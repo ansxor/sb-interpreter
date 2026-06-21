@@ -9,11 +9,24 @@ contract, the four-source authoring process, and the per-category task breakdown
 > auto-generator; specs are authored from all sources. `instructions/` is being rebuilt
 > (milestone S).
 
+## Two kinds of spec
+
+1. **Instruction specs** — `instructions/<id>.yaml`, the rigid **v2 contract** below
+   (`id`/`kind`/`signatures`/`errors`/`tests`...). For functions, statements, operators,
+   system vars — anything with a call shape. Executed by `sb-spec`.
+2. **Concept specs** — `concepts/<slug>.md`, **Markdown + frontmatter**, for cross-cutting
+   *models/architecture* that don't have a call shape (screen/layer compositing, the
+   VM/slot execution model, MML grammar, file/extdata format, frame/timing, error model).
+   Prose-first, but still carry `sources` + `confidence`. See `concepts/README.md`.
+
+Both obey the confidence ladder. Don't force architecture into the instruction schema.
+
 ## Layout
 
 ```
 spec/
-  instructions/<stem>.yaml   # one per instruction — the v2 contract (see prd/specs.md)
+  instructions/<stem>.yaml   # per-instruction — the v2 contract (YAML; see prd/specs.md)
+  concepts/<slug>.md         # architecture/behavior models (Markdown; see concepts/README.md)
   tests/<stem>.yaml          # optional test overlay (oracle harvest writes here)
   reference/
     errors.yaml              # ERRNUM table (3..47)   — to be cross-checked vs oracle (S-T14)

@@ -32,7 +32,7 @@ error conditions (errnum), and test cases (code → expect) with honest per-sour
 A category is done when every instruction in it is specced with cases, and oracle-verifiable
 cases are harvested (`hw_verified`) or queued in `HARVEST_QUEUE.md`.
 
-- [ ] S-T0 Spec schema v2 + authoring guide — define the richer spec shape (typed sigs, ranges, errors, cases) and the 4-source process; update `spec/SCHEMA.md`; `sb-spec` structs to match
+- [x] S-T0 Spec schema v2 + authoring guide — v2 contract (typed sigs/ranges/errors/cases) + 4-source process in `prd/specs.md`; `sb-spec` structs updated; **concept-spec** kind (Markdown) added; FLOOR exemplar + screen-and-color-model exemplar written
 - [ ] S-T1 Mathematics (27) — author specs + cases → S-T0
 - [ ] S-T2 Strings (12) → S-T0
 - [ ] S-T3 Control + Advanced control (22+5) → S-T0
@@ -47,6 +47,15 @@ cases are harvested (`hw_verified`) or queued in `HARVEST_QUEUE.md`.
 - [ ] S-T12 Files + Source-manip + DIRECT-mode (8+7+7) → S-T0
 - [ ] S-T13 Wireless (8) → S-T0
 - [ ] S-T14 Verify reference tables (errors/sysvars/constants) vs disassembly + oracle → O-T4, O-T5
+
+### S-C — Concept specs (architecture/models; Markdown in `spec/concepts/`, see prd/specs.md)
+- [ ] S-C1 execution-model — lexer/parser/compiler/VM, 4 slots + COMMON, frame layout → gov. M1
+- [~] S-C2 screen-and-color-model — layers/Z/RGBA5551 (exemplar drafted; confirm vs oracle) → gov. M2, O-T6
+- [ ] S-C3 sprite-bg-model — attributes/animation/collision/tilemaps → gov. M3
+- [ ] S-C4 frame-and-timing-model — VSYNC/WAIT/MAINCNT, 60 fps → gov. M4
+- [ ] S-C5 mml-grammar — the full MML language → gov. M5
+- [ ] S-C6 file-and-extdata-format — projects/resources/extdata layout → gov. M6, O-T3
+- [ ] S-C7 error-model — errnum/ERRLINE, halt/CONT semantics → gov. M1, O-T5
 
 ## O — Oracle harvest engine (real SmileBASIC 3.6.0 in Azahar)
 - [x] O-T1 RPC connection — Azahar `--install` + boot; read guest memory (banner @0x2E9AE0 confirms 3.6.0; runtime = file offset + 0x100000)

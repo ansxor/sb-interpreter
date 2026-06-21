@@ -67,11 +67,32 @@ writes there). Either way the conformance suite runs them against `sb-core`.
    to `HARVEST_QUEUE.md` for a later harvest pass.
 6. Set the top-level `confidence` to the **lowest** of the spec's load-bearing claims.
 
+**Mine the sbsave corpus.** `harness/corpus/sbsave/files/*/TXT/` holds 3,329 real programs.
+`grep -rl '\bFLOOR\b' harness/corpus/sbsave/files` surfaces real usages — common argument
+patterns, edge cases, and idioms the docs never show (e.g. `MODULE`, `VAR X#=0`). Turn
+surprising ones into test cases. sbsave is test **input**, not ground truth — verify expects
+via the oracle. These programs are also end-to-end inputs for the final interpreter (run on
+sb-core + the oracle and diff). See `harness/corpus/sbsave/README.md`.
+
 ### Loop vs. oracle division
 - The autonomous loop (`ralph.sh`) authors specs from docs + disassembly + osb and queues
   oracle-needed cases. It **never** sets `hw_verified`.
 - A supervised harvest pass (oracle reachable from this machine) runs the queued cases and
   upgrades them. See `prd/oracle.md` (O-T8).
+
+## Concept specs (architecture/models — the other kind)
+
+Cross-cutting models with no call shape go in `spec/concepts/<slug>.md` (Markdown +
+frontmatter; see `spec/concepts/README.md`), **not** the instruction schema. They carry
+`sources` + `confidence` and are the contract for their implementation milestone:
+
+- `execution-model` — lexer/parser/compiler/VM, 4 slots + COMMON, frame layout → M1
+- `screen-and-color-model` — layers, Z-order, RGBA5551 → M2  *(exemplar written)*
+- `sprite-bg-model` — attributes, animation, collision, tilemaps → M3
+- `frame-and-timing-model` — VSYNC/WAIT/MAINCNT, 60 fps → M4
+- `mml-grammar` — the full MML language → M5
+- `file-and-extdata-format` — projects, resources, extdata layout → M6
+- `error-model` — errnum/ERRLINE, halt/CONT semantics
 
 ## Tasks (by category — counts are sb-docs instruction counts)
 

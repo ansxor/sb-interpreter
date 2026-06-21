@@ -18,10 +18,19 @@ fn committed_specs_load_and_are_wellformed() {
     for s in &specs {
         assert!(!s.id.is_empty(), "spec has empty id");
         assert!(
-            s.summary.is_some() || !s.forms.is_empty(),
-            "{} has neither summary nor forms",
+            s.summary.is_some() || !s.signatures.is_empty(),
+            "{} has neither summary nor signatures",
             s.id
         );
+        // Every load-bearing test must declare an expectation.
+        for t in &s.tests {
+            assert!(
+                t.expect.stdout.is_some() || t.expect.value.is_some() || t.expect.error.is_some(),
+                "{}: test '{}' has no expectation",
+                s.id,
+                t.name
+            );
+        }
     }
 }
 

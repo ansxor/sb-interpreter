@@ -59,25 +59,64 @@ pub enum Kind {
     SystemVar,
 }
 
+/// Version provenance for an instruction.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Version {
+    #[serde(default)]
+    pub introduced: Option<String>,
+    #[serde(default)]
+    pub verified_on: Option<String>,
+}
+
+/// A typed argument (or OUT parameter) in a signature.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Arg {
     pub name: String,
+    /// `number` (int|double) | `integer` | `double` | `string` | `number_array` | ...
+    #[serde(rename = "type")]
+    pub ty: String,
+    /// Allowed range, free-form (e.g. "0-511", "any"). Tightened from docs/disassembly.
     #[serde(default)]
-    pub desc: String,
+    pub range: Option<String>,
+    /// Default value when omitted (for optional args, e.g. LOCATE).
+    #[serde(default)]
+    pub default: Option<serde_yaml::Value>,
+    #[serde(default)]
+    pub optional: bool,
+    #[serde(default)]
+    pub desc: Option<String>,
 }
 
+/// A function/return value.
 #[derive(Debug, Clone, Deserialize)]
-pub struct Form {
+pub struct Ret {
+    #[serde(rename = "type")]
+    pub ty: String,
     #[serde(default)]
-    pub format: Option<String>,
-    #[serde(default)]
-    pub description: Option<String>,
+    pub desc: Option<String>,
+}
+
+/// One call form (overload): ordered `args`, optional `out` params, optional `returns`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Signature {
     #[serde(default)]
     pub args: Vec<Arg>,
     #[serde(default)]
-    pub returns: Vec<Arg>,
+    pub out: Vec<Arg>,
     #[serde(default)]
-    pub examples: Vec<String>,
+    pub returns: Option<Ret>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// An error condition: which `errnum` is raised, and when.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ErrorCond {
+    pub errnum: u8,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub when: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -93,8 +132,13 @@ pub struct Source {
 /// Expected result of a conformance test case.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Expect {
+    /// Exact console text.
     #[serde(default)]
     pub stdout: Option<String>,
+    /// Expected value of a named variable after the program (string repr).
+    #[serde(default)]
+    pub value: Option<String>,
+    /// Expected error.
     #[serde(default)]
     pub error: Option<ErrorExpect>,
 }
@@ -104,7 +148,7 @@ pub struct ErrorExpect {
     pub errnum: u8,
 }
 
-/// A single conformance test (from the `spec/tests/` overlay).
+/// A single conformance test (inline in the spec, or in the `spec/tests/` overlay).
 #[derive(Debug, Clone, Deserialize)]
 pub struct TestCase {
     pub name: String,
@@ -113,7 +157,7 @@ pub struct TestCase {
     pub expect: Expect,
 }
 
-/// One instruction's full spec (documented layer + merged test overlay).
+/// One instruction's full spec (the v2 contract — see `prd/specs.md`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Spec {
     pub id: String,
@@ -121,18 +165,22 @@ pub struct Spec {
     #[serde(default)]
     pub category: String,
     #[serde(default)]
+    pub version: Option<Version>,
+    #[serde(default)]
+    pub signatures: Vec<Signature>,
+    #[serde(default)]
     pub summary: Option<String>,
     #[serde(default)]
     pub semantics: Vec<String>,
     #[serde(default)]
-    pub forms: Vec<Form>,
+    pub errors: Vec<ErrorCond>,
     #[serde(default)]
     pub see_also: Option<String>,
     #[serde(default)]
     pub sources: Vec<Source>,
     pub confidence: Confidence,
-    /// Merged from `spec/tests/<stem>.yaml`; empty if no overlay exists.
-    #[serde(default, skip)]
+    /// Inline test cases; the `spec/tests/<stem>.yaml` overlay is appended on load.
+    #[serde(default)]
     pub tests: Vec<TestCase>,
 }
 
@@ -191,7 +239,7 @@ pub fn load_all(spec_dir: &Path) -> Result<Vec<Spec>, LoadError> {
                 .map_err(|e| LoadError::Io(overlay_path.clone(), e))?;
             let overlay: TestOverlay =
                 serde_yaml::from_str(&otext).map_err(|e| LoadError::Parse(overlay_path, e))?;
-            spec.tests = overlay.tests;
+            spec.tests.extend(overlay.tests);
         }
         specs.push(spec);
     }
