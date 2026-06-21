@@ -1,0 +1,19 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/chklabel.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "CHKLABEL"
+kind: function
+category: "Basic instructions (data operations and others)"
+system: "SmileBASIC 3"
+summary: "Checks if there is a label that can be referenced with the specified string"
+semantics: []
+forms:
+  - format: "Variable = CHKLABEL(\"@Label string\"[,Flag])"
+    description: "Checks if there is a label that can be referenced with the specified string"
+    args:
+      - { name: "@Label string", desc: "- It is also possible to check a different SLOT by using CHKLABEL \"1:@Label name\"<br>- The target SLOT should be enabled beforehand with USE, e.g., USE 1" }
+      - { name: "Flag", desc: "0= Searches only within DEF (if omitted, 0)<br>1= If not found within DEF, searches for global labels" }
+    examples:
+      - "A=CHKLABEL(\"@MAIN\")"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/chklabel.md" }
+confidence: documented

@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/spclr.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SPCLR"
+kind: statement
+category: "Sprites"
+system: "SmileBASIC 3"
+summary: "Stops using the specified sprite and releases the memory If memory is not released after use with sprites, there will be no available memory for SPSET"
+semantics: []
+forms:
+  - format: "SPCLR Management number"
+    description: "Stops using the specified sprite and releases the memory If memory is not released after use with sprites, there will be no available memory for SPSET"
+    args:
+      - { name: "Management number", desc: "Management number of the sprite to stop using: 0-511" }
+    examples:
+      - "SPCLR 56"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spclr.md" }
+confidence: documented

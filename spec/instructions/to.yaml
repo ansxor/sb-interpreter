@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/to.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "TO"
+kind: statement
+category: "Basic instructions (control and branching)"
+system: "SmileBASIC 3"
+summary: "Specifies the loop count end value"
+semantics:
+  - "See Comment for the FOR instruction for details regarding FOR to NEXT"
+forms:
+  - format: "TO End value"
+    description: "Specifies the loop count end value"
+    args: []
+    examples:
+      - "FOR I=0 TO 9 STEP 2\n PRINT I;\",\";\nNEXT"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/to.md" }
+confidence: documented

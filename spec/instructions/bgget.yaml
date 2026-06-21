@@ -1,0 +1,20 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/bgget.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BGGET"
+kind: function
+category: "BG"
+system: "SmileBASIC 3"
+summary: "Gets information on a BG character on the BG screen"
+semantics: []
+forms:
+  - format: "Variable=BGGET( Layer, X, Y [,Coordinate system flag] )"
+    description: "Gets information on a BG character on the BG screen"
+    args:
+      - { name: "Layer", desc: "Target layer number: 0-3" }
+      - { name: "X,Y", desc: "Coordinates to get the BG character from (Coordinate values differ depending on the coordinate<br>system flag described below)" }
+      - { name: "Coordinate system<br>flag (If omitted,<br>0)", desc: "0: Treats X-, Y-coordinates as the BG screen coordinates (in character units)<br>1: Treats X-, Y-coordinates as the screen coordinates (in pixel units)" }
+    examples:
+      - "C=BGGET(0,12,14)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgget.md" }
+confidence: documented

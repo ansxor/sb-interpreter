@@ -1,0 +1,19 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/randomize.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "RANDOMIZE"
+kind: statement
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Initializes a random number series"
+semantics: []
+forms:
+  - format: "RANDOMIZE Seed ID [, Seed value ]"
+    description: "Initializes a random number series"
+    args:
+      - { name: "Seed ID", desc: "Random number series type: 0-7" }
+      - { name: "Seed value", desc: "If 0 or omitted, initialization will be performed using available entropy information" }
+    examples:
+      - "RANDOMIZE 0"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/randomize.md" }
+confidence: documented

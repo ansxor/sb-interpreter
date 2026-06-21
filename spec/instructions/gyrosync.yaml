@@ -1,0 +1,20 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/gyrosync.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "GYROSYNC"
+kind: statement
+category: "Various kinds of input"
+system: "SmileBASIC 3"
+summary: "Updates gyro information"
+semantics:
+  - "Error accumulation may occur if gyro information is repeatedly retrieved"
+  - "This instruction should be called to reset information appropriately"
+  - "However, calling this instruction at an interval of 1 frame or less is prohibited"
+forms:
+  - format: "GYROSYNC"
+    description: "Updates gyro information"
+    args: []
+    examples:
+      - "GYROSYNC"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gyrosync.md" }
+confidence: documented

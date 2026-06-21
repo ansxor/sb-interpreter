@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/option.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "OPTION"
+kind: statement
+category: "Basic instructions (data operations and others)"
+system: "SmileBASIC 3"
+summary: "Sets the operating mode of the program"
+semantics: []
+forms:
+  - format: "OPTION Feature name"
+    description: "Sets the operating mode of the program"
+    args:
+      - { name: "Feature name", desc: "STRICT: Variable declaration is required (A reference without declaration will give an error)<br>DEFINT: Causes the default variable type to be Integer" }
+    examples:
+      - "OPTION STRICT"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/option.md" }
+confidence: documented

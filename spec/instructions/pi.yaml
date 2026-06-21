@@ -1,0 +1,17 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/pi.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "PI"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Gets the circumference ratio"
+semantics: []
+forms:
+  - format: "Variable = PI()"
+    description: "Gets the circumference ratio"
+    args: []
+    examples:
+      - "A=PI()"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/pi.md" }
+confidence: documented

@@ -1,0 +1,25 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/splink.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SPLINK"
+kind: statement
+category: "Sprites"
+system: "SmileBASIC 3"
+summary: "Links one sprite to another sprite"
+semantics:
+  - "Only the coordinates will be linked (The rotation angle and magnification information will not)"
+  - "Only a sprite with a lower management number can be specified as the link destination (parent)"
+  - "The display coordinates of the child will be determined in relation to the parent"
+  - "In this coordinate system, the top left corner of the screen will not be the origin"
+  - "There are no restrictions on link hierarchies"
+  - "If used before SPSET, an error will occur"
+forms:
+  - format: "SPLINK Management number, Link destination management number"
+    description: "Links one sprite to another sprite"
+    args:
+      - { name: "Management number", desc: "Management number of the link source (child) sprite: 0-511" }
+      - { name: "Link destination<br>management number", desc: "Management number of the link destination (parent) sprite: 0-511<br>* Management numbers that are not lower than that of the link source will give errors." }
+    examples:
+      - "SPLINK 15,4"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/splink.md" }
+confidence: documented

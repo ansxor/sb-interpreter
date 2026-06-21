@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/chkvar.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "CHKVAR"
+kind: function
+category: "Basic instructions (data operations and others)"
+system: "SmileBASIC 3"
+summary: "Checks if there is a variable that can be referenced with the specified string"
+semantics: []
+forms:
+  - format: "Variable = CHKVAR(\"Character string\")"
+    description: "Checks if there is a variable that can be referenced with the specified string"
+    args:
+      - { name: "Character string", desc: "Character string of the variable to check" }
+    examples:
+      - "A=CHKVAR(\"COUNTX\")"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/chkvar.md" }
+confidence: documented

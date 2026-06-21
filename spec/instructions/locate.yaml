@@ -1,0 +1,19 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/locate.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "LOCATE"
+kind: statement
+category: "Console input/output"
+system: "SmileBASIC 3"
+summary: "Specifies the character display location on the console screen"
+semantics: []
+forms:
+  - format: "LOCATE [X-coordinate],[Y-coordinate] [,Z-coordinate]"
+    description: "Specifies the character display location on the console screen"
+    args:
+      - { name: "X-,Y-coordinates", desc: "- Coordinates of each character (X:0-49,Y:0-29)<br>- If the X- and Y-coordinates are omitted, the previous coordinates for each will be kept" }
+      - { name: "Z-coordinate", desc: "- Coordinate in the depth direction (Rear:1024<Screen surface:0<Front:-256)<br>- If omitted, the previous Z-coordinate will be kept" }
+    examples:
+      - "LOCATE 20,15\nLOCATE 0,0,-200"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/locate.md" }
+confidence: documented

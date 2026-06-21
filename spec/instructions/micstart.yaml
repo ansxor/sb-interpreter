@@ -1,0 +1,22 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/micstart.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "MICSTART"
+kind: statement
+category: "Various kinds of input"
+system: "SmileBASIC 3"
+summary: "Starts sampling from the microphone"
+semantics:
+  - "The microphone should be enabled beforehand with XON MIC"
+  - "Recorded into memory used for sampling in the system"
+forms:
+  - format: "MICSTART Sampling rate, Number of bits, Number of seconds"
+    description: "Starts sampling from the microphone"
+    args:
+      - { name: "Sampling rate", desc: "0: 8180Hz<br>1: 10910Hz<br>2: 16360Hz<br>3: 32730Hz" }
+      - { name: "Number of bits", desc: "0: 8 bits<br>1: 16 bits" }
+      - { name: "Number of seconds", desc: "0: Loop mode<br>1-: Number of seconds for sampling<br>- 8180Hz: Up to 32 sec for 8 bits, 16 sec for 16 bits<br>- 10910Hz: Up to 24 sec for 8 bits, 12 sec for 16 bits<br>- 16360Hz: Up to 16 sec for 8 bits, 8 sec for 16 bits<br>- 32730Hz: Up to 8 sec for 8 bits, 4 sec for 16 bits<br>- In loop mode, data will be overwritten from the beginning once the maximum number of seconds<br>has been reached" }
+    examples:
+      - "XON MIC\nMICSTART 0,1,10"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/micstart.md" }
+confidence: documented

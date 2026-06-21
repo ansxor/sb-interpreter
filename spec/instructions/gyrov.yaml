@@ -1,0 +1,22 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/gyrov.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "GYROV"
+kind: statement
+category: "Various kinds of input"
+system: "SmileBASIC 3"
+summary: "Gets information on the angular velocity of the gyro sensor Motion sensor(s) should be enabled beforehand with XON MOTION"
+semantics: []
+forms:
+  - format: "GYROV OUT P,R,Y"
+    description: "Gets information on the angular velocity of the gyro sensor Motion sensor(s) should be enabled beforehand with XON MOTION"
+    args:
+      - { name: "None", desc: "" }
+    returns:
+      - { name: "P", desc: "Variable to receive Pitch (angular velocity of the X-coordinate) (Unit: radians/second)" }
+      - { name: "R", desc: "Variable to receive Roll (angular velocity of the Y-coordinate) (Unit: radians/second)" }
+      - { name: "Y", desc: "Variable to receive Yaw (angular velocity of the Z-coordinate) (Unit: radians/second)" }
+    examples:
+      - "XON MOTION\nGYROV OUT P,R,Y"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gyrov.md" }
+confidence: documented

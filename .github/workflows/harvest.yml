@@ -1,0 +1,21 @@
+name: Harvest fixtures (manual)
+
+# Phase A is intentionally NOT part of CI: it needs the Citra/Azahar emulator +
+# SmileBASIC 3.6.0 and is slow/stateful/non-deterministic. A maintainer runs the
+# harvest locally (see harness/harvest/README.md), commits the refreshed fixtures, and
+# opens a PR — then the deterministic CI gate replays them.
+#
+# This workflow exists only to document that and to provide a manual trigger hook for a
+# future self-hosted runner with an emulator attached.
+on:
+  workflow_dispatch:
+
+jobs:
+  note:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain
+        run: |
+          echo "Harvest requires an emulator + SmileBASIC and cannot run on hosted CI."
+          echo "Run it locally:  python3 harness/harvest/harvest.py"
+          echo "Then commit spec/tests + harness/corpus/golden and open a PR."

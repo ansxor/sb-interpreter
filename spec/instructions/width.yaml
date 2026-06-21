@@ -1,0 +1,20 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/width.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "WIDTH"
+kind: statement
+category: "Console input/output"
+system: "SmileBASIC 3"
+summary: "Changes the console character sizes"
+semantics:
+  - "Only enlarges the characters, does not display a smooth zoomed-in view"
+  - "This is an auxiliary function for people who have trouble viewing small characters"
+forms:
+  - format: "WIDTH Font size"
+    description: "Changes the console character sizes"
+    args:
+      - { name: "Font size", desc: "8: 8x8 pixels (Standard)<br>16: 16x16 pixels (Twice as large as the normal horizontal and vertical display)" }
+    examples:
+      - "WIDTH 16\nA=WIDTH()"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/width.md" }
+confidence: documented

@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/gprio.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "GPRIO"
+kind: statement
+category: "Graphics"
+system: "SmileBASIC 3"
+summary: "Changes the display order of the graphic screen If 3D mode is used, the whole graphic screen will be affected"
+semantics: []
+forms:
+  - format: "GPRIO Z-coordinate"
+    description: "Changes the display order of the graphic screen If 3D mode is used, the whole graphic screen will be affected"
+    args:
+      - { name: "Z-coordinate", desc: "Coordinate in the depth direction (Rear:1024 < Screen surface:0 < Front:-256)" }
+    examples:
+      - "GPRIO -100"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gprio.md" }
+confidence: documented

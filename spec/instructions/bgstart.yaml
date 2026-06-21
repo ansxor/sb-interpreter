@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/bgstart.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BGSTART"
+kind: statement
+category: "BG"
+system: "SmileBASIC 3"
+summary: "Starts BG animation"
+semantics: []
+forms:
+  - format: "BGSTART [Layer]"
+    description: "Starts BG animation"
+    args:
+      - { name: "Layer", desc: "Target layer number: 0-3<br>* If the layer is omitted, animation of all layers will be started." }
+    examples:
+      - "BGSTART"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgstart.md" }
+confidence: documented

@@ -1,0 +1,23 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/backcolor.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BACKCOLOR"
+kind: function
+category: "Screen control"
+system: "SmileBASIC 3"
+summary: "Specifies a background color"
+semantics: []
+forms:
+  - format: "BACKCOLOR Background color code"
+    description: "Specifies a background color"
+    args:
+      - { name: "Background color<br>code", desc: "- Usually specified with the RGB function, e.g., BACKCOLOR RGB(64,128,128)<br>- To specify a numerical value directly, a color code consisting of an 8-bit value for each<br>RGB element should be specified" }
+    examples:
+      - "BACKCOLOR RGB(64,128,128)"
+  - format: "Variable=BACKCOLOR()"
+    description: "Specifies the current background color"
+    args: []
+    examples:
+      - "C=BACKCOLOR()"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/backcolor.md" }
+confidence: documented

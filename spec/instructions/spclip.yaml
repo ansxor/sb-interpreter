@@ -1,0 +1,20 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/spclip.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SPCLIP"
+kind: statement
+category: "Sprites"
+system: "SmileBASIC 3"
+summary: "Specifies a clipping area in the sprite"
+semantics:
+  - "If the range is omitted, the whole screen will be assumed"
+forms:
+  - format: "SPCLIP [Start point X,Start point Y,End point X, End point Y]"
+    description: "Specifies a clipping area in the sprite"
+    args:
+      - { name: "Start point X,Y", desc: "Start point coordinates for the clipping area (X: 0-399, Y: 0-239)" }
+      - { name: "End point X,Y", desc: "End point coordinates for the clipping area (X: 0-399, Y: 0-239)" }
+    examples:
+      - "SPCLIP 100,100,200,200"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spclip.md" }
+confidence: documented

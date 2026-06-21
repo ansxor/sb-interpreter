@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/mpstat.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "MPSTAT"
+kind: function
+category: "Wireless communication"
+system: "SmileBASIC 3"
+summary: "Gets the connection status of a specified terminal in a wireless communication session Communication will be terminated if the system goes into sleep mode"
+semantics: []
+forms:
+  - format: "Variable = MPSTAT( [Terminal ID] )"
+    description: "Gets the connection status of a specified terminal in a wireless communication session Communication will be terminated if the system goes into sleep mode"
+    args:
+      - { name: "Terminal ID", desc: "0-3: ID of another terminal in the wireless communication session (If omitted, the whole<br>session will be assumed)" }
+    examples:
+      - "RET=MPSTAT( 2 )"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/mpstat.md" }
+confidence: documented

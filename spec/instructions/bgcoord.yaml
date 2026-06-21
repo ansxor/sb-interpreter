@@ -1,0 +1,21 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/bgcoord.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BGCOORD"
+kind: statement
+category: "BG"
+system: "SmileBASIC 3"
+summary: "Converts display coordinates to BG screen coordinates, or vice versa"
+semantics: []
+forms:
+  - format: "BGCOORD Layer,Source X-coordinate,Source Y-coordinate[,Mode]OUT DX,DY"
+    description: "Converts display coordinates to BG screen coordinates, or vice versa"
+    args:
+      - { name: "Layer", desc: "Layer number: 0-3" }
+      - { name: "Source X-, Y-<br>coordinates", desc: "Coordinates to convert (BG character coordinates or display coordinates)" }
+      - { name: "Mode", desc: "Conversion mode: 0-2<br>0: Converts BG screen coordinates to display coordinates<br>1: Converts display coordinates to BG screen coordinates (in character units)<br>2: Converts display coordinates to BG screen coordinates (in pixel units)" }
+      - { name: "DX,DY", desc: "Variable to store the converted coordinates (BG character coordinates or display coordinates)" }
+    examples:
+      - "BGCOORD 0,BGX,BGY,0 OUT DX,DY"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgcoord.md" }
+confidence: documented

@@ -1,0 +1,19 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/log.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "LOG"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Finds the logarithm"
+semantics: []
+forms:
+  - format: "Variable = LOG( Numerical value [,Base ] )"
+    description: "Finds the logarithm"
+    args:
+      - { name: "Numerical value", desc: "Antilogarithm" }
+      - { name: "Base", desc: "Base (* If omitted, the natural logarithm will be found.)" }
+    examples:
+      - "A=LOG(2,2)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/log.md" }
+confidence: documented

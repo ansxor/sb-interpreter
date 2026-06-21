@@ -1,0 +1,22 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/xscreen.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "XSCREEN"
+kind: statement
+category: "Screen control"
+system: "SmileBASIC 3"
+summary: "Sets a screen mode execution is started"
+semantics:
+  - "Screen modes 2 and 3 can also be used in DIRECT mode, but the Touch Screen will be switched to a keyboard after"
+  - "3D specification can be disabled in the Parental Control settings"
+forms:
+  - format: "XSCREEN Screen mode [,Number of sprite assignments ,Number of BG assignments]"
+    description: "Sets a screen mode execution is started"
+    args:
+      - { name: "Screen mode", desc: "0: Upper screen-3D, Touch Screen-Not used (Default)<br>1: Upper screen-2D, Touch Screen-Not used<br>2: Upper screen-3D, Touch Screen-Used (Keyboard displayed during INPUT)<br>3: Upper screen-2D, Touch Screen-Used (Keyboard displayed during INPUT)<br>4: Upper and Touch screens combined (Upper screen 2D; INPUT and DIRECT mode not allowed)" }
+      - { name: "Number of sprite<br>assignments", desc: "- Number of sprites to assign to the upper screen: 0-512<br>- Touch Screen: 512 - number of SPs on the upper screen" }
+      - { name: "Number of BG<br>allocations", desc: "- Number of BG layers to assign to the upper screen: 0-4<br>- Touch Screen: 4 - number of BG layers on the upper screen" }
+    examples:
+      - "XSCREEN 2,128,4"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/xscreen.md" }
+confidence: documented

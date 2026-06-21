@@ -1,0 +1,27 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/bgrot.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BGROT"
+kind: statement
+category: "BG"
+system: "SmileBASIC 3"
+summary: "Rotates the BG screen"
+semantics: []
+forms:
+  - format: "BGROT Layer,Angle"
+    description: "Rotates the BG screen"
+    args:
+      - { name: "Layer", desc: "Target layer number: 0-3" }
+      - { name: "Angle", desc: "Rotation angle (clockwise): 0-360" }
+    examples:
+      - "BGROT 0,180"
+  - format: "BGROT Layer OUT R"
+    description: "Gets rotation information from the BG screen"
+    args:
+      - { name: "Layer", desc: "Target layer number: 0-3" }
+    returns:
+      - { name: "Angle", desc: "R: 0-360" }
+    examples:
+      - "BGROT 0 OUT R"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgrot.md" }
+confidence: documented

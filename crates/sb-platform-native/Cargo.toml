@@ -1,0 +1,19 @@
+[package]
+name = "sb-platform-native"
+description = "Native desktop runner for the SmileBASIC interpreter (windowing/input/storage). GUI deps (winit) land in M1."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "sb"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+sb-core = { path = "../sb-core" }
+sb-render = { path = "../sb-render" }
+sb-audio = { path = "../sb-audio" }

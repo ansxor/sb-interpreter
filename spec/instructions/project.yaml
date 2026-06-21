@@ -1,0 +1,26 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/project.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "PROJECT"
+kind: statement
+category: "Instructions available only in DIRECT mode"
+system: "SmileBASIC 3"
+summary: "Switches the default project DIRECT mode only"
+semantics: []
+forms:
+  - format: "PROJECT \"Project name\""
+    description: "Switches the default project DIRECT mode only"
+    args:
+      - { name: "Project name", desc: "Name string of project to change<br>- New projects can be created from the TOP MENU<br>- Project name \"\" specifies the default project" }
+    examples:
+      - "PROJECT \"\""
+  - format: "PROJECT OUT PJ$"
+    description: "Obtains the default project Can be also used from within programs"
+    args:
+      - { name: "None", desc: "" }
+    returns:
+      - { name: "PJ$", desc: "Current project name" }
+    examples:
+      - "PROJECT OUT PJ$"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/project.md" }
+confidence: documented

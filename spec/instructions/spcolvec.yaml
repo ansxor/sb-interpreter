@@ -1,0 +1,21 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/spcolvec.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SPCOLVEC"
+kind: statement
+category: "Sprites"
+system: "SmileBASIC 3"
+summary: "Sets a movement speed for sprite collision detection"
+semantics:
+  - "It is recommended to also call this instruction when setting SPCOL"
+  - "If used before SPSET, an error will occur"
+forms:
+  - format: "SPCOLVEC Management number [,Movement amount X,Movement amount Y]"
+    description: "Sets a movement speed for sprite collision detection"
+    args:
+      - { name: "Management number", desc: "Management number of the target sprite: 0-511" }
+      - { name: "Movement amount<br>X,Movement amount<br>Y", desc: "- If omitted, the amount will be automatically calculated as follows:<br>- When linear interpolation of \"XY\" in SPANIM is being performed: Movement distance from the<br>previous frame<br>- Otherwise: 0,0" }
+    examples:
+      - "SPCOLVEC 93"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spcolvec.md" }
+confidence: documented

@@ -1,0 +1,26 @@
+# AUTO-GENERATED from sb-docs/.../reference/system-variables.md — do not edit.
+system_variables:
+  - { name: "CSRX", desc: "Cursor position X", writable: false }
+  - { name: "CSRY", desc: "Cursor position Y", writable: false }
+  - { name: "CSRZ", desc: "Cursor position Z (depth)", writable: false }
+  - { name: "FREEMEM", desc: "Amount of free user memory available (in KB)", writable: false }
+  - { name: "VERSION", desc: "System version (&HXXYYZZZZ)", writable: false }
+  - { name: "TABSTEP", desc: "TAB movement amount (writable)", writable: true }
+  - { name: "SYSBEEP", desc: "System sound effects (writable, TRUE=allowed)", writable: true }
+  - { name: "ERRNUM", desc: "Error number", writable: false }
+  - { name: "ERRLINE", desc: "Line where an error occurred", writable: false }
+  - { name: "ERRPRG", desc: "Program SLOT where an error occurred", writable: false }
+  - { name: "PRGSLOT", desc: "Current program SLOT for the PRG instruction", writable: false }
+  - { name: "RESULT", desc: "Dialog result (TRUE/FALSE/-1=Suspended)", writable: false }
+  - { name: "MAINCNT", desc: "Number of frames since SmileBASIC was launched", writable: false }
+  - { name: "MICPOS", desc: "Current sampling location", writable: false }
+  - { name: "MICSIZE", desc: "Number of samples in the sampling buffer", writable: false }
+  - { name: "MPCOUNT", desc: "Number of participants in a session", writable: false }
+  - { name: "MPHOST", desc: "Host ID", writable: false }
+  - { name: "MPLOCAL", desc: "User ID", writable: false }
+  - { name: "TRUE", desc: "Always 1", writable: false }
+  - { name: "FALSE", desc: "Always 0", writable: false }
+  - { name: "TIME$", desc: "Time string (HH:MM:SS)", writable: false }
+  - { name: "DATE$", desc: "Date string (YYYY/MM/DD)", writable: false }
+  - { name: "HARDWARE", desc: "Hardware information (1=new3DS)", writable: false }
+  - { name: "CALLIDX", desc: "Number called by SPFUNC and BGFUNC", writable: false }

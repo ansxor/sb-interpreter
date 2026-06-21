@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/prgname.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "PRGNAME$"
+kind: function
+category: "Source code manipulation"
+system: "SmileBASIC 3"
+summary: "Program file name File that has been handled with the LOAD/SAVE instruction"
+semantics: []
+forms:
+  - format: "String variable=PRGNAME$([Program SLOT])"
+    description: "Program file name File that has been handled with the LOAD/SAVE instruction"
+    args:
+      - { name: "Program SLOT", desc: "Program SLOT from which to get the file name: 0-3" }
+    examples:
+      - "PRINT PRGNAME$(0)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/prgname.md" }
+confidence: documented

@@ -1,0 +1,25 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/spchk.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SPCHK"
+kind: function
+category: "Sprites"
+system: "SmileBASIC 3"
+summary: "Gets the animation status of a sprite If used before SPSET, an error will occur"
+semantics: []
+forms:
+  - format: "Variable=SPCHK( Management number )"
+    description: "Gets the animation status of a sprite If used before SPSET, an error will occur"
+    args:
+      - { name: "Management number", desc: "Management number of the target sprite: 0-511" }
+    returns:
+      - { name: "b02", desc: "UV-coordinates (4), #CHKUV" }
+      - { name: "b03", desc: "Definition number (8), #CHKI" }
+      - { name: "b04", desc: "Rotation (16), #CHKR" }
+      - { name: "b05", desc: "Magnification XY (32), #CHKS" }
+      - { name: "b06", desc: "Display color (64), #CHKC" }
+      - { name: "b07", desc: "Variable (128), #CHKV" }
+    examples:
+      - "ST=SPCHK(5)\n'|b00|#CHKXY\n'|b01|#CHKZ\n'|b02|#CHKUV\n'|b03|#CHKI\n'|b04|#CHKR\n'|b05|#CHKS\n'|b06|#CHKC\n'|b07|#CHKV"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spchk.md" }
+confidence: documented

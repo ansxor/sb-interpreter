@@ -1,0 +1,19 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/and.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "AND"
+kind: operator
+category: "Bit Operations"
+system: "SmileBASIC 3"
+summary: "Logical AND of Numerical value 1 and Numerical value 2 (Multiplication of bits)"
+semantics: []
+forms:
+  - format: "Variable=Numerical value 1 AND Numerical value 2"
+    description: "Logical AND of Numerical value 1 and Numerical value 2 (Multiplication of bits)"
+    args:
+      - { name: "Numerical value 1", desc: "Bit string 1" }
+      - { name: "Numerical value 2", desc: "Bit string 2" }
+    examples:
+      - "A=200 AND &HE7"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/and.md" }
+confidence: documented

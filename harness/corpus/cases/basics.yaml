@@ -1,0 +1,21 @@
+# Cross-cutting deterministic cases (code + expect). Same schema as spec/tests/.
+# Expects below are documented-layer hypotheses; harvest.py confirms them on real SB3.
+cases:
+  - name: print_integer
+    code: 'PRINT 42'
+    expect: { stdout: "42" }
+  - name: integer_division
+    code: 'PRINT 7 DIV 2'
+    expect: { stdout: "3" }
+  - name: modulo
+    code: 'PRINT 7 MOD 3'
+    expect: { stdout: "1" }
+  - name: string_concat
+    code: 'PRINT "A"+"B"'
+    expect: { stdout: "AB" }
+  - name: divide_by_zero
+    code: 'PRINT 1/0'
+    expect: { error: { errnum: 7 } }   # Divide by zero
+  - name: order_of_operations
+    code: 'PRINT 2+3*4'
+    expect: { stdout: "14" }

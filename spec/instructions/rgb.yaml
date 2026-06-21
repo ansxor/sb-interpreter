@@ -1,0 +1,35 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/rgb.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "RGB"
+kind: function
+category: "Graphics"
+system: "SmileBASIC 3"
+summary: "Gets a color code based on 8-bit RGB values"
+semantics:
+  - "Black RGB(0,0,0)"
+  - "White RGB(255,255,255)"
+  - "Light gray RGB(224,224,224)"
+  - "Gray RGB(128,128,128)"
+  - "Dark gray RGB(64,64,64)"
+  - "Red RGB(255,0,0)"
+  - "Pink RGB(255,96,208)"
+  - "Purple RGB(160,32,255)"
+  - "Light blue RGB(80,208,255)"
+  - "Blue RGB(0,32,255)"
+  - "Yellow green RGB(96,255,128)"
+  - "Green RGB(0,192,0)"
+  - "Yellow RGB(255,224,32)"
+  - "Orange RGB(255,160,16)"
+  - "Brown RGB(160,128,96)"
+  - "Pale pink RGB(255,208,160)"
+forms:
+  - format: "Variable = RGB( [Transparency,] Red,Green,Blue )"
+    description: "Gets a color code based on 8-bit RGB values"
+    args:
+      - { name: "Transparency", desc: "- Transparency information (255: Opaque, Otherwise: Transparent)<br>- A transparency level in the range 0-255 can be specified for SPCOLOR" }
+      - { name: "Red, Green, Blue", desc: "Each color has an 8-bit color tone value (each 0-255)" }
+    examples:
+      - "GPSET 0,0, RGB(255,255,0) 'YELLOW"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/rgb.md" }
+confidence: documented

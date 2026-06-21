@@ -1,0 +1,22 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/cont.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "CONT"
+kind: statement
+category: "Instructions available only in DIRECT mode"
+system: "SmileBASIC 3"
+summary: "Resumes a suspended program to an error"
+semantics:
+  - "DIRECT mode only"
+  - "Execution is resumed from the location it was suspended at using the START button, the STOP instruction, or due"
+  - "If the program has been stopped and then edited, it cannot be resumed"
+  - "If the program was suspended while waiting for user input, it cannot be resumed"
+  - "The program may not be able to be resumed depending on the type of error that occurred"
+forms:
+  - format: "CONT"
+    description: "Resumes a suspended program to an error"
+    args: []
+    examples:
+      - "CONT"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/cont.md" }
+confidence: documented

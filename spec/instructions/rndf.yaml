@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/rndf.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "RNDF"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Gets a real-type random number (a real-type random number greater than 0 and less than 1.0)"
+semantics: []
+forms:
+  - format: "Variable = RNDF( [ Seed ID ] )"
+    description: "Gets a real-type random number (a real-type random number greater than 0 and less than 1.0)"
+    args:
+      - { name: "Seed ID", desc: "Random number series: 0-7" }
+    examples:
+      - "A=RNDF()"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/rndf.md" }
+confidence: documented

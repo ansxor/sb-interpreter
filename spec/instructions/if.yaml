@@ -1,0 +1,24 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/if.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "IF"
+kind: statement
+category: "Basic instructions (control and branching)"
+system: "SmileBASIC 3"
+summary: "Executes Process 1 if the condition is satisfied, or Process 2 if the condition is not satisfied"
+semantics:
+  - "GOTO can be omitted immediately after THEN or ELSE"
+  - "ENDIF should be used when the process spans multiple lines"
+forms:
+  - format: "IF Conditional expression THEN Process to execute when the condition is satisfied [ELSE Process to execute when\nthe condition is not satisfied] [ENDIF]"
+    description: "Executes Process 1 if the condition is satisfied, or Process 2 if the condition is not satisfied"
+    args: []
+    examples:
+      - "IF A==1 THEN PRINT \"OK\"\nIF A>1 THEN @JMP1 ELSE PRINT DATE$\nIF A==1 THEN\n PRINT \"Congratulations\":BEEP 72\nELSE\n PRINT \"Bad luck\"\nENDIF\n@JMP1\nEND"
+  - format: "IF Conditional expression GOTO @Label [ELSE Process to execute when the condition is not satisfied]"
+    description: "Branches to @Label if the condition is satisfied See Comment for IF for details regarding conditional evaluation"
+    args: []
+    examples:
+      - "IF A==1 GOTO @MAIN\nIF X>0 GOTO @JMP1 ELSE PRINT A$\nIF Y==5 GOTO @JMP1 ELSE @JMP2\n@JMP1\nPRINT \"@JMP1\"\n@JMP2\nPRINT \"@JMP2\"\nEND"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/if.md" }
+confidence: documented

@@ -1,0 +1,19 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/inc.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "INC"
+kind: statement
+category: "Basic instructions (variables and arrays)"
+system: "SmileBASIC 3"
+summary: "Increments the value of a variable by +1 If the Expression argument is specified, the value of the expression will be added"
+semantics: []
+forms:
+  - format: "INC Variable [, Expression ]"
+    description: "Increments the value of a variable by +1 If the Expression argument is specified, the value of the expression will be added"
+    args:
+      - { name: "Variable", desc: "Name of variable to increment value of" }
+      - { name: "Expression", desc: "Value to add (If omitted, 1)" }
+    examples:
+      - "INC X\nINC X,3"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/inc.md" }
+confidence: documented

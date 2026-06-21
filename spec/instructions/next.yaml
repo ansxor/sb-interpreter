@@ -1,0 +1,21 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/next.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "NEXT"
+kind: statement
+category: "Basic instructions (control and branching)"
+system: "SmileBASIC 3"
+summary: "Instruction that indicates the end of a FOR loop"
+semantics:
+  - "See Comment for the FOR instruction for details regarding FOR to NEXT"
+  - "Using NEXT with IF in a FOR loop is not recommended"
+  - "Use CONTINUE to exit the loop before the end"
+forms:
+  - format: "NEXT [ Control variable ]"
+    description: "Instruction that indicates the end of a FOR loop"
+    args:
+      - { name: "Control variable", desc: "- Even if a control variable is specified, it will be ignored and the instruction will work in<br>the same way as NEXT on its own<br>- Specifications such as NEXT J,I are not allowed" }
+    examples:
+      - "FOR I=0 TO 9 STEP 2\n PRINT I;\",\";\nNEXT"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/next.md" }
+confidence: documented

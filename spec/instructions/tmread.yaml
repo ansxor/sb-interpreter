@@ -1,0 +1,20 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/tmread.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "TMREAD"
+kind: statement
+category: "Basic instructions (data operations and others)"
+system: "SmileBASIC 3"
+summary: "Converts a time string to numerical values"
+semantics: []
+forms:
+  - format: "TMREAD [\"Time string\"] OUT H,M,S"
+    description: "Converts a time string to numerical values"
+    args:
+      - { name: "Time string", desc: "Time string in \"HH:MM:SS\" format (if omitted, the current time)" }
+    returns:
+      - { name: "Variables to store<br>numerical values", desc: "H: Variable to receive the hours (0-23)<br>M: Variable to receive the minutes<br>S: Variable to receive the seconds" }
+    examples:
+      - "TMREAD \"12:59:31\" OUT H,M,S"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/tmread.md" }
+confidence: documented

@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/xoff.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "XOFF"
+kind: statement
+category: "Basic instructions (advanced control)"
+system: "SmileBASIC 3"
+summary: "Stops using a special feature declared with XON"
+semantics: []
+forms:
+  - format: "XOFF Name of the feature to stop"
+    description: "Stops using a special feature declared with XON"
+    args:
+      - { name: "Name of feature to<br>stop", desc: "MOTION: Motion sensor, gyro sensor<br>EXPAD: Circle Pad Pro<br>MIC: Microphone" }
+    examples:
+      - "XOFF MOTION"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/xoff.md" }
+confidence: documented

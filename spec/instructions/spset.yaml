@@ -1,0 +1,70 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/spset.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SPSET"
+kind: statement
+category: "Sprites"
+system: "SmileBASIC 3"
+summary: "Creates a sprite (using a definition template)"
+semantics:
+  - "SPSET makes a sprite available for use"
+  - "Executing SPSET will initialize rotation and all other information"
+  - "All values of SPVAR will be 0"
+  - "When any SPHIT instruction for collision detection is to be used, SPCOL should be called after SPSET"
+forms:
+  - format: "SPSET Management number,Definition number"
+    description: "Creates a sprite (using a definition template)"
+    args:
+      - { name: "Management number", desc: "Number of the sprite to create: 0-511" }
+      - { name: "Definition number", desc: "Definition number of the template defined with SPDEF: 0-4095" }
+    examples:
+      - "SPSET 1,500"
+  - format: "SPSET Management number ,U,V [,W,H] ,Attribute"
+    description: "Creates a sprite (using image and other information specified directly) Can be used to set a sprite separately without using the values from SPDEF"
+    args:
+      - { name: "Management number", desc: "Number of the sprite to create: 0-511" }
+      - { name: "U,V", desc: "Coordinates of the original image to define (U: 0-511, V: 0-511)" }
+      - { name: "W,H", desc: "Size of the original image to define (If omitted: 16,16)<br>* U+W and/or V+H values greater than 512 will give an error." }
+      - { name: "Attribute", desc: "|b00| Display (0=OFF, 1=ON) #SPSHOW<br>|b01|<br>↑<br>Rotation by 90 degrees (Specified with two bits: b01 and b02)<br>|b02|<br>↓<br>#SPROT0, #SPROT90, #SPROT0180, #SPROT270<br>|b03| Horizontal inversion (0=OFF, 1=ON), #SPREVH<br>|b04| Vertical inversion (0=OFF, 1=ON), #SPREVV<br>|b05| Additive synthesis (0=OFF, 1=ON), #SPADD<br>If omitted, 0x01 (Only display is set to ON)" }
+    examples:
+      - "SPSET 54,0,0,32,32,1"
+  - format: "SPSET Definition number OUT IX"
+    description: "Finds an available sprite number and creates a sprite (using a definition template) Finds an available sprite number from the whole range"
+    args:
+      - { name: "Definition number", desc: "Definition number of the template defined with SPDEF: 0-4095" }
+    returns:
+      - { name: "IX", desc: "Variable to receive the generated number: 0-511 (-1 = No available number)" }
+    examples:
+      - "SPSET 500 OUT IX"
+  - format: "SPSET U,V,W,H,Attribute OUT IX"
+    description: "Finds an available sprite number and creates a sprite (using image and other information specified directly) Finds an available sprite number from the whole range"
+    args:
+      - { name: "U,V", desc: "Coordinates of the original image to define (U: 0-511, V: 0-511)" }
+      - { name: "W,H", desc: "Size of the original image to define (If omitted: 16,16)<br>* U+W and/or V+H values greater than 512 will give an error." }
+      - { name: "Attribute", desc: "|b00| Display (0=OFF, 1=ON) #SPSHOW<br>|b01|<br>↑<br>Rotation by 90 degrees (Specified with two bits: b01 and b02)<br>|b02|<br>↓<br>#SPROT0, #SPROT90, #SPROT0180, #SPROT270<br>|b03| Horizontal inversion (0=OFF, 1=ON), #SPREVH<br>|b04| Vertical inversion (0=OFF, 1=ON), #SPREVV<br>|b05| Additive synthesis (0=OFF, 1=ON), #SPADD" }
+    returns:
+      - { name: "IX", desc: "Variable to receive the generated number: 0-511 (-1 = No available number)" }
+    examples:
+      - "SPSET 0,0,32,32,1 OUT IX"
+  - format: "SPSET Upper limit,Lower limit, Definition number OUT IX"
+    description: "Finds an available sprite number in a certain range and creates a sprite (using a definition template) Finds an available number in the specified range"
+    args:
+      - { name: "Upper limit, Lower<br>limit", desc: "Range in which to find an available number (0-511)" }
+      - { name: "Definition number", desc: "Definition number of the template defined with SPDEF: 0-4095" }
+    returns:
+      - { name: "IX", desc: "Variable to receive the generated number: 0-511 (-1 = No available number)" }
+    examples:
+      - "SPSET 100,120, 500 OUT IX"
+  - format: "SPSET Upper limit,Lower limit, U,V,W,H,Attribute OUT IX"
+    description: "Finds an available sprite number in a certain range and creates a sprite (using image and other information specified directly) Finds an available number in the specified range"
+    args:
+      - { name: "Upper limit,Lower<br>limit", desc: "Range in which to find an available number (0-511)" }
+      - { name: "U,V", desc: "Coordinates of the original image to define (U: 0-511, V: 0-511)" }
+      - { name: "W,H", desc: "Size of the original image to define (If omitted: 16,16)<br>* U+W and/or V+H values greater than 512 will give an error." }
+      - { name: "Attribute", desc: "|b00| Display (0=OFF, 1=ON) #SPSHOW<br>↑<br>|b01|<br>Rotation by 90 degrees (Specified with two bits: b01 and b02)<br>|b02|<br>↓<br>#SPROT0, #SPROT90, #SPROT0180, #SPROT270<br>|b03| Horizontal inversion (0=OFF, 1=ON), #SPREVH<br>|b04| Vertical inversion (0=OFF, 1=ON), #SPREVV<br>|b05| Additive synthesis (0=OFF, 1=ON), #SPADD<br>If omitted, 0x01 (Only display is set to ON)" }
+    returns:
+      - { name: "IX", desc: "Variable to receive the generated number: 0-511 (-1 = No available number)" }
+    examples:
+      - "SPSET 100,120, 0,0,32,32,1 OUT IX"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spset.md" }
+confidence: documented

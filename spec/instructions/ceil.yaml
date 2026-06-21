@@ -1,0 +1,21 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/ceil.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "CEIL"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Gets the integer part (by rounding up to the whole number)"
+semantics:
+  - "The smallest integer that is not less than the specified value will be obtained"
+  - "CEIL(12.5) will be 13, while CEIL(-12.5) will be -12"
+forms:
+  - format: "Variable = CEIL( Numerical value )"
+    description: "Gets the integer part (by rounding up to the whole number)"
+    args:
+      - { name: "Numerical value", desc: "Source numerical value" }
+    examples:
+      - "A=CEIL(12.345)"
+see_also: "ROUND: Round-off, FLOOR: Round-down"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/ceil.md" }
+confidence: documented

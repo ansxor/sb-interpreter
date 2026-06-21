@@ -1,0 +1,26 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/gcolor.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "GCOLOR"
+kind: statement
+category: "Graphics"
+system: "SmileBASIC 3"
+summary: "Specifies the graphic draw color"
+semantics: []
+forms:
+  - format: "GCOLOR Color code"
+    description: "Specifies the graphic draw color"
+    args:
+      - { name: "Color code", desc: "- Usually specified with the RGB function, e.g., GCOLOR RGB(64,255,48)<br>- To specify a numerical value directly, a color code consisting of an 8-bit value for each<br>ARGB element should be specified<br>- An 8-bit value for A (255: Opaque, Otherwise: Transparent) + one for each RGB element (0-<br>255)" }
+    examples:
+      - "GCOLOR RGB(255,0,0)"
+  - format: "GCOLOR OUT C32"
+    description: "Specifies the graphic draw color"
+    args:
+      - { name: "None", desc: "" }
+    returns:
+      - { name: "C32", desc: "Color code consisting of an 8-bit value for each ARGB element" }
+    examples:
+      - "GCOLOR OUT C32"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gcolor.md" }
+confidence: documented

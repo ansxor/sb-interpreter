@@ -1,0 +1,60 @@
+name: CI
+
+# Deterministic, hermetic gate. Runs on every push/PR.
+# NO emulator, NO fuzzing, NO network beyond fetching crates — Phase B replay only.
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Build (native)
+        run: cargo build --workspace
+      - name: Build (wasm32)
+        run: cargo build --workspace --target wasm32-unknown-unknown
+
+      - name: Test (deterministic conformance + units)
+        run: cargo test --workspace
+
+      - name: Spec coverage report
+        run: cargo run -q -p sb-spec --bin sb-spec-coverage | tee coverage.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spec-coverage
+          path: coverage.txt
+
+  harness:
+    # Hermetic checks only: the Python harness must byte-compile and the deterministic
+    # replay inventory must run. The emulator oracle + fuzzer never run here.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Byte-compile harness + tools
+        run: find tools harness -name '*.py' -print0 | xargs -0 python -m py_compile
+      - name: Regenerate specs and assert no drift
+        run: |
+          python tools/gen_specs.py
+          git diff --exit-code spec/instructions spec/reference \
+            || (echo "::error::spec/ is out of date — run tools/gen_specs.py and commit"; exit 1)
+      - name: Deterministic replay inventory
+        run: python harness/diff/replay.py

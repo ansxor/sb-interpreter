@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/vsync.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "VSYNC"
+kind: statement
+category: "Basic instructions (data operations and others)"
+system: "SmileBASIC 3"
+summary: "Stops the program until the specified number of vertically synchronized frames has been reached Unlike WAIT, the VSYNC count starts from the last VSYNC"
+semantics: []
+forms:
+  - format: "VSYNC [Number of frames]"
+    description: "Stops the program until the specified number of vertically synchronized frames has been reached Unlike WAIT, the VSYNC count starts from the last VSYNC"
+    args:
+      - { name: "Number of frames", desc: "Specify the number of frames to wait, starting from the last VSYNC (0: Ignore; if omitted, 1<br>is assumed)" }
+    examples:
+      - "VSYNC 1"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/vsync.md" }
+confidence: documented

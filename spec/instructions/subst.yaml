@@ -1,0 +1,21 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/subst.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SUBST$"
+kind: function
+category: "Operations on strings"
+system: "SmileBASIC 3"
+summary: "Substitutes one character string with another string"
+semantics: []
+forms:
+  - format: "String variable = SUBST$( \"Character string\", Start position, [Number of characters,] \"Substitute string\" )"
+    description: "Substitutes one character string with another string"
+    args:
+      - { name: "Character string", desc: "Source character string" }
+      - { name: "Start position", desc: "Position in the source character string from which to start substitution (0 - Number of<br>characters minus 1)" }
+      - { name: "Number of<br>characters", desc: "- Number of characters to substitute with another string<br>- If omitted, all characters after the substitution start position will be replaced with the<br>substitute string" }
+      - { name: "Substitute string", desc: "The specified number of characters from the start position will be substituted with this<br>string" }
+    examples:
+      - "A$=SUBST$( \"ABC\",0,2,\"XY\" )"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/subst.md" }
+confidence: documented

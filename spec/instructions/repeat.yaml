@@ -1,0 +1,20 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/repeat.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "REPEAT"
+kind: statement
+category: "Basic instructions (control and branching)"
+system: "SmileBASIC 3"
+summary: "Instruction for starting a REPEAT loop"
+semantics:
+  - "The UNTIL instruction and a conditional expression should be placed at the end of the loop"
+  - "Unlike the WHILE instruction, this executes the process before determining the condition"
+  - "Exits the loop when the condition is satisfied or when the BREAK instruction is executed"
+forms:
+  - format: "REPEAT"
+    description: "Instruction for starting a REPEAT loop"
+    args: []
+    examples:
+      - "A=0:B=4\nREPEAT\n A=A+1\nUNTIL A>B"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/repeat.md" }
+confidence: documented

@@ -1,0 +1,34 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/copy.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "COPY"
+kind: statement
+category: "Basic instructions (variables and arrays)"
+system: "SmileBASIC 3"
+summary: "Copies one array to another array element(s) will be added automatically"
+semantics:
+  - "For one-dimensional arrays only, if the number of elements in the copy destination is insufficient, the required"
+  - "Both the copy source and destination ignore dimensions"
+  - "The data elements enumerated in the DATA instruction will be read into the array"
+forms:
+  - format: "COPY Copy destination array [,Copy destination offset],Copy source array [[,Copy source offset] , Number of copy\nelements]"
+    description: "Copies one array to another array element(s) will be added automatically"
+    args:
+      - { name: "Copy destination<br>array", desc: "Copy destination array (to be overwritten with the content of the copy source array)" }
+      - { name: "Copy destination<br>offset", desc: "First element to be overwritten (If this is omitted, overwriting will start with the beginning<br>of the copy destination)" }
+      - { name: "Copy source array", desc: "Copy source array" }
+      - { name: "Copy source offset", desc: "First element to be overwritten (If this is omitted, copying will start with the beginning of<br>the copy source)" }
+      - { name: "Number of copy<br>elements", desc: "Number of elements to be overwritten (If this is omitted, up to the end of the copy source<br>will be copied)" }
+    examples:
+      - "DIM SRC[10],DST[10]\nCOPY DST,SRC"
+  - format: "COPY Copy destination array [,Copy destination offset], \"@Label string\" [,Number of copy data items]"
+    description: "Reads a DATA sequence into an array element(s) will be added automatically"
+    args:
+      - { name: "Copy destination<br>array", desc: "Copy destination array (to be overwritten with the content of the DATA sequence)" }
+      - { name: "Copy destination<br>offset", desc: "First element to be overwritten (If this is omitted, overwriting will start with the beginning<br>of the array)" }
+      - { name: "\"@Label string\"", desc: "Specify the @Label name string set to the DATA instruction to be read" }
+      - { name: "Number of copy<br>data items", desc: "- Number of data items to be read (If this is omitted, data items will be read according to<br>the number of elements in the copy destination array)<br>- If the number of data items is smaller than the number of arrays in the copy destination, an<br>error will occur." }
+    examples:
+      - "DIM DST[5]\nCOPY DST,\"@SRC\"\n@SRC\nDATA 5,1,1,2,4"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/copy.md" }
+confidence: documented

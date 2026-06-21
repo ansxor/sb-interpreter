@@ -1,0 +1,24 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/spfunc.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SPFUNC"
+kind: statement
+category: "Sprites"
+system: "SmileBASIC 3"
+summary: "Assigns a process to a sprite"
+semantics:
+  - "An instruction for advanced users that is used when callback processing is required"
+  - "All sprite processes are executed with CALL sprite"
+  - "Instead of @Label, a user process defined using DEF can also be specified"
+  - "At the processing target, the management number can be obtained using the CALLIDX system variable"
+  - "If used before SPSET, an error will occur"
+forms:
+  - format: "SPFUNC Management number, @Label"
+    description: "Assigns a process to a sprite"
+    args:
+      - { name: "Management number", desc: "Management number of the target sprite: 0-511" }
+      - { name: "@Label", desc: "Label of the processing target (or a user-defined process) to be called" }
+    examples:
+      - "SPFUNC 0,@PROG"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spfunc.md" }
+confidence: documented

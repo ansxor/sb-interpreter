@@ -1,0 +1,29 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/exec.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "EXEC"
+kind: statement
+category: "Files"
+system: "SmileBASIC 3"
+summary: "Loads and executes a program"
+semantics:
+  - "It is impossible to return from a program started with EXEC to the previous program"
+  - "It is possible to return by using END in a program started with EXEC in another SLOT"
+  - "This cannot be used to run a program in DIRECT mode"
+  - "It is impossible to return from a program executed with EXEC to the previous program"
+forms:
+  - format: "EXEC \"[Resource name:]File name\""
+    description: "Loads and executes a program"
+    args:
+      - { name: "Resource name:", desc: "PRG0-PRG3: Program SLOT into which to load the program" }
+      - { name: "File name", desc: "File name of the program to load" }
+    examples:
+      - "EXEC \"SAMPLE\"\nEXEC \"PRG0:SBGED\""
+  - format: "EXEC Program SLOT"
+    description: "Executes a program in a different SLOT"
+    args:
+      - { name: "Program SLOT", desc: "0-3: SLOT number of the program to execute" }
+    examples:
+      - "EXEC 2"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/exec.md" }
+confidence: documented

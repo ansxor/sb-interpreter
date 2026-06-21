@@ -1,0 +1,31 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/fontdef.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "FONTDEF"
+kind: statement
+category: "Console input/output"
+system: "SmileBASIC 3"
+summary: "Defines a font for the specified character code"
+semantics: []
+forms:
+  - format: "FONTDEF Character code, \"Font definition string\""
+    description: "Defines a font for the specified character code"
+    args:
+      - { name: "Character code", desc: "Character code (UTF-16) for which to define a font" }
+      - { name: "Font definition<br>string", desc: "- One pixel corresponds to a 16-bit color code in the RGBA=5551 format<br>- 5 bits for each RGB color (0-31) + alpha channel 1 bit (0: Transparent, 1: Opaque)<br>- A color element should be handled as a 4-digit hexadecimal string<br>- Example) White: FFFF, Black: 0001, Red: F801<br>- As one character occupies 8x8=64 pixels, its font definition string should consist of a<br>total of 256 characters" }
+    examples:
+      - "F$=\"FFFF\":Z$=\"0000\"\nD$=F$*7+Z$\nD$=D$+F$*2+Z$*3+F$*2+Z$\nD$=D$+F$+Z$+F$*3+Z$+F$+Z$\nD$=D$+F$+Z$*5+F$+Z$\nD$=D$+F$+Z$+F$*3+Z$+F$+Z$\nD$=D$+F$+Z$+F$*3+Z$+F$+Z$\nD$=D$+F$*7+Z$\nD$=D$+Z$*8\nFONTDEF ASC(\"A\"),D$"
+  - format: "FONTDEF Character code, Numerical value array"
+    description: "Defines a font for the specified character code"
+    args:
+      - { name: "Character code", desc: "Character code (UTF-16) for which to define a font" }
+      - { name: "Font definition<br>array", desc: "- A numerical value array with an element for each pixel should be prepared (8x8 pixels for<br>one character = 64 elements)<br>- One pixel corresponds to a 16-bit color code in the RGBA=5551 format<br>- 5 bits for each RGB color (0-31) + alpha channel 1 bit (0: Transparent, 1: Opaque)<br>- Example) White: &HFFFF, Black: &H0001, Red: &HF801" }
+    examples:
+      - "DIM F%[64]\nDATA \"11111110\"\nDATA \"11000110\"\nDATA \"10111010\"\nDATA \"10000010\"\nDATA \"10111010\"\nDATA \"10111010\"\nDATA \"11111110\"\nDATA \"00000000\"\nTOP=ASC(\"A\"):CNT=1\nFOR I=0 TO CNT-1\n FOR D=0 TO 7\n  READ F$\n  FOR B=0 TO 7\n   C=0:IF MID$(F$,B,1)==\"1\" THEN C=&HFFFF\n   F%[D*8+B]=C\n  NEXT\n NEXT\n FONTDEF TOP+I,F%\nNEXT"
+  - format: "FONTDEF"
+    description: "Resets the font definition to its initial state"
+    args: []
+    examples:
+      - "FONTDEF"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/fontdef.md" }
+confidence: documented

@@ -1,0 +1,32 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/goto.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "GOTO"
+kind: statement
+category: "Basic instructions (control and branching)"
+system: "SmileBASIC 3"
+summary: "Forces branching"
+semantics:
+  - "The branch number begins with 0, unlike in conventional BASIC"
+  - "See Comment for IF for details regarding conditional evaluation"
+forms:
+  - format: "GOTO @Label"
+    description: "Forces branching"
+    args:
+      - { name: "@Label", desc: "- Jump target @Label name<br>- Label string, which is the Label name enclosed in \"\" (String variables are also allowed)<br>- A program SLOT can be specified in the following format: \"1:@Label name\"<br>- The target SLOT should be enabled beforehand with the USE instruction" }
+    examples:
+      - "GOTO @MAIN\nJP$=\"@MAIN\":GOTO JP$"
+  - format: "ON Control variable GOTO @Label 0, @Label 1 …"
+    description: "Branches to a label line according to the control variable value"
+    args:
+      - { name: "@Label 0", desc: "Jump target to use when the control variable is 0" }
+      - { name: "@Label 1", desc: "Jump target to use when the control variable is 1<br>:<br>- Prepare the necessary number of branch destinations<br>- Label strings cannot be used in the ON to GOTO labels" }
+    examples:
+      - "ON IDX GOTO @JMP_A,@JMP_B\nPRINT \"OVER\":END\n@JMP_A\nPRINT \"IDX=0\":END\n@JMP_B\nPRINT \"IDX=1\":END"
+  - format: "IF Conditional expression GOTO @Label [ELSE Process to execute when the condition is not satisfied]"
+    description: "Branches to @Label if the condition is satisfied"
+    args: []
+    examples:
+      - "IF A==1 GOTO @MAIN\nIF X>0 GOTO @JMP1 ELSE PRINT A$\nIF Y==5 GOTO @JMP1 ELSE @JMP2\n@JMP1\nPRINT \"@JMP1\"\n@JMP2\nPRINT \"@JMP2\"\nEND"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/goto.md" }
+confidence: documented

@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/classify.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "CLASSIFY"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Determines whether a given number is an ordinary numerical value, infinity, or not-a-number (NaN)"
+semantics: []
+forms:
+  - format: "Variable = CLASSIFY( Numerical value )"
+    description: "Determines whether a given number is an ordinary numerical value, infinity, or not-a-number (NaN)"
+    args:
+      - { name: "Numerical value", desc: "Real number to check" }
+    examples:
+      - "A=CLASSIFY(0.5)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/classify.md" }
+confidence: documented

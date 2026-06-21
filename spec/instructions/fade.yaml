@@ -1,0 +1,26 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/fade.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "FADE"
+kind: function
+category: "Screen control"
+system: "SmileBASIC 3"
+summary: "Sets the color for the screen fader"
+semantics:
+  - "The fader is always displayed in the front"
+  - "The entire screen is filled with the fading color (taking the transparent color into consideration)"
+forms:
+  - format: "FADE Fading color [,Fading time]"
+    description: "Sets the color for the screen fader"
+    args:
+      - { name: "Fading color", desc: "The color to fill the screen (specifying RGB(0,0,0,0) disables the fader)" }
+      - { name: "Fading time", desc: "The screen color changes from the current fading color to the specified fading color over a<br>specified time period, which can be specified in units of 1/60th of a second." }
+    examples:
+      - "FADE RGB(32,64,64,64),60"
+  - format: "Value=FADE()"
+    description: "Gets the current screen fader color"
+    args: []
+    examples:
+      - "C=FADE()"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/fade.md" }
+confidence: documented

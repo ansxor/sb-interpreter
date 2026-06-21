@@ -1,0 +1,29 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/bgscale.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BGSCALE"
+kind: statement
+category: "BG"
+system: "SmileBASIC 3"
+summary: "Scales the BG screen"
+semantics:
+  - "When scaled down, BGs exceeding 3600 in total will not be displayed"
+  - "If this display limit is exceeded, the BG screen will be distorted"
+forms:
+  - format: "BGSCALE Layer,Enlargement scale X,Enlargement scale Y"
+    description: "Scales the BG screen"
+    args:
+      - { name: "Layer", desc: "Target layer number: 0-3" }
+      - { name: "Enlargement scale<br>X,Y", desc: "0.5 (50%) - 1.0 (100%) - 2.0(200%) -" }
+    examples:
+      - "BGSCALE 0,1.5,2.0"
+  - format: "BGSCALE Layer OUT SX,SY"
+    description: "Gets scale-up/down information from the BG screen"
+    args:
+      - { name: "Layer", desc: "Target layer number: 0-3" }
+    returns:
+      - { name: "SX,SY", desc: "0.5 (50%) - 1.0 (100%) - 2.0(200%) -" }
+    examples:
+      - "BGSCALE 0 OUT SX,SY"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgscale.md" }
+confidence: documented

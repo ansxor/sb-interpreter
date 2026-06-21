@@ -1,0 +1,30 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/gload.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "GLOAD"
+kind: statement
+category: "Graphics"
+system: "SmileBASIC 3"
+summary: "Copies image data from an array to the graphic screen"
+semantics: []
+forms:
+  - format: "GLOAD [X,Y,Width,Height,] Image array,Color conversion flag,Copy mode"
+    description: "Copies image data from an array to the graphic screen"
+    args:
+      - { name: "X,Y,Width,Height", desc: "Start point X-coordinate, start point Y-coordinate, and width/height (in pixels) of the copy<br>destination range" }
+      - { name: "Image array", desc: "Numerical value array containing image data stored with GSAVE" }
+      - { name: "Color conversion<br>flag", desc: "0: Performs color conversion (Converts to 32-bit logical colors)<br>1: Leaves the physical codes as they are (16-bit)" }
+      - { name: "Copy mode", desc: "TRUE = Copies the transparent color, FALSE = Does not copy the transparent color" }
+    examples:
+      - "GLOAD 0,0,512,512, WORK, 1, 0"
+  - format: "GLOAD [X,Y,Width,Height,] Image array,Palette array,Copy mode"
+    description: "Copies image data from an array to the graphic screen Colors will be handled as index colors from palettes"
+    args:
+      - { name: "X,Y,Width,Height", desc: "Start point X-coordinate, start point Y-coordinate, and width/height (in pixels) of the copy<br>destination range" }
+      - { name: "Image array", desc: "Numerical value array containing image data stored with GSAVE" }
+      - { name: "Palette array", desc: "Numerical value array containing palette data" }
+      - { name: "Copy mode", desc: "TRUE = Copies the transparent color, FALSE = Does not copy the transparent color" }
+    examples:
+      - "GLOAD 0,0,512,512, WORK, PALETTE, 0"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gload.md" }
+confidence: documented

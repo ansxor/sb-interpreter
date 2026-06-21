@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/cosh.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "COSH"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Returns the hyperbolic cosine value"
+semantics: []
+forms:
+  - format: "Variable = COSH( Numerical value )"
+    description: "Returns the hyperbolic cosine value"
+    args:
+      - { name: "Numerical value", desc: "Real-type number for which to find the hyperbolic cosine" }
+    examples:
+      - "A=COSH(1)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/cosh.md" }
+confidence: documented

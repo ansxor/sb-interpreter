@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/bgmclear.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BGMCLEAR"
+kind: statement
+category: "Sound"
+system: "SmileBASIC 3"
+summary: "Clears a user-defined piece of music"
+semantics: []
+forms:
+  - format: "BGMCLEAR [User-defined tune number]"
+    description: "Clears a user-defined piece of music"
+    args:
+      - { name: "User-defined tune<br>number", desc: "Tune number: 128-255 (If omitted, all defined tunes will be cleared)" }
+    examples:
+      - "BGMCLEAR"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgmclear.md" }
+confidence: documented

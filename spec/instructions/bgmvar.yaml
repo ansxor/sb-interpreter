@@ -1,0 +1,27 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/bgmvar.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BGMVAR"
+kind: function
+category: "Sound"
+system: "SmileBASIC 3"
+summary: "Writes to an MML internal variable"
+semantics: []
+forms:
+  - format: "BGMVAR Track number, Variable number, Value"
+    description: "Writes to an MML internal variable"
+    args:
+      - { name: "Track number", desc: "Target MML track number: 0-7" }
+      - { name: "Variable number", desc: "Internal variable to which to write a value: 0-7 ($0-$7 in MML)" }
+      - { name: "Value", desc: "Value to write to the variable" }
+    examples:
+      - "BGMVAR 0,5,10"
+  - format: "Variable=BGMVAR(Track number, Variable number )"
+    description: "Reads an MML internal variable"
+    args:
+      - { name: "Track number", desc: "Target MML track number: 0-7" }
+      - { name: "Variable number", desc: "Internal variable from which to read the value: 0-7 ($0-$7 in MML)" }
+    examples:
+      - "MC=BGMVAR(0,5)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgmvar.md" }
+confidence: documented

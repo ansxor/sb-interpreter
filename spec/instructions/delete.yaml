@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/delete.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "DELETE"
+kind: statement
+category: "Files"
+system: "SmileBASIC 3"
+summary: "Deletes a file When run, a confirmation dialog will be displayed"
+semantics: []
+forms:
+  - format: "DELETE \"[File type:]File name\""
+    description: "Deletes a file When run, a confirmation dialog will be displayed"
+    args:
+      - { name: "File type:", desc: "\"TXT:\" Texts and programs (optional)<br>\"DAT:\" Binary data (including graphics)" }
+    examples:
+      - "DELETE \"SAMPLE\""
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/delete.md" }
+confidence: documented

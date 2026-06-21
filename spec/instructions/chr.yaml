@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/chr.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "CHR$"
+kind: function
+category: "Operations on strings"
+system: "SmileBASIC 3"
+summary: "Returns the character for the specified character code"
+semantics: []
+forms:
+  - format: "String variable = CHR$( Character code )"
+    description: "Returns the character for the specified character code"
+    args:
+      - { name: "Character code", desc: "Number (UTF-16) that corresponds to a character" }
+    examples:
+      - "S$=CHR$(65)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/chr.md" }
+confidence: documented

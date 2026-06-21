@@ -1,0 +1,17 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/efcon.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "EFCON"
+kind: statement
+category: "Sound"
+system: "SmileBASIC 3"
+summary: "Turns on the effector setting The effect type should be selected with the EFCSET instruction"
+semantics: []
+forms:
+  - format: "EFCON"
+    description: "Turns on the effector setting The effect type should be selected with the EFCSET instruction"
+    args: []
+    examples:
+      - "EFCON"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/efcon.md" }
+confidence: documented

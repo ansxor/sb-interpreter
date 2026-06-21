@@ -1,0 +1,21 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/xon.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "XON"
+kind: statement
+category: "Basic instructions (advanced control)"
+system: "SmileBASIC 3"
+summary: "Declares the use of a special feature"
+semantics:
+  - "These features are not available unless their use is declared beforehand"
+  - "When XON EXPAD is successful, RESULT will be returned as TRUE."
+  - "If the system is already in the XON state, this command will not display a dialog"
+forms:
+  - format: "XON Name of feature to use"
+    description: "Declares the use of a special feature"
+    args:
+      - { name: "Name of feature to<br>use", desc: "MOTION: Motion sensor, gyro sensor<br>EXPAD: Circle Pad Pro<br>MIC: Microphone" }
+    examples:
+      - "XON MOTION"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/xon.md" }
+confidence: documented

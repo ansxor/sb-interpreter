@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/sqr.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SQR"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Finds the positive square root"
+semantics: []
+forms:
+  - format: "Variable = SQR( Numerical value )"
+    description: "Finds the positive square root"
+    args:
+      - { name: "Numerical value", desc: "Numerical value for which to find the square root" }
+    examples:
+      - "A=SQR(4)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/sqr.md" }
+confidence: documented

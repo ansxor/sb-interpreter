@@ -1,0 +1,19 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/rnd.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "RND"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Gets an integer random number (0 - the maximum value minus 1)"
+semantics: []
+forms:
+  - format: "Variable = RND( [ Seed ID, ] Maximum value )"
+    description: "Gets an integer random number (0 - the maximum value minus 1)"
+    args:
+      - { name: "Seed ID", desc: "Random number series: 0-7" }
+      - { name: "Maximum value", desc: "Upper limit of the random number to be obtained" }
+    examples:
+      - "A=RND(100)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/rnd.md" }
+confidence: documented

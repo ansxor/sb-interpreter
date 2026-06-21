@@ -1,0 +1,35 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/save.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SAVE"
+kind: statement
+category: "Files"
+system: "SmileBASIC 3"
+summary: "Saves a file"
+semantics:
+  - "When run, a confirmation dialog will be displayed"
+  - "The confirmation dialog for SAVE cannot be hidden"
+forms:
+  - format: "SAVE \"[Resource name:]File name\""
+    description: "Saves a file"
+    args:
+      - { name: "Resource name:", desc: "If omitted: Current program SLOT<br>PRG0-PRG3: Program SLOT (PRG = PRG0)<br>GRP0-GRP5: Graphic page<br>GRPF: Font image page" }
+      - { name: "File name", desc: "Name to save the file under" }
+    examples:
+      - "SAVE \"PRG0:TEST\""
+  - format: "SAVE \"TXT:File name\", String variable"
+    description: "Saves a string variable to a text file"
+    args:
+      - { name: "File name", desc: "Name to save the file under (prefixed with \"TXT:\")" }
+      - { name: "String variable", desc: "String variable containing the text data to be saved (UTF-8)" }
+    examples:
+      - "SAVE \"TXT:MEMOFILE\",TX$"
+  - format: "SAVE \"DAT:File name\", Numerical value array"
+    description: "Saves a numerical value array to a binary file"
+    args:
+      - { name: "File name", desc: "Name to save the file under (prefixed with \"DAT:\")" }
+      - { name: "Numerical value<br>array", desc: "Numerical value array containing the data to be saved" }
+    examples:
+      - "SAVE \"DAT:TEST\",MARRAY"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/save.md" }
+confidence: documented

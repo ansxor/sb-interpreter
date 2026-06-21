@@ -1,0 +1,20 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/bgclip.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BGCLIP"
+kind: statement
+category: "BG"
+system: "SmileBASIC 3"
+summary: "Specifies the display area of the BG screen"
+semantics: []
+forms:
+  - format: "BGCLIP Layer [,Starting point X,Starting point Y,End point X,End point Y]"
+    description: "Specifies the display area of the BG screen"
+    args:
+      - { name: "Layer", desc: "Target layer number: 0-3" }
+      - { name: "Start point X,Y", desc: "Start point coordinates (in pixels) of the display area" }
+      - { name: "End point X,Y", desc: "- End point coordinates (in pixels) of the display area<br>- If the start and end points are omitted, the whole layer will be the display area" }
+    examples:
+      - "BGCLIP 0,20,20,379,219"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgclip.md" }
+confidence: documented

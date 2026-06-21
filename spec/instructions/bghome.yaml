@@ -1,0 +1,28 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/bghome.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BGHOME"
+kind: statement
+category: "BG"
+system: "SmileBASIC 3"
+summary: "Sets the display origin of a layer"
+semantics:
+  - "Origin for rotation and scaling of the BG screen"
+forms:
+  - format: "BGHOME Layer,Position X,Position Y"
+    description: "Sets the display origin of a layer"
+    args:
+      - { name: "Layer", desc: "Target layer number: 0-3" }
+      - { name: "Position X,Y", desc: "Origin coordinates in pixel units" }
+    examples:
+      - "BGHOME 0,200,120"
+  - format: "BGHOME Layer OUT HX,HY"
+    description: "Gets the display origin of a layer"
+    args:
+      - { name: "Layer", desc: "Target origin number: 0-3" }
+    returns:
+      - { name: "HX,HY", desc: "Variables to receive the coordinates of the reference point" }
+    examples:
+      - "BGHOME 0 OUT HX,HY"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bghome.md" }
+confidence: documented

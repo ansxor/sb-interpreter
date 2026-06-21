@@ -1,0 +1,81 @@
+# AUTO-GENERATED from sb-docs/.../reference/constants.md — do not edit.
+constants:
+  - { name: "#ON", group: "Generic", raw: "1", bits: 1 }
+  - { name: "#OFF", group: "Generic", raw: "0", bits: 0 }
+  - { name: "#YES", group: "Generic", raw: "1", bits: 1 }
+  - { name: "#NO", group: "Generic", raw: "0", bits: 0 }
+  - { name: "#TRUE", group: "Generic", raw: "1", bits: 1 }
+  - { name: "#FALSE", group: "Generic", raw: "0", bits: 0 }
+  - { name: "#AQUA", group: "RGB colors", raw: "&HFF00F8F8", bits: 4278253816 }
+  - { name: "#BLACK", group: "RGB colors", raw: "&HFF000000", bits: 4278190080 }
+  - { name: "#BLUE", group: "RGB colors", raw: "&HFF0000FF", bits: 4278190335 }
+  - { name: "#CYAN", group: "RGB colors", raw: "&HFF0000F8", bits: 4278190328 }
+  - { name: "#FUCHSIA", group: "RGB colors", raw: "&HFFF800F8", bits: 4294443256 }
+  - { name: "#GRAY", group: "RGB colors", raw: "&HFF808080", bits: 4286611584 }
+  - { name: "#GREEN", group: "RGB colors", raw: "&HFF008000", bits: 4278222848 }
+  - { name: "#LIME", group: "RGB colors", raw: "&HFF00F800", bits: 4278253568 }
+  - { name: "#MAGENTA", group: "RGB colors", raw: "&HFFF800F8", bits: 4294443256 }
+  - { name: "#MAROON", group: "RGB colors", raw: "&HFF800000", bits: 4286578688 }
+  - { name: "#NAVY", group: "RGB colors", raw: "&HFF000080", bits: 4278190208 }
+  - { name: "#OLIVE", group: "RGB colors", raw: "&HFF808000", bits: 4286611456 }
+  - { name: "#PURPLE", group: "RGB colors", raw: "&HFF800080", bits: 4286578816 }
+  - { name: "#RED", group: "RGB colors", raw: "&HFFF80000", bits: 4294443008 }
+  - { name: "#SILVER", group: "RGB colors", raw: "&HFFC0C0C0", bits: 4290822336 }
+  - { name: "#TEAL", group: "RGB colors", raw: "&HFF008080", bits: 4278222976 }
+  - { name: "#WHITE", group: "RGB colors", raw: "&HFFF8F8F8", bits: 4294506744 }
+  - { name: "#YELLOW", group: "RGB colors", raw: "&HFFF8F800", bits: 4294506496 }
+  - { name: "#TBLACK", group: "Text colors", raw: "1", bits: 1 }
+  - { name: "#TMAROON", group: "Text colors", raw: "2", bits: 2 }
+  - { name: "#TRED", group: "Text colors", raw: "3", bits: 3 }
+  - { name: "#TGREEN", group: "Text colors", raw: "4", bits: 4 }
+  - { name: "#TLIME", group: "Text colors", raw: "5", bits: 5 }
+  - { name: "#TOLIVE", group: "Text colors", raw: "6", bits: 6 }
+  - { name: "#TYELLOW", group: "Text colors", raw: "7", bits: 7 }
+  - { name: "#TNAVY", group: "Text colors", raw: "8", bits: 8 }
+  - { name: "#TBLUE", group: "Text colors", raw: "9", bits: 9 }
+  - { name: "#TPURPLE", group: "Text colors", raw: "10", bits: 10 }
+  - { name: "#TMAGENTA", group: "Text colors", raw: "11", bits: 11 }
+  - { name: "#TTEAL", group: "Text colors", raw: "12", bits: 12 }
+  - { name: "#TCYAN", group: "Text colors", raw: "13", bits: 13 }
+  - { name: "#TGRAY", group: "Text colors", raw: "14", bits: 14 }
+  - { name: "#TWHITE", group: "Text colors", raw: "15", bits: 15 }
+  - { name: "#UP", group: "Button bits", raw: "&H0001", bits: 1 }
+  - { name: "#DOWN", group: "Button bits", raw: "&H0002", bits: 2 }
+  - { name: "#LEFT", group: "Button bits", raw: "&H0004", bits: 4 }
+  - { name: "#RIGHT", group: "Button bits", raw: "&H0008", bits: 8 }
+  - { name: "#A", group: "Button bits", raw: "&H0010", bits: 16 }
+  - { name: "#B", group: "Button bits", raw: "&H0020", bits: 32 }
+  - { name: "#X", group: "Button bits", raw: "&H0040", bits: 64 }
+  - { name: "#Y", group: "Button bits", raw: "&H0080", bits: 128 }
+  - { name: "#L", group: "Button bits", raw: "&H0100", bits: 256 }
+  - { name: "#R", group: "Button bits", raw: "&H0200", bits: 512 }
+  - { name: "#ZL", group: "Button bits", raw: "&H0800", bits: 2048 }
+  - { name: "#ZR", group: "Button bits", raw: "&H1000", bits: 4096 }
+  - { name: "#TROT0", group: "Text rotation & reflection (ATTR)", raw: "&H00", bits: 0 }
+  - { name: "#TROT90", group: "Text rotation & reflection (ATTR)", raw: "&H01", bits: 1 }
+  - { name: "#TROT180", group: "Text rotation & reflection (ATTR)", raw: "&H02", bits: 2 }
+  - { name: "#TROT270", group: "Text rotation & reflection (ATTR)", raw: "&H03", bits: 3 }
+  - { name: "#TREVH", group: "Text rotation & reflection (ATTR)", raw: "&H04", bits: 4 }
+  - { name: "#TREVV", group: "Text rotation & reflection (ATTR)", raw: "&H08", bits: 8 }
+  - { name: "#SPSHOW", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H01", bits: 1 }
+  - { name: "#SPROT0", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H00", bits: 0 }
+  - { name: "#SPROT90", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H02", bits: 2 }
+  - { name: "#SPROT180", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H04", bits: 4 }
+  - { name: "#SPROT270", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H06", bits: 6 }
+  - { name: "#SPREVH", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H08", bits: 8 }
+  - { name: "#SPREVV", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H10", bits: 16 }
+  - { name: "#SPADD", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H20", bits: 32 }
+  - { name: "#BGROT0", group: "Background attributes (BG ATTR)", raw: "&H0000", bits: 0 }
+  - { name: "#BGROT90", group: "Background attributes (BG ATTR)", raw: "&H0800", bits: 2048 }
+  - { name: "#BGROT180", group: "Background attributes (BG ATTR)", raw: "&H1000", bits: 4096 }
+  - { name: "#BGROT270", group: "Background attributes (BG ATTR)", raw: "&H2000", bits: 8192 }
+  - { name: "#BGREVH", group: "Background attributes (BG ATTR)", raw: "&H4000", bits: 16384 }
+  - { name: "#BGREVV", group: "Background attributes (BG ATTR)", raw: "&H8000", bits: 32768 }
+  - { name: "#CHKXY", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H01", bits: 1 }
+  - { name: "#CHKZ", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H02", bits: 2 }
+  - { name: "#CHKUV", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H04", bits: 4 }
+  - { name: "#CHKI", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H08", bits: 8 }
+  - { name: "#CHKR", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H10", bits: 16 }
+  - { name: "#CHKS", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H20", bits: 32 }
+  - { name: "#CHKC", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H40", bits: 64 }
+  - { name: "#CHKV", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H80", bits: 128 }

@@ -1,0 +1,21 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/gcopy.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "GCOPY"
+kind: statement
+category: "Graphics"
+system: "SmileBASIC 3"
+summary: "Copies an image from another graphic page"
+semantics: []
+forms:
+  - format: "GCOPY [Transfer source page,] Start point X,Start point Y, End point X,End point Y, Transfer destination\nX,Transfer destination Y, Copy mode"
+    description: "Copies an image from another graphic page"
+    args:
+      - { name: "Transfer source<br>page", desc: "0-5 (GRP0-GRP5), -1 (GRPF) If omitted: Current drawing page" }
+      - { name: "Start point X,Y<br>End point X,Y", desc: "Start and end point coordinates of the copy source range (X: 0-399, Y: 0-239)" }
+      - { name: "Transfer<br>destination X,Y", desc: "Start point coordinates of the copy destination range (X: 0-399, Y: 0-239)" }
+      - { name: "Copy mode", desc: "TRUE = Copies the transparent color, FALSE = Does not copy the transparent color" }
+    examples:
+      - "GCOPY 0, 0,0,100,100, 200,100 ,1"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gcopy.md" }
+confidence: documented

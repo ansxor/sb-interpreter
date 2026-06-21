@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/break.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BREAK"
+kind: statement
+category: "Basic instructions (control and branching)"
+system: "SmileBASIC 3"
+summary: "Forces a loop to end"
+semantics:
+  - "Used in FOR ... NEXT, WHILE ... WEND, REPEAT ... UNTIL"
+forms:
+  - format: "BREAK"
+    description: "Forces a loop to end"
+    args: []
+    examples:
+      - "FOR I=0 TO 9\n IF I==1 THEN CONTINUE\n IF I==7 THEN BREAK\n PRINT I;\",\";\nNEXT"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/break.md" }
+confidence: documented

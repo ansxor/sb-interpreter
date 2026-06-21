@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/sinh.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SINH"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Returns the hyperbolic sine value"
+semantics: []
+forms:
+  - format: "Variable = SINH( Numerical value )"
+    description: "Returns the hyperbolic sine value"
+    args:
+      - { name: "Numerical value", desc: "Real-type number for which to find the hyperbolic sine" }
+    examples:
+      - "A=SINH(1)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/sinh.md" }
+confidence: documented

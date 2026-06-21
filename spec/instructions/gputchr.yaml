@@ -1,0 +1,30 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/gputchr.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "GPUTCHR"
+kind: statement
+category: "Graphics"
+system: "SmileBASIC 3"
+summary: "Draws a character string on the graphic screen"
+semantics: []
+forms:
+  - format: "GPUTCHR X,Y, \"String\" [,Scale X,Scale Y][,Color code]"
+    description: "Draws a character string on the graphic screen"
+    args:
+      - { name: "X,Y", desc: "Display position (X: 0-399, Y: 0-239)" }
+      - { name: "\"String\"", desc: "String to display" }
+      - { name: "Scale X,Y", desc: "Display magnification (No scaling=1.0)" }
+      - { name: "Color code", desc: "Color code consisting of an 8-bit value for each ARGB element * See GCOLOR" }
+    examples:
+      - "GPUTCHR 10,10,\"\n\""
+  - format: "GPUTCHR X,Y, Character code [,Scale X,Scale Y][,Color code]"
+    description: "Draws a character on the graphic screen"
+    args:
+      - { name: "X,Y", desc: "Display position (X: 0-399, Y: 0-239)" }
+      - { name: "Character code", desc: "Character code to display" }
+      - { name: "Scale X,Y", desc: "Display magnification (No scaling=1.0)" }
+      - { name: "Color code", desc: "Color code consisting of an 8-bit value for each ARGB element * See GCOLOR" }
+    examples:
+      - "GPUTCHR 10,10,ASC(\"A\")"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gputchr.md" }
+confidence: documented

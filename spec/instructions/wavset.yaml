@@ -1,0 +1,21 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/wavset.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "WAVSET"
+kind: statement
+category: "Sound"
+system: "SmileBASIC 3"
+summary: "Defines the sound of an MML user-defined musical instrument"
+semantics: []
+forms:
+  - format: "WAVSET Definition number,A,D,S,R,\"Waveform string\" [,Reference pitch]"
+    description: "Defines the sound of an MML user-defined musical instrument"
+    args:
+      - { name: "Definition number", desc: "- User-defined musical instrument number: 224-255<br>- This number is specified with the MML @ command." }
+      - { name: "A,D,S,R", desc: "Envelope definition parameters<br>A: Attack (0-127)<br>D: Decay (0-127)<br>S: Sustain (0-127)<br>R: Release (0-127)" }
+      - { name: "Waveform string", desc: "- Hexadecimal string<br>- Two characters represent one sample value (8 bits)<br>- &H00 - &H80 (128) - &HFF (255)<br>- 16, 32, 64, 128, 256, or 512 samples can be specified<br>- The number of characters should be twice the number of samples" }
+      - { name: "Reference pitch", desc: "If omitted, 69 (O4A)" }
+    examples:
+      - "W$=\"7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF\"*4\nWAVSET 224,3,10,30,5,W$,69"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/wavset.md" }
+confidence: documented

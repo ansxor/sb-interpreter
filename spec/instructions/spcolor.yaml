@@ -1,0 +1,27 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/spcolor.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SPCOLOR"
+kind: statement
+category: "Sprites"
+system: "SmileBASIC 3"
+summary: "Sets the display color of a sprite If used before SPSET, an error will occur"
+semantics: []
+forms:
+  - format: "SPCOLOR Management number, Color code"
+    description: "Sets the display color of a sprite If used before SPSET, an error will occur"
+    args:
+      - { name: "Management number", desc: "Management number of the target sprite: 0-511" }
+      - { name: "Color code", desc: "32-bit color code in the ARGB=8888 format<br>- The lower the value of A, the higher the transparency level<br>- The actual display color will be the color code multiplied by the original pixel color" }
+    examples:
+      - "SPCOLOR 1,RGB(16, 255,0,0) 'A=16,R=255,G=0,B=0"
+  - format: "SPCOLOR Management number OUT C32"
+    description: "Gets the display color of a sprite If used before SPSET, an error will occur"
+    args:
+      - { name: "Management number", desc: "Management number of the target sprite: 0-511" }
+    returns:
+      - { name: "C32", desc: "Variable that returns the current color code (32-bit ARGB)" }
+    examples:
+      - "SPCOLOR 1 OUT C"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spcolor.md" }
+confidence: documented

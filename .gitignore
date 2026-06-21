@@ -1,0 +1,33 @@
+# --- Rust ---
+/target
+**/*.rs.bk
+# Cargo.lock IS committed (this workspace ships binaries -> reproducible builds).
+
+# --- 3DS ROM images + extracted/derived code (copyrighted; never commit) ---
+*.cia
+*.cxi
+*_code.bin
+*.dec.bin
+sb-disassembly/*.bin
+
+# --- Large derived disassembly artifacts (regenerable; see sb-disassembly/README.md) ---
+sb-disassembly/listings/*.lst
+sb-disassembly/ghidra_project/
+
+# --- Source PDFs (copyrighted; text is extracted into sb-docs/) ---
+*.pdf
+
+# --- External reference checkout (clone separately; see README) ---
+/osb
+
+# --- Python ---
+__pycache__/
+*.pyc
+
+# --- Ralph autonomous loop ---
+ralph-logs/
+ralph.stop
+RALPH_PROMPT.md
+
+# --- OS / editor ---
+.DS_Store

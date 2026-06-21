@@ -1,0 +1,19 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/unshift.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "UNSHIFT"
+kind: statement
+category: "Basic instructions (variables and arrays)"
+system: "SmileBASIC 3"
+summary: "Adds an element to the start of an array (The number of elements will increase by 1)"
+semantics: []
+forms:
+  - format: "UNSHIFT Array, Expression"
+    description: "Adds an element to the start of an array (The number of elements will increase by 1)"
+    args:
+      - { name: "Array", desc: "Array to which the element will be added" }
+      - { name: "Expression", desc: "Value of the element to add" }
+    examples:
+      - "DIM WORK[10]\nUNSHIFT WORK, 123"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/unshift.md" }
+confidence: documented

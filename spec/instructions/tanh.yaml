@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/tanh.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "TANH"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Returns the hyperbolic tangent value"
+semantics: []
+forms:
+  - format: "Variable = TANH( Numerical value )"
+    description: "Returns the hyperbolic tangent value"
+    args:
+      - { name: "Numerical value", desc: "Real-type number for which to find the hyperbolic tangent" }
+    examples:
+      - "A=TANH(0.5)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/tanh.md" }
+confidence: documented

@@ -1,0 +1,22 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/data.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "DATA"
+kind: statement
+category: "Basic instructions (data operations and others)"
+system: "SmileBASIC 3"
+summary: "Defines data to read with READ statements"
+semantics:
+  - "Numerical values and character strings can be mixed"
+  - "Expressions containing only numerical constants are handled as constants, and so can be written in DATA"
+  - "Constants starting with # are also allowed"
+  - "Expressions where &&, ||, variables, and functions are mixed are not allowed"
+  - "Character string expressions are not allowed"
+forms:
+  - format: "DATA Data [, Data\n…\n]"
+    description: "Defines data to read with READ statements"
+    args: []
+    examples:
+      - "READ X,Y,Z,ST$ 'Comments can be written\nDATA 123,345,56,\"SAMPLE\""
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/data.md" }
+confidence: documented

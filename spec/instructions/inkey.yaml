@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/inkey.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "INKEY$"
+kind: function
+category: "Console input/output"
+system: "SmileBASIC 3"
+summary: "Gets a character input from the keyboard (without waiting for input)"
+semantics: []
+forms:
+  - format: "String variable=INKEY$()"
+    description: "Gets a character input from the keyboard (without waiting for input)"
+    args:
+      - { name: "None", desc: "" }
+    examples:
+      - "C$=INKEY$()"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/inkey.md" }
+confidence: documented

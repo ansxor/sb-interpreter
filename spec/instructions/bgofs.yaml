@@ -1,0 +1,29 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/bgofs.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BGOFS"
+kind: statement
+category: "BG"
+system: "SmileBASIC 3"
+summary: "Changes the display offset of the BG screen"
+semantics: []
+forms:
+  - format: "BGOFS Layer,X,Y,[Z]"
+    description: "Changes the display offset of the BG screen"
+    args:
+      - { name: "Layer", desc: "Target layer number: 0-3" }
+      - { name: "X,Y", desc: "Display offset coordinates in pixels" }
+      - { name: "Z", desc: "Coordinate in the depth direction (Rear:1024 < Screen surface:0 < Front:-256)" }
+    examples:
+      - "BGOFS 0,-100,-100"
+  - format: "BGOFS Layer OUT X,Y[,Z]"
+    description: "Gets BG coordinates"
+    args:
+      - { name: "Layer", desc: "Target layer number: 0-3" }
+    returns:
+      - { name: "X,Y", desc: "Variables to receive the coordinates" }
+      - { name: "Z", desc: "Variable to receive the depth information" }
+    examples:
+      - "BGOFS 0 OUT X,Y,Z"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgofs.md" }
+confidence: documented

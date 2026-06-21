@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/talk.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "TALK"
+kind: statement
+category: "Sound"
+system: "SmileBASIC 3"
+summary: "Generates synthesized speech Alphanumeric symbols are read out character-by-character"
+semantics: []
+forms:
+  - format: "TALK \"Voice string\""
+    description: "Generates synthesized speech Alphanumeric symbols are read out character-by-character"
+    args:
+      - { name: "Voice string", desc: "Synthesized speech string (Characters will be read out directly)" }
+    examples:
+      - "TALK \"ABCDE<P50000><S20000>FGHIJKLM\""
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/talk.md" }
+confidence: documented

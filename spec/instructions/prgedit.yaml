@@ -1,0 +1,19 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/prgedit.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "PRGEDIT"
+kind: statement
+category: "Source code manipulation"
+system: "SmileBASIC 3"
+summary: "Specifies the program SLOT to manipulate, and the current line"
+semantics: []
+forms:
+  - format: "PRGEDIT Program SLOT [,Line number]"
+    description: "Specifies the program SLOT to manipulate, and the current line"
+    args:
+      - { name: "Program SLOT", desc: "- Program SLOT to manipulate: 0-3<br>- Specifying the SLOT currently running will give an error" }
+      - { name: "Line number", desc: "- Line to manipulate (Current line)<br>- If this is omitted, the first line will be the current line<br>- If -1 is specified for the line number, the current line will be the last line" }
+    examples:
+      - "PRGEDIT 0"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/prgedit.md" }
+confidence: documented

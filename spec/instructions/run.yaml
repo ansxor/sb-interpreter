@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/run.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "RUN"
+kind: statement
+category: "Instructions available only in DIRECT mode"
+system: "SmileBASIC 3"
+summary: "Program execution DIRECT mode only"
+semantics: []
+forms:
+  - format: "RUN [Program SLOT]"
+    description: "Program execution DIRECT mode only"
+    args:
+      - { name: "Program SLOT", desc: "Specified program SLOT to be executed (0 to 3. If omitted, 0)" }
+    examples:
+      - "RUN\nRUN 1"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/run.md" }
+confidence: documented

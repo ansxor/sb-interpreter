@@ -1,0 +1,19 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/round.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "ROUND"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Gets the integer part (by rounding off to the nearest whole number)"
+semantics: []
+forms:
+  - format: "Variable = ROUND( Numerical value )"
+    description: "Gets the integer part (by rounding off to the nearest whole number)"
+    args:
+      - { name: "Numerical value", desc: "Source numerical value" }
+    examples:
+      - "A=ROUND(12.345)"
+see_also: "FLOOR: Round-down, CEIL: Round-up"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/round.md" }
+confidence: documented

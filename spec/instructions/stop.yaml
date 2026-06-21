@@ -1,0 +1,19 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/stop.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "STOP"
+kind: statement
+category: "Basic instructions (control and branching)"
+system: "SmileBASIC 3"
+summary: "Suspends a running program"
+semantics:
+  - "The program SLOT:line number of the suspended program will be displayed"
+  - "The program can be resumed with the CONT instruction (However, resuming is not available in certain situations)"
+forms:
+  - format: "STOP"
+    description: "Suspends a running program"
+    args: []
+    examples:
+      - "STOP"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/stop.md" }
+confidence: documented

@@ -1,0 +1,21 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/touch.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "TOUCH"
+kind: statement
+category: "Various kinds of input"
+system: "SmileBASIC 3"
+summary: "Gets touch information The 5 pixels around the edge of the screen cannot be read"
+semantics: []
+forms:
+  - format: "TOUCH [Terminal ID] OUT STTM,TX,TY"
+    description: "Gets touch information The 5 pixels around the edge of the screen cannot be read"
+    args:
+      - { name: "Terminal ID (0-3)", desc: "This should be specified when information from another terminal is to be obtained via wireless<br>communication" }
+    returns:
+      - { name: "STTM", desc: "Variable to receive the time when the screen is touched (0 = No touch)" }
+      - { name: "TX,TY", desc: "- Variables to receive the touch coordinates (TX: 5-314, TY: 5-234)<br>- Note that returned values are not in the same range as the size of the Touch Screen" }
+    examples:
+      - "TOUCH OUT TM,TX,TY"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/touch.md" }
+confidence: documented

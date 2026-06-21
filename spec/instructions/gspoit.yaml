@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/gspoit.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "GSPOIT"
+kind: function
+category: "Graphics"
+system: "SmileBASIC 3"
+summary: "Gets a color from the specified coordinates on the graphic screen The return value may not be the same as the value specified at the time of drawing because it has passed through the internal color representation"
+semantics: []
+forms:
+  - format: "Variable = GSPOIT( X-coordinate,Y-coordinate )"
+    description: "Gets a color from the specified coordinates on the graphic screen The return value may not be the same as the value specified at the time of drawing because it has passed through the internal color representation"
+    args:
+      - { name: "X-,Y-coordinates", desc: "Coordinates of which to get the color (X: 0-399, Y: 0-239)" }
+    examples:
+      - "C=GSPOIT(100,100)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gspoit.md" }
+confidence: documented

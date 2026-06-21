@@ -1,0 +1,17 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/micstop.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "MICSTOP"
+kind: statement
+category: "Various kinds of input"
+system: "SmileBASIC 3"
+summary: "Stops sampling from the microphone"
+semantics: []
+forms:
+  - format: "MICSTOP"
+    description: "Stops sampling from the microphone"
+    args: []
+    examples:
+      - "MICSTOP"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/micstop.md" }
+confidence: documented

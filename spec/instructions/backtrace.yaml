@@ -1,0 +1,20 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/backtrace.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BACKTRACE"
+kind: statement
+category: "Instructions available only in DIRECT mode"
+system: "SmileBASIC 3"
+summary: "Displays the history of previous callers before it was stopped will be displayed"
+semantics:
+  - "DIRECT mode only"
+  - "When execution has been stopped, for example with the STOP instruction, the caller history up to the point just"
+  - "A list of slot numbers and line numbers will be displayed"
+forms:
+  - format: "BACKTRACE"
+    description: "Displays the history of previous callers before it was stopped will be displayed"
+    args: []
+    examples:
+      - "BACKTRACE"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/backtrace.md" }
+confidence: documented

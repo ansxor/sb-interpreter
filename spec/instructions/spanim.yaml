@@ -1,0 +1,43 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/spanim.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SPANIM"
+kind: statement
+category: "Sprites"
+system: "SmileBASIC 3"
+summary: "Displays animation with a sprite (using animation data specified with an array) If used before SPSET, an error will occur"
+semantics:
+  - "Animation waits for a specified time, according to the value input"
+  - "Animation starts from the frame following SPANIM execution"
+  - "Up to 32 pieces of data will be accepted for each target element"
+  - "If a negative value is specified for time, linear interpolation from the previous value will occur"
+forms:
+  - format: "SPANIM Management number,\"Animation target\",Data array [,Loop]"
+    description: "Displays animation with a sprite (using animation data specified with an array) If used before SPSET, an error will occur"
+    args:
+      - { name: "Management number", desc: "Management number of the sprite for which to set the animation: 0-511" }
+      - { name: "Animation target", desc: "Numerical value or character string to control the elements that should change<br>- 0 or \"XY\": XY-coordinates<br>- 1 or \"Z\": Z-coordinates<br>- 2 or \"UV\": UV-coordinates (Coordinates of the definition source image)<br>- 3 or \"I\": Definition number<br>- 4 or \"R\": Rotation angle<br>- 5 or \"S\": Magnification XY<br>- 6 or \"C\": Display color<br>- 7 or \"V\": Variable (Value of sprite internal variable 7)<br>- Adding 8 to the target numerical value will cause the value to be treated as being relative<br>to the run time<br>- Suffixing the character string with \"+\" will also cause the value to be treated as being<br>relative to the run time" }
+      - { name: "Data array", desc: "One-dimensional numerical value array storing the animation data" }
+      - { name: "Loop", desc: "Loop count: (1-) The value 0 specifies an endless loop" }
+    examples:
+      - "DIM PANIM[ 6 ]\nPANIM[0] = -60 'frame(-60=smooth)\nPANIM[1] = 200 'offset X,Y\nPANIM[2] = 100\nPANIM[3] = -30 'frame\nPANIM[4] = 50 'offset\nPANIM[5] = 20\nSPSET 0,0\nSPANIM 0,\"XY\",PANIM"
+  - format: "SPANIM Management number,\"Animation target\",\"@Label string\" [,Loop]"
+    description: "Displays animation with a sprite (using animation data specified with the DATA instruction) If used before SPSET, an error will occur"
+    args:
+      - { name: "Management number", desc: "Management number of the sprite for which to set the animation: 0-511" }
+      - { name: "Animation target", desc: "Numerical value or character string to control the elements that should change<br>- 0 or \"XY\": XY-coordinates<br>- 1 or \"Z\": Z-coordinates<br>- 2 or \"UV\": UV-coordinates (Coordinates of the definition source image)<br>- 3 or \"I\": Definition number<br>- 4 or \"R\": Rotation angle<br>- 5 or \"S\": Magnification XY<br>- 6 or \"C\": Display color<br>- 7 or \"V\": Variable (Value of sprite internal variable 7)<br>- Adding 8 to the target numerical value will cause the value to be treated as being relative<br>to the run time<br>- Suffixing the character string with \"+\" will also cause the value to be treated as being<br>relative to the run time" }
+      - { name: "@Label string", desc: "- First label of the DATA instruction storing the animation data<br>- This should be specified as a character string by enclosing the @Label name in \"\" (or as a<br>string variable)" }
+      - { name: "Loop", desc: "Loop count: (1-) The value 0 specifies an endless loop" }
+    examples:
+      - "@MOVDATA\nDATA 2 'counter\nDATA -60,200,100 'frame,offset\nDATA -30,50,20 'frame,offset\nSPSET 0,0\nSPANIM 0,\"XY\",\"@MOVDATA\""
+  - format: "SPANIM Management number,\"Animation target\",Time 1,Item 1[,Item 2] [,Time 2,Item 1[,Item 2]] …\n [,Loop]"
+    description: "Displays animation with a sprite (using animation data specified directly as arguments) If used before SPSET, an error will occur"
+    args:
+      - { name: "Management number", desc: "Management number of the sprite for which to set the animation: 0-511" }
+      - { name: "Animation target", desc: "Numerical value or character string to control the elements that should change<br>- 0 or \"XY\": XY-coordinates<br>- 1 or \"Z\": Z-coordinates<br>- 2 or \"UV\": UV-coordinates (Coordinates of the definition source image)<br>- 3 or \"I\": Definition number<br>- 4 or \"R\": Rotation angle<br>- 5 or \"S\": Magnification XY<br>- 6 or \"C\": Display color<br>- 7 or \"V\": Variable (Value of sprite internal variable 7)<br>- Adding 8 to the target numerical value will cause the value to be treated as being relative<br>to the run time<br>- Suffixing the character string with \"+\" will also cause the value to be treated as being<br>relative to the run time" }
+      - { name: "Time,Item", desc: "- Animation data itself (As many Time/Item sets as needed should be listed. Maximum: 32)" }
+      - { name: "Loop", desc: "Loop count: (1-) The value 0 specifies an endless loop" }
+    examples:
+      - "SPSET 0,0\nSPANIM 0,\"XY\", -60,200,100, -30,50,20"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spanim.md" }
+confidence: documented

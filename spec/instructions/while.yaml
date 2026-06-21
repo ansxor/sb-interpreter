@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/while.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "WHILE"
+kind: statement
+category: "Basic instructions (control and branching)"
+system: "SmileBASIC 3"
+summary: "Repeats the process up to WEND while the condition is satisfied"
+semantics:
+  - "Exits the loop if the condition is not satisfied or when the BREAK instruction is executed"
+forms:
+  - format: "WHILE Conditional expression"
+    description: "Repeats the process up to WEND while the condition is satisfied"
+    args: []
+    examples:
+      - "A=0:B=4\nWHILE A<B\n A=A+1\nWEND"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/while.md" }
+confidence: documented

@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/spshow.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SPSHOW"
+kind: statement
+category: "Sprites"
+system: "SmileBASIC 3"
+summary: "Starts displaying a sprite If used before SPSET, an error will occur"
+semantics: []
+forms:
+  - format: "SPSHOW Management number"
+    description: "Starts displaying a sprite If used before SPSET, an error will occur"
+    args:
+      - { name: "Management number", desc: "Management number of the sprite to display: 0-511" }
+    examples:
+      - "SPSHOW 43"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spshow.md" }
+confidence: documented

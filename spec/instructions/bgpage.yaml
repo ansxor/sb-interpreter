@@ -1,0 +1,23 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/bgpage.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "BGPAGE"
+kind: function
+category: "BG"
+system: "SmileBASIC 3"
+summary: "Sets a graphic page to assign to BG"
+semantics: []
+forms:
+  - format: "BGPAGE Graphic page"
+    description: "Sets a graphic page to assign to BG"
+    args:
+      - { name: "Graphic page", desc: "0-5 (GRP0-GRP5) By default, the graphic page for BG is 5 (GRP5)" }
+    examples:
+      - "BGPAGE 5"
+  - format: "Variable=BGPAGE()"
+    description: "Gets the graphic page that has been assigned to BG"
+    args: []
+    examples:
+      - "P=BGPAGE()"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgpage.md" }
+confidence: documented

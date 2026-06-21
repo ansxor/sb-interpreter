@@ -1,0 +1,17 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/wend.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "WEND"
+kind: statement
+category: "Basic instructions (control and branching)"
+system: "SmileBASIC 3"
+summary: "Instruction that indicates the end of a WHILE loop"
+semantics: []
+forms:
+  - format: "WEND"
+    description: "Instruction that indicates the end of a WHILE loop"
+    args: []
+    examples:
+      - "A=0:B=4\nWHILE A<B\n A=A+1\nWEND"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/wend.md" }
+confidence: documented

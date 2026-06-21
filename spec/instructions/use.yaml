@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/use.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "USE"
+kind: statement
+category: "Files"
+system: "SmileBASIC 3"
+summary: "Makes a program in the specified program SLOT executable"
+semantics: []
+forms:
+  - format: "USE Program SLOT"
+    description: "Makes a program in the specified program SLOT executable"
+    args:
+      - { name: "Program SLOT", desc: "0-3: Program SLOT" }
+    examples:
+      - "USE 2"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/use.md" }
+confidence: documented

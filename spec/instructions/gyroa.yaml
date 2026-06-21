@@ -1,0 +1,22 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/gyroa.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "GYROA"
+kind: statement
+category: "Various kinds of input"
+system: "SmileBASIC 3"
+summary: "Gets information on the angle of the gyro sensor Motion sensor(s) should be enabled beforehand with XON MOTION"
+semantics: []
+forms:
+  - format: "GYROA OUT P,R,Y"
+    description: "Gets information on the angle of the gyro sensor Motion sensor(s) should be enabled beforehand with XON MOTION"
+    args:
+      - { name: "None", desc: "" }
+    returns:
+      - { name: "P", desc: "Variable to receive Pitch (angle of the X-coordinate) (Unit: radian)" }
+      - { name: "R", desc: "Variable to receive Roll (angle of the Y-coordinate) (Unit: radian)" }
+      - { name: "Y", desc: "Variable to receive Yaw (angle of the Z-coordinate) (Unit: radian)" }
+    examples:
+      - "XON MOTION\nGYROA OUT P,R,Y"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gyroa.md" }
+confidence: documented

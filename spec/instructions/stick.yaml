@@ -1,0 +1,20 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/stick.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "STICK"
+kind: statement
+category: "Various kinds of input"
+system: "SmileBASIC 3"
+summary: "Gets information on the Circle Pad"
+semantics: []
+forms:
+  - format: "STICK [Terminal ID] OUT X,Y"
+    description: "Gets information on the Circle Pad"
+    args:
+      - { name: "Terminal ID (0-3)", desc: "This should be specified when information is obtained from another terminal via wireless<br>communication" }
+    returns:
+      - { name: "X,Y", desc: "- Variables to receive Circle Pad input magnitude ( X:±1.0, Y:±1.0 )<br>- Actual return values will be around ±0.86<br>- For Y values,<br>↑<br>corresponds to positive and<br>↓<br>to negative" }
+    examples:
+      - "STICK OUT X,Y\nSTICK 3 OUT X,Y"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/stick.md" }
+confidence: documented

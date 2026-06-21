@@ -1,0 +1,59 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/dialog.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "DIALOG"
+kind: function
+category: "Basic instructions (data operations and others)"
+system: "SmileBASIC 3"
+summary: "Displays a dialog and waits for a button to be pressed"
+semantics:
+  - "The result is returned with the system variable RESULT"
+  - "RESULT: 1 (Confirmed), -1 (Canceled), 0 (Time out)"
+  - "For details on the UTF-16 format, please refer to a technical book or similar resource."
+forms:
+  - format: "DIALOG \"Text string\""
+    description: "Displays a dialog and waits for a button to be pressed"
+    args:
+      - { name: "Text string", desc: "Character string to display in the dialog" }
+    examples:
+      - "DIALOG \"Good morning!\""
+  - format: "DIALOG \"Text string\",[Selection type],[\"Caption string\"],[Timeout period]"
+    description: "Displays a dialog and waits for a button to be pressed"
+    args:
+      - { name: "Text string", desc: "Character string to display in the dialog" }
+      - { name: "Selection type", desc: "0: OK (default)<br>5: Next" }
+      - { name: "Caption string", desc: "Character string to display in the caption field at the top of the dialog" }
+      - { name: "Timeout period", desc: "Number of seconds to wait before closing the dialog automatically (If omitted, 0: Not closed)" }
+    examples:
+      - "DIALOG \"Let's get started\",5,\"Scenario\",-120"
+  - format: "Variable = DIALOG(\"Text string\",[Selection type],[\"Caption string\"],[Timeout period])"
+    description: "Displays a dialog and waits for the specified button to be pressed"
+    args:
+      - { name: "Text string", desc: "Character string to display in the dialog" }
+      - { name: "Selection type", desc: "0: OK (default)<br>1: No/Yes<br>2: Back/Next<br>3: Cancel/Confirm<br>4: Cancel/Execute<br>5: Next" }
+      - { name: "Caption string", desc: "Character string to display in the caption field at the top of the dialog" }
+      - { name: "Timeout period", desc: "Number of seconds to wait before closing the dialog automatically (If omitted, 0: Not closed)" }
+    examples:
+      - "R=DIALOG(\"Would you like to try again?\" ,1,\"\n\",0)"
+  - format: "Variable = DIALOG(\"Text string\",Button type,[\"Caption string\"],[Timeout period])"
+    description: "Displays a dialog and waits for the Touch Screen or a hardware button to be pressed"
+    args:
+      - { name: "Text string", desc: "Character string to display in the dialog" }
+      - { name: "Button type", desc: "|b00| ABXY buttons (1)<br>|b01| +Control Pad (2)<br>|b02| L,R buttons (4)<br>|b03| Touch Screen (8)<br>- Specify a value for which the logical OR is calculated with the above bit value and the sign<br>is reversed<br>- ZL and ZR buttons cannot be detected<br>- -1 causes only ABXY to be specified<br>- For example, to detect ABXY and +Control Pad, -3 should be specified" }
+      - { name: "Caption string", desc: "Character string to display in the caption field at the top of the dialog" }
+      - { name: "Timeout period", desc: "Number of seconds to wait before closing the dialog automatically (if omitted, 0: Not closed)" }
+    examples:
+      - "R=DIALOG(\"ABXYLR/+Control Pad/Touch\",-15,\"Special\",0)"
+  - format: "String=DIALOG( \"Initial string\", \"Caption string\" [,Maximum characters])"
+    description: "Displays a dialog used only for inputting file names"
+    args:
+      - { name: "Initial string", desc: "String that is initially input" }
+      - { name: "Caption string", desc: "String to be displayed in the caption field" }
+      - { name: "Maximum characters", desc: "Up to 14 characters" }
+    examples:
+      - "T$=DIALOG( \"NEWNAME0\",\"SAVE\", 14 )"
+  - format: null
+    description: "Displaying special characters in DIALOG To use special character and symbols, pass the character code in the UTF-16 format to CHR$"
+    args: []
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/dialog.md" }
+confidence: documented

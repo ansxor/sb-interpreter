@@ -1,0 +1,17 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/talkstop.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "TALKSTOP"
+kind: statement
+category: "Sound"
+system: "SmileBASIC 3"
+summary: "Stops the synthesized speech currently playing"
+semantics: []
+forms:
+  - format: "TALKSTOP"
+    description: "Stops the synthesized speech currently playing"
+    args: []
+    examples:
+      - "TALKSTOP"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/talkstop.md" }
+confidence: documented

@@ -1,0 +1,23 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/accel.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "ACCEL"
+kind: statement
+category: "Various kinds of input"
+system: "SmileBASIC 3"
+summary: "Gets information on acceleration"
+semantics:
+  - "The motion sensor should be enabled beforehand with XON MOTION"
+  - "Note that this instruction will continue to detect 1G acceleration in the gravity direction"
+  - "This is useful when operation is performed while tilting"
+forms:
+  - format: "ACCEL OUT X,Y,Z"
+    description: "Gets information on acceleration"
+    args:
+      - { name: "None", desc: "" }
+    returns:
+      - { name: "X,Y,Z", desc: "Variables to receive acceleration (Unit: G)" }
+    examples:
+      - "XON MOTION\nACCEL OUT X,Y,Z"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/accel.md" }
+confidence: documented

@@ -1,0 +1,36 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/call.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "CALL"
+kind: function
+category: "Basic instructions (advanced control)"
+system: "SmileBASIC 3"
+summary: "Calls the user-defined instruction with the specified name"
+semantics: []
+forms:
+  - format: "CALL \"Instruction name\" [,Argument …\n] [OUT Variable 1 [,Variable 2\n…\n]]"
+    description: "Calls the user-defined instruction with the specified name"
+    args:
+      - { name: "Instruction name", desc: "- User-defined instruction name string to call<br>- Being a string, it should either be enclosed in \"\" or specified using a string variable." }
+      - { name: "Arguments-", desc: "Any arguments required for the specified instruction" }
+    examples:
+      - "CALL \"USERCD\",X,Y OUT A,B\n'\nDEF USERCD X,Y OUT A,B\nA=X+Y:B=X*Y\nEND"
+  - format: "Variable=CALL(\"Function name\" [,Argument …\n])"
+    description: "Calls the user-defined function with the specified name"
+    args:
+      - { name: "Function name", desc: "- User-defined function name string to call<br>- Being a string, it should either be enclosed in \"\" or specified using a string variable." }
+      - { name: "Arguments", desc: "Any arguments required for the specified function should be enumerated" }
+    examples:
+      - "A=CALL(\"USERFC\",X,Y)\n'\nDEF USERFC(X,Y)\nRETURN X*Y\nEND"
+  - format: "CALL SPRITE"
+    description: "Calls a sprite callback Processes which have been specified for each sprite using SPFUNC are called together"
+    args: []
+    examples:
+      - "CALL SPRITE"
+  - format: "CALL BG"
+    description: "Calls a BG callback Processes which have been specified for each sprite using SPFUNC are called together"
+    args: []
+    examples:
+      - "CALL BG"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/call.md" }
+confidence: documented

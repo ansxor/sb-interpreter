@@ -1,0 +1,28 @@
+# Faithful SmileBASIC 3.6.0 interpreter — Rust workspace.
+# Plan: ~/.claude/plans/i-want-to-make-bright-plum.md
+[workspace]
+resolver = "2"
+members = [
+    "crates/sb-core",
+    "crates/sb-render",
+    "crates/sb-audio",
+    "crates/sb-platform-native",
+    "crates/sb-platform-wasm",
+    "crates/sb-spec",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+authors = ["sb-interpreter contributors"]
+repository = "https://github.com/local/sb-interpreter"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+
+# Keep release builds reproducible/deterministic-friendly.
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

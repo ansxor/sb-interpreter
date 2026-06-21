@@ -1,0 +1,21 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/rsort.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "RSORT"
+kind: statement
+category: "Basic instructions (variables and arrays)"
+system: "SmileBASIC 3"
+summary: "Sorts arrays in descending order"
+semantics: []
+forms:
+  - format: "RSORT [Start position, Number of elements,] Array 1 [,Array 2 , …\n]"
+    description: "Sorts arrays in descending order"
+    args:
+      - { name: "Start position", desc: "Position in Array 1 (0-) from which to start sorting" }
+      - { name: "Number of elements", desc: "Number of elements in Array 1 (1-) to sort" }
+      - { name: "Array 1", desc: "Array with numerical values to sort" }
+      - { name: "Array 2", desc: "- Array to sort according to the result of sorting of Array 1<br>- Array 1 to Array 8 can be enumerated" }
+    examples:
+      - "DIM WORK[10]\nRSORT 0, 10, WORK"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/rsort.md" }
+confidence: documented

@@ -1,0 +1,17 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/endif.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "ENDIF"
+kind: statement
+category: "Basic instructions (control and branching)"
+system: "SmileBASIC 3"
+summary: "Ends if processing spans multiple lines after control switching with IF See Comment for IF for details regarding conditional evaluation"
+semantics: []
+forms:
+  - format: "IF Conditional expression THEN Process to execute when the condition is satisfied ELSE Process to execute when the\ncondition is not satisfied [ENDIF]"
+    description: "Ends if processing spans multiple lines after control switching with IF See Comment for IF for details regarding conditional evaluation"
+    args: []
+    examples:
+      - "IF A==0 THEN\n PRINT \"A=0\"\nENDIF"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/endif.md" }
+confidence: documented

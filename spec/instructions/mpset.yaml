@@ -1,0 +1,19 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/mpset.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "MPSET"
+kind: statement
+category: "Wireless communication"
+system: "SmileBASIC 3"
+summary: "Writes to user-defined data in a wireless communication session Communication will be terminated if the system goes into sleep mode"
+semantics: []
+forms:
+  - format: "MPSET Internal management number, Numerical value"
+    description: "Writes to user-defined data in a wireless communication session Communication will be terminated if the system goes into sleep mode"
+    args:
+      - { name: "Internal<br>management number", desc: "0-8: Management number of the target data/td>" }
+      - { name: "Numerical value", desc: "Numerical value to register (Only an integer value is allowed)" }
+    examples:
+      - "MPSET 5,123"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/mpset.md" }
+confidence: documented

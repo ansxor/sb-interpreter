@@ -1,0 +1,19 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/color.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "COLOR"
+kind: statement
+category: "Console input/output"
+system: "SmileBASIC 3"
+summary: "Specifies the display colors for the console screen Constants for text colors are available (#TBLACK to #TWHITE)"
+semantics: []
+forms:
+  - format: "COLOR Drawing color [,Background color]"
+    description: "Specifies the display colors for the console screen Constants for text colors are available (#TBLACK to #TWHITE)"
+    args:
+      - { name: "Drawing color", desc: "0: Transparent color<br>1: Black, #TBLACK<br>2: Dark red, #TMAROON<br>3: Red, #TRED<br>4: Dark green, #TGREEN<br>5: Green, #TLIME<br>6: Dark yellow, #TOLIVE<br>7: Yellow, #TYELLOW<br>8: Dark blue, #TNAVY<br>9: Blue, #TBLUE<br>10: Dark magenta, #TPURPLE<br>11: Magenta, #TMAGENTA<br>12: Dark cyan, #TTEAL<br>13: Cyan, #TCYAN<br>14: Gray, #TGRAY<br>15: White, #TWHITE" }
+      - { name: "Background color", desc: "- Background color number for each character (0-15: See the drawing colors)<br>- If only the background color needs to be changed, the drawing color can be omitted" }
+    examples:
+      - "COLOR 7,4\nCOLOR #TWHITE\nCOLOR ,0"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/color.md" }
+confidence: documented

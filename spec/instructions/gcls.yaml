@@ -1,0 +1,20 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/gcls.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "GCLS"
+kind: statement
+category: "Graphics"
+system: "SmileBASIC 3"
+summary: "Clears the graphic screen"
+semantics:
+  - "Instruction to fill the whole screen with black"
+  - "It is also possible to specify a color code with which to fill the screen"
+forms:
+  - format: "GCLS [ Color code ]"
+    description: "Clears the graphic screen"
+    args:
+      - { name: "Color code", desc: "Color code consisting of an 8-bit value for each ARGB element * See GCOLOR" }
+    examples:
+      - "GCLS RGB(32,32,32)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gcls.md" }
+confidence: documented

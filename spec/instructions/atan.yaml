@@ -1,0 +1,24 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/atan.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "ATAN"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Returns the arc tangent value (from numerical values)"
+semantics: []
+forms:
+  - format: "Variable = ATAN( Numerical value )"
+    description: "Returns the arc tangent value (from numerical values)"
+    args:
+      - { name: "Numerical value", desc: "Numerical value from which to find the angle" }
+    examples:
+      - "A=ATAN(1)"
+  - format: "Variable = ATAN( Y-coordinate,X-coordinate )"
+    description: "Returns the arc tangent value (from XY-coordinates)"
+    args:
+      - { name: "Y-,X-coordinates", desc: "- X-,Y-coordinates from the origin<br>- The Y-coordinate should be input first" }
+    examples:
+      - "A=ATAN(1,1)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/atan.md" }
+confidence: documented

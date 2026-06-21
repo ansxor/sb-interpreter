@@ -1,0 +1,17 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/clear.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "CLEAR"
+kind: statement
+category: "Instructions available only in DIRECT mode"
+system: "SmileBASIC 3"
+summary: "Initializes the BASIC internal memory DIRECT mode only"
+semantics: []
+forms:
+  - format: "CLEAR"
+    description: "Initializes the BASIC internal memory DIRECT mode only"
+    args: []
+    examples:
+      - "CLEAR"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/clear.md" }
+confidence: documented

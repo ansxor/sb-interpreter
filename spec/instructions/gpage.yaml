@@ -1,0 +1,28 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/gpage.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "GPAGE"
+kind: statement
+category: "Graphics"
+system: "SmileBASIC 3"
+summary: "Specifies a page for graphic display and a page for manipulation"
+semantics: []
+forms:
+  - format: "GPAGE Display page, Manipulation page"
+    description: "Specifies a page for graphic display and a page for manipulation"
+    args:
+      - { name: "Display page", desc: "0-5: GRP0-GRP5" }
+      - { name: "Manipulation page", desc: "0-5: GRP0-GRP5<br>* By default, GRP4 contains sprites and GRP5 contains BG images." }
+    examples:
+      - "GPAGE 0,0"
+  - format: "GPAGE OUT VP,WP"
+    description: "Gets information on the graphic page currently set"
+    args:
+      - { name: "None", desc: "" }
+    returns:
+      - { name: "VP", desc: "Page number for display (0-5)" }
+      - { name: "WP", desc: "Page number for manipulation (0-5)" }
+    examples:
+      - "GPAGE OUT WP,GP"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gpage.md" }
+confidence: documented

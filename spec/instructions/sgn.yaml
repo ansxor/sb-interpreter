@@ -1,0 +1,18 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/sgn.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "SGN"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Gets the sign"
+semantics: []
+forms:
+  - format: "Variable = SGN( Numerical value )"
+    description: "Gets the sign"
+    args:
+      - { name: "Numerical value", desc: "Numerical value for which to get the sign" }
+    examples:
+      - "A=SGN(12.345)"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/sgn.md" }
+confidence: documented

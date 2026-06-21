@@ -1,0 +1,20 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/rename.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "RENAME"
+kind: statement
+category: "Files"
+system: "SmileBASIC 3"
+summary: "Changes a file name When run, a confirmation dialog will be displayed"
+semantics: []
+forms:
+  - format: "RENAME \"[File type:]File name\", \"[File type:]New name\""
+    description: "Changes a file name When run, a confirmation dialog will be displayed"
+    args:
+      - { name: "File type:", desc: "\"TXT:\" Texts and programs (optional)<br>\"DAT:\" Binary data (including graphics)" }
+      - { name: "File name", desc: "Name of file to change name of" }
+      - { name: "New name", desc: "New file name" }
+    examples:
+      - "RENAME \"SAMPLE\",\"NEWNAME\""
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/rename.md" }
+confidence: documented

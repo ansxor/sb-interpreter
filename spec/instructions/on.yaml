@@ -1,0 +1,27 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/on.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "ON"
+kind: statement
+category: "Basic instructions (control and branching)"
+system: "SmileBASIC 3"
+summary: "Branches to a label line according to the control variable value"
+semantics:
+  - "The branch number begins with 0, unlike in conventional BASIC"
+forms:
+  - format: "ON Control variable GOTO @Label 0, @Label 1 …"
+    description: "Branches to a label line according to the control variable value"
+    args:
+      - { name: "@Label 0", desc: "Jump target to use when the control variable is 0" }
+      - { name: "@Label 1", desc: "Jump target to use when the control variable is 1<br>:<br>- Prepare the necessary number of branch destinations<br>- Label strings cannot be used in the ON to GOTO labels" }
+    examples:
+      - "ON IDX GOTO @JMP_A,@JMP_B\nPRINT \"OVER\":END\n@JMP_A\nPRINT \"IDX=0\":END\n@JMP_B\nPRINT \"IDX=1\":END"
+  - format: "ON Control variable GOSUB @Label 0, @Label 1 …"
+    description: "Calls a sub-routine according to a control variable value"
+    args:
+      - { name: "@Label 0", desc: "Sub-routine when the control variable is 0" }
+      - { name: "@Label 1", desc: "Sub-routine when the control variable is 1<br>:<br>- Prepare the necessary number of branch destinations<br>- Label strings cannot be used in the ON to GOSUB labels" }
+    examples:
+      - "ON IDX GOSUB @SUB_A,@SUB_B\nPRINT \"EXIT\":END\n@SUB_A\nPRINT \"IDX=0\":RETURN\n@SUB_B\nPRINT \"IDX=1\":RETURN"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/on.md" }
+confidence: documented

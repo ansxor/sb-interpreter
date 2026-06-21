@@ -1,0 +1,21 @@
+# AUTO-GENERATED from sb-docs/smilebasic-3/floor.md by tools/gen_specs.py — do not edit.
+# Verified tests + oracle-harvested expects live in spec/tests/ (merged by sb-spec).
+id: "FLOOR"
+kind: function
+category: "Mathematics"
+system: "SmileBASIC 3"
+summary: "Gets the integer part (by rounding down to the whole number)"
+semantics:
+  - "The largest integer that is not greater than the specified value will be obtained"
+  - "FLOOR(12.5) will be 12, while FLOOR(-12.5) will be -13"
+forms:
+  - format: "Variable = FLOOR( Numerical value )"
+    description: "Gets the integer part (by rounding down to the whole number)"
+    args:
+      - { name: "Numerical value", desc: "Source numerical value" }
+    examples:
+      - "A=FLOOR(12.345)"
+see_also: "ROUND: Round-off, CEIL: Round-up"
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/floor.md" }
+confidence: documented
