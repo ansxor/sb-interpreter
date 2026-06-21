@@ -51,10 +51,5 @@ jobs:
           python-version: "3.x"
       - name: Byte-compile harness + tools
         run: find tools harness -name '*.py' -print0 | xargs -0 python -m py_compile
-      - name: Regenerate specs and assert no drift
-        run: |
-          python tools/gen_specs.py
-          git diff --exit-code spec/instructions spec/reference \
-            || (echo "::error::spec/ is out of date — run tools/gen_specs.py and commit"; exit 1)
       - name: Deterministic replay inventory
         run: python harness/diff/replay.py

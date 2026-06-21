@@ -166,6 +166,11 @@ pub fn load_all(spec_dir: &Path) -> Result<Vec<Spec>, LoadError> {
     let instr_dir = spec_dir.join("instructions");
     let tests_dir = spec_dir.join("tests");
 
+    // During spec build-out the instructions/ dir may be empty or absent.
+    if !instr_dir.exists() {
+        return Ok(Vec::new());
+    }
+
     let mut paths: Vec<PathBuf> = std::fs::read_dir(&instr_dir)
         .map_err(|e| LoadError::Io(instr_dir.clone(), e))?
         .filter_map(|e| e.ok().map(|e| e.path()))

@@ -1,0 +1,109 @@
+# S — Spec build-out (PRD)
+
+> Status: 🔥 active · Depends on: M0; uses O (oracle) · Read `prd/README.md` first. Tasks: `PRD.md` (S-T*).
+
+## Context / why
+
+The spec is the **contract** the whole interpreter is verified against. The first attempt
+auto-generated specs from `sb-docs` alone — documentation re-rendered as YAML, with no
+typed signatures, no error conditions, and no test cases. Those were **deleted** because
+they'd anchor everything on a thin, single-source artifact. This milestone rebuilds the
+spec suite **for real**, from **all four sources**, so "faithful" is grounded in evidence.
+
+This is the priority milestone. Interpreter implementation (M1–M7) is gated on the
+relevant category's specs existing.
+
+## The four sources (every spec draws on all that apply)
+
+1. **Docs** (`sb-docs/smilebasic-3/`) — syntax, args, ranges, prose semantics → `documented`.
+2. **Disassembly** (`sb-disassembly/listings/cia_3.6.0.lst`) — exact numeric/string/edge
+   behavior; names are UTF-16, runtime = file offset + `0x100000` → `disassembled`.
+3. **osb** (`osb/SMILEBASIC/*.d`, 3.5.0) — behavioral **cross-check only**, never authoritative.
+4. **Oracle** (real SB 3.6.0 in Azahar, see `prd/oracle.md`) — ground truth → `hw_verified`.
+
+## The contract (spec schema v2)
+
+This is the shape every `spec/instructions/<id>.yaml` must reach (the original target):
+
+```yaml
+id: FLOOR
+kind: function                 # statement | function | operator | system_var
+category: Mathematics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+signatures:                    # list models overloads
+  - args:    [{ name: value, type: number, range: "any" }]   # number = int|double
+    returns: { type: integer }
+summary: "Largest integer not greater than value (rounds toward -inf)."
+semantics:
+  - "Integer input returns unchanged (no coercion error)."
+  - "Result type is always Integer, even for Double input."
+  - "FLOOR(-2.1) == -3."
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "value is a string" }   # official table = 8
+sources:
+  - { type: documented,   ref: "sb-docs/smilebasic-3/floor.md" }
+  - { type: disassembled, ref: "cia_3.6.0.lst FLOOR handler @0x...", confidence: hypothesis }
+  - { type: hw_verified,  ref: "oracle run <date>" }
+confidence: hw_verified        # documented < community < observed < disassembled < hw_verified
+tests:
+  - { name: positive_fraction, code: "PRINT FLOOR(3.7)",  expect: { stdout: "3" } }
+  - { name: negative_rounds_down, code: "PRINT FLOOR(-2.1)", expect: { stdout: "-3" } }
+  - { name: integer_passthrough, code: "PRINT FLOOR(5)",  expect: { stdout: "5" } }
+  - { name: string_errors, code: 'A=FLOOR("x")', expect: { error: { errnum: 8 } } }
+```
+
+`tests` may stay inline OR live in the `spec/tests/<id>.yaml` overlay (oracle harvest
+writes there). Either way the conformance suite runs them against `sb-core`.
+
+## Authoring process (per instruction)
+
+1. Read the doc page; draft `id/kind/category/signatures/summary/semantics`.
+2. Find the handler in the disassembly (keyword table → handler; see `prd/README.md`
+   gotchas) and confirm exact behavior, ranges, rounding, error conditions; cite the addr.
+3. Cross-check against osb's implementation; note any 3.5.0-vs-3.6.0 divergence.
+4. Write **test cases**: at least normal + boundary + error per signature, with `expect`.
+5. **Verify expects against the oracle** (harvest) → set those to `hw_verified`. If the
+   oracle isn't available in this run, set `documented`/`disassembled` and append the case
+   to `HARVEST_QUEUE.md` for a later harvest pass.
+6. Set the top-level `confidence` to the **lowest** of the spec's load-bearing claims.
+
+### Loop vs. oracle division
+- The autonomous loop (`ralph.sh`) authors specs from docs + disassembly + osb and queues
+  oracle-needed cases. It **never** sets `hw_verified`.
+- A supervised harvest pass (oracle reachable from this machine) runs the queued cases and
+  upgrades them. See `prd/oracle.md` (O-T8).
+
+## Tasks (by category — counts are sb-docs instruction counts)
+
+Each `S-T*` below: author every instruction's spec in that category to the v2 contract,
+with test cases, honest confidence, and harvest-queue entries. Done = all specced + cases
+present + oracle-verifiable cases harvested or queued.
+
+- **S-T0 — Spec schema v2 + authoring guide.** Update `spec/SCHEMA.md` to the contract
+  above; update the `sb-spec` serde structs (typed `signatures`, `errors`, ranges) and the
+  loader/coverage; provide one fully-worked exemplar (`FLOOR`) as the reference.
+- **S-T1 Mathematics (27)** · **S-T2 Strings (12)** · **S-T3 Control + Advanced (27)** ·
+  **S-T4 Variables/arrays + Data (27)** · **S-T5 Console I/O (12)** · **S-T6 Bit-ops +
+  operators (5)** · **S-T7 Graphics (19)** · **S-T8 Sprites (27)** · **S-T9 BG (24)** ·
+  **S-T10 Sound + MML (18)** · **S-T11 Various input + Screen (20)** · **S-T12 Files +
+  Source-manip + DIRECT (22)** · **S-T13 Wireless (8)**.
+- **S-T14 — Verify reference tables.** Cross-check `spec/reference/{errors,sysvars,
+  constants}.yaml` against the disassembly (error strings @≈0x1E965C; constant table) and
+  the oracle; raise confidence. (These were kept from M0 but are doc-derived.)
+
+The category list/counts come from `sb-docs/smilebasic-3/README.md`. Work category-by-
+category so implementation (M1–M7) can start on a category as soon as its specs land.
+
+## Acceptance (per category task)
+- Every instruction in the category has a `spec/instructions/<id>.yaml` at the v2 contract.
+- Typed signatures (with ranges/defaults), semantics, and error conditions present.
+- ≥1 test case per signature covering normal + boundary + error, each with `expect`.
+- `confidence` set honestly per source; oracle-verifiable cases harvested or in `HARVEST_QUEUE.md`.
+- `cargo test -p sb-spec` loads them; `sb-spec-coverage` reflects the new confidence mix.
+
+## Verification
+```bash
+cargo test -p sb-spec
+cargo run -p sb-spec --bin sb-spec-coverage     # confidence distribution
+# supervised harvest (oracle up): python3 harness/harvest/harvest.py
+```

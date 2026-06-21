@@ -6,95 +6,96 @@ under `prd/` (start at `prd/README.md`). Task IDs here match those docs.
 
 **Legend:** `[ ]` todo · `[~]` in progress · `[x]` done · `→` depends on.
 
+> **Active priority: S (spec build-out) + O (oracle).** The doc-only specs were deleted —
+> they were built from `sb-docs` alone, not from all sources. The real contract is built
+> from **docs + disassembly + osb cross-check + oracle (hw_verified)**. Interpreter
+> implementation (M1–M7) is **gated on the spec suite existing** for the relevant category.
+
 | Milestone | Goal | Doc | Status |
 |---|---|---|---|
 | M0 | Scaffolding & spec pipeline | `prd/M0.md` | ✅ done |
-| M1 | Core VM + a real window | `prd/M1.md` | ⬜ |
-| M2 | Graphics (GRP + compositor) | `prd/M2.md` | ⬜ |
-| M3 | Sprites & BG | `prd/M3.md` | ⬜ |
-| M4 | Input & timing | `prd/M4.md` | ⬜ |
-| M5 | Audio (MML) | `prd/M5.md` | ⬜ |
-| M6 | Files, projects, system, stubs | `prd/M6.md` | ⬜ |
+| **S** | **Spec build-out (all sources)** | `prd/specs.md` | 🔥 active |
+| **O** | **Oracle harvest engine** | `prd/oracle.md` | 🔥 active (connected) |
+| M1 | Core VM + a real window | `prd/M1.md` | ◐ lexer/AST done; gated on S |
+| M2 | Graphics (GRP + compositor) | `prd/M2.md` | ⬜ gated on S |
+| M3 | Sprites & BG | `prd/M3.md` | ⬜ gated on S |
+| M4 | Input & timing | `prd/M4.md` | ⬜ gated on S |
+| M5 | Audio (MML) | `prd/M5.md` | ⬜ gated on S |
+| M6 | Files, projects, system, stubs | `prd/M6.md` | ⬜ gated on S |
 | M7 | Hardening | `prd/M7.md` | ⬜ |
-| O | Emulator-oracle bring-up | `prd/oracle.md` | ⬜ |
 
 ---
 
+## S — Spec build-out (the contract; from docs + disassembly + osb + oracle)
+Each instruction spec gets: typed signature (arg types/ranges/defaults), precise semantics,
+error conditions (errnum), and test cases (code → expect) with honest per-source confidence.
+A category is done when every instruction in it is specced with cases, and oracle-verifiable
+cases are harvested (`hw_verified`) or queued in `HARVEST_QUEUE.md`.
+
+- [ ] S-T0 Spec schema v2 + authoring guide — define the richer spec shape (typed sigs, ranges, errors, cases) and the 4-source process; update `spec/SCHEMA.md`; `sb-spec` structs to match
+- [ ] S-T1 Mathematics (27) — author specs + cases → S-T0
+- [ ] S-T2 Strings (12) → S-T0
+- [ ] S-T3 Control + Advanced control (22+5) → S-T0
+- [ ] S-T4 Variables/arrays + Data-ops (13+14) → S-T0
+- [ ] S-T5 Console I/O (12) → S-T0
+- [ ] S-T6 Bit-ops + operators (5) → S-T0
+- [ ] S-T7 Graphics (19) → S-T0
+- [ ] S-T8 Sprites (27) → S-T0
+- [ ] S-T9 BG (24) → S-T0
+- [ ] S-T10 Sound + MML reference (18) → S-T0
+- [ ] S-T11 Various input + Screen control (13+7) → S-T0
+- [ ] S-T12 Files + Source-manip + DIRECT-mode (8+7+7) → S-T0
+- [ ] S-T13 Wireless (8) → S-T0
+- [ ] S-T14 Verify reference tables (errors/sysvars/constants) vs disassembly + oracle → O-T4, O-T5
+
+## O — Oracle harvest engine (real SmileBASIC 3.6.0 in Azahar)
+- [x] O-T1 RPC connection — Azahar `--install` + boot; read guest memory (banner @0x2E9AE0 confirms 3.6.0; runtime = file offset + 0x100000)
+- [ ] O-T2 Autorun — drive SB to RUN a program deterministically (TAS movie record/play `-r`/`-p`, and/or RPC trigger) → O-T1
+- [ ] O-T3 Program injection — get a test program into SB (extdata file format, or RPC `write_memory` into a slot) → O-T1
+- [ ] O-T4 stdout capture — read the console grid from guest memory (RE its address) or CHKCHR scrape → O-T1
+- [ ] O-T5 ERRNUM/ERRLINE capture — RE the sysvar addresses; read after a halt → O-T1
+- [ ] O-T6 Framebuffer capture — `--dump-video` and/or RE the framebuffer address; decode to RGBA → O-T1
+- [ ] O-T7 Audio capture — emulator audio dump → O-T1
+- [ ] O-T8 harvest.py end-to-end — run case → capture → write `spec/tests/<id>.yaml` (`hw_verified`) + golden media → O-T2, O-T3, O-T4, O-T5
+
 ## M0 — Scaffolding & spec pipeline ✅
-- [x] M0-T1 Scaffold Rust workspace + 6 crates (build native + wasm32)
-- [x] M0-T2 Move harness tools into `tools/`
-- [x] M0-T3 Spec ingestion `tools/gen_specs.py` → 248 instruction specs + reference tables
-- [x] M0-T4 `sb-spec` loader + coverage bin + test-overlay merge
-- [x] M0-T5 Harness skeleton (oracle/diff/fuzz/harvest/corpus) + ported goldens
-- [x] M0-T6 CI (deterministic replay only) + `.gitignore` + git init
+- [x] M0-T1 Rust workspace + 6 crates (native + wasm32)
+- [x] M0-T2 Tools into `tools/`
+- [x] M0-T3 Spec skeleton + reference tables (doc-only instruction specs since DELETED — see S)
+- [x] M0-T4 `sb-spec` loader + coverage + test-overlay merge
+- [x] M0-T5 Harness skeleton + ported goldens + sbsave corpus
+- [x] M0-T6 CI (deterministic replay only) + git
 
-## M1 — Core VM + a real window
-- [x] M1-T1 Lexer — tokenize SB source (TokenType, Token, SourceLocation; `&H`/`&B`, `$`/`%`/`#` suffixes, comments, `TRUE`/`FALSE`, 2-char ops)
-- [x] M1-T2 AST — expression/statement node types → M1-T1
-- [ ] M1-T3 Parser — recursive descent + precedence-climbing + constant folding → M1-T2
-- [ ] M1-T4 Value/Array completion — 1–4D arrays, references, int↔double coercion rules → (M0 value.rs)
-- [ ] M1-T5 Bytecode + Compiler — Code opcodes, AST→bytecode, scopes, labels, DATA table → M1-T3, M1-T4
-- [ ] M1-T6 VM — stack machine, frames, 4 slots + COMMON DEF, dispatch loop → M1-T5
-- [ ] M1-T7 Builtin registration macro + math/string builtins → M1-T6
-- [ ] M1-T8 Control-flow + console builtins (PRINT/`?`, LOCATE, COLOR, CLS, INPUT, LINPUT) → M1-T7, M1-T10
-- [ ] M1-T9 TinyMT RNG (port `tinymt32.d` + 8-engine wrapper; RND/RNDF/RANDOMIZE; RNDF double-draw) → M1-T7
-- [ ] M1-T10 Console model — 50×30 grid, attributes, font, TABSTEP; render to framebuffer → (M0 sb-render)
-- [ ] M1-T11 Headless runner `sb-run` — run a `.sb3`, emit console text to stdout (for replay) → M1-T8
-- [ ] M1-T12 Window — native (winit + pixels) + wasm (canvas/WebGL) blit of framebuffer, 60 fps → M1-T10
-- [ ] M1-T13 Error model — SbError propagation, ERRNUM/ERRLINE sysvars, messages per spec → M1-T6
-- [ ] M1-T14 Conformance wiring — execute `spec/tests/` + `corpus/cases` via sb-core in `cargo test`; `ASSERT__` test builtin; run `otya_test.sb3` → M1-T11
+## M1 — Core VM + a real window  (gated on S-T1..S-T6 for the parts it touches)
+- [x] M1-T1 Lexer (token.rs + lexer.rs) — ⚠ revisit full-width identifiers (HARVEST_QUEUE)
+- [x] M1-T2 AST (ast.rs)
+- [ ] M1-T3 Parser — recursive descent + precedence + const folding → M1-T2, S-T6
+- [ ] M1-T4 Value/Array completion (1–4D, refs, coercion)
+- [ ] M1-T5 Bytecode + Compiler → M1-T3, M1-T4
+- [ ] M1-T6 VM (stack machine, 4 slots + COMMON) → M1-T5
+- [ ] M1-T7 Builtin registration + math/string builtins → M1-T6, S-T1, S-T2
+- [ ] M1-T8 Control-flow + console builtins → M1-T7, M1-T10, S-T3, S-T5
+- [ ] M1-T9 TinyMT RNG (RND/RNDF/RANDOMIZE) → M1-T7, S-T1
+- [ ] M1-T10 Console model + render → framebuffer → (M0 sb-render)
+- [ ] M1-T11 Headless runner `sb-run` → M1-T8
+- [ ] M1-T12 Window (native winit + wasm canvas) → M1-T10
+- [ ] M1-T13 Error model + ERRNUM/ERRLINE → M1-T6, S-T14
+- [ ] M1-T14 Conformance wiring (run spec/tests + corpus; ASSERT__; otya_test) → M1-T11
 
-## M2 — Graphics (GRP + compositor)
-- [ ] M2-T1 GRP page model — GPAGE, GCLS, GCOLOR, GPRIO, GCLIP, RGB/RGBREAD/GSPOIT
-- [ ] M2-T2 Drawing primitives — GPSET, GLINE, GBOX, GFILL, GCIRCLE, GTRI, GPAINT → M2-T1
-- [ ] M2-T3 Bitmap ops — GCOPY, GLOAD, GSAVE → M2-T1
-- [ ] M2-T4 5-layer compositor — backdrop→GRP→BG→sprite→console, Z order, RGBA5551 math → M2-T2
-- [ ] M2-T5 RE pixel/color math from disassembly; harvest golden PNGs; pixel-diff replay → M2-T4, O-T6
+## M2 — Graphics  (gated on S-T7)
+- [ ] M2-T1 GRP page model · [ ] M2-T2 Drawing primitives · [ ] M2-T3 Bitmap ops · [ ] M2-T4 Compositor · [ ] M2-T5 Golden PNG harvest + pixel-diff → O-T6
 
-## M3 — Sprites & BG
-- [ ] M3-T1 Sprite core — SPSET/SPCLR/SPSHOW/SPHIDE/SPOFS/SPCHR/SPSCALE/SPROT/SPCOLOR/SPHOME/SPPAGE/SPUSED → M2-T4
-- [ ] M3-T2 Sprite animation/link/vars — SPANIM/SPSTART/SPSTOP/SPFUNC(+CALLIDX)/SPVAR/SPLINK/SPUNLINK → M3-T1
-- [ ] M3-T3 Sprite collision — SPCOL/SPCHK/SPHITSP/SPHITRC/SPHITINFO/SPCOLVEC; SPDEF (+`spdef.csv`) → M3-T1
-- [ ] M3-T4 BG core — BGPUT/BGGET/BGFILL/BGOFS/BGROT/BGSCALE/BGCOLOR/BGSCREEN/BGCLIP/BGSHOW/BGHIDE/BGHOME/BGPAGE/BGCLR → M2-T4
-- [ ] M3-T5 BG animation/extras — BGANIM/BGFUNC/BGSTART/BGSTOP/BGVAR/BGCHK/BGCOORD/BGCOPY/BGLOAD/BGSAVE → M3-T4
-- [ ] M3-T6 Composite sprites + BG into framebuffer; golden PNG diffs → M3-T1, M3-T4
+## M3 — Sprites & BG  (gated on S-T8, S-T9)
+- [ ] M3-T1 Sprite core · [ ] M3-T2 Animation/link/vars · [ ] M3-T3 Collision · [ ] M3-T4 BG core · [ ] M3-T5 BG extras · [ ] M3-T6 Composite + golden diffs
 
-## M4 — Input & timing
-- [ ] M4-T1 Buttons/sticks — BUTTON, STICK, STICKEX, BREPEAT
-- [ ] M4-T2 Touch + keyboard — TOUCH, KEY, INKEY$
-- [ ] M4-T3 Frame timing — VSYNC, WAIT, MAINCNT; 60 fps main loop → M1-T12
-- [ ] M4-T4 Display config — XSCREEN, DISPLAY, VISIBLE, WIDTH; HARDWARE sysvar
-- [ ] M4-T5 Host input mapping — native (keyboard/gamepad) + wasm (keyboard/gamepad) → SB input state → M4-T1, M4-T2
+## M4 — Input & timing  (gated on S-T11)
+- [ ] M4-T1 Buttons/sticks · [ ] M4-T2 Touch/keyboard · [ ] M4-T3 Frame timing (VSYNC/WAIT/MAINCNT) · [ ] M4-T4 Display config · [ ] M4-T5 Host input mapping
 
-## M5 — Audio (MML)
-- [ ] M5-T1 MML parser — per `spec/reference/mml.yaml` (channels, lengths, octaves, envelopes, repeats, macros)
-- [ ] M5-T2 Synth engine — instruments @0–@127, drums @128/@129, PSG @144–@151, user waveforms @224–@255, envelopes → M5-T1
-- [ ] M5-T3 BGM commands — BGMPLAY/BGMSET/BGMSETD/BGMSTOP/BGMCHK/BGMVAR/BGMVOL/BGMCLEAR → M5-T2
-- [ ] M5-T4 SFX/voice — BEEP, TALK/TALKCHK/TALKSTOP, EFCSET/EFCON/EFCOFF/EFCWET, WAVSET/WAVSETA → M5-T2
-- [ ] M5-T5 Audio backend — cpal (native) / WebAudio (wasm) → M5-T2
-- [ ] M5-T6 RE exact sample rate/timing; harvest golden WAVs; sample/spectral-diff replay → M5-T5, O-T7
+## M5 — Audio (MML)  (gated on S-T10)
+- [ ] M5-T1 MML parser · [ ] M5-T2 Synth engine · [ ] M5-T3 BGM commands · [ ] M5-T4 SFX/voice · [ ] M5-T5 Audio backend · [ ] M5-T6 Golden WAV harvest + diff → O-T7
 
-## M6 — Files, projects, system, faithful stubs
-- [ ] M6-T1 Storage abstraction — native FS / wasm IndexedDB; extdata-compatible layout
-- [ ] M6-T2 File commands — SAVE/LOAD/FILES/DELETE/RENAME/COPY/CHKFILE/PROJECT → M6-T1
-- [ ] M6-T3 System variables — DATE$/TIME$/MAINCNT/VERSION/FREEMEM model/RESULT/etc. per spec
-- [ ] M6-T4 Source-edit — PRGEDIT/PRGGET$/PRGSET/PRGINS/PRGDEL/PRGNAME$/PRGSIZE; error 38
-- [ ] M6-T5 Misc + faithful limitation stubs — DIALOG/FONTDEF/CLIPBOARD; MIC/MOTION/MP behavior + errors 36/37/43/44/45
-- [ ] M6-T6 Multi-slot semantics — EXEC/USE/CALL/COMMON DEF across slots → M1-T6
+## M6 — Files, projects, system, faithful stubs  (gated on S-T12)
+- [ ] M6-T1 Storage abstraction · [ ] M6-T2 File commands · [ ] M6-T3 System variables · [ ] M6-T4 Source-edit (PRG*) · [ ] M6-T5 Misc + limitation stubs · [ ] M6-T6 Multi-slot semantics
 
 ## M7 — Hardening
-- [ ] M7-T1 Fuzzing campaign — seeded grammar-aware generator, differential vs oracle, minimize + promote findings → O-T8
-- [ ] M7-T2 hw_verified push — oracle-harvest expects across the spec set; raise confidence → O-T8
-- [ ] M7-T3 Exact error strings — reconcile messages/numbers vs disassembly (`0x1E965C`+)
-- [ ] M7-T4 Float formatting — exact STR$/PRINT double→string algorithm (RE from disassembly)
-- [ ] M7-T5 Overflow/precision corners + performance pass
-
-## O — Emulator-oracle bring-up (parallel, independent of interpreter)
-- [ ] O-T1 Confirm Citra/Azahar RPC connects to running SB3 (`process_list`, `read_memory(0x100000,4)`)
-- [ ] O-T2 Autorun — auto-start a program in SB3 under emulation
-- [ ] O-T3 extdata container format — inject programs/files into SB extdata
-- [ ] O-T4 stdout capture — CHKCHR grid scrape vs console-memory read
-- [ ] O-T5 ERRNUM/ERRLINE address RE + error capture → O-T1
-- [ ] O-T6 Framebuffer address + pixel format RE (top/bottom) → O-T1
-- [ ] O-T7 Audio capture from emulator → O-T1
-- [ ] O-T8 `harvest.py` end-to-end — capture → write `spec/tests/` overlays + golden media → O-T2, O-T4, O-T5
+- [ ] M7-T1 Fuzzing campaign → O-T8 · [ ] M7-T2 hw_verified push → O-T8 · [ ] M7-T3 Exact error strings → O-T5 · [ ] M7-T4 Float formatting (STR$) · [ ] M7-T5 Overflow/precision + perf

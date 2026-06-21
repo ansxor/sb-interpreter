@@ -73,6 +73,13 @@ Do EXACTLY ONE task this run, fully and correctly, then commit. Then stop.
   Reuse existing utilities and patterns.
 
 ## 3. Implement — one task only
+- **If this is a SPEC-BUILD task (id `S-*`):** your deliverable is the spec FILE(S)
+  `spec/instructions/<id>.yaml` (one per instruction in the category), authored to the v2
+  contract in `prd/specs.md` from docs + disassembly + osb cross-check — typed signatures
+  (ranges/defaults), semantics, error conditions (errnum), and test cases (code → expect).
+  Set `confidence` honestly; **NEVER hw_verified** (that's the oracle's job) — queue
+  oracle-needed cases to `HARVEST_QUEUE.md`. Write NO interpreter code. Verify with
+  `cargo test -p sb-spec`, then commit. (The rest of section 3 is for code tasks.)
 - SPEC-FIRST: the contract is the spec (`spec/instructions/<id>.yaml` + `spec/reference/*`)
   and the task's Acceptance criteria — what SmileBASIC 3.6.0 does per the docs. Implement
   to the spec, not to osb.
