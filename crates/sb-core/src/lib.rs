@@ -18,6 +18,7 @@ pub mod error;
 pub mod value;
 
 // --- pipeline stages (implemented in milestone M1) ---
+pub mod ast;
 pub mod builtins;
 pub mod compiler;
 pub mod lexer;
@@ -25,6 +26,7 @@ pub mod parser;
 pub mod token;
 pub mod vm;
 
+pub use ast::{BinOp, Block, Expr, ExprKind, Stmt, StmtKind, UnOp};
 pub use error::{ErrNum, SbError};
 pub use lexer::{lex, Lexer};
 pub use token::{SourceLocation, Token, TokenType};

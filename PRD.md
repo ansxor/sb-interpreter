@@ -30,7 +30,7 @@ under `prd/` (start at `prd/README.md`). Task IDs here match those docs.
 
 ## M1 — Core VM + a real window
 - [x] M1-T1 Lexer — tokenize SB source (TokenType, Token, SourceLocation; `&H`/`&B`, `$`/`%`/`#` suffixes, comments, `TRUE`/`FALSE`, 2-char ops)
-- [ ] M1-T2 AST — expression/statement node types → M1-T1
+- [x] M1-T2 AST — expression/statement node types → M1-T1
 - [ ] M1-T3 Parser — recursive descent + precedence-climbing + constant folding → M1-T2
 - [ ] M1-T4 Value/Array completion — 1–4D arrays, references, int↔double coercion rules → (M0 value.rs)
 - [ ] M1-T5 Bytecode + Compiler — Code opcodes, AST→bytecode, scopes, labels, DATA table → M1-T3, M1-T4
