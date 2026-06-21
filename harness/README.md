@@ -35,7 +35,7 @@ schedule, and opens a PR with refreshed fixtures.
 | `fuzz/`    | A | Grammar-aware, **seeded** program generator for differential testing. |
 | `harvest/` | A | Orchestrates oracle+fuzz and writes committed fixtures. Opens the refresh PR. |
 | `diff/`    | B+A | `replay.py` (deterministic gate) and `run.py` (3-way differential: sb-core vs osb vs oracle). |
-| `corpus/`  | — | Committed test programs, cross-cutting cases, and golden PNG/WAV fixtures. |
+| `corpus/`  | — | Committed test programs, cross-cutting cases, golden PNG/WAV fixtures, and `sbsave/` (3,329 scraped real-world programs as test *inputs*; see `corpus/sbsave/README.md`). |
 
 ## Requirements
 

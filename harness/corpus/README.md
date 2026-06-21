@@ -6,6 +6,7 @@
 | `programs/*.sb3` | Full SmileBASIC programs. Some are self-checking (use `ASSERT__`); others are run on both sb-core and the oracle and compared. | `diff/replay.py`, `diff/run.py` |
 | `golden/gfx/*.png` | Frozen oracle framebuffers for pixel-diffing (M2+). | `diff/replay.py` |
 | `golden/audio/*.wav` | Frozen oracle audio for sample/spectral-diffing (M5). | `diff/replay.py` |
+| `sbsave/` | 3,329 real scraped programs + 2,773 resources (test **inputs**, not goldens). `INDEX.json` committed; unpacked tree regenerable via `tools/extract_sbsave.py`. | parser/e2e fuel; oracle-diff candidates. See `sbsave/README.md`. |
 
 ## Notes on the ported programs
 

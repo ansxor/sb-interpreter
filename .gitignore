@@ -14,6 +14,10 @@ sb-disassembly/*.bin
 sb-disassembly/listings/*.lst
 sb-disassembly/ghidra_project/
 
+# --- Extracted sbsave corpus (~765MB; regenerable: python3 tools/extract_sbsave.py) ---
+# The committed INDEX.json manifest is the reference; the unpacked tree is not.
+harness/corpus/sbsave/files/
+
 # --- Source PDFs (copyrighted; text is extracted into sb-docs/) ---
 *.pdf
 

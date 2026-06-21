@@ -73,15 +73,36 @@ Do EXACTLY ONE task this run, fully and correctly, then commit. Then stop.
   Reuse existing utilities and patterns.
 
 ## 3. Implement — one task only
-- Implement the task COMPLETELY within its scope. No placeholders, no stubs, no "do later"
-  for the part you are doing. (Features that the PRD explicitly defers to a later milestone
-  may remain stubbed as documented.)
-- Fidelity matters: Integer = i32, Double = f64. Cross-check behavior against `osb/` (D,
-  3.5.0 — a hint, never authoritative) and, for exact numbers, the `sb-disassembly/`
-  listing. Match SmileBASIC, not Rust defaults.
-- Keep `sb-core` free of I/O / GUI / threads (it must build for wasm32). Platform code goes
-  in the `sb-platform-*` crates.
-- Add or extend DETERMINISTIC tests (fixed RNG seeds, no emulator, no network).
+- SPEC-FIRST: the contract is the spec (`spec/instructions/<id>.yaml` + `spec/reference/*`)
+  and the task's Acceptance criteria — what SmileBASIC 3.6.0 does per the docs. Implement
+  to the spec, not to osb.
+- `osb/` (D, 3.5.0) is a STRUCTURAL reference ONLY — consult it for how to shape a
+  lexer/parser/VM, NEVER as the definition of behavior. Do NOT translate it line-by-line,
+  do NOT copy its comments, and do NOT reproduce its limitations or 3.5.0-isms (example:
+  osb lexes ASCII-only identifiers, but SmileBASIC is Japanese and allows full-width/kana
+  names). Where osb disagrees with the docs/disassembly, the docs/disassembly win.
+- Confirm exact numeric/string behavior in the `sb-disassembly/` listing (names are UTF-16,
+  base 0x100000 — see prd/README.md). Integer = i32, Double = f64. Match SmileBASIC, not
+  Rust defaults and not osb.
+- MANDATORY TESTS: turn the spec's concrete documented values into conformance tests
+  (`spec/tests/<id>.yaml` overlays and/or `harness/corpus/cases/*.yaml`) and make sb-core
+  pass them. Docs often give exact results (e.g. FLOOR(12.5)=12, FLOOR(-12.5)=-13) — use
+  them. A behavior task with NO new spec/corpus test is NOT done. Tests are deterministic
+  (fixed seeds, no emulator, no network).
+- REAL-PROGRAM CORPUS: `harness/corpus/sbsave/` has 3,329 scraped programs + resources
+  (`INDEX.json` manifest; unpack with `python3 tools/extract_sbsave.py`, or fetch one with
+  `--get KEY`). Use as test INPUTS — parser/e2e "doesn't panic" sweeps over small
+  `type:"TXT"` entries — NEVER as expected output (no oracle = no verified golden). See
+  `harness/corpus/sbsave/README.md`.
+- Set `confidence` HONESTLY: `documented` (from docs) or `disassembled` (you read the
+  listing and confirmed it). NEVER `hw_verified` — only the offline Citra oracle harvest
+  sets that.
+- If a 3.6.0 edge case is NOT determinable from the docs or disassembly, implement the
+  documented behavior, add a test, and QUEUE it for the oracle by appending one line to
+  `HARVEST_QUEUE.md` (task id · the question · your assumption). Never silently inherit an
+  unverified behavior from osb.
+- Keep `sb-core` free of I/O / GUI / threads (must build for wasm32); platform code goes in
+  the `sb-platform-*` crates.
 
 ## 4. Verify — must be fully green before you mark a task done
 Run these and make them ALL pass:
@@ -95,8 +116,8 @@ If you changed Python, also: `python3 -m py_compile` the changed files; if you c
 
 ## 5. Record + commit — ALWAYS finish with a commit
 - If the task is FULLY done and the gate is green: flip its `- [ ]` to `- [x]` in PRD.md
-  (and update the milestone status table if a whole milestone just completed). Where you
-  verified behavior, raise the spec `confidence` and add a `spec/tests/<id>.yaml` overlay.
+  (and update the milestone status table if a whole milestone just completed). Make sure the
+  spec `confidence` updates and the new conformance tests from step 3 are committed.
 - If you could NOT finish this run: leave the task `[ ]`, append a short
   "Progress: ..." note under that task's section in `prd/<Mx>.md`, and commit the
   incremental work so the next iteration continues.
@@ -109,6 +130,11 @@ If you changed Python, also: `python3 -m py_compile` the changed files; if you c
 - NEVER run the emulator, fuzzer, or oracle/harvest — they are offline/manual.
 - NEVER weaken, skip, or delete a test to make the suite pass. Fix the code instead.
 - NEVER touch git history or remotes.
+- NEVER write a line-by-line osb port or inherit osb's limitations — implement to the spec;
+  osb is a structural hint only. Don't even write "port of osb" in comments; describe the
+  3.6.0 behavior you implemented and cite the spec/disassembly.
+- NEVER set a spec to `confidence: hw_verified` — only the offline Citra oracle harvest may.
+- A task that implements behavior is NOT done without a new spec/corpus conformance test.
 - The task's Acceptance criteria in `prd/<Mx>.md` is the definition of done.
 PROMPT_EOF
 

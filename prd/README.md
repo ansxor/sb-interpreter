@@ -41,6 +41,25 @@ When you implement or verify a behavior, **raise its confidence and add tests**.
 for a behavior means: implemented in `sb-core`, covered by a deterministic test, and the
 spec's confidence reflects how it was verified.
 
+### Implementation fidelity rule (read this twice)
+
+**The spec is the contract. `osb/` is a *structural* reference only.** We are building
+SmileBASIC **3.6.0**; `osb` is a third-party **3.5.0** interpreter that "may or may not be
+accurate." Use it to learn how to *shape* a lexer/parser/VM — never as the definition of
+behavior.
+
+- Do **not** translate osb line-by-line, copy its comments, or write "port of osb."
+- Do **not** reproduce osb's limitations or 3.5.0-isms (e.g. osb's ASCII-only identifiers —
+  SmileBASIC is Japanese and supports full-width/kana names).
+- Where osb disagrees with the docs or the disassembly, **the docs/disassembly win.**
+- **Every behavior task must add a spec-derived conformance test** (`spec/tests/<id>.yaml`
+  and/or `harness/corpus/cases/*.yaml`) using the concrete values the docs give.
+- Set `confidence` honestly: `documented` or `disassembled`. **Never `hw_verified`** unless
+  it came from the offline Citra oracle harvest.
+- Can't determine a 3.6.0 edge case from docs/disassembly? Implement the documented
+  behavior, add a test, and append the open question to `HARVEST_QUEUE.md` for the oracle —
+  do not silently inherit it from osb.
+
 ## Reference sources (and how to use them)
 
 | Source | Path | Use for |
@@ -49,6 +68,7 @@ spec's confidence reflects how it was verified.
 | **Official docs** | `sb-docs/smilebasic-3/` (instructions, `reference/`, `manual/`) | Prose semantics, screen/sound models, MML. |
 | **Disassembly** | `sb-disassembly/listings/cia_3.6.0.lst` | Exact numeric behavior (rounding, RNG, float→string, pixel math). |
 | **osb (D, 3.5.0)** | `osb/SMILEBASIC/*.d` | Design template + behavioral cross-check. **Never authoritative** where it disagrees with the docs/disassembly (it targets 3.5.0). |
+| **Real programs** | `harness/corpus/sbsave/` (`INDEX.json`) | 3,329 scraped real-world programs + 2,773 resources. Test *inputs* (parser fuel, e2e runs, oracle-diff candidates) — **never** expected values. See its README. |
 | **Oracle** | `harness/` + `tools/citra.py` | Ground truth (`hw_verified`). |
 
 ### Disassembly gotchas (read before grepping)

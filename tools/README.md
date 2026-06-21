@@ -8,6 +8,7 @@ harness (`harness/`).
 |---|---|
 | `citra.py` | Client for the Citra/Azahar **scripting RPC** (UDP `127.0.0.1:45987`): `read_memory` / `write_memory` / `process_list` / `set_process`. The foundation the conformance oracle is built on (`harness/oracle/`). Run `python3 citra.py` to self-test via doctests against a running emulator. |
 | `extract_code.py` | Parses the 3DS CXI/CIA containers in the repo root and extracts the ARM `.code` segment from each NCCH/ExeFS. Produces the `*_code.bin` files. |
+| `extract_sbsave.py` | Decodes the `sbsave/` PETC server scrape (915 downloads → 3,329 programs + 2,773 resources) into an extdata-compatible tree under `harness/corpus/sbsave/` + a committed `INDEX.json` manifest. The docstring documents the reverse-engineered PETC/project file format. `--get KEY[/NAME]` prints one program. |
 
 ## Related (not moved — live next to their data)
 
