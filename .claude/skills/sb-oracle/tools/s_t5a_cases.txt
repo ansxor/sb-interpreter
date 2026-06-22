@@ -1,0 +1,18 @@
+print_text|CLS:PRINT "AB"|CHR$(CHKCHR(0,0))+CHR$(CHKCHR(1,0))|progstr
+print_num|CLS:PRINT 5|CHR$(CHKCHR(0,0))+CHR$(CHKCHR(1,0))|progstr
+print_num_neg|CLS:PRINT -5|CHR$(CHKCHR(0,0))+CHR$(CHKCHR(1,0))|progstr
+print_semicolon|CLS:PRINT "A";"B"|CHR$(CHKCHR(0,0))+CHR$(CHKCHR(1,0))|progstr
+print_csr_after|CLS:PRINT "A"|STR$(CSRX)+","+STR$(CSRY)|progstr
+print_csr_trailing|CLS:PRINT "A";|STR$(CSRX)+","+STR$(CSRY)|progstr
+print_empty_newline|CLS:PRINT|STR$(CSRX)+","+STR$(CSRY)|progstr
+print_comma_csrx|CLS:PRINT "A","B";|CSRX|prog
+tabstep_default|TABSTEP
+locate_csr|LOCATE 20,15|STR$(CSRX)+","+STR$(CSRY)|progstr
+locate_print|CLS:LOCATE 3,2:PRINT "X"|CHR$(CHKCHR(3,2))|progstr
+cls_empty|PRINT "A":CLS|CHKCHR(0,0)|prog
+cls_cursor|LOCATE 10,10:CLS|STR$(CSRX)+","+STR$(CSRY)|progstr
+chkchr_empty|CLS|CHKCHR(5,5)|prog
+color_white|#TWHITE
+color_red|#TRED
+color_black|#TBLACK
+color_yellow|#TYELLOW

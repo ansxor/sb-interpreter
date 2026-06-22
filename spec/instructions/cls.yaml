@@ -1,0 +1,29 @@
+id: CLS
+kind: statement
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    note: "CLS — clear the console screen."
+
+summary: "Clears the console (text) screen of the currently DISPLAY-selected screen and resets the cursor to the top-left."
+
+semantics:
+  - "CLS erases all console characters on the screen selected by DISPLAY and returns the cursor to (0,0)."
+  - "After CLS, reading a console cell with CHKCHR returns 0 (empty)."
+  - "CLS affects only the console (text) layer, not graphics (GRP), sprites, or BG."
+  - "Takes no arguments."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/cls.md (CLS; clears the console screen specified with DISPLAY)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst CLS handler FUN_0014bec4 @0x14bec4: clears the console character/attribute planes and resets the cursor position" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5a): after PRINT \"A\":CLS, CHKCHR(0,0)=0 (cell emptied); LOCATE 10,10:CLS resets the cursor to CSRX=0,CSRY=0; an untouched cell reads CHKCHR=0" }
+
+confidence: hw_verified
+
+tests:
+  - { name: cls_clears, code: "PRINT \"A\"\nCLS\nPRINT CHKCHR(0,0)", expect: { stdout: "0" } }
+  - { name: cls_resets_cursor, code: "LOCATE 10,10\nCLS\nPRINT CSRX;\",\";CSRY", expect: { stdout: "0,0" } }

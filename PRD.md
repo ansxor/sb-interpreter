@@ -68,7 +68,7 @@ and name the instructions they cover inline.
 - [x] S-T4f Misc data-ops — DIALOG · KEY · OPTION · VSYNC · WAIT
 
 #### S-T5 Console I/O (12) → S-T0
-- [ ] S-T5a Output — PRINT · LOCATE · COLOR · CLS
+- [x] S-T5a Output — PRINT · LOCATE · COLOR · CLS
 - [ ] S-T5b Input — INPUT · LINPUT · INKEY$
 - [ ] S-T5c Attributes & font — ATTR · CHKCHR · FONTDEF · SCROLL · WIDTH
 
