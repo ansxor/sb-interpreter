@@ -15,6 +15,8 @@
 #   ./ralph.sh            # headless: loop until all tasks done (or ./ralph.stop appears)
 #   ./ralph.sh 5          # headless: run at most 5 iterations
 #   ./ralph.sh -i         # interactive: launch the Claude TUI and drive it with /loop
+#   ./ralph.sh --sonnet   # use Sonnet instead of the default Opus (alias for --model sonnet)
+#   ./ralph.sh --model X  # use any model X
 #   RALPH_MODEL=sonnet ./ralph.sh
 #
 # Two modes:
@@ -33,13 +35,25 @@ cd "$(dirname "$0")"
 
 # ── Args / flags ────────────────────────────────────────────────────────────────────
 INTERACTIVE=0
-if [ "${1:-}" = "-i" ] || [ "${1:-}" = "--interactive" ]; then
-  INTERACTIVE=1; shift
-fi
+MODEL="${RALPH_MODEL:-opus}"             # default Opus; RALPH_MODEL or --sonnet/--model override
+
+# Parse flags (any order) before the positional MAX_ITERS. An explicit
+# --sonnet/--opus/--model wins over RALPH_MODEL.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -i|--interactive) INTERACTIVE=1; shift ;;
+    -s|--sonnet)      MODEL="sonnet"; shift ;;
+    --opus)           MODEL="opus";   shift ;;
+    --model)          MODEL="${2:?--model needs a model name}"; shift 2 ;;
+    --model=*)        MODEL="${1#--model=}"; shift ;;
+    --)               shift; break ;;
+    -*)               echo "error: unknown flag '$1'" >&2; exit 1 ;;
+    *)                break ;;          # positional (MAX_ITERS) — stop flag parsing
+  esac
+done
 [ "${RALPH_INTERACTIVE:-0}" = "1" ] && INTERACTIVE=1
 
 MAX_ITERS="${1:-0}"                       # 0 = unlimited (headless mode only)
-MODEL="${RALPH_MODEL:-opus}"
 LOG_DIR="${RALPH_LOG_DIR:-ralph-logs}"
 SLEEP_BETWEEN="${RALPH_SLEEP:-3}"
 MAX_NOPROGRESS="${RALPH_MAX_NOPROGRESS:-3}" # stop after N iterations with no commit
