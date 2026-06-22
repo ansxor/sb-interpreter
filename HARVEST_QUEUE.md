@@ -10,6 +10,12 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T7c (GFILL/GPAINT/GPUTCHR exact pixels & color) · Visual / O-T6 — verify the exact
+  filled-region geometry of GPAINT (no-border form fills the contiguous seed-color area), the
+  GPUTCHR glyph rendering (string vs char-code form, scale interpolation, exact glyph pixels),
+  and exact RGBA5551 colors, via the grp golden. Set/unset coverage (GFILL solid, GPAINT bounded
+  fill, GPUTCHR glyph drawn) already hw_verified 2026-06-22 via GSPOIT.
+
 - [ ] S-T7b (GCIRCLE arc/sector geometry; exact pixel goldens) · Visual / O-T6 — verify the
   exact angular geometry of GCIRCLE arc (flag 0) and sector (flag 1: arc + bounding radii,
   outline only) including the angle convention (where 0deg points, CW/CCW), and exact RGBA5551
