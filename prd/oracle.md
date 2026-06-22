@@ -54,7 +54,14 @@ against real SB-saved files and by load+run of our written programs.
   **independent of XSCREEN mode** — capture each page for two-screen content; don't change XSCREEN
   (it disrupts the oracle's keyboard). Composited display (sprites/BG, XSCREEN 4, 3D) → `screenshot`
   (Azahar Ctrl+P). Goldens land in `harness/corpus/golden/gfx/*.png` (for M2/M3 / S-T7).
-- [ ] **O-T7 Audio capture** — emulator audio dump → PCM (audio goldens for M5).
+- [~] **O-T7 Audio** — there is **no deterministic emulator audio golden**: SB has no
+  render-audio-to-file, and emulator audio is real-time (mixing/timing/sample-rate dependent),
+  which conflicts with the frozen-golden rule. So the deterministic gate for M5 is **MML →
+  note-events** (pitch/duration/volume/envelope) + synth parameter tables, authored from docs +
+  disassembly with NO emulator (see `prd/M5.md`, S-T10, S-C5 mml-grammar). A best-effort
+  REFERENCE capture exists for manual ear-checks: `sb_audio.py` drives Azahar `Tools > Dump
+  Video` and extracts the audio with ffmpeg → WAV. The ffmpeg extraction is verified; the live
+  menu/save-dialog orchestration is UNTESTED (kept off the running oracle). Never a CI golden.
 - [ ] **O-T8 harvest end-to-end** — wire `run_case` into `harness/harvest/harvest.py`: batch a
   category's spec/corpus cases, capture, write `spec/tests/<id>.yaml` (`hw_verified`) + golden
   media, open a PR. The deterministic gate then replays them without the emulator. → O-T5

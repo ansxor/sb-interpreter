@@ -75,10 +75,12 @@ Do EXACTLY ONE task this run, fully and correctly, then commit. Then stop.
 - Choose the FIRST `- [ ]` task in PRD.md whose every dependency (`→ ID`) is already `[x]`.
 - Tasks are SLICED small on purpose (e.g. `S-T1a`, a 3-6 instruction slice). Do exactly ONE
   slice — do NOT widen scope to the whole category. One slice end-to-end beats half a category.
-- The sb-oracle skill gives TEXT/VALUE/error ground truth (when Azahar is up), so oracle
-  harvest of `expect:`/errnums IS doable in-loop. SKIP only what the skill can't do yet:
-  GRAPHICS framebuffer + AUDIO capture (golden PNG/WAV — O-T6/O-T7). If a task is partly
-  blocked, do the doable parts and leave it `[ ]` with a progress note.
+- The sb-oracle skill gives ground truth when Azahar is up: TEXT/VALUE (`batch`), ERRNUM/ERRLINE
+  (`errcase` / `|err`), and GRAPHICS (`grp` → PNG; `screenshot` for composite). Harvest these
+  in-loop. AUDIO has NO deterministic emulator golden (real-time, timing-dependent) — for
+  S-T10/M5 spec the MML grammar + note-events + synth params from docs+disassembly (NO emulator);
+  `sb_audio.py` is a manual reference only, not an in-loop golden. If a task is partly blocked, do
+  the doable parts and leave it `[ ]` with a progress note.
 - If NO task is doable, do not invent work. Write one line to `ralph-logs/BLOCKED.md`
   saying why, then STOP without committing.
 - Begin your output with the chosen task ID (e.g. "Picking M1-T1").

@@ -120,6 +120,17 @@ writes it to disk, and `sb_grp.decode_grp` decodes it to RGBA → PNG.
   use `capture_screen` (Azahar **Ctrl+P** screenshot of the rendered layout, both screens).
 - Goldens go in `harness/corpus/golden/gfx/*.png` (see `harness/corpus/README.md`).
 
+## Audio (O-T7) — reference only, NOT a deterministic golden
+SB has no render-audio-to-file, and emulator audio is real-time (mixing/timing/sample-rate
+dependent), so there is **no sample-exact, replayable audio golden** like the gfx PNGs. The
+deterministic contract for M5 is **MML → note-events + synth params** (docs + disassembly, no
+emulator). `sb_audio.py` is a best-effort *reference* only:
+- `sb_audio.py extract <video> [out.wav]` — pull the audio track from a dump via ffmpeg (verified).
+- `capture_audio(program, out_wav, seconds, run_trigger)` — drives Azahar `Tools > Dump Video`
+  (osascript) around a program run, then extracts WAV. **Live-UNTESTED** (kept off the running
+  oracle to avoid wedging it on the save dialog); for manual ear-checks / loose spectral compare,
+  never a committed CI fixture.
+
 ## Pitfalls
 - `LOAD"TXT:name"` needs an output variable (→ "Illegal function call"); use `LOAD"PRG0:name"` for programs.
 - Can't chain `LOAD ... :RUN` on one line (→ "Syntax error"); RUN separately, no `clear_line()` between.
