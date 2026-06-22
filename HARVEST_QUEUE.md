@@ -204,3 +204,15 @@ oracle to confirm exact output and promote to `hw_verified`.
   to primitives, GCLIP clip region, GPRIO layer Z-order, GPAGE display/draw page selection are
   pixel effects — need the framebuffer oracle (O-T6, not yet in the skill). Behavior is from
   docs + disassembly.
+
+- [x] S-T7b errnum cases · HARVESTED 2026-06-22 (sb-oracle batch s_t7b → specs hw_verified):
+  all 15 arg-count guards confirmed errnum 4 / errline 1 — GPSET 100 / 1,2,3,4 / A=GPSET(1,1);
+  GLINE 0,0,1 / 0,0,1,1,2,3 / A=GLINE(...); GBOX 0,0,1 / 0,0,1,1,2,3 / A=GBOX(...);
+  GTRI 0,0,1,1,2 / 0,0,1,1,2,2,3,4 / A=GTRI(...); GCIRCLE 100,100 / 1,1,1,0,45,1,2,3 /
+  A=GCIRCLE(100,100,30). Matches the disasm guards (errnum 4 sites @0x153dd0/@0x153318/
+  @0x15514c/@0x1554e0/@0x154a80).
+- [ ] S-T7b visual side-effects (framebuffer path) · the actual pixels GPSET/GLINE/GBOX/GTRI/
+  GCIRCLE draw, the default-color path (current GCOLOR), float-coordinate rounding, GCIRCLE arc
+  vs sector geometry + angle normalization (negative / >360 wrap, where 0deg points), and
+  radius<=0 no-op are pixel effects — need the framebuffer oracle (O-T6, not yet in the skill).
+  Behavior is from docs + disassembly + corpus.

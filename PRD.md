@@ -77,7 +77,7 @@ and name the instructions they cover inline.
 
 #### S-T7 Graphics (19) → S-T0  (no framebuffer harvest yet → O-T6; spec from docs+disasm)
 - [x] S-T7a Page/clip/color — GPAGE · GCLS · GCLIP · GPRIO · GCOLOR
-- [ ] S-T7b Primitives — GPSET · GLINE · GBOX · GTRI · GCIRCLE
+- [x] S-T7b Primitives — GPSET · GLINE · GBOX · GTRI · GCIRCLE
 - [ ] S-T7c Fill & char — GFILL · GPAINT · GPUTCHR
 - [ ] S-T7d Buffer copy/load/save — GCOPY · GLOAD · GSAVE
 - [ ] S-T7e Color read — GSPOIT · RGB · RGBREAD

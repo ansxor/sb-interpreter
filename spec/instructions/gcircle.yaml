@@ -1,0 +1,55 @@
+id: GCIRCLE
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x, type: integer, range: "graphic-page coordinate (visible 0-399 x, 0-239 y)", desc: "Center X" }
+      - { name: y, type: integer, range: "graphic-page coordinate", desc: "Center Y" }
+      - { name: radius, type: integer, range: "1- (radius <= 0 draws nothing)", desc: "Radius in pixels" }
+      - { name: color_code, type: integer, optional: true, range: "any 32-bit ARGB value", desc: "ARGB8888 color (defaults to current GCOLOR). See GCOLOR." }
+    note: "GCIRCLE x,y,r [,color] — draws a full circle (3 or 4 args, no return value)."
+  - args:
+      - { name: x, type: integer, range: "graphic-page coordinate", desc: "Center X" }
+      - { name: y, type: integer, range: "graphic-page coordinate", desc: "Center Y" }
+      - { name: radius, type: integer, range: "1- (radius <= 0 draws nothing)", desc: "Radius in pixels" }
+      - { name: start_angle, type: integer, range: "0-360 (degrees; values outside the range and end<start also occur in real code)", desc: "Arc start angle" }
+      - { name: end_angle, type: integer, range: "0-360 (degrees)", desc: "Arc end angle" }
+      - { name: flag, type: integer, optional: true, range: "0=arc (open), 1=sector (pie); defaults to 0", desc: "Drawing method" }
+      - { name: color_code, type: integer, optional: true, range: "any 32-bit ARGB value", desc: "ARGB8888 color (defaults to current GCOLOR). See GCOLOR." }
+    note: "GCIRCLE x,y,r,start,end [,flag [,color]] — draws an arc or sector (5, 6 or 7 args, no return value)."
+
+summary: "Draws a circle, or (with start/end angles) an open arc or filled sector, centered at a point on the current graphic page."
+
+semantics:
+  - "Valid argument counts are 3, 4, 5, 6 and 7; no value is returned. Any other argument count, or requesting a return value, raises errnum 4 (Illegal function call). The handler subtracts 3 from the argcount and switches on 0..4 (sub r0,r0,#3 / cmp r0,#5 / ldrcc pc,[pc,r0,lsl #2] @0x154700); the default (argcount < 3 or > 7, or return-count != 0) path is mov r0,#0x4 / bl 0x1fffdc (errnum 4) @0x154a80."
+  - "3/4 args = full circle: 3-arg defaults the color from the current GCOLOR draw color (graphics-context field +0xc: ldreq r0,[r6,#0xc]/streq [sp,#0x18] @0x154780), 4-arg uses the explicit color. The circle is drawn by helper bl 0x18fa7c @0x154ab8."
+  - "5/6/7 args = arc or sector: when flag is omitted (5 args) it defaults to 0 (open arc); when color is omitted (5 or 6 args) it defaults to the current GCOLOR draw color. flag 0 = open arc, flag 1 = filled sector (pie slice). The arc/sector is drawn by helper bl 0x191e98 @0x154af8."
+  - "Radius <= 0 draws nothing (the draw paths guard ldr r3,[sp,#0x28] / cmp r3,#0 / ble skip @0x154a9c and @0x154acc) — it is silently ignored, not an error."
+  - "The color is NOT range-checked — a full 32-bit ARGB value (A=255 opaque, otherwise transparent); signed/&H/#CONSTANT operands are accepted (e.g. -1 = opaque white). Coordinates, radius and angles are integer-coerced from the popped args (real code passes float radius/angle expressions); center/radius outside the visible area are clipped by the draw helper, not rejected."
+  - "Angles are degrees; real programs pass negative angles and end<start / >360 values (e.g. start 215 end 325, or -90..90). The exact angle normalization (wrap, direction, where 0 deg points) is a draw-helper detail left to the framebuffer oracle (queued)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not 3, 4, 5, 6 or 7, or a return value is requested (used as a function)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gcircle.md (form 1: GCIRCLE Center X,Center Y, Radius [,Color] draws a circle; form 2: GCIRCLE Center X, Center Y, Radius, Start angle, End angle [Flag [Color]] draws an arc; Radius 1-; angles 0-360; Flag 0=Arc 1=Sector; e.g. GCIRCLE 200,120,30 and GCIRCLE 200,120,30,0,45,1)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GCIRCLE handler @0x1546d4: graphics state ptr 0x154b08->0x315d60, gfx-context = [[..]+0x20] (r6); return-count r0=[r4,#0xc] cmp #0 bne -> errnum 4 @0x1546f4; argcount-dispatch sub r0,[r4,#0x4],#3 / cmp #5 / ldrcc pc jumptable @0x154700-0x154720 (cases argcount 3,4,5,6,7), default mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x154a80; 3-arg defaults color ldreq r0,[r6,#0xc]/streq [sp,#0x18] @0x154780; radius<=0 guard ldr r3,[sp,#0x28] cmp #0 ble @0x154a9c/@0x154acc; circle draw bl 0x18fa7c @0x154ab8, arc/sector draw bl 0x191e98 @0x154af8; no coordinate/color range guard in the handler." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GCIRCLE: draws circles/arcs on the active graphic page (3.5.0 structural cross-check only)." }
+  - { type: community, ref: "sbsave corpus: GCIRCLE appears ~1178x across 262 files. Arg-count distribution confirms 3 (~235), 4 (~698, dominant), 5 (~49), 6 (~33), 7 (~163) and NO genuine >7-arg form. Real forms include the 5-arg arc WITHOUT flag (ABK45ENE/TXT/121SPACE4 'GCIRCLE 112,160,100,215,325'), flag=1 sector (13D4DV3V/TXT/MAIN_PRG_V2), negative (-1) and &H ARGB colors, negative/>360 angles (NDQXKEA3/TXT/SETUP '-90,90,0'; '270,450,0'), and float radius. Only flag values 0 and 1 observed." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7b): GCIRCLE 100,100 (2 args) -> errnum 4, errline 1; GCIRCLE 1,1,1,0,45,1,2,3 (8 args) -> errnum 4; A=GCIRCLE(100,100,30) (used as a function) -> errnum 4." }
+
+confidence: disassembled
+
+tests:
+  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7b); circle/arc side-effects need the framebuffer oracle (O-T6, queued).
+  - { name: circle_default_color_ok, code: "GCIRCLE 200,120,30", expect: { stdout: "" } }
+  - { name: circle_explicit_color_ok, code: "GCIRCLE 200,120,30,RGB(255,0,0)", expect: { stdout: "" } }
+  - { name: arc_no_flag_ok, code: "GCIRCLE 112,160,100,215,325", expect: { stdout: "" } }
+  - { name: sector_ok, code: "GCIRCLE 200,120,30,0,45,1", expect: { stdout: "" } }
+  - { name: arc_full_ok, code: "GCIRCLE 200,120,30,0,45,1,RGB(0,0,255)", expect: { stdout: "" } }
+  - { name: radius_zero_noop_ok, code: "GCIRCLE 100,100,0", expect: { stdout: "" } }
+  - { name: two_args_errors, code: "GCIRCLE 100,100", expect: { error: { errnum: 4 } } }
+  - { name: eight_args_errors, code: "GCIRCLE 1,1,1,0,45,1,2,3", expect: { error: { errnum: 4 } } }
+  - { name: as_function_errors, code: "A=GCIRCLE(100,100,30)", expect: { error: { errnum: 4 } } }

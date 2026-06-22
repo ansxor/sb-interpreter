@@ -1,0 +1,49 @@
+id: GLINE
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x1, type: integer, range: "graphic-page coordinate (visible 0-399 x, 0-239 y)", desc: "Start point X" }
+      - { name: y1, type: integer, range: "graphic-page coordinate", desc: "Start point Y" }
+      - { name: x2, type: integer, range: "graphic-page coordinate", desc: "End point X" }
+      - { name: y2, type: integer, range: "graphic-page coordinate", desc: "End point Y" }
+    note: "GLINE x1,y1,x2,y2 — draws a line in the current GCOLOR draw color (4 args, no return value)."
+  - args:
+      - { name: x1, type: integer, range: "graphic-page coordinate", desc: "Start point X" }
+      - { name: y1, type: integer, range: "graphic-page coordinate", desc: "Start point Y" }
+      - { name: x2, type: integer, range: "graphic-page coordinate", desc: "End point X" }
+      - { name: y2, type: integer, range: "graphic-page coordinate", desc: "End point Y" }
+      - { name: color_code, type: integer, optional: true, range: "any 32-bit ARGB value", desc: "ARGB8888 color (8 bits each A,R,G,B); usually built with RGB(). A=255 opaque, otherwise transparent. See GCOLOR." }
+    note: "GLINE x1,y1,x2,y2,color — draws a line in the given color (5 args, no return value)."
+
+summary: "Draws a straight line between two points on the current graphic page, using the current draw color or an explicit ARGB color."
+
+semantics:
+  - "Takes exactly 4 args (x1,y1,x2,y2) or 5 args (+color) and returns no value. Any other argument count, or requesting a return value, raises errnum 4 (Illegal function call) — return-count [r4,#0xc] cmp #0 bne error @0x1532f4, argcount [r4,#0x4] cmp #4 (beq @0x153304) / cmp #5 (beq @0x15330c) else mov r0,#0x4 (errnum 4) @0x153318."
+  - "With 4 args the color defaults to the current GCOLOR draw color (the 4-arg path loads it from the graphics-context draw-color field +0xc: ldreq r0,[r6,#0xc] / streq r0,[sp,#0x18] @0x1533a4). With 5 args the popped 32-bit value is the color."
+  - "The color is NOT range-checked — it is a full 32-bit ARGB value (8 bits each A,R,G,B); A=255 opaque, otherwise transparent. Signed/&H/#CONSTANT color operands are accepted (e.g. -1 = opaque white)."
+  - "A degenerate line where start == end (e.g. GLINE x,y,x,y) plots a single point; coordinates are integer-coerced from the popped args and off-screen / out-of-range coordinates are clipped by the draw helper rather than rejected — no range error."
+  - "Draws onto the GPAGE-selected manipulation page; the handler reads the graphics context via [[0x315d60]+0x20] (r6) and fetches the four coordinates plus color through the standard arg-fetch vtable slot [r2,#0x40]."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not 4 or 5, or a return value is requested (used as a function)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gline.md (GLINE Start point X,Start point Y, End point X,End point Y [,Color code] — draws a straight line; coords X:0-399 Y:0-239; Color is 8 bits per ARGB element, see GCOLOR; e.g. GLINE 0,0,399,239,RGB(0,255,255))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GLINE handler @0x1532d4: graphics state ptr 0x153524->0x315d60, gfx-context = [[..]+0x20] (r6); return-count r0=[r4,#0xc] cmp #0 bne -> errnum 4 @0x1532f4; argcount r0=[r4,#0x4] cmp #4 beq @0x153328 (4-arg, default color), cmp #5 beq @0x1533b4 (5-arg), else mov r2,#0/mvn r1/mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x153310; 4-arg path defaults color ldreq r0,[r6,#0xc]/streq [sp,#0x18] @0x1533a4; coordinates fetched via vtable [r2,#0x40]; no range guard in the handler." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GLINE: draws a line on the active graphic page (3.5.0 structural cross-check only)." }
+  - { type: community, ref: "sbsave corpus: GLINE appears ~5121x. Confirms the 4-arg default-color form (e.g. NZ53Y3AJ/TXT/SIMPLEDRAW 'GLINE 200+I,20,200+I,40'), #CONSTANT/&H/RGB() and negative (-1) color operands, float coordinates (13D4DV3V/TXT/MAIN_PRG_V2 'GLINE CX-0.5,...'), and single-point (start==end) usage — all legal." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7b): GLINE 0,0,1 (3 args) -> errnum 4, errline 1; GLINE 0,0,1,1,2,3 (6 args) -> errnum 4; A=GLINE(0,0,1,1) (used as a function) -> errnum 4." }
+
+confidence: disassembled
+
+tests:
+  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7b); line side-effects need the framebuffer oracle (O-T6, queued).
+  - { name: line_default_color_ok, code: "GLINE 0,0,399,239", expect: { stdout: "" } }
+  - { name: line_explicit_color_ok, code: "GLINE 0,0,399,239,RGB(0,255,255)", expect: { stdout: "" } }
+  - { name: line_single_point_ok, code: "GLINE 10,10,10,10,-1", expect: { stdout: "" } }
+  - { name: three_args_errors, code: "GLINE 0,0,1", expect: { error: { errnum: 4 } } }
+  - { name: six_args_errors, code: "GLINE 0,0,1,1,2,3", expect: { error: { errnum: 4 } } }
+  - { name: as_function_errors, code: "A=GLINE(0,0,1,1)", expect: { error: { errnum: 4 } } }

@@ -1,0 +1,48 @@
+id: GBOX
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x1, type: integer, range: "graphic-page coordinate (visible 0-399 x, 0-239 y)", desc: "Start point X (one corner)" }
+      - { name: y1, type: integer, range: "graphic-page coordinate", desc: "Start point Y" }
+      - { name: x2, type: integer, range: "graphic-page coordinate", desc: "End point X (opposite corner)" }
+      - { name: y2, type: integer, range: "graphic-page coordinate", desc: "End point Y" }
+    note: "GBOX x1,y1,x2,y2 — draws an unfilled rectangle outline in the current GCOLOR draw color (4 args, no return value)."
+  - args:
+      - { name: x1, type: integer, range: "graphic-page coordinate", desc: "Start point X" }
+      - { name: y1, type: integer, range: "graphic-page coordinate", desc: "Start point Y" }
+      - { name: x2, type: integer, range: "graphic-page coordinate", desc: "End point X" }
+      - { name: y2, type: integer, range: "graphic-page coordinate", desc: "End point Y" }
+      - { name: color_code, type: integer, optional: true, range: "any 32-bit ARGB value", desc: "ARGB8888 color (8 bits each A,R,G,B); usually built with RGB(). A=255 opaque, otherwise transparent. See GCOLOR." }
+    note: "GBOX x1,y1,x2,y2,color — draws the rectangle outline in the given color (5 args, no return value)."
+
+summary: "Draws an unfilled quadrangle (rectangle outline) between two opposite corners on the current graphic page."
+
+semantics:
+  - "Draws only the rectangle OUTLINE (four edges) — it is not filled. To fill a box, draw it then GPAINT the interior (the corpus idiom 'GBOX ...:GPAINT ...'), or use GFILL."
+  - "Takes exactly 4 args (x1,y1,x2,y2) or 5 args (+color) and returns no value. Any other argument count, or requesting a return value, raises errnum 4 (Illegal function call) — return-count [r4,#0xc] cmp #0 bne error @0x155130, argcount [r4,#0x4] cmp #4 (beq @0x155140) / cmp #5 (beq @0x155148) else mov r0,#0x4 (errnum 4) @0x15514c."
+  - "With 4 args the color defaults to the current GCOLOR draw color (loaded from graphics-context field +0xc). With 5 args the popped 32-bit value is used. The color is NOT range-checked — a full 32-bit ARGB value (A=255 opaque, otherwise transparent); signed/&H/#CONSTANT operands are accepted (e.g. -1 = opaque white)."
+  - "Corners may be given in any order and may be off-screen / out of range; coordinates are integer-coerced and clipped by the draw helper rather than rejected — no range error. The handler reads the graphics context via [[0x315d60]+0x20] (r6) and passes the corners + color to the rectangle-outline draw helper bl 0x1939d8 @0x1552bc."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not 4 or 5, or a return value is requested (used as a function)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gbox.md (GBOX Start point X,Start point Y, End point X,End point Y [,Color code] — draws a quadrangle; coords X:0-399 Y:0-239; Color is 8 bits per ARGB element, see GCOLOR; e.g. GBOX 0,0,399,239)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GBOX handler @0x155110: graphics state ptr 0x1552cc->0x315d60, gfx-context = [[..]+0x20] (r6); return-count r0=[r4,#0xc] cmp #0 bne -> errnum 4 @0x155130; argcount r0=[r4,#0x4] cmp #4 beq @0x155164 (4-arg, default color), cmp #5 beq @0x1551f0 (5-arg), else mov r2,#0/mvn r1/mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x15514c; coordinates fetched via vtable [r2,#0x40]; rectangle-outline draw bl 0x1939d8 @0x1552bc; no fill path and no range guard in the handler." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GBOX: draws a rectangle outline on the active graphic page (3.5.0 structural cross-check only)." }
+  - { type: community, ref: "sbsave corpus: GBOX appears ~2238x. Confirms the 4-arg default-color form (~418 lines, e.g. 5KSKXX8X/TXT/GED 'GBOX 236,16,364,144'), #CONSTANT/&H/RGB() and negative (-1, e.g. 2RD4S3RJ/TXT/GAME 'GBOX 88,32,152,48,-1') color operands, and negative/off-screen corners (clipped). No real 6-arg/fill form exists — apparent extras are inline RGB()/array commas or a user-defined 'GBOX2' DEF; outline-only holds. Faux-fill via GPAINT seen (23EX5E4V/TXT/10)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7b): GBOX 0,0,1 (3 args) -> errnum 4, errline 1; GBOX 0,0,1,1,2,3 (6 args) -> errnum 4; A=GBOX(0,0,1,1) (used as a function) -> errnum 4." }
+
+confidence: disassembled
+
+tests:
+  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7b); box side-effects need the framebuffer oracle (O-T6, queued).
+  - { name: box_default_color_ok, code: "GBOX 0,0,399,239", expect: { stdout: "" } }
+  - { name: box_explicit_color_ok, code: "GBOX 10,10,100,100,RGB(255,0,0)", expect: { stdout: "" } }
+  - { name: box_negative_color_ok, code: "GBOX 0,0,50,50,-1", expect: { stdout: "" } }
+  - { name: three_args_errors, code: "GBOX 0,0,1", expect: { error: { errnum: 4 } } }
+  - { name: six_args_errors, code: "GBOX 0,0,1,1,2,3", expect: { error: { errnum: 4 } } }
+  - { name: as_function_errors, code: "A=GBOX(0,0,1,1)", expect: { error: { errnum: 4 } } }

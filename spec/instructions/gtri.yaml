@@ -1,0 +1,52 @@
+id: GTRI
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x1, type: integer, range: "graphic-page coordinate (visible 0-399 x, 0-239 y)", desc: "Vertex 1 X" }
+      - { name: y1, type: integer, range: "graphic-page coordinate", desc: "Vertex 1 Y" }
+      - { name: x2, type: integer, range: "graphic-page coordinate", desc: "Vertex 2 X" }
+      - { name: y2, type: integer, range: "graphic-page coordinate", desc: "Vertex 2 Y" }
+      - { name: x3, type: integer, range: "graphic-page coordinate", desc: "Vertex 3 X" }
+      - { name: y3, type: integer, range: "graphic-page coordinate", desc: "Vertex 3 Y" }
+    note: "GTRI x1,y1,x2,y2,x3,y3 — draws a filled triangle in the current GCOLOR draw color (6 args, no return value)."
+  - args:
+      - { name: x1, type: integer, range: "graphic-page coordinate", desc: "Vertex 1 X" }
+      - { name: y1, type: integer, range: "graphic-page coordinate", desc: "Vertex 1 Y" }
+      - { name: x2, type: integer, range: "graphic-page coordinate", desc: "Vertex 2 X" }
+      - { name: y2, type: integer, range: "graphic-page coordinate", desc: "Vertex 2 Y" }
+      - { name: x3, type: integer, range: "graphic-page coordinate", desc: "Vertex 3 X" }
+      - { name: y3, type: integer, range: "graphic-page coordinate", desc: "Vertex 3 Y" }
+      - { name: color_code, type: integer, optional: true, range: "any 32-bit ARGB value", desc: "ARGB8888 color (8 bits each A,R,G,B); usually built with RGB(). A=255 opaque, otherwise transparent. See GCOLOR." }
+    note: "GTRI x1,y1,x2,y2,x3,y3,color — draws the filled triangle in the given color (7 args, no return value)."
+
+summary: "Draws a triangle from three vertices on the current graphic page and fills it with a color."
+
+semantics:
+  - "The triangle is FILLED (not just an outline) with the chosen color."
+  - "Takes exactly 6 args (three vertices) or 7 args (+color) and returns no value. Any other argument count, or requesting a return value, raises errnum 4 (Illegal function call) — return-count [r4,#0xc] cmp #0 bne error @0x1554b8, argcount [r4,#0x4] cmp #6 (beq @0x1554cc) / cmp #7 (beq @0x1554d4) else mov r0,#0x4 (errnum 4) @0x1554e0."
+  - "With 6 args the color defaults to the current GCOLOR draw color (loaded from graphics-context field +0xc). With 7 args the popped 32-bit value is used. The color is NOT range-checked — a full 32-bit ARGB value (A=255 opaque, otherwise transparent); signed/&H/#CONSTANT operands are accepted (e.g. -1 = opaque white)."
+  - "Vertices may be off-screen / out of range; coordinates are integer-coerced from the popped args (real code passes float vertices, e.g. GTRI 19.5*8,...) and are clipped by the draw helper rather than rejected — no range error. The handler reads the graphics context via [[0x315d60]+0x20] (r6) and fetches the six vertex coordinates plus color through the standard arg-fetch vtable slot [r2,#0x40]."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not 6 or 7, or a return value is requested (used as a function)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gtri.md (GTRI X1,Y1, X2,Y2, X3,Y3 [,Color code] — draws a triangle and fills it with a color; vertices X:0-399 Y:0-239; Color is 8 bits per ARGB element, see GCOLOR; e.g. GTRI 200,10,300,200,100,200)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GTRI handler @0x15549c: graphics state ptr 0x1556d0->0x315d60, gfx-context = [[..]+0x20] (r6); return-count r1=[r4,#0xc] cmp #0 bne -> errnum 4 @0x1554b8; argcount r1=[r4,#0x4] cmp #6 beq @0x1554f0 (6-arg, default color), cmp #7 beq @0x1555b8 (7-arg), else mov r2,#0/mvn r1/mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x1554d8; coordinates fetched via vtable [r2,#0x40]; no range guard in the handler." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GTRI: draws a filled triangle on the active graphic page (3.5.0 structural cross-check only)." }
+  - { type: community, ref: "sbsave corpus: GTRI appears ~513x. Confirms the 6-arg default-color form (~86 lines, e.g. 433J5XA3/TXT/ATMOS 'GTRI 0,0,160,0,80,240'), negative (-1) color (2RD4S3RJ/TXT/VERSION_1.3), and float-literal vertices (7343YJHX/TXT/-TG_PLAYER 'GTRI 19.5*8,...'). No real >7-arg form exists — software 3D rasterizers use nested-array vertices but never more than 7 top-level operands." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7b): GTRI 0,0,1,1,2 (5 args) -> errnum 4, errline 1; GTRI 0,0,1,1,2,2,3,4 (8 args) -> errnum 4; A=GTRI(0,0,1,1,2,2) (used as a function) -> errnum 4." }
+
+confidence: disassembled
+
+tests:
+  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7b); triangle side-effects need the framebuffer oracle (O-T6, queued).
+  - { name: tri_default_color_ok, code: "GTRI 200,10,300,200,100,200", expect: { stdout: "" } }
+  - { name: tri_explicit_color_ok, code: "GTRI 0,0,160,0,80,240,RGB(0,255,0)", expect: { stdout: "" } }
+  - { name: tri_negative_color_ok, code: "GTRI 0,0,10,0,5,10,-1", expect: { stdout: "" } }
+  - { name: five_args_errors, code: "GTRI 0,0,1,1,2", expect: { error: { errnum: 4 } } }
+  - { name: eight_args_errors, code: "GTRI 0,0,1,1,2,2,3,4", expect: { error: { errnum: 4 } } }
+  - { name: as_function_errors, code: "A=GTRI(0,0,1,1,2,2)", expect: { error: { errnum: 4 } } }

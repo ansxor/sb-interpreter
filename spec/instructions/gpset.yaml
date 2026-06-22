@@ -1,0 +1,45 @@
+id: GPSET
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x, type: integer, range: "graphic-page coordinate (page is 512x512; visible area 0-399 x, 0-239 y)", desc: "X coordinate of the pixel" }
+      - { name: y, type: integer, range: "graphic-page coordinate", desc: "Y coordinate of the pixel" }
+    note: "GPSET x,y — plots one pixel using the current GCOLOR draw color (2 args, no return value)."
+  - args:
+      - { name: x, type: integer, range: "graphic-page coordinate", desc: "X coordinate of the pixel" }
+      - { name: y, type: integer, range: "graphic-page coordinate", desc: "Y coordinate of the pixel" }
+      - { name: color_code, type: integer, optional: true, range: "any 32-bit ARGB value", desc: "ARGB8888 color (8 bits each A,R,G,B); usually built with RGB(). A=255 opaque, otherwise transparent. See GCOLOR." }
+    note: "GPSET x,y,color — plots one pixel in the given color (3 args, no return value)."
+
+summary: "Plots a single pixel on the current graphic (manipulation) page, using the current draw color or an explicit ARGB color."
+
+semantics:
+  - "Takes exactly 2 args (x,y) or 3 args (x,y,color) and returns no value. Any other argument count, or requesting a return value (used as a function), raises errnum 4 (Illegal function call) — return-count [r4,#0xc] cmp #0 / bne error @0x153dac, argcount [r4,#0x4] cmp #2 (beq @0x153dbc) / cmp #3 (beq @0x153dc4) else mov r0,#0x4 (errnum 4) @0x153dd0."
+  - "With 2 args the color defaults to the current graphic draw color set by GCOLOR (the 2-arg path loads it from the graphics-context draw-color field +0xc: ldreq r0,[r6,#0xc] / streq r0,[sp,#0x8] @0x153e1c). With 3 args the popped 32-bit value is used as the color directly."
+  - "The color is NOT range-checked — it is a full 32-bit ARGB value (8 bits each A,R,G,B); A=255 is opaque, any other alpha is transparent (same convention as GCOLOR/GCLS). Signed and &H literals are accepted as colors (e.g. -1 = &HFFFFFFFF = opaque white)."
+  - "Coordinates are integer-coerced from the popped arguments (the standard arg-fetch vtable slot [r2,#0x40]); real code passes floating-point and array/expression operands freely (e.g. GPSET CX-0.5,Y). The exact float->int rounding for fractional coordinates is left to the framebuffer oracle (queued)."
+  - "Draws onto the graphic page currently selected for manipulation by GPAGE; the dispatch reads the graphics context via [[0x315d60]+0x20] and passes x,y,color to the pixel-draw helper bl 0x194044 @0x153ea0. Out-of-range / off-screen coordinates are clipped by the draw helper, not rejected — no range error is raised (real programs plot at e.g. 511,511)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not 2 or 3, or a return value is requested (used as a function)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gpset.md (GPSET X-coordinate,Y-coordinate [,Color code] — puts a pixel on the graphic screen; Color code is 8 bits per ARGB element, see GCOLOR; e.g. GPSET 100,50)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GPSET handler @0x153d8c: graphics state ptr 0x315d60, gfx-context = [[0x315d60]+0x20] (r6); return-count r0=[r4,#0xc] cmp #0 bne -> errnum 4 @0x153dac; argcount r0=[r4,#0x4] cmp #2 beq @0x153de0 (2-arg, default color), cmp #3 beq @0x153e2c (3-arg), else mov r2,#0/mvn r1/mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x153dc8; 2-arg path defaults color from draw-color field ldreq r0,[r6,#0xc]/streq [sp,#0x8] @0x153e1c; pixel draw bl 0x194044 @0x153ea0; no coordinate or color range guard in the handler." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GPSET: plots one pixel on the active graphic page (3.5.0 structural cross-check only)." }
+  - { type: community, ref: "sbsave corpus: GPSET appears ~2063x. Confirms the 2-arg default-color form (~462 'GPSET x,y' lines, e.g. NZ53Y3AJ/TXT/SIMPLEDRAW), &H/#CONSTANT/RGB() and negative (-1) color operands (e.g. 2RD4S3RJ/TXT/GAME 'GPSET X,Y,-1'), float coordinates (13D4DV3V/TXT/MAIN_PRG_V2), and off-screen coords (GPSET 511,511,#WHITE) — all legal." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7b): GPSET 100 (1 arg) -> errnum 4, errline 1; GPSET 1,2,3,4 (4 args) -> errnum 4; A=GPSET(1,1) (used as a function) -> errnum 4." }
+
+confidence: disassembled
+
+tests:
+  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7b); pixel side-effects need the framebuffer oracle (O-T6, queued).
+  - { name: plot_default_color_ok, code: "GPSET 100,50", expect: { stdout: "" } }
+  - { name: plot_explicit_color_ok, code: "GPSET 100,50,RGB(0,255,255)", expect: { stdout: "" } }
+  - { name: plot_negative_color_ok, code: "GPSET 10,10,-1", expect: { stdout: "" } }
+  - { name: one_arg_errors, code: "GPSET 100", expect: { error: { errnum: 4 } } }
+  - { name: four_args_errors, code: "GPSET 1,2,3,4", expect: { error: { errnum: 4 } } }
+  - { name: as_function_errors, code: "A=GPSET(1,1)", expect: { error: { errnum: 4 } } }
