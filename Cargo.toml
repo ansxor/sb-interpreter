@@ -1,0 +1,24 @@
+# SmileBASIC 3.6.0 spec suite — Rust workspace.
+# Only sb-spec remains: it loads + validates the YAML instruction specs under spec/
+# and reports confidence coverage. The interpreter crates were removed (pre-pivot).
+[workspace]
+resolver = "2"
+members = [
+    "crates/sb-spec",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+authors = ["sb-interpreter contributors"]
+repository = "https://github.com/local/sb-interpreter"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+
+# Keep release builds reproducible/deterministic-friendly.
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
