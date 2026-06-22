@@ -25,10 +25,18 @@ def _osa(script):
     return subprocess.run(["osascript", "-e", script], capture_output=True, text=True).stdout.strip()
 
 
+def is_running():
+    """True if an Azahar process is up."""
+    return (subprocess.run(["pgrep", "-x", PROC], capture_output=True).returncode == 0
+            or subprocess.run(["pgrep", "-if", "Azahar.app"], capture_output=True).returncode == 0)
+
+
 def raise_window():
-    """Bring Azahar to the front and pin its geometry. Returns (bx,by,w,h)."""
+    """Bring Azahar to the front and pin its geometry. Launches it if not running (cold
+    start: wait for SmileBASIC to boot). Returns (bx,by,w,h)."""
+    cold = not is_running()
     subprocess.run(["open", "-a", APP])
-    time.sleep(0.8)
+    time.sleep(12.0 if cold else 0.8)  # cold start needs ~boot time before SB is usable
     _osa(f'tell application "System Events" to tell (first process whose name contains "{PROC}") '
          f'to set position of window 1 to {{{POS[0]}, {POS[1]}}}')
     _osa(f'tell application "System Events" to tell (first process whose name contains "{PROC}") '

@@ -122,11 +122,13 @@ Do EXACTLY ONE task this run, fully and correctly, then commit. Then stop.
 The `.claude/skills/sb-oracle/` skill drives REAL SB 3.6.0 in Azahar — it IS the ground-truth
 oracle. Use it to (a) HARVEST `hw_verified` expects for spec/test cases and (b) differentially
 check that `sb-core`'s output matches real SB. From `.claude/skills/sb-oracle/tools/`:
-    python3 run_case.py prog 'FLOOR(-2.1)'             # -> -3   (numeric; wraps in STR$)
-    python3 run_case.py prog 'MID$("ABCDE",2,3)' str   # -> BCD  (string result)
-- It needs Azahar RUNNING with SB on the DIRECT-mode screen (GUI automation). Probe first
-  (`python3 sb_window.py bounds`); if it's not up or a case errors, fall back to
-  documented/disassembled and queue the case in `HARVEST_QUEUE.md` — do NOT block the task.
+    python3 run_case.py ready                          # FIRST: launch Azahar if needed + probe -> READY
+    python3 run_case.py batch cases.txt                # harvest a category (name|expr lines) in ONE shot
+    python3 run_case.py prog 'FLOOR(-2.1)'             # one case -> -3
+- FIRST run `run_case.py ready` (it launches Azahar + confirms SB is usable). Then prefer
+  `batch` for the whole category — ONE process, NO backgrounding/sleep (the harness blocks
+  `sleep N; cmd`). If `ready` says NOT READY or a case errors, fall back to
+  documented/disassembled + queue in `HARVEST_QUEUE.md` — do NOT block the task.
 - The oracle result is the SOURCE OF TRUTH: if `sb-core` disagrees, `sb-core` is wrong.
 - When you get an oracle result, write it into the spec's `spec/tests/<id>.yaml` `expect:`
   (and/or `harness/corpus/cases`), set that source `confidence: hw_verified`, and COMMIT it.

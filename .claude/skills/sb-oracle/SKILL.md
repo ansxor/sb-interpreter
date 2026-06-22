@@ -19,18 +19,22 @@ Capture ground truth from real SB 3.6.0 to fill `hw_verified` specs (see `prd/or
 
 ```bash
 cd .claude/skills/sb-oracle/tools
-# EFFICIENT (recommended): write program to extdata, LOAD"PRG0:P",0 + RUN, read result.
-python3 run_case.py prog 'FLOOR(-2.1)'            # -> -3
-python3 run_case.py progsrc 'SAVE"TXT:O",STR$(LEN("ABC")+1)'   # full program; must SAVE to O
-# TYPED: type the command into DIRECT mode (no file write).
-python3 run_case.py expr 'MID$("ABCDE",2,3)' str  # -> BCD
+python3 run_case.py ready                          # STEP 0: launch Azahar (if needed) + probe -> READY
+python3 run_case.py batch cases.txt                # RECOMMENDED: many `name|expr` lines, one process
+python3 run_case.py prog 'FLOOR(-2.1)'             # one case via the program-file path -> -3
+python3 run_case.py expr 'MID$("ABCDE",2,3)' str   # one typed case, string -> BCD
 ```
+Run `ready` FIRST — it cold-starts Azahar and confirms SB is usable, so cases don't each eat a
+timeout (a `sb_window.py bounds` that returns coords is NOT proof of readiness). Prefer `batch`
+(one process, no backgrounding/sleep) over many single calls — the harness blocks `sleep N; cmd`.
 Verified: FLOOR(3.7)=3, FLOOR(-2.1)=-3, FLOOR(5)=5, FLOOR(8.9)=8, 7 DIV 2=3, 7 MOD 3=1,
 LEN("ABCDE")=5, ABS(-9)=9, POW(2,10)=1024, SQR(144)=12.
 
 ## Setup (once per session)
-1. Azahar running SmileBASIC 3.6.0; SB on the DIRECT-mode screen (keyboard visible).
-2. Screen Recording + Accessibility granted to the terminal app; `cliclick` installed.
+0. **Launch first:** `run_case.py ready` opens Azahar if needed and waits for boot. SB must end
+   up on the **DIRECT-mode screen** (keyboard visible); if it boots to a menu, navigate there
+   once. `ready` (a real harvest probe) is the readiness signal — not `sb_window.py bounds`.
+1. Screen Recording + Accessibility granted to the terminal app; `cliclick` installed.
 
 ## Mechanism
 - **Raise window:** `open -a Azahar` (osascript `activate` is unreliable). Window pinned to
