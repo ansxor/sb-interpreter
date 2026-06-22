@@ -1,0 +1,40 @@
+id: POW
+kind: function
+category: Mathematics
+version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+
+signatures:
+  - args:
+      - { name: value, type: number, range: "any", desc: "Numerical value to exponentiate (the base)" }
+      - { name: multiplier, type: number, range: "any", desc: "Exponentiation multiplier (the exponent)" }
+    returns: { type: double, desc: "value raised to the power multiplier" }
+
+summary: "Returns value raised to the power multiplier (value ** multiplier) as a Double."
+
+semantics:
+  - "POW(2,10)=1024, POW(1,4)=1, POW(3,2)=9, POW(2,-1)=0.5. Both args are coerced to Double; the result is a Double."
+  - "When value (the base) >= 0, computes pow(value, multiplier) directly."
+  - "When value < 0, the exponent must be a whole number (the handler checks frac(multiplier)==0): POW(-2,3)=-8 is fine, but POW(-2,0.5) raises Illegal function call (errnum 4) rather than returning NaN."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "value < 0 and multiplier is not a whole number; or argument count is not 2" }
+  - { errnum: 8, name: TypeMismatch, when: "either argument is a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/pow.md" }
+  - { type: disassembled, ref: "cia_3.6.0.lst POW handler @0x148858; both args to-double (+0x44); base>=0 -> pow @0x299180; base<0 -> frac-of-exponent check @0x1eb5c0, nonzero frac -> `mov r0,#0x4` (errnum 4); non-number -> errnum 8" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: POW(2,10)=1024, POW(1,4)=1, POW(3,2)=9, POW(2,-1)=0.5, POW(-2,3)=-8, POW(5,0)=1, POW(2,0.5)=1.41421" }
+
+confidence: hw_verified
+
+tests:
+  # numeric expects below are hw_verified (sb-oracle 2026-06-22); error cases are disassembled.
+  - { name: power_of_two,       code: "PRINT POW(2,10)",  expect: { stdout: "1024" } }
+  - { name: one_to_any,         code: "PRINT POW(1,4)",   expect: { stdout: "1" } }
+  - { name: square,             code: "PRINT POW(3,2)",   expect: { stdout: "9" } }
+  - { name: negative_exponent,  code: "PRINT POW(2,-1)",  expect: { stdout: "0.5" } }
+  - { name: negative_base_int,  code: "PRINT POW(-2,3)",  expect: { stdout: "-8" } }
+  - { name: zero_exponent,      code: "PRINT POW(5,0)",   expect: { stdout: "1" } }
+  - { name: fractional_exponent, code: "PRINT POW(2,0.5)", expect: { stdout: "1.41421" } }
+  - { name: negative_base_frac_illegal, code: "A=POW(-2,0.5)", expect: { error: { errnum: 4 } } }
+  - { name: string_type_mismatch,       code: 'A=POW("x",2)',  expect: { error: { errnum: 8 } } }

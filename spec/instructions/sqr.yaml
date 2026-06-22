@@ -1,0 +1,36 @@
+id: SQR
+kind: function
+category: Mathematics
+version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+
+signatures:
+  - args:
+      - { name: value, type: number, range: ">= 0", desc: "Numerical value for which to find the square root" }
+    returns: { type: double, desc: "Positive square root of value" }
+
+summary: "Returns the (non-negative) square root of value as a Double."
+
+semantics:
+  - "SQR(4)=2, SQR(9)=3, SQR(0)=0. The argument is coerced to Double and the result is always a Double."
+  - "Computed with the hardware VSQRT instruction (`vsqrtcs.f64`), guarded by a value >= 0 check."
+
+errors:
+  - { errnum: 10, name: OutOfRange, when: "value < 0" }
+  - { errnum: 8, name: TypeMismatch, when: "value is a string" }
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 1" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/sqr.md" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SQR handler @0x149930; arg coerced via to-double method (+0x44); `vcmpe d0,#0.0` then `vsqrtcs.f64 d8,d0`; value<0 -> `mov r0,#0xa` (errnum 10); non-number -> errnum 8" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: SQR(4)=2, SQR(9)=3, SQR(0)=0, SQR(2)=1.41421 (SB prints doubles to 6 significant figures)" }
+
+confidence: hw_verified
+
+tests:
+  # numeric expects below are hw_verified (sb-oracle 2026-06-22); error cases are disassembled.
+  - { name: perfect_square,   code: "PRINT SQR(4)",  expect: { stdout: "2" } }
+  - { name: perfect_square_9, code: "PRINT SQR(9)",  expect: { stdout: "3" } }
+  - { name: zero,             code: "PRINT SQR(0)",  expect: { stdout: "0" } }
+  - { name: irrational_6sig,  code: "PRINT SQR(2)",  expect: { stdout: "1.41421" } }
+  - { name: negative_out_of_range, code: "A=SQR(-1)", expect: { error: { errnum: 10 } } }
+  - { name: string_type_mismatch,  code: 'A=SQR("x")', expect: { error: { errnum: 8 } } }

@@ -42,7 +42,7 @@ and name the instructions they cover inline.
 #### S-T1 Mathematics (27) → S-T0
 - [x] S-T1a Rounding — FLOOR · ROUND · CEIL
 - [x] S-T1b Sign & classify — ABS · SGN · CLASSIFY
-- [ ] S-T1c Powers/roots/log — SQR · POW · EXP · LOG
+- [x] S-T1c Powers/roots/log — SQR · POW · EXP · LOG
 - [ ] S-T1d Trigonometry — SIN · COS · TAN · ASIN · ACOS · ATAN
 - [ ] S-T1e Hyperbolic & angle — SINH · COSH · TANH · DEG · RAD · PI
 - [ ] S-T1f Min/max & RNG — MIN · MAX · RND · RNDF · RANDOMIZE
