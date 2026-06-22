@@ -1,0 +1,21 @@
+and_basic	1
+and_mask	192
+and_neg	255
+and_double	1
+or_basic	7
+or_mask	163
+xor_basic	6
+xor_mask	40
+xor_self	0
+div_basic	40
+div_trunc	3
+div_neg	-3
+div_neg2	-3
+div_double	3
+mod_basic	0
+mod_rem	1
+mod_neg	-1
+mod_neg2	1
+mod_double	1
+div_zero	errnum=7 errline=1
+mod_zero	errnum=7 errline=1
