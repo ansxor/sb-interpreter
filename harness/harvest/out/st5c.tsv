@@ -1,0 +1,19 @@
+chkchr_oob_neg	0
+chkchr_oob_y	0
+width_query_default	8
+chkchr_read	65
+width_query_16	16
+attr_16	errnum=10 errline=1
+attr_neg1	errnum=10 errline=1
+attr_func	errnum=4 errline=1
+chkchr_1arg	errnum=4 errline=1
+chkchr_stmt	errnum=4 errline=1
+width_12	errnum=4 errline=1
+width_0	errnum=4 errline=1
+scroll_1arg	errnum=4 errline=1
+scroll_func	errnum=4 errline=1
+fontdef_big	errnum=10 errline=1
+fontdef_neg	errnum=10 errline=1
+fontdef_badhex	errnum=4 errline=1
+fontdef_short	errnum=31 errline=1
+fontdef_func	errnum=4 errline=1

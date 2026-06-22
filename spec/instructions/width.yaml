@@ -1,0 +1,42 @@
+id: WIDTH
+kind: statement
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: size, type: integer, range: "8 or 16 only", desc: "Console font size in pixels: 8 = 8x8 (standard), 16 = 16x16 (double size). No other value is accepted." }
+    note: "WIDTH size — sets the console character size. Exactly 1 argument; statement form."
+  - args: []
+    returns: { type: integer, desc: "Current console font size: 8 or 16." }
+    note: "size = WIDTH() — function form with zero arguments returns the current console font size (8 or 16)."
+
+summary: "Sets the console character size to 8x8 (standard) or 16x16 (double); the zero-argument function form WIDTH() returns the current size."
+
+semantics:
+  - "Has two forms distinguished by whether a return value is requested. Statement form WIDTH size takes exactly 1 argument and no return value; function form WIDTH() takes 0 arguments and returns the current size."
+  - "Statement form: the size must be exactly 8 or 16. Any other value raises errnum 4 (Illegal function call) — NOT errnum 10. The handler compares the arg to 8 (-> internal flag 0) and 16 (-> internal flag 1); anything else falls to mov r0,#0x4 @0x14c250."
+  - "Statement form with an argument count other than 1 raises errnum 4 (guard cmp [r0+0x4],#0x1, else mov r0,#0x4 @0x14c1f4)."
+  - "Function form WIDTH(): must have 0 arguments; a function call with any argument raises errnum 4 (the function path requires return-count==1 AND argcount==0 @0x14c1c0, else the errnum-4 path @0x14c1d4). Returns 16 if the current size is 16x16, else 8 (movne r1,#0x10 / moveq r1,#0x8 from the console size flag [.+0x88] @0x14c298)."
+  - "WIDTH 16 only enlarges the glyphs (each cell becomes 16x16 px); it is not a smooth zoom and it halves the effective character columns/rows. Setting the size triggers a console reflow (bl 0x14ee8c @0x14c268)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "statement form size is not 8 or 16; or the statement form has an argument count other than 1; or the function form WIDTH() is given any argument" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/width.md (WIDTH Font size; 8 = 8x8 standard, 16 = 16x16 twice as large; only enlarges, no smooth zoom; example WIDTH 16, A=WIDTH())" }
+  - { type: disassembled, ref: "cia_3.6.0.lst WIDTH handler @0x14c1b0: branch on return-count [r0+0xc] (cmp #0 -> statement @0x14c1e4; cmp #1 with argcount [r0+0x4]==0 -> function @0x14c274). Statement: argcount cmp #0x1 else mov r0,#0x4 (errnum 4) @0x14c1f4; value cmp r0,#0x8 (moveq flag 0) / cmp r0,#0x10 (moveq flag 1), else mov r0,#0x4 (errnum 4) bl 0x1fffdc @0x14c250; reflow bl 0x14ee8c @0x14c268. Function: read size flag [r1+0x88]; movne r1,#0x10 / moveq r1,#0x8 (return 16 or 8) @0x14c298.", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/console.d WIDTH: toggles console font scale 8/16 and reflows; query returns current scale (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: both forms in active use. Statement `WIDTH 8` (~173) / `WIDTH 16` (~153) — only 8 and 16 ever appear as the size literal. Function `WIDTH()` query in ~38 uses, e.g. 227EVK4V/TXT/SBSMILE `OLDW[P]=WIDTH():WIDTH 8` and conditionals `IF WIDTH()==16`. (oracle-pending)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5c): WIDTH() at default -> 8; WIDTH 16:WIDTH() -> 16; WIDTH 12 -> errnum 4 errline 1; WIDTH 0 -> errnum 4 errline 1 (invalid size raises errnum 4 Illegal function call, NOT errnum 10)." }
+
+confidence: hw_verified
+
+tests:
+  # value/return/error expects are hw_verified (sb-oracle 2026-06-22). NOTE: invalid size -> errnum 4, not 10.
+  - { name: set_double, code: 'WIDTH 16:PRINT "A"', expect: { stdout: "A" } }
+  - { name: set_standard, code: 'WIDTH 8:PRINT "A"', expect: { stdout: "A" } }
+  - { name: query_default, code: "PRINT WIDTH()", expect: { stdout: "8" } }
+  - { name: query_after_set, code: "WIDTH 16:PRINT WIDTH()", expect: { stdout: "16" } }
+  - { name: invalid_size_errors, code: "WIDTH 12", expect: { error: { errnum: 4 } } }
+  - { name: zero_size_errors, code: "WIDTH 0", expect: { error: { errnum: 4 } } }

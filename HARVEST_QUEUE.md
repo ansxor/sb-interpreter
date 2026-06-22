@@ -182,3 +182,11 @@ oracle to confirm exact output and promote to `hw_verified`.
 - [ ] S-T5b INKEY$ live keypress · INKEY$() returning an actual queued char is unharvested
   (real-time keyboard); only the empty-buffer "" is hw_verified. · assumption (disasm @0x14b234
   strh of one UTF-16 unit): returns a 1-char string of the popped key.
+- [x] S-T5c value/errnum cases · HARVESTED 2026-06-22 (sb-oracle batch s_t5c → spec hw_verified):
+  ATTR 16/-1 → errnum 10, A=ATTR(3) → errnum 4; CHKCHR(0,0)=65 after PRINT "A", CHKCHR(-1,0)=0,
+  CHKCHR(0,100)=0, A=CHKCHR(0)/CHKCHR 0,0 → errnum 4; FONTDEF 70000/-1 → errnum 10, bad-hex
+  → errnum 4, short array → errnum 31, A=FONTDEF(...) → errnum 4; WIDTH()=8 default / 16 after
+  WIDTH 16, WIDTH 12/0 → errnum 4 (NOT 10); SCROLL 5 / A=SCROLL(5,7) → errnum 4.
+- [ ] S-T5c visual side-effects (screenshot path) · ATTR rotation/inversion render, FONTDEF glyph
+  pixels, SCROLL pixel movement, WIDTH 8↔16 reflow are not VALUE-harvestable — they need the
+  framebuffer/screenshot oracle (not yet in the skill). Behavior is from docs + disassembly.

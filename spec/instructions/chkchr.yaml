@@ -1,0 +1,41 @@
+id: CHKCHR
+kind: function
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x, type: integer, range: "console column (0..49 displayable)", desc: "Character column to read." }
+      - { name: y, type: integer, range: "console row (0..29 displayable)", desc: "Character row to read." }
+    returns: { type: integer, desc: "UTF-16 character code of the glyph at the console cell, or 0 if the cell is empty or the coordinate is outside the console." }
+    note: "code = CHKCHR(X,Y) — returns the UTF-16 code of the character currently displayed at console cell (X,Y). Function only; exactly 2 arguments."
+
+summary: "Returns the UTF-16 character code currently displayed at console cell (X,Y); returns 0 for an empty cell or an out-of-bounds coordinate (no error)."
+
+semantics:
+  - "Takes exactly 2 arguments and must be used as a function (return value requested). A different argument count, or use as a statement (no return value), raises errnum 4 (Illegal function call) — guard cmp r0,#0x2 (argcount=[r5+0x4]) with cmpeq [r5+0xc],#0x1 (return-count), else mov r0,#0x4 @0x14b890."
+  - "Both coordinates are read as Integers. An out-of-bounds coordinate does NOT raise an error: it returns 0. X<0 or X>=console width returns 0 (guard @0x14b900: cmp r0,#0; ldrge width=[r4,#0x20]; cmpge width,X; ble -> return 0). Y<0 returns 0 (blt @0x14b918); Y at/below the bottom of the visible+scrolled region also returns 0."
+  - "Return value is the raw 16-bit cell character code, zero-extended (ldrh r0,[cell]; uxth r1,r0 @0x14b960). SmileBASIC strings are UTF-16, so this is the UTF-16 code unit of the displayed glyph; ASC of a single-char string can be compared against it."
+  - "An empty console cell reads as 0 (the cleared cell value), the same value returned for out-of-bounds, so 0 means \"nothing readable here\"."
+  - "CHKCHR honors SCROLL: the coordinate is resolved through the console's scroll offset before reading the cell (the handler factors the scrolled height via FUN_0x1fd518 @0x14b91c), so it reads what is currently visible at (X,Y)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not 2, or it is used as a statement (no return value requested)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/chkchr.md (Variable = CHKCHR(X,Y); X:0-49, Y:0-29 in character units; return value = UTF-16 character code; example CODE=CHKCHR(0,0))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst CHKCHR handler @0x14b868: argcount/return guard cmp r0,#0x2 + cmpeq [r5+0xc],#0x1, else mov r0,#0x4 (errnum 4) bl 0x1fffdc @0x14b890. Bounds @0x14b8fc: X=[sp]; cmp X,#0; ldrge width=[r4,#0x20]; cmpge width,X; ble 0x14b96c (return 0). Y=[sp+4]; cmp Y,#0; blt 0x14b96c. Out-of-bounds path mov r1,#0x0 @0x14b96c. Valid read: ldrh r0,[cell]; uxth r1,r0 @0x14b960 then returned via [r5+0x10] vtable. No errnum 10 path.", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/console.d CHKCHR: reads console character buffer at (x,y), returns 0 when off-grid (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: ~510 calls, always 2-arg. Dominant idiom compares the result against a character code, e.g. 23C4NVKE/TXT/BATTING `IF CHKCHR(0,11)==ASC(\"\") THEN` and `C$=CHR$(CHKCHR(X,Y))` — confirms the return is a UTF-16 code unit comparable to ASC(...). No 1-arg or 3-arg form occurs. (oracle-pending)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5c): LOCATE 0,0:?\"A\"; then CHKCHR(0,0) -> 65 (UTF-16 code of 'A'); CHKCHR(-1,0) -> 0; CHKCHR(0,100) -> 0 (out-of-bounds returns 0, no error); A=CHKCHR(0) (wrong argcount) -> errnum 4 errline 1; CHKCHR 0,0 (used as a statement) -> errnum 4 errline 1." }
+
+confidence: hw_verified
+
+tests:
+  # value/out-of-bounds/error expects are hw_verified (sb-oracle 2026-06-22).
+  - { name: read_printed_char, code: 'LOCATE 0,0:PRINT "A";:C=CHKCHR(0,0):PRINT C', expect: { stdout: "65" } }
+  - { name: empty_cell_zero, code: 'ACLS:C=CHKCHR(10,10):PRINT C', expect: { stdout: "0" } }
+  - { name: out_of_bounds_zero, code: 'C=CHKCHR(-1,0):PRINT C', expect: { stdout: "0" } }
+  - { name: y_out_of_bounds_zero, code: 'C=CHKCHR(0,100):PRINT C', expect: { stdout: "0" } }
+  - { name: wrong_argcount_errors, code: "C=CHKCHR(0)", expect: { error: { errnum: 4 } } }
+  - { name: as_statement_errors, code: "CHKCHR 0,0", expect: { error: { errnum: 4 } } }

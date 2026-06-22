@@ -1,0 +1,51 @@
+id: FONTDEF
+kind: statement
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: code, type: integer, range: "0..65535 (UTF-16 character code)", desc: "Character code whose 8x8 glyph is redefined." }
+      - { name: definition, type: string, range: "256 hex characters (RGBA5551 per pixel)", desc: "Font definition string: 64 pixels x 4 hex digits = 256 chars. Each pixel is a 16-bit RGBA5551 color (RRRRR GGGGG BBBBB A) as a 4-digit uppercase hex code, e.g. FFFF=white, 0001=black-opaque, F801=red, 0000=transparent." }
+    note: "FONTDEF code, \"string\" — redefines the glyph for a character code from a 256-char hex string (form 1)."
+  - args:
+      - { name: code, type: integer, range: "0..65535 (UTF-16 character code)", desc: "Character code whose 8x8 glyph is redefined." }
+      - { name: definition, type: array, range: ">=64 numeric elements, each 0..65535", desc: "Numeric array, one RGBA5551 color per pixel (8x8 = 64 elements). Integer (F%[]) or Double array; only the first 64 elements are used." }
+    note: "FONTDEF code, array — redefines the glyph from a 64-element numeric array (form 2)."
+  - args: []
+    note: "FONTDEF — with no arguments, resets all font definitions to their initial (built-in) state (form 3)."
+
+summary: "Redefines the 8x8 console glyph for a character code from a hex string or a 64-element numeric array (RGBA5551 per pixel); the no-argument form resets all fonts to default."
+
+semantics:
+  - "Three forms by argument count: 0 args resets all custom font definitions to default (bl 0x1ef2d0 @0x14c51c); 2 args redefine one character's glyph from either a hex string (form 1) or a numeric array (form 2). FONTDEF is a statement; requesting a return value (function use) raises errnum 4 (return-count [r0+0xc]!=0 -> bne errnum-4 path @0x14c558)."
+  - "More than 2 argument slots raises errnum 4 (cmp argcount,#0x2; bgt 0x14c558 -> mov r0,#0x4 @0x14c558)."
+  - "The character code is read first and range-checked: it must be 0..65535 (the handler bounds it by the constant 0xFFFF @0x14c8b8); a code < 0 or > 65535 raises errnum 10 (Out of range) — guard @0x14c52c: cmp code,#0; cmpge 0xFFFF,code; else mov r0,#0xa."
+  - "String form: the definition is 64 pixels x 4 hex digits = 256 characters. Each group of 4 chars is parsed as a hex RGBA5551 color (5 bits each R/G/B, 1 alpha bit; 0=transparent, 1=opaque). Hex digits 0-9/A-F/a-f are all accepted (sub #0x30 / #0x41 / #0x61 parser @0x14c5b4). A non-hex character in the string raises errnum 4 (Illegal function call) — mov r0,#0x4 @0x14c6d0. Example colors: FFFF=white, 0001=black-opaque, F801=red."
+  - "Array form: the array must hold at least 64 elements; fewer raises errnum 31 (Subscript out of range) — guard cmp len,#0x40; blt -> mov r0,#0x1f @0x14c730. Only the first 64 elements are used. Each element is an RGBA5551 color: for an Integer array each value must be < 0x10000 (else errnum 10 @0x14c784); for a Double array each value is range-checked 0..65535 and truncated to u32 (vcmpe/vcvt.u32.f64 @0x14c7c8), out of range raising errnum 10."
+  - "The redefined glyph affects the console font (and the font image accessible via GCOPY/GSAVE/GLOAD page -1). Definitions persist until overwritten or until the no-argument FONTDEF reset."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "more than 2 arguments, a return value is requested (used as a function), or the string form contains a non-hex character" }
+  - { errnum: 10, name: "Out of range", when: "character code is < 0 or > 65535, or a numeric-array element is outside 0..65535" }
+  - { errnum: 31, name: "Subscript out of range", when: "the definition array has fewer than 64 elements" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/fontdef.md (3 forms: FONTDEF code,\"string\" 256-char hex RGBA5551; FONTDEF code,array 64-element numeric RGBA5551; bare FONTDEF resets to initial state; one char = 8x8 = 64 pixels; FFFF white, 0001 black, F801 red; manipulable via GCOPY/GSAVE/GLOAD page -1)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst FONTDEF handler @0x14c430: return-count [r0+0xc]!=0 -> bne errnum-4 @0x14c558; argcount cmp #0x2 bgt errnum-4 @0x14c558; cmp #0 beq reset (bl 0x1ef2d0) @0x14c518. Code range guard @0x14c52c: cmp code,#0; cmpge 0xFFFF(@0x14c8b8),code; else mov r0,#0xa (errnum 10) bl 0x1fffdc. String form hex parse @0x14c5b4 (sub #0x30/#0x41/#0x61), bad digit -> mov r0,#0x4 (errnum 4) @0x14c6d0. Array form @0x14c570: length cmp #0x40 blt -> mov r0,#0x1f (errnum 31) @0x14c730; int element cmp #0x10000 bcs -> errnum path; double element vcmpe.f64 bounds / vcvt.u32.f64 else mov r0,#0xa (errnum 10) @0x14c7e8.", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/console.d FONTDEF: writes 8x8 RGBA5551 glyph into the font texture from a hex string or array, bare form restores defaults (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: all 3 forms occur in real programs. Bare reset `FONTDEF` in ~50 files (e.g. 13D4DV3V/TXT/MAIN_PRG_V2 line 7). Array form `FONTDEF code,F%` (Integer array) in ~45 uses (e.g. 2XVV233J/TXT/GAME.PRG line 1138 `FONTDEF C%,F%`). High character codes via &H literal — e.g. 43LEDEAE/TXT/XCMD.LIB line 448 `FONTDEF &HE225,\"...\"` (&HE225=57893, well within 0..65535, the private-use UTF-16 area). Codes also given as ASC(\"x\"), ASC(MID$(...)), and base+offset arithmetic. (output unproven; oracle-pending — see HARVEST_QUEUE.md)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5c): FONTDEF 70000,\"FFFF\"*64 -> errnum 10 errline 1; FONTDEF -1,\"FFFF\"*64 -> errnum 10 errline 1 (code range 0..65535); FONTDEF ASC(\"A\"),\"GGGG\"*64 (non-hex string) -> errnum 4 errline 1; DIM F%[16]:FONTDEF ASC(\"A\"),F% (array < 64) -> errnum 31 errline 1 (Subscript out of range); A=FONTDEF(65,\"FFFF\"*64) (used as a function) -> errnum 4 errline 1." }
+
+confidence: hw_verified
+
+tests:
+  # error expects (errnum 4/10/31) are hw_verified (sb-oracle 2026-06-22).
+  # A solid-white "A" glyph: 64 pixels = 256 hex chars of FFFF.
+  - { name: define_then_print, code: 'FONTDEF ASC("A"),"FFFF"*64:PRINT "A"', expect: { stdout: "A" } }
+  - { name: reset_form, code: 'FONTDEF ASC("A"),"FFFF"*64:FONTDEF:PRINT "A"', expect: { stdout: "A" } }
+  - { name: code_out_of_range, code: 'FONTDEF 70000,"FFFF"*64', expect: { error: { errnum: 10 } } }
+  - { name: code_negative, code: 'FONTDEF -1,"FFFF"*64', expect: { error: { errnum: 10 } } }
+  - { name: bad_hex_char, code: 'FONTDEF ASC("A"),"GGGG"*64', expect: { error: { errnum: 4 } } }
+  - { name: array_too_short, code: 'DIM F%[16]:FONTDEF ASC("A"),F%', expect: { error: { errnum: 31 } } }
+  - { name: as_function_errors, code: 'A=FONTDEF(65,"FFFF"*64)', expect: { error: { errnum: 4 } } }

@@ -1,0 +1,37 @@
+id: SCROLL
+kind: statement
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x, type: integer, range: "any (signed character count)", desc: "Horizontal viewpoint movement in character cells. Negative = leftward, positive = rightward." }
+      - { name: y, type: integer, range: "any (signed character count)", desc: "Vertical viewpoint movement in character cells. Negative = upward, positive = downward." }
+    note: "SCROLL X,Y — shifts the display position of the whole console by (X,Y) character cells. Exactly 2 arguments; statement only."
+
+summary: "Shifts the display origin of the whole console screen by (X,Y) character cells; characters appear to move opposite the viewpoint and any pushed off-screen are lost."
+
+semantics:
+  - "Takes exactly 2 argument slots and no return value (statement). A different argument-slot count, or use as a function (requesting a return value), raises errnum 4 (Illegal function call) — argcount guard cmp r0,#0x2 (r0=[r4+0x4]) with return-count [r4+0xc]==0, else mov r0,#0x4 @0x14bd3c."
+  - "Both X and Y are read as Integers and passed straight to the console scroll routine (FUN_0x180ca8 @0x14bda4) with no range check — any signed value is accepted (no errnum 10 path in the handler)."
+  - "Moves the viewpoint: a positive X scrolls the view rightward so the on-screen characters appear to move left; positive Y scrolls the view down so characters appear to move up. Negative values move the opposite way (docs: \"characters will move in the opposite direction\")."
+  - "Characters pushed past the edge of the console are discarded — scrolling is destructive, not a wrap-around; cells exposed on the trailing edge come in blank."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument-slot count is not 2, or a return value is requested (used as a function)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/scroll.md (SCROLL Number of characters X, Number of characters Y; negative X=left/positive=right, negative Y=up/positive=down; characters move opposite the viewpoint; pushed-out characters disappear; example SCROLL 5,7)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SCROLL handler @0x14bd08: argcount guard cmp r0,#0x2 (r0=[r4+0x4]) + return-count cmpeq [r4+0xc],#0x0, else mov r0,#0x4 (errnum 4) bl 0x1fffdc @0x14bd3c. Eval X via vtable [r2+0x40] into [sp], Y into [sp+4]; no range/bounds guard. ldmia sp,{r1,r2}; bl 0x180ca8 (console scroll) @0x14bd9c; mov r0,#0x0 return.", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/console.d SCROLL: offsets console origin by (x,y), destructive at edges (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: ~294 calls, always 2-arg, both signed integers including negatives (e.g. 4DAXEXWD/TXT/---ATOMIC--- `SCROLL 0,-1` for scroll-up; 4KHEPXW3/TXT/BBZH repeats `SCROLL 2,0`). No 1-arg or 3-arg form occurs. (oracle-pending)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5c): SCROLL 5 (1 arg) -> errnum 4 errline 1; A=SCROLL(5,7) (used as a function) -> errnum 4 errline 1. (The pixel-scroll visual effect is screenshot-path, oracle-pending.)" }
+
+confidence: hw_verified
+
+tests:
+  # SCROLL has no observable text-output side effect in PRINT capture; error expects are hw_verified (sb-oracle 2026-06-22).
+  - { name: basic_scroll, code: 'SCROLL 5,7:PRINT "OK"', expect: { stdout: "OK" } }
+  - { name: negative_scroll, code: 'SCROLL -3,-2:PRINT "OK"', expect: { stdout: "OK" } }
+  - { name: wrong_argcount_errors, code: "SCROLL 5", expect: { error: { errnum: 4 } } }
+  - { name: as_function_errors, code: "A=SCROLL(5,7)", expect: { error: { errnum: 4 } } }
