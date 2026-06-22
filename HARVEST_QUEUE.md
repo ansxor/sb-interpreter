@@ -313,3 +313,18 @@ oracle to confirm exact output and promote to `hw_verified`.
   - BGPAGE GET default value (expected 5/GRP5) and that SET changes which GRP layers fetch tiles from.
   - BGCLR clear effect (map filled with empty tiles) — one layer vs all-layers form.
   - BGSHOW/BGHIDE visibility toggle on rendered output (and idempotence).
+
+- [ ] S-T9b BG tiles — render/side-effect harvests (error cases already hw_verified, s_t9b batch
+  2026-06-22: BGPUT layer/X/Y-oob -> errnum 10; BGFILL layer-oob -> errnum 10; BGGET layer-oob ->
+  errnum 10 / used-as-statement -> errnum 4; BGCOPY layer-oob -> errnum 10 / 5-arg -> errnum 4;
+  BGCLIP layer-oob -> errnum 10 / 3-arg -> errnum 4; all valid forms NOERR, errline 1). Need the
+  BG framebuffer oracle (O-T6) for:
+  - BGPUT/BGFILL screen-data exact bit layout: the docs say rotation is at b12-b13, but the named
+    constants #BGROT90=&H0800 / #BGROT180=&H1000 / #BGROT270=&H2000 (constants.yaml) place rotation
+    at b11-b13. Confirm via BGPUT a value then BGGET it back which bits the engine keeps/decodes.
+  - BGGET round-trip after BGPUT (read back the exact packed screen-data value); char-number cycle-1024
+    behavior (does BGGET return the stored 0-4095 or the mod-1024 displayed value?).
+  - BGGET pixel-mode (coordFlag=1) pixel->char conversion: rounding and which tile size is used.
+  - BGFILL/BGCOPY rectangle semantics: inclusive corners, reversed start/end ordering, out-of-bounds
+    coordinate clamp vs error (no errnum seen in the handler), and BGCOPY overlapping src/dst.
+  - BGCLIP clip rectangle visible effect and the internal layer-id (layer+2) mapping.

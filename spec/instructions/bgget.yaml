@@ -1,0 +1,44 @@
+id: BGGET
+kind: function
+category: BG
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+      - { name: x, type: integer, range: "0..width-1 (char) or pixel coordinate", desc: "X coordinate to read; interpretation depends on the coordinate-system flag." }
+      - { name: y, type: integer, range: "0..height-1 (char) or pixel coordinate", desc: "Y coordinate to read; interpretation depends on the coordinate-system flag." }
+      - { name: coord_flag, type: integer, range: "0 | 1", optional: true, desc: "Coordinate system: 0 (default) = X,Y are BG-screen coordinates in character units; 1 = X,Y are screen coordinates in pixel units." }
+    returns: { type: integer, desc: "The 16-bit screen data of the cell: character number (b0-b11, cycle 1024) plus rotation (#BGROT0/90/180/270) and flip (#BGREVH/#BGREVV) attribute bits." }
+    note: "v = BGGET(layer, x, y [,coordFlag]) — read the screen data of one BG character. Function only; 3 or 4 arguments."
+
+summary: "Returns the screen data of a BG character at (X,Y) on one layer — the packed 16-bit value holding the character number plus its rotation and horizontal/vertical flip flags. The optional 4th argument selects whether X,Y are character-unit BG coordinates (0, default) or pixel-unit screen coordinates (1)."
+
+semantics:
+  - "Function only with exactly 3 OR 4 arguments: a return value must be requested (return-count [r4,#0xc] == 1, cmp #0x1 @0x163fd4); the argument count must be 3 (cmp #0x3 @0x163fec) or 4 (cmp #0x4 @0x163ff4). Any other count, or use as a statement, raises errnum 4 (Illegal function call) — mov r0,#0x4 @0x164004."
+  - "COORD FLAG (optional 4th argument): when present it is evaluated as an Integer first (getter @0x16400c) and stored; when omitted it defaults to 0. Flag 0 = X,Y are BG-screen (character) coordinates; flag 1 (non-zero) = X,Y are screen (pixel) coordinates, converted to character coordinates by dividing by the layer's tile size (pixel path @0x1640c4: load coords, bl 0x28e1a0 divide)."
+  - "LAYER must be in 0..3: range-checked by the shared layer getter FUN_001e2504 (bl @0x164034); a value < 0 or >= the live BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560."
+  - "In character-coordinate mode (flag 0) the coordinate is range-checked: X<0 (cmp X,#0 blt @0x1640fc) or X>=the layer's map width ([r2,#0x10], cmp width,X bgt = ok @0x164108) raises errnum 10 (Out of range) — mov r0,#0xa, r1=#1 @0x164114. Y is checked likewise against the map height."
+  - "Return value is the 16-bit screen data stored in the cell: bits b0-b11 = character number (0-4095, display cycle 1024); rotation bits decode to #BGROT0/#BGROT90/#BGROT180/#BGROT270; horizontal flip = #BGREVH; vertical flip = #BGREVV. It is the same packed value BGPUT/BGFILL accept."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "used as a statement (no return requested), or the argument count is not 3 or 4" }
+  - { errnum: 10, name: "Out of range", when: "layer not in 0..3, or (character-coordinate mode) X/Y outside the layer's map" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgget.md (Variable=BGGET(Layer,X,Y[,CoordFlag]) — 'Gets information on a BG character on the BG screen'; Layer 0-3; coord flag 0 = BG-screen (character) coords, 1 = screen (pixel) coords; return = char number 0-4095 (cycle 1024) + rotation #BGROT0/#BGROT90/#BGROT0180/#BGROT270 + #BGREVH/#BGREVV; e.g. C=BGGET(0,12,14))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGGET handler @0x163fc4 (FUN_00163fc4): return-count [r4,#0xc] cmp #0x1 @0x163fd4; argcount cmp #0x3 @0x163fec / cmp #0x4 @0x163ff4, else mov r0,#0x4 errnum 4 @0x164004; 4th-arg coord-flag getter @0x16400c; layer range-check via bl 0x1e2504 (errnum 10 @0x1e2560); flag!=0 pixel->char divide path bl 0x28e1a0 @0x1640d8; flag==0 char path X<0 or X>=width [r2,#0x10] -> mov r0,#0xa errnum 10 @0x164114 (cmp @0x1640fc/@0x164108); result pushed via [r4,#0x10] vtable @0x1640ec." }
+  - { type: community, ref: "osb/SMILEBASIC/bg.d BG tilemap get handling (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: ~250 calls, all 3-arg (~132x) or 4-arg (~109x). The 4-arg coordFlag is dominated by flag=1 pixel mode (~80x, used for collision/platformer reads, e.g. 'BGGET(0,CX[PLAYER]-BGX,CY[PLAYER]-BGY,1)' in 13D4DV3V/TXT/MAIN_PRG_V2) with explicit flag=0 char mode rarer (~29x); confirms both documented coordinate modes. No 2-arg or 5+-arg form. (oracle-pending: pixel->char conversion rounding, queued)" }
+
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9b): C=BGGET(4,0,0) -> errnum 10 (layer out of range); BGGET 0,0,0 used as a statement -> errnum 4 (Illegal function call). Valid BGSCREEN 0,32,32:C=BGGET(0,0,0) raises nothing. All errline 1." }
+
+confidence: disassembled
+
+tests:
+  # Read-back values depend on prior BGPUT writes and need the BG oracle (O-T6, queued); error
+  # expects below are hw_verified (sb-oracle 2026-06-22 s_t9b).
+  - { name: get_ok_3arg, code: "BGSCREEN 0,32,32\nC=BGGET(0,0,0)", expect: { stdout: "" } }
+  - { name: get_ok_4arg, code: "BGSCREEN 0,32,32\nC=BGGET(0,0,0,0)", expect: { stdout: "" } }
+  - { name: layer_out_of_range, code: "C=BGGET(4,0,0)", expect: { error: { errnum: 10 } } }
+  - { name: as_statement_errors, code: "BGGET 0,0,0", expect: { error: { errnum: 4 } } }

@@ -1,0 +1,45 @@
+id: BGCOPY
+kind: statement
+category: BG
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number (source and destination are the same layer)." }
+      - { name: start_x, type: integer, range: "0..width-1", desc: "Copy-source start column, in character (tile) units." }
+      - { name: start_y, type: integer, range: "0..height-1", desc: "Copy-source start row, in character (tile) units." }
+      - { name: end_x, type: integer, range: "0..width-1", desc: "Copy-source end column, in character (tile) units." }
+      - { name: end_y, type: integer, range: "0..height-1", desc: "Copy-source end row, in character (tile) units." }
+      - { name: dest_x, type: integer, range: "0..width-1", desc: "Copy-destination start column, in character (tile) units." }
+      - { name: dest_y, type: integer, range: "0..height-1", desc: "Copy-destination start row, in character (tile) units." }
+    note: "BGCOPY layer, startX, startY, endX, endY, destX, destY — copy a rectangular block of the layer's tilemap to another position within the same layer (7 args, no return value)."
+
+summary: "Copies a rectangular block of one BG layer's tilemap (in character units) from the source region (startX,startY)-(endX,endY) to a destination whose top-left is (destX,destY), within the same layer."
+
+semantics:
+  - "Statement only with exactly 7 arguments: if a return value is requested (used as a function) or the argument count is not 7, the handler raises errnum 4 (Illegal function call) — argcount [r0,#0x4] cmp #0x7 with cmpeq return-count [r0,#0xc],#0, else mov r0,#0x4 @0x1651d0."
+  - "LAYER must be in 0..3: range-checked by the shared layer getter FUN_001e2504 (bl @0x1651f0); a value < 0 or >= the live BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560."
+  - "The six coordinates (startX, startY, endX, endY, destX, destY) are evaluated as Integers in order (getters @0x165228-0x1652e0). The copy operates on the source rectangle (inclusive of both corners) and writes it with its top-left corner at (destX,destY). The documented coordinate range is 0..(BGSCREEN size - 1) for each axis."
+  - "The copy is performed within a single layer (source and destination layer are the same). The actual block move is done by the BG copy helper bl 0x15f9a0 @0x165308."
+  - "BGCOPY only rewrites tilemap cells; it does not change the layer size (BGSCREEN), visibility, scroll or graphic page."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "used as a function (return requested) or the argument count is not 7" }
+  - { errnum: 10, name: "Out of range", when: "the layer is not in 0..3" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgcopy.md (BGCOPY Layer,StartX,StartY,EndX,EndY,DestX,DestY — 'Copies from the BG screen in character units'; Layer 0-3; source start/end and destination coords 0..BGSCREEN-1; e.g. BGCOPY 2,0,0,32,32,0,0)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGCOPY handler @0x1651a8: argcount [r0,#0x4] cmp #0x7 + cmpeq return-count [r0,#0xc],#0, else mov r0,#0x4 errnum 4 @0x1651d0 (bl 0x1fffdc); layer range-check via bl 0x1e2504 (errnum 10 @0x1e2560); six coord getters @0x165228-0x1652e0 (mov r7 #1..#6 per arg); copy helper bl 0x15f9a0 @0x165308; state ptr const @0x16531c, map base const @0x165320." }
+  - { type: community, ref: "osb/SMILEBASIC/bg.d BG tilemap block-copy handling (3.5.0 structural cross-check only)" }
+
+  - { type: community, ref: "sbsave corpus: ~39 calls, all documented 7-arg form, e.g. 'BGCOPY 0,0,0,25,15,0,15' in 2XVV233J/TXT/GAME.PRG, 'BGCOPY 1,0,8,24,47,25,8' in VKAKV3ZP/TXT/HNZRQ. No other argument count." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9b): BGCOPY 4,0,0,1,1,2,2 -> errnum 10 (layer out of range); BGCOPY 0,0,0,1,1 (5 args) -> errnum 4 (Illegal function call). Valid BGSCREEN 2,32,32:BGCOPY 2,0,0,3,3,4,4 raises nothing. All errline 1." }
+
+confidence: disassembled
+
+tests:
+  # Tilemap copy side effects need the BG framebuffer oracle (O-T6, queued); error expects below
+  # are hw_verified (sb-oracle 2026-06-22 s_t9b).
+  - { name: copy_ok, code: "BGSCREEN 2,32,32\nBGCOPY 2,0,0,3,3,4,4", expect: { stdout: "" } }
+  - { name: layer_out_of_range, code: "BGCOPY 4,0,0,1,1,2,2", expect: { error: { errnum: 10 } } }
+  - { name: wrong_argcount_errors, code: "BGCOPY 0,0,0,1,1", expect: { error: { errnum: 4 } } }
