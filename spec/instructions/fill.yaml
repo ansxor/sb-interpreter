@@ -1,0 +1,43 @@
+id: FILL
+kind: statement
+category: Variables and Arrays
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: array, type: array, desc: "Array to overwrite (integer, real, or string)" }
+      - { name: value, type: any, desc: "Value to write into each element (number or string matching the array type)" }
+      - { name: offset, type: integer, range: ">=0", optional: true, default: 0, desc: "Element index to begin writing from" }
+      - { name: count, type: integer, range: ">=0", optional: true, desc: "Number of elements to write (default: to end of array)" }
+    note: "FILL array, value [,offset [,count]] — set elements to value."
+
+summary: "Sets every element of an array to the specified value. A subrange may be filled with offset and count."
+
+semantics:
+  - "FILL array,value writes value into every element of the array."
+  - "With offset, writing starts at that element index; with count, only that many elements are written."
+  - "Works on any array element type: integer, real (double), or string."
+  - "Writing a value whose type does not match the array element type (e.g. a string into a numeric array) raises errnum 8 (Type mismatch)."
+  - "Integer↔double values coerce to the numeric array's element type."
+  - "FILL does not change the array length; it only overwrites existing elements (offset+count beyond the array bounds raises errnum 31, Subscript out of range — oracle-pending)."
+  - "Wrong argument count raises errnum 4 (Illegal function call)."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "value type does not match the array element type" }
+  - { errnum: 4, name: IllegalFunctionCall, when: "wrong number of arguments" }
+  - { errnum: 31, name: "Subscript out of range", when: "offset/count exceed the array bounds (oracle-pending)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/fill.md (FILL Array,Value[,Offset[,Number]]; sets all elements; partial via offset+count; any array type incl. string)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst FILL handler FUN_0014a570 @0x14a570 (shares the COPY code region): argc check -> errnum 4 (mov r0,#4 @0x14a590 -> 0x1fffdc); element-type handling branches on the array tag" }
+  - { type: community, ref: "sbsave corpus: ~1,379 FILL (excl. GFILL/BGFILL); offset/count subrange common (~174, e.g. FILL FOR_BOX_VAR$,\"-\",(STR_SEL+S_P)*4+1,3 in 13D4DV3V/TXT/MAIN_PRG_V2); string arrays (~53) incl. clear via FILL MEMO$,\"\"; expression values FILL tGB%,RGB(...) (~346)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4c): FILL A,9 -> all 9 (999); FILL A,7,1,2 -> only A[1],A[2]=7 (0770); FILL S$,\"x\" -> all \"x\" (xx); FILL S$,\"-\",1,2 -> S$[1],S$[2]=\"-\" (,--,); FILL A,\"x\" on numeric array -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: fill_all, code: "DIM A[3]\nFILL A,9\nPRINT A[0];A[1];A[2]", expect: { stdout: "999" } }
+  - { name: fill_offset_count, code: "DIM A[4]\nFILL A,7,1,2\nPRINT A[0];A[1];A[2];A[3]", expect: { stdout: "0770" } }
+  - { name: fill_string, code: "DIM S$[2]\nFILL S$,\"x\"\nPRINT S$[0];S$[1]", expect: { stdout: "xx" } }
+  - { name: fill_string_offset, code: "DIM S$[4]\nFILL S$,\"-\",1,2\nPRINT S$[0];\",\";S$[1];S$[2];\",\";S$[3]", expect: { stdout: ",--," } }
+  - { name: fill_type_mismatch, code: "DIM A[2]\nFILL A,\"x\"", expect: { error: { errnum: 8 } } }

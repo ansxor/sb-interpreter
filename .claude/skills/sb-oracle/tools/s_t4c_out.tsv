@@ -1,0 +1,23 @@
+copy_basic	2
+copy_autoextend	3
+copy_dest_offset	78
+copy_count	120
+copy_5arg	34
+copy_from_data	54
+fill_all	999
+fill_offset_count	0770
+fill_string	xx
+fill_string_offset	,--,
+sort_basic	123
+sort_range_prefix	123
+sort_partial	4231
+sort_parallel	102030
+sort_string_key	abc
+sort_float_key	1.5,2.5,3.5
+rsort_basic	321
+rsort_range_prefix	321
+rsort_parallel	302010
+rsort_string_key	cba
+rsort_num_key_str_parallel	cba
+copy_type_mismatch	errnum=8 errline=1
+fill_type_mismatch	errnum=8 errline=1

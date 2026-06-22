@@ -62,7 +62,7 @@ and name the instructions they cover inline.
 #### S-T4 Variables/arrays + Data-ops (27) → S-T0
 - [x] S-T4a Declaration & inc — VAR · DIM · DEC · INC · SWAP
 - [x] S-T4b Array stack/queue — PUSH · POP · SHIFT · UNSHIFT
-- [ ] S-T4c Array ops — COPY · FILL · SORT · RSORT
+- [x] S-T4c Array ops — COPY · FILL · SORT · RSORT
 - [ ] S-T4d DATA/READ — DATA · READ · RESTORE · REM
 - [ ] S-T4e Read helpers & checks — DTREAD · TMREAD · CHKCALL · CHKLABEL · CHKVAR
 - [ ] S-T4f Misc data-ops — DIALOG · KEY · OPTION · VSYNC · WAIT

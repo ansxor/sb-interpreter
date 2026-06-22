@@ -10,6 +10,12 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T4c (COPY/FILL/SORT/RSORT) · Confirm the secondary error edges: COPY DATA-form with
+  fewer DATA items than required (errnum? docs say "an error occurs" — guess 13 Out of DATA);
+  FILL with offset/count beyond array bounds (errnum 31?); SORT/RSORT with bad/missing array
+  args (errnum 4?). · assumption: per docs/error-table. Core COPY (incl. 5-arg + DATA form),
+  FILL (incl. string+offset), SORT/RSORT (numeric/float/string keys + parallels) all
+  hw_verified 2026-06-22.
 - [ ] S-T4b (PUSH/UNSHIFT/POP/SHIFT) · Confirm behavior on a MULTI-DIMENSIONAL array (e.g.
   `DIM A[2,2]:PUSH A,9`) — does it error (and which errnum) or operate on a flattened/last
   dimension? · assumption: documented for 1D only; multi-dim likely errors. Corpus shows no

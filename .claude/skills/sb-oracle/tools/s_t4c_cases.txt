@@ -1,0 +1,27 @@
+# COPY
+copy_basic|DIM S[3]:S[0]=1:S[1]=2:S[2]=3:DIM D[3]:COPY D,S|D[1]|prog
+copy_autoextend|DIM S[3]:DIM D[0]:COPY D,S|LEN(D)|prog
+copy_dest_offset|DIM S[2]:S[0]=7:S[1]=8:DIM D[4]:COPY D,1,S|STR$(D[1])+STR$(D[2])|progstr
+copy_count|DIM S[3]:S[0]=1:S[1]=2:S[2]=3:DIM D[3]:COPY D,S,0,2|STR$(D[0])+STR$(D[1])+STR$(D[2])|progstr
+copy_5arg|DIM S[4]:S[0]=1:S[1]=2:S[2]=3:S[3]=4:DIM D[4]:COPY D,1,S,2,2|STR$(D[1])+STR$(D[2])|progstr
+copy_from_data|DIM D[5]:COPY D,"@SRC"\n@SRC\nDATA 5,1,1,2,4|STR$(D[0])+STR$(D[4])|progstr
+copy_type_mismatch|DIM A[1]:DIM S$[1]:COPY A,S$|err
+# FILL
+fill_all|DIM A[3]:FILL A,9|STR$(A[0])+STR$(A[1])+STR$(A[2])|progstr
+fill_offset_count|DIM A[4]:FILL A,7,1,2|STR$(A[0])+STR$(A[1])+STR$(A[2])+STR$(A[3])|progstr
+fill_string|DIM S$[2]:FILL S$,"x"|S$[0]+S$[1]|progstr
+fill_string_offset|DIM S$[4]:FILL S$,"-",1,2|S$[0]+","+S$[1]+S$[2]+","+S$[3]|progstr
+fill_type_mismatch|DIM A[2]:FILL A,"x"|err
+# SORT
+sort_basic|DIM A[3]:A[0]=3:A[1]=1:A[2]=2:SORT A|STR$(A[0])+STR$(A[1])+STR$(A[2])|progstr
+sort_range_prefix|DIM A[3]:A[0]=3:A[1]=1:A[2]=2:SORT 0,3,A|STR$(A[0])+STR$(A[1])+STR$(A[2])|progstr
+sort_partial|DIM A[4]:A[0]=4:A[1]=3:A[2]=2:A[3]=1:SORT 1,2,A|STR$(A[0])+STR$(A[1])+STR$(A[2])+STR$(A[3])|progstr
+sort_parallel|DIM A[3]:A[0]=3:A[1]=1:A[2]=2:DIM B[3]:B[0]=30:B[1]=10:B[2]=20:SORT A,B|STR$(B[0])+STR$(B[1])+STR$(B[2])|progstr
+sort_string_key|DIM S$[3]:S$[0]="c":S$[1]="a":S$[2]="b":SORT S$|S$[0]+S$[1]+S$[2]|progstr
+sort_float_key|DIM A#[3]:A#[0]=3.5:A#[1]=1.5:A#[2]=2.5:SORT A#|STR$(A#[0])+","+STR$(A#[1])+","+STR$(A#[2])|progstr
+# RSORT
+rsort_basic|DIM A[3]:A[0]=1:A[1]=3:A[2]=2:RSORT A|STR$(A[0])+STR$(A[1])+STR$(A[2])|progstr
+rsort_range_prefix|DIM A[3]:A[0]=1:A[1]=3:A[2]=2:RSORT 0,3,A|STR$(A[0])+STR$(A[1])+STR$(A[2])|progstr
+rsort_parallel|DIM A[3]:A[0]=1:A[1]=3:A[2]=2:DIM B[3]:B[0]=10:B[1]=30:B[2]=20:RSORT A,B|STR$(B[0])+STR$(B[1])+STR$(B[2])|progstr
+rsort_string_key|DIM S$[3]:S$[0]="a":S$[1]="c":S$[2]="b":RSORT S$|S$[0]+S$[1]+S$[2]|progstr
+rsort_num_key_str_parallel|DIM A[3]:A[0]=3:A[1]=1:A[2]=2:DIM N$[3]:N$[0]="c":N$[1]="a":N$[2]="b":RSORT A,N$|N$[0]+N$[1]+N$[2]|progstr

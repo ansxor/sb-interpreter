@@ -1,0 +1,40 @@
+id: RSORT
+kind: statement
+category: Variables and Arrays
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: start, type: integer, range: ">=0", optional: true, default: 0, desc: "Index in array1 from which to start sorting" }
+      - { name: count, type: integer, range: ">=1", optional: true, desc: "Number of elements of array1 to sort (default: whole array)" }
+      - { name: array1, type: array, desc: "Key array to sort in descending order (numeric or string; strings sort lexically)" }
+      - { name: array2plus, type: array, optional: true, desc: "Up to 7 additional arrays reordered to follow array1's sort (array2..array8)" }
+    note: "RSORT [start, count,] array1 [,array2, ...] — descending sort; the optional leading start/count pair is detected by type."
+
+summary: "Sorts a numeric array in descending order. Additional parallel arrays are reordered to follow the same permutation. A subrange may be sorted with a leading start/count pair."
+
+semantics:
+  - "RSORT array1 sorts the whole array in descending numeric order (the reverse ordering of [[sort]])."
+  - "A leading start,count pair sorts only array1[start..start+count-1]; elements outside the range are left in place."
+  - "array1 is the key array (numeric). array2..array8 (up to 7 more) are reordered by the SAME permutation as array1 — parallel-array sort."
+  - "The leading start/count pair is distinguished from the first array operand by argument TYPE: a number in the first slot is start, an array is array1."
+  - "The key array (array1) may be an integer, double, OR string array; string arrays sort lexically in reverse (e.g. \"a\",\"c\",\"b\" -> \"c\",\"b\",\"a\"). Parallel arrays (array2..array8) may be any type, e.g. a numeric key with a string parallel (RSORT scores$, names$)."
+  - "Wrong argument count or out-of-range start/count: errnum oracle-pending (likely 4 / 10)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "wrong number/shape of arguments (oracle-pending exact conditions)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/rsort.md (RSORT [Start,Number,] Array1[,Array2,...]; descending; Array1 keys; Array2..Array8 reordered to match; up to 8 arrays)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst RSORT handler FUN_001450f8 @0x1450f8: same variadic argument parsing/type-checks as SORT @0x14aae0 but with the comparison reversed for descending order" }
+  - { type: community, ref: "sbsave corpus: ~139 RSORT; two-array key+parallel most common (~44%); leading start,count prefix real (~10%, e.g. RSORT 0,PCT%,ZB#,JP% in A3W4384E/TXT/MAIN); numeric key + string parallel real (RSORT RANK_SC%,RANK_NM$ in 73383JLY/TXT/SOLIDGUNNER_C); up to 8 parallel arrays (3D z-sorting); used heavily for 3D depth sort" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4c): RSORT A (1,3,2) -> 3,2,1; RSORT 0,3,A -> 3,2,1; RSORT A,B reorders parallel B (10,30,20 -> 30,20,10); string key RSORT S$ (a,c,b) -> c,b,a; numeric key + string parallel RSORT A,N$ (A=3,1,2 N$=c,a,b) -> N$ follows desc sort -> c,b,a" }
+
+confidence: hw_verified
+
+tests:
+  - { name: rsort_basic, code: "DIM A[3]\nA[0]=1\nA[1]=3\nA[2]=2\nRSORT A\nPRINT A[0];A[1];A[2]", expect: { stdout: "321" } }
+  - { name: rsort_with_range_prefix, code: "DIM A[3]\nA[0]=1\nA[1]=3\nA[2]=2\nRSORT 0,3,A\nPRINT A[0];A[1];A[2]", expect: { stdout: "321" } }
+  - { name: rsort_parallel, code: "DIM A[3]\nA[0]=1\nA[1]=3\nA[2]=2\nDIM B[3]\nB[0]=10\nB[1]=30\nB[2]=20\nRSORT A,B\nPRINT B[0];B[1];B[2]", expect: { stdout: "302010" } }
+  - { name: rsort_string_key, code: "DIM S$[3]\nS$[0]=\"a\"\nS$[1]=\"c\"\nS$[2]=\"b\"\nRSORT S$\nPRINT S$[0];S$[1];S$[2]", expect: { stdout: "cba" } }
+  - { name: rsort_num_key_string_parallel, code: "DIM A[3]\nA[0]=3\nA[1]=1\nA[2]=2\nDIM N$[3]\nN$[0]=\"c\"\nN$[1]=\"a\"\nN$[2]=\"b\"\nRSORT A,N$\nPRINT N$[0];N$[1];N$[2]", expect: { stdout: "cba" } }
