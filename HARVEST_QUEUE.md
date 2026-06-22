@@ -216,3 +216,19 @@ oracle to confirm exact output and promote to `hw_verified`.
   vs sector geometry + angle normalization (negative / >360 wrap, where 0deg points), and
   radius<=0 no-op are pixel effects — need the framebuffer oracle (O-T6, not yet in the skill).
   Behavior is from docs + disassembly + corpus.
+
+- [x] S-T7c arg-count guards · HARVESTED 2026-06-22 (sb-oracle batch s_t7c → specs hw_verified):
+  all 9 confirmed errnum 4 / errline 1 — GFILL 0,0,1 / 0,0,1,1,2,3 / A=GFILL(0,0,1,1);
+  GPAINT 200 / 0,0,1,2,3 / A=GPAINT(0,0); GPUTCHR 10,10 / 10,10,"A",2,2,0,0 / A=GPUTCHR(10,10,"A").
+  Matches the disasm guards (GFILL @0x153154, GPAINT @0x154544, GPUTCHR @0x154b40 / @0x154c18).
+- [ ] S-T7c GPUTCHR float-scale coercion · does a float scale (1.5,1.5) truncate to 1 (no
+  scaling) or round? corpus shows ~41 real uses (e.g. 43Y5P31D/TXT/CAR '...,1.5,1.5,...').
+  Assumption: integer-truncated by the int arg-fetch (disasm fetches scale via int vtable
+  [r2,#0x40] @0x154c6c/@0x154cb8), so 1.5 → 1. Needs oracle + framebuffer to confirm.
+- [ ] S-T7c GPUTCHR errnum 49 · the graphic-plane availability guard (mov r0,#0x31 @0x154da4)
+  raises errnum 49 — confirm the exact error NAME and the precise state that triggers it
+  (plane not displayed/allocated). Not in errors.yaml (which stops at 47); oracle-pending.
+- [ ] S-T7c visual side-effects (framebuffer path) · GFILL solid-rect span + default-color
+  path, GPAINT flood-fill region (border-omitted = start-point color region vs explicit
+  border), GPUTCHR glyph rendering/positioning/scale/font — all pixel effects needing the
+  framebuffer oracle (O-T6, not yet in the skill). Behavior is from docs + disassembly + corpus.

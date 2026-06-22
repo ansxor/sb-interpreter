@@ -1,0 +1,49 @@
+id: GFILL
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x1, type: integer, range: "graphic-page coordinate (visible 0-399 x, 0-239 y)", desc: "Start point X (one corner)" }
+      - { name: y1, type: integer, range: "graphic-page coordinate", desc: "Start point Y" }
+      - { name: x2, type: integer, range: "graphic-page coordinate", desc: "End point X (opposite corner)" }
+      - { name: y2, type: integer, range: "graphic-page coordinate", desc: "End point Y" }
+    note: "GFILL x1,y1,x2,y2 — fills a solid rectangle in the current GCOLOR draw color (4 args, no return value)."
+  - args:
+      - { name: x1, type: integer, range: "graphic-page coordinate", desc: "Start point X" }
+      - { name: y1, type: integer, range: "graphic-page coordinate", desc: "Start point Y" }
+      - { name: x2, type: integer, range: "graphic-page coordinate", desc: "End point X" }
+      - { name: y2, type: integer, range: "graphic-page coordinate", desc: "End point Y" }
+      - { name: color_code, type: integer, optional: true, range: "any 32-bit ARGB value", desc: "ARGB8888 color (8 bits each A,R,G,B); usually built with RGB(). A=255 opaque, otherwise transparent. See GCOLOR." }
+    note: "GFILL x1,y1,x2,y2,color — fills the rectangle in the given color (5 args, no return value)."
+
+summary: "Draws a SOLID (filled) quadrangle (rectangle) between two opposite corners on the current graphic page, using the current draw color or an explicit ARGB color."
+
+semantics:
+  - "Fills the whole rectangle interior — unlike GBOX, which draws only the outline. The filled span is the axis-aligned box spanned by the two corners."
+  - "Takes exactly 4 args (x1,y1,x2,y2) or 5 args (+color) and returns no value. Any other argument count, or requesting a return value, raises errnum 4 (Illegal function call) — return-count [r4,#0xc] cmp #0 bne error @0x153130, argcount [r4,#0x4] cmp #4 (beq @0x153164) / cmp #5 (beq @0x1531f0) else mov r0,#0x4 (errnum 4) @0x153154."
+  - "With 4 args the color defaults to the current GCOLOR draw color (the 4-arg path loads it from the graphics-context draw-color field +0xc: ldreq r0,[r6,#0xc] / streq r0,[sp,#0x1c] @0x1531e0). With 5 args the popped 32-bit value is the color."
+  - "The color is NOT range-checked — it is a full 32-bit ARGB value (8 bits each A,R,G,B); A=255 opaque, otherwise transparent. Signed/&H/#CONSTANT color operands are accepted (e.g. -1 = opaque white)."
+  - "Corners may be given in any order and may be off-screen / out of range; coordinates are integer-coerced from the popped args and clipped by the draw helper rather than rejected — no range error. The handler reads the graphics context via [[0x315d60]+0x20] (r6), fetches the four coordinates plus color through the standard arg-fetch vtable slot [r2,#0x40], and passes them to the filled-rectangle draw helper bl 0x193dec @0x1532bc."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not 4 or 5, or a return value is requested (used as a function)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gfill.md (GFILL Start point X,Start point Y, End point X,End point Y [,Color code] — draws a quadrangle and fills it with a color; coords X:0-399 Y:0-239; Color is 8 bits per ARGB element, see GCOLOR; e.g. GFILL 0,0,399,239)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GFILL handler @0x153110: graphics state ptr ldr [0x1532cc]->0x315d60, gfx-context = [[..]+0x20] (r6); return-count r0=[r4,#0xc] cmp #0 bne 0x15314c -> errnum 4 @0x153130; argcount r0=[r4,#0x4] cmp #4 beq 0x153164 (4-arg, default color), cmp #5 beq 0x1531f0 (5-arg), else mov r2,#0/mvn r1/mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x153154; 4-arg path defaults color ldreq r0,[r6,#0xc]/streq [sp,#0x1c] @0x1531e0; coordinates fetched via vtable [r2,#0x40]; filled-rectangle draw bl 0x193dec @0x1532bc; no range guard in the handler." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GFILL: fills a rectangle on the active graphic page (3.5.0 structural cross-check only)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7c): GFILL 0,0,1 (3 args) -> errnum 4, errline 1; GFILL 0,0,1,1,2,3 (6 args) -> errnum 4; A=GFILL(0,0,1,1) (used as a function) -> errnum 4." }
+  - { type: community, ref: "sbsave corpus: GFILL appears ~7860x. Confirms the 4-arg default-color form (~742 lines, e.g. 1K237KNV/TXT/FREEBGM_RWI2 'GFILL 0,240,400,480'), and #CONSTANT (1DVK34J/TXT/HNZTL 'GFILL 0,112,49,121,#BLACK'), &H hex (1DVK34J/TXT/HNZMJG 'GFILL ...,&HFF0000FF'), negative (2EVX5N4E/TXT/CALENDAR 'GFILL 0,0,319,15,-12961222'; -1) and array-element color operands (1DVK34J/TXT/HNZCDRV 'GFILL ...,C_CMR%[PH,2]') — all legal. No real form with a count other than 4 or 5." }
+
+confidence: disassembled
+
+tests:
+  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7c); fill side-effects need the framebuffer oracle (O-T6, queued).
+  - { name: fill_default_color_ok, code: "GFILL 0,0,399,239", expect: { stdout: "" } }
+  - { name: fill_explicit_color_ok, code: "GFILL 10,10,100,100,RGB(255,0,0)", expect: { stdout: "" } }
+  - { name: fill_negative_color_ok, code: "GFILL 0,0,50,50,-1", expect: { stdout: "" } }
+  - { name: three_args_errors, code: "GFILL 0,0,1", expect: { error: { errnum: 4 } } }
+  - { name: six_args_errors, code: "GFILL 0,0,1,1,2,3", expect: { error: { errnum: 4 } } }
+  - { name: as_function_errors, code: "A=GFILL(0,0,1,1)", expect: { error: { errnum: 4 } } }

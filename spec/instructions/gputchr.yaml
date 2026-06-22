@@ -1,0 +1,64 @@
+id: GPUTCHR
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x, type: integer, range: "graphic-page coordinate (visible 0-399 x, 0-239 y)", desc: "Display position X" }
+      - { name: y, type: integer, range: "graphic-page coordinate", desc: "Display position Y" }
+      - { name: text, type: string, desc: "String to draw, one font glyph per character" }
+    note: "GPUTCHR x,y,\"str\" — draws a string at (x,y) in the current GCOLOR draw color, scale 1 (3 args)."
+  - args:
+      - { name: x, type: integer, range: "graphic-page coordinate", desc: "Display position X" }
+      - { name: y, type: integer, range: "graphic-page coordinate", desc: "Display position Y" }
+      - { name: char_code, type: integer, desc: "Character code to draw (e.g. ASC(\"A\"))" }
+    note: "GPUTCHR x,y,code — draws a single character by code at (x,y) in the current GCOLOR draw color, scale 1 (3 args)."
+  - args:
+      - { name: x, type: integer, range: "graphic-page coordinate", desc: "Display position X" }
+      - { name: y, type: integer, range: "graphic-page coordinate", desc: "Display position Y" }
+      - { name: text_or_code, type: any, desc: "String or character code (see above)" }
+      - { name: color_code, type: integer, optional: true, range: "any 32-bit ARGB value", desc: "ARGB8888 color (see GCOLOR)." }
+    note: "GPUTCHR x,y,chr,color — 4 args: the single extra operand is the COLOR (scale stays 1). Scale is a pair, so one extra arg can only be the color."
+  - args:
+      - { name: x, type: integer, range: "graphic-page coordinate", desc: "Display position X" }
+      - { name: y, type: integer, range: "graphic-page coordinate", desc: "Display position Y" }
+      - { name: text_or_code, type: any, desc: "String or character code (see above)" }
+      - { name: scale_x, type: integer, desc: "Horizontal magnification (no scaling = 1; integer-coerced)." }
+      - { name: scale_y, type: integer, desc: "Vertical magnification (no scaling = 1; integer-coerced)." }
+      - { name: color_code, type: integer, optional: true, range: "any 32-bit ARGB value", desc: "ARGB8888 color (see GCOLOR)." }
+    note: "GPUTCHR x,y,chr,sx,sy[,color] — 5 args = +scaleX,scaleY (default color); 6 args = +scaleX,scaleY,color."
+
+summary: "Draws a character or string onto the current graphic page from the system font, at integer scale, in the current or an explicit ARGB color. The third operand may be a string (draws each glyph) or a numeric character code (draws one glyph)."
+
+semantics:
+  - "The third operand is dual-typed: a string draws each character's glyph; a numeric value draws the single glyph for that character code. The handler dispatches on the operand's runtime type (string-vs-number) at @0x154b9c (type byte [..+0x20][+2]; string path via vtable [..+0x50], numeric path via vtable [..+0x40] storing the code as a halfword strh r0,[sp,#0x24])."
+  - "Takes 3 to 6 args and returns no value. A return request, or argcount < 3, raises errnum 4 — return-count [r4,#0xc] cmp #0 plus argcount [r4,#0x4] cmp #3 bge 0x154b58 else mov r0,#0x4 (errnum 4) @0x154b40; argcount > 6 likewise raises errnum 4 via the cmp #3/#4/#5/#6 ladder falling through to mov r0,#0x4 @0x154c18."
+  - "Optional groups: scale is a PAIR (Scale X, Scale Y), color is a single value. So by argcount — 3 args: scale 1, color = current GCOLOR; 4 args: the one extra operand is the COLOR (scale stays 1, @0x154c3c -> sp+0x20); 5 args: the two extras are Scale X (sp+0x2c) and Scale Y (sp+0x30), color defaults to GCOLOR (@0x154c6c); 6 args: Scale X, Scale Y, and explicit color (@0x154cb8)."
+  - "Scale is integer-coerced (fetched via the int vtable slot [r2,#0x40]). The draw decision @0x154d24 requires a positive glyph count and BOTH scales > 0: if Scale X <= 0 or Scale Y <= 0 (or the glyph count is 0), the handler draws nothing and returns with no error (ble 0x154d90). Default color is the graphics-context draw color [r7,#0xc]."
+  - "Real programs pass FLOAT scale literals despite the int fetch (sbsave corpus: ~41 e.g. '...,1.5,1.5,...' / '...,2.0,2.0,...'); these are accepted (no type error) and coerced to integer by the fetch. Whether 1.5 truncates to 1 (no scaling) or rounds is oracle-pending — see HARVEST_QUEUE.md."
+  - "Drawing is gated by a graphics-plane availability guard: if the target graphic plane is not currently available the handler raises errnum 0x31 (=49) @0x154da4 ([r1,#0x60] / [[r8]][+0x1c][+0x60] flag check at @0x154d3c-0x154d64). Otherwise the glyph(s) are rendered via the draw helper bl 0x1929ac @0x154d8c (args: ctx r0=r7, count r9, X sp+0x1c, Y sp+0x28, plus scale/color packed on the stack)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is less than 3 or greater than 6, or a return value is requested (used as a function)" }
+  - { errnum: 49, name: "(graphic-plane availability guard)", when: "the target graphic plane is not currently available — raised as mov r0,#0x31 @0x154da4. Exact error name not yet harvested (oracle-pending)." }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gputchr.md (form 1: GPUTCHR X,Y,\"String\" [,Scale X,Scale Y][,Color code] — draws a string on the graphic screen; form 2: GPUTCHR X,Y,Character code [,Scale X,Scale Y][,Color code] — draws a character; X:0-399 Y:0-239; No scaling=1.0; Color is 8 bits per ARGB element, see GCOLOR; e.g. GPUTCHR 10,10,ASC(\"A\"))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GPUTCHR handler @0x154b10: graphics state ptr ldr [0x154db4], gfx-context r7=[..+0x20]; gate = return-count [r4,#0xc] cmp #0 + argcount r10=[r4,#0x4] cmp #3 bge 0x154b58 else mov r0,#0x4 errnum 4 @0x154b40; arg2 string/number dispatch @0x154b9c (type [..+0x20][+2]; string vtable [..+0x50], number vtable [..+0x40] strh [sp,#0x24]); argcount ladder cmp #3 beq 0x154c28 (scale 1 + color [r7,#0xc]) / cmp #4 beq 0x154c3c (color -> sp+0x20, scale 1) / cmp #5 beq 0x154c6c (scaleX sp+0x2c, scaleY sp+0x30, default color) / cmp #6 beq 0x154cb8 (scaleX, scaleY, color), else mov r0,#0x4 errnum 4 @0x154c18; draw skipped if scaleX<=0 || scaleY<=0 || count==0 (ble 0x154d90 @0x154d3c); graphic-plane guard -> errnum 0x31 @0x154da4; glyph draw bl 0x1929ac @0x154d8c." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GPUTCHR: draws font glyph(s) on the active graphic page (3.5.0 structural cross-check only)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7c): GPUTCHR 10,10 (2 args) -> errnum 4, errline 1; GPUTCHR 10,10,\"A\",2,2,0,0 (7 args) -> errnum 4; A=GPUTCHR(10,10,\"A\") (used as a function) -> errnum 4." }
+  - { type: community, ref: "sbsave corpus: GPUTCHR appears ~11808x. Confirms both the string (1233728E/TXT/MG_DOG 'GPUTCHR 200-LEN(D$)*4,VY+I*8,D$', incl. concat/STR$/MID$ string expressions) and char-code (ASC()) third operand; the 4-arg +color, 5-arg +scaleX/scaleY, and 6-arg forms; plain-numeric (1233728E/TXT/MG_DOG 'GPUTCHR 0,256,\"  \",1,1,7'), &H hex (1DVENVAE/TXT/PICS_R1_1V 'GPUTCHR X-2,Y-8,\"A\",2,2,&HFF00FFFF') and negative (-1, 1R8EDWHE/TXT/DEFY3DSIMPLE 'GPUTCHR ...,\"\"+STR$(P),-1') color operands; and FLOAT scale literals (~41, 43Y5P31D/TXT/CAR 'GPUTCHR 140,140,\"PRESS ANY BUTTON\",1.5,1.5,RGB(40,40,40)'). No real form with a count outside 3-6." }
+
+confidence: disassembled
+
+tests:
+  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7c); glyph side-effects need the framebuffer oracle (O-T6, queued). errnum 49 plane guard is oracle-pending (HARVEST_QUEUE.md).
+  - { name: putchr_string_ok, code: "GPUTCHR 10,10,\"A\"", expect: { stdout: "" } }
+  - { name: putchr_code_ok, code: "GPUTCHR 10,10,ASC(\"A\")", expect: { stdout: "" } }
+  - { name: putchr_string_color_ok, code: "GPUTCHR 10,10,\"Hi\",RGB(255,0,0)", expect: { stdout: "" } }
+  - { name: putchr_scale_ok, code: "GPUTCHR 10,10,\"A\",2,2", expect: { stdout: "" } }
+  - { name: putchr_scale_color_ok, code: "GPUTCHR 10,10,\"A\",2,2,RGB(0,255,0)", expect: { stdout: "" } }
+  - { name: two_args_errors, code: "GPUTCHR 10,10", expect: { error: { errnum: 4 } } }
+  - { name: seven_args_errors, code: "GPUTCHR 10,10,\"A\",2,2,0,0", expect: { error: { errnum: 4 } } }
+  - { name: as_function_errors, code: "A=GPUTCHR(10,10,\"A\")", expect: { error: { errnum: 4 } } }

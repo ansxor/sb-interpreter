@@ -1,0 +1,51 @@
+id: GPAINT
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x, type: integer, range: "graphic-page coordinate (visible 0-399 x, 0-239 y)", desc: "X to start filling from" }
+      - { name: y, type: integer, range: "graphic-page coordinate", desc: "Y to start filling from" }
+    note: "GPAINT x,y — flood-fills from (x,y) in the current GCOLOR draw color, bounded by the region of the color found at the start point (2 args)."
+  - args:
+      - { name: x, type: integer, range: "graphic-page coordinate", desc: "X to start filling from" }
+      - { name: y, type: integer, range: "graphic-page coordinate", desc: "Y to start filling from" }
+      - { name: fill_color, type: integer, optional: true, range: "any 32-bit ARGB value", desc: "ARGB8888 fill color (see GCOLOR)." }
+    note: "GPAINT x,y,fill — flood-fills with the given color, bounded by the region of the color found at the start point (3 args; border omitted)."
+  - args:
+      - { name: x, type: integer, range: "graphic-page coordinate", desc: "X to start filling from" }
+      - { name: y, type: integer, range: "graphic-page coordinate", desc: "Y to start filling from" }
+      - { name: fill_color, type: integer, range: "any 32-bit ARGB value", desc: "ARGB8888 fill color (see GCOLOR)." }
+      - { name: border_color, type: integer, optional: true, range: "any 32-bit ARGB value", desc: "ARGB8888 border color: fill spreads until it hits this color (see GCOLOR)." }
+    note: "GPAINT x,y,fill,border — flood-fills with `fill`, spreading until it reaches pixels of `border` color (4 args)."
+
+summary: "Flood-fills a connected region of the current graphic page starting at (x,y). When the border color is omitted, the fill is bounded by the color found at the start point; when given, it spreads until it reaches the border color."
+
+semantics:
+  - "Flood fill (seed fill) from the start point. With a border color given, the fill spreads over connected pixels until it reaches pixels of the border color. With the border omitted, the boundary is implicit: the run of the color sampled at the start point is replaced (fill spreads across the contiguous region matching the start-point color)."
+  - "Takes 2, 3, or 4 args and returns no value. Any other argument count, or requesting a return value, raises errnum 4 (Illegal function call) — return-count [r4,#0xc] cmp #0 bne error @0x154518, argcount [r4,#0x4] cmp #2 (beq @0x154554) / cmp #3 (beq @0x1545a8) / cmp #4 (beq @0x15461c) else mov r0,#0x4 (errnum 4) @0x154544."
+  - "With 2 args the fill color defaults to the current GCOLOR draw color (the 2-arg path loads it from graphics-context field +0xc: ldr r3,[r6,#0xc] @0x154598). With 3+ args the explicit fill color is used. Border color is present only in the 4-arg form."
+  - "The 2- and 3-arg (no-border) forms call the border-less paint helper bl 0x191870 @0x154614; the 4-arg (with-border) form calls a distinct helper bl 0x191b1c @0x1546bc that takes the border color (border at sp+0x10 -> sp+0, x/y/fill in r1/r2/r3). The handler reads the graphics context via [[0x315d60]+0x20] (r6); coordinates and colors are fetched through the arg-fetch vtable slot [r2,#0x40]."
+  - "Colors are full 32-bit ARGB values (8 bits each A,R,G,B), NOT range-checked; signed/&H/#CONSTANT operands are accepted. Start coordinates are integer-coerced."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not 2, 3, or 4, or a return value is requested (used as a function)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gpaint.md (GPAINT Start point X, Start point Y [,Fill Color [,Border color]] — fills the graphic screen with color; if the border color is omitted, the color range at the start point coordinates will be used; coords X:0-399 Y:0-239; e.g. GPAINT 200,120,RGB(255,0,0),RGB(0,0,0))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GPAINT handler @0x1544f8: graphics state ptr ldr [0x1546cc]->0x315d60, gfx-context = [[..]+0x20] (r6); return-count r0=[r4,#0xc] cmp #0 bne 0x15453c -> errnum 4 @0x154518; argcount r0=[r4,#0x4] cmp #2 beq 0x154554 / cmp #3 beq 0x1545a8 / cmp #4 beq 0x15461c, else mov r2,#0/mvn r1/mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x154544; 2-arg path defaults fill color ldr r3,[r6,#0xc] @0x154598; no-border helper bl 0x191870 @0x154614 (2/3-arg), with-border helper bl 0x191b1c @0x1546bc (4-arg); coords/colors via vtable [r2,#0x40]; no range guard." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GPAINT: flood fill on the active graphic page (3.5.0 structural cross-check only)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7c): GPAINT 200 (1 arg) -> errnum 4, errline 1; GPAINT 0,0,1,2,3 (5 args) -> errnum 4; A=GPAINT(0,0) (used as a function) -> errnum 4." }
+  - { type: community, ref: "sbsave corpus: GPAINT appears ~1335x. Confirms the 3-arg (fill only, e.g. 1K8XDW8E/TXT/HARDQUIZ 'GPAINT 0,100,RGB(0,0,50)') and 4-arg (fill+border) forms, with both colors as plain numerics (DFPZ4HD/TXT/_RECOVERY 'GPAINT 385,225,8,8'), RGB(), &H hex (1233728E/TXT/MG_DOG 'GPAINT 127,127,&HFFFFFF80'), and negative (-1, 2RD4S3RJ/TXT/GAME 'GPAINT 80,8,-1') operands — all legal. No real form with a count other than 2-4." }
+
+confidence: disassembled
+
+tests:
+  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7c); paint side-effects need the framebuffer oracle (O-T6, queued).
+  - { name: paint_seed_only_ok, code: "GPAINT 200,120", expect: { stdout: "" } }
+  - { name: paint_fill_color_ok, code: "GPAINT 200,120,RGB(255,0,0)", expect: { stdout: "" } }
+  - { name: paint_fill_border_ok, code: "GPAINT 200,120,RGB(255,0,0),RGB(0,0,0)", expect: { stdout: "" } }
+  - { name: one_arg_errors, code: "GPAINT 200", expect: { error: { errnum: 4 } } }
+  - { name: five_args_errors, code: "GPAINT 0,0,1,2,3", expect: { error: { errnum: 4 } } }
+  - { name: as_function_errors, code: "A=GPAINT(0,0)", expect: { error: { errnum: 4 } } }
