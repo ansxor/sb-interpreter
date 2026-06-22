@@ -19,17 +19,22 @@ Capture ground truth from real SB 3.6.0 to fill `hw_verified` specs (see `prd/or
 
 ```bash
 cd .claude/skills/sb-oracle/tools
-python3 run_case.py ready                          # STEP 0: launch Azahar (if needed) + probe -> READY
-python3 run_case.py setupkeys                       # OPTIONAL: assign F1 = LOAD+RUN macro (one-tap runs)
+python3 run_case.py ready                          # STEP 0: tap SMILE -> arm KEY 1-5 + verify -> READY
 python3 run_case.py batch cases.txt out.tsv        # RECOMMENDED: FAST harvest (one mega-program)
-python3 run_case.py prog 'FLOOR(-2.1)'             # one case via the program-file path -> -3
-python3 run_case.py expr 'MID$("ABCDE",2,3)' str   # one typed case, string -> BCD
+python3 run_case.py prog 'FLOOR(-2.1)'             # one value case via the key/program path -> -3
+python3 run_case.py prog 'MID$("ABCDE",1,2)' str   # one value case, string result -> BC
 python3 run_case.py errcase 'A=SQR(-1)'            # error case -> {errored, errnum, errline}
 python3 run_case.py grp draw.sb out.png top        # GRAPHICS golden: draw -> SAVE GRPn -> PNG
 python3 run_case.py screenshot out.png             # COMPOSITE golden (sprites/BG): Ctrl+P
 ```
-Run `ready` FIRST — it cold-starts Azahar and confirms SB is usable, so cases don't each eat a
-timeout (a `sb_window.py bounds` that returns coords is NOT proof of readiness).
+Run `ready` FIRST — it taps the SMILE button (which runs OBOOT to arm the five function keys)
+and proves the SAVE->dialog->disk path by writing `__OK__` to result file `O`. A `sb_window.py
+bounds` that returns coords is NOT proof of readiness; a green `ready` (O=="__OK__") is.
+
+**Input is via function keys, never typed.** The whole harvest drives SB through five armed
+KEY slots — `F1`=LOAD, `F4`=RUN, `F2`=save-error, `F3`=save-`__OK__`, `F5`=CLS — each a single
+calibrated tap at a fixed screen coordinate. Char-by-char typing (the old flakiness source) is
+gone. The keys are armed once by the **SMILE button** (see Setup); `run_case.py` only taps.
 
 **`batch` is fast** — instead of typing each case into DIRECT mode (the slow part: dozens of
 on-screen taps + a confirm dialog *per case*), it writes ONE program that evaluates ALL value
@@ -56,36 +61,45 @@ Verified: FLOOR(3.7)=3, FLOOR(-2.1)=-3, FLOOR(5)=5, FLOOR(8.9)=8, 7 DIV 2=3, 7 M
 LEN("ABCDE")=5, ABS(-9)=9, POW(2,10)=1024, SQR(144)=12.
 
 ## Setup (once per session)
-0. **Launch first:** `run_case.py ready` opens Azahar if needed and waits for boot. SB must end
-   up on the **DIRECT-mode screen** (keyboard visible); if it boots to a menu, navigate there
-   once. `ready` (a real harvest probe) is the readiness signal — not `sb_window.py bounds`.
-1. Screen Recording + Accessibility granted to the terminal app; `cliclick` installed.
+0. **Launch + arm:** open Azahar and get SB onto the **DIRECT-mode screen** (keyboard visible).
+   Then `run_case.py ready` taps SMILE to arm the keys and verifies via `O=="__OK__"`.
+1. **Assign OBOOT to the SMILE button — one-time, manual, in SB's settings.** `smile_boot.sb`
+   (program **`OBOOT`**, already injected to extdata by `sb_extdata.write_file`) is the bootstrap:
+   tapping SMILE loads+runs it, which sets `KEY 1`-`KEY 5` and SAVEs `__OK__` to `O`. Assign
+   program `OBOOT` to SMILE once; thereafter `ready` re-arms in one tap. (Re-inject OBOOT after
+   editing `smile_boot.sb`: `python3 -c 'import sb_extdata as X; X.write_file("OBOOT", open("smile_boot.sb").read(), "TXT")'`.)
+2. Screen Recording + Accessibility granted to the terminal app; `cliclick` installed.
 
 ## Mechanism
 - **Raise window:** `open -a Azahar` (osascript `activate` is unreliable). Window pinned to
   pos(60,80) size(400,539) for stable coordinates.
-- **Touch:** `cliclick` at screen `(60+wx, 80+wy)`. Keymap (`keymap.json`, from `inputs.json`
-  via `gen_keymap.py`, transform `window = input + (40,272)`, scale 1.0) — verified accurate.
-- **Type/execute:** `type_str` taps keys; `enter()` executes; `clear_line()` = SHIFT+BACKSPACE.
-- **Efficient path:** `sb_extdata.write_file()` writes a valid program to extdata, then type
-  `LOAD"PRG0:<name>",0` (the `,0` auto-dismisses the load dialog) + `RUN`. The program SAVEs
-  its result; the **Write-file/overwrite dialog** is confirmed by a polled **YES** tap; the
-  result file is read from disk.
+- **Touch:** `cliclick` at screen `(60+wx, 80+wy)`. Keymap (`keymap.json`) holds every key plus
+  the named taps **`F1`-`F5`** (function-key row, y≈278), **`SMILE`** (223,495), **`YES`** (318,488).
+- **The five armed keys (set by OBOOT via the SMILE button):**
+  `F1`=`LOAD"PRG0:P",0` · `F4`=`RUN` · `F2`=`SAVE"TXT:O",STR$(ERRNUM)+CHR$(9)+STR$(ERRLINE)` ·
+  `F3`=`SAVE"TXT:O","__OK__"` · `F5`=`CLS`. Each KEY macro is ONE line ending in `CHR$(13)`. LOAD
+  and RUN are **separate keys** — a KEY macro can't hold a multi-line LOAD+RUN (an embedded
+  `CHR$(10)`/`CHR$(13)` does not reliably run both lines on hardware).
+- **Run a program:** `sb_extdata.write_file()` writes the program to extdata as slot `P`, then
+  **delete result file `O`** (so "O exists" = fresh), tap **F5** (CLS), **F1** (load), **F4**
+  (run). The program SAVEs its result; read `O` from disk. No long typing — only the F-keys.
+- **SAVE-dialog handling (`W.confirm_dialogs()`):** a SmileBASIC SAVE is a **two-dialog**
+  sequence — `Confirm · Write file` (tap **YES**, file is written) then `Information · Write file`
+  (tap **OK**, same screen position). LOAD from a key slot adds a one-tap load dialog (the `,0`
+  auto-dismisses only when *typed*, not from a key). `confirm_dialogs()` taps the YES/OK button
+  until **no dialog is on screen** (it samples bottom-screen brightness: dialog body ≥158, keyboard
+  ≤75) — so every save self-closes. NEVER tap YES speculatively to "clear a stale dialog": when
+  none is open that tap lands on a key and injects junk. Each op closes its own dialogs instead.
 - **Mega-program (the fast harvest):** `batch` writes ONE program — `R$=""` then a
   `R$=R$+"<name>"+CHR$(9)+STR$(<expr>)+CHR$(10)` line per case, then `SAVE"TXT:O",R$` — so all
-  results come back in a single file (`name<TAB>value`, LF-separated). One LOAD+RUN for the whole
+  results come back in a single file (`name<TAB>value`, LF-separated). One F1+F4 for the whole
   slice. No in-program error handling exists in SB, so a halting case yields no file → `harvest`
-  bisects to find it. (Only the program *source* is on disk; nothing long is typed.)
-- **One-tap run macro (KEY/F1):** `setup_keys` assigns `KEY 1,"LOAD"+CHR$(34)+"PRG0:P"+CHR$(34)
-  +",0:RUN"+CHR$(13)` — the trailing **`CHR$(13)`** (carriage return, per the `KEY` docs — *not*
-  `CHR$(10)`) makes pressing **F1** load+run program `P` in a single tap (a "reset & run"). The
-  run trigger uses F1 when `keymap.json` has an `"F1"` coord; otherwise it types `LOAD…+RUN`
-  (fine — with the mega-program that's ~once per slice). **To enable one-tap: calibrate F1 once**
-  (`sb_window.py calibrate <wx> <wy>` against a screenshot, add `"F1": [wx,wy]` to `keymap.json`).
-- **Error capture (`run_error_case`):** run `<stmt>` + a `SAVE"TXT:O","__OK__"` sentinel; if the
-  sentinel appears it didn't raise, else read `SAVE"TXT:O",STR$(ERRNUM)+CHR$(9)+STR$(ERRLINE)` in
-  DIRECT mode (the error halted the program; `ERRNUM`/`ERRLINE` persist into DIRECT mode and were
-  set by this run, so no stale-value risk). Freeze `errnum` into the spec test's `expect.error`.
+  bisects to find it.
+- **Error capture (`run_error_case`) — reliable now:** program is `<stmt>` + a
+  `SAVE"TXT:O","__OK__"` sentinel. Delete `O`, F1+F4. If `O=="__OK__"` it didn't raise (NOERR);
+  if `O` is **absent** the stmt halted before the sentinel → tap **F2** to SAVE
+  `ERRNUM`/`ERRLINE` (set by this run's halt, read in DIRECT mode). The delete-first kills the
+  old `errline=0` stale-read ghost. Freeze `errnum` into the spec test's `expect.error`.
 
 ## extdata file format (fully cracked, validated both directions)
 Path: `~/Library/Application Support/Azahar/sdmc/Nintendo 3DS/<0*32>/<0*32>/extdata/00000000/000016DE/user/###/<DISKNAME>`.
@@ -132,7 +146,19 @@ emulator). `sb_audio.py` is a best-effort *reference* only:
   never a committed CI fixture.
 
 ## Pitfalls
+- **A SAVE is two dialogs:** `Confirm · Write file` (→ YES, file written) then `Information ·
+  Write file` (→ OK, same spot). Closing only the first orphans the second; the next op then
+  breaks. Use `W.confirm_dialogs()`, which taps until the screen is dialog-free.
+- **Never speculatively tap YES** to clear a maybe-stale dialog: with none open the tap hits a
+  key and injects junk (e.g. a stray `KEY 1,"E"…`). Make each op close its own dialogs.
+- **`,0` auto-dismisses the load dialog only when TYPED, not from a KEY slot.** So F1 (`LOAD…,0`)
+  still raises a one-tap load dialog — `_load_prog()` clears it with `confirm_dialogs()`.
+- **A KEY macro is one line.** An embedded `CHR$(10)` or `CHR$(13)` does NOT reliably run a
+  two-line `LOAD`+`RUN` from one key (the CR truncates the macro; the LF buffers oddly). Keep
+  LOAD (F1) and RUN (F4) as separate keys.
+- **Delete the result file `O` before each run** so "O exists" means a fresh result — this is
+  what kills the old `errnum=0`/`errline=0` stale-read artifact.
 - `LOAD"TXT:name"` needs an output variable (→ "Illegal function call"); use `LOAD"PRG0:name"` for programs.
-- Can't chain `LOAD ... :RUN` on one line (→ "Syntax error"); RUN separately, no `clear_line()` between.
+- Can't chain `LOAD ... :RUN` on one line (→ "Syntax error"); LOAD (F1) and RUN (F4) are separate taps.
 - A file with a bad/absent HMAC footer shows as `?NAME` in FILES and won't load — always use `write_file`.
 - Terminal can occlude Azahar; `open -a Azahar` right before capture/click. Don't hammer the RPC.

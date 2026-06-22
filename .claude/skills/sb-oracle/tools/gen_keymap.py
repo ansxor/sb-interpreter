@@ -28,8 +28,16 @@ out["SHIFT"] = [58, 473]   # confirmed empirically (clear_line works); not in in
 out["RUN"] = [328, 275]    # tab above the keyboard, confirmed empirically
 out["DIRECT"] = [55, 498]
 out["EDIT"] = [110, 498]
-out["YES"] = [318, 488]   # Confirm-Write dialog, bottom-right (confirmed)
+out["YES"] = [318, 488]   # Confirm/Information-Write dialog, bottom-right OK/Yes (confirmed)
 out["NO"] = [110, 488]    # Confirm-Write dialog, bottom-left (estimate)
+# Function-key row (top of the bottom screen, y≈278) — armed by OBOOT via the SMILE button:
+# F1=LOAD F2=save-err F3=save-__OK__ F4=RUN F5=CLS. Confirmed empirically (live taps).
+out["F1"] = [74, 278]
+out["F2"] = [138, 278]
+out["F3"] = [201, 278]
+out["F4"] = [265, 278]
+out["F5"] = [328, 278]
+out["SMILE"] = [223, 495]  # green smiley in the bottom button row (runs OBOOT); confirmed
 json.dump(out, open(HERE / "keymap.json", "w"), indent=0)
 nk = sum(1 for k in out if not k.startswith("_"))
 print(f"wrote {nk} keys. samples: 1={out['1']} 6={out['6']} 7={out['7']} 0={out['0']} "

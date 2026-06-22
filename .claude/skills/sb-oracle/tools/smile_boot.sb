@@ -1,0 +1,36 @@
+'OBOOT — oracle bootstrap, assign to the SMILE button.
+'Tapping SMILE loads+runs this; it arms the 5 function keys (KEY 1-5)
+'so every per-case oracle action is ONE function-key tap, not
+'character-by-character DIRECT typing (the source of the flakiness).
+'
+'CHR$(34)=" (quote), CHR$(9)=TAB, CHR$(13)=ENTER (executes the line).
+'Each KEY macro is ONE line ending in a single CHR$(13). A KEY macro
+'cannot hold a multi-line LOAD+RUN (embedded CHR$(10)/CHR$(13) doesn't
+'reliably run both lines on hardware), so LOAD and RUN are SEPARATE keys:
+'tap F1 to load the test program, then F4 to run it.
+
+'F1 = load the test program P:  LOAD"PRG0:P",0   (,0 auto-dismisses load dialog)
+KEY 1,"LOAD"+CHR$(34)+"PRG0:P"+CHR$(34)+",0"+CHR$(13)
+
+'F2 = capture an error halt:  SAVE"TXT:O",STR$(ERRNUM)+CHR$(9)+STR$(ERRLINE)
+'After a program halts on error, ERRNUM/ERRLINE persist into DIRECT mode.
+'One tap writes them to result file O. (Replaces the 42x-flaky typed read.)
+KEY 2,"SAVE"+CHR$(34)+"TXT:O"+CHR$(34)+",STR$(ERRNUM)+CHR$(9)+STR$(ERRLINE)"+CHR$(13)
+
+'F3 = NOERR sentinel:  SAVE"TXT:O","__OK__"
+'Explicit "this case did not raise" marker (harness deletes O before each
+'run so this is unambiguous).
+KEY 3,"SAVE"+CHR$(34)+"TXT:O"+CHR$(34)+","+CHR$(34)+"__OK__"+CHR$(34)+CHR$(13)
+
+'F4 = RUN the loaded program (tap after F1).
+KEY 4,"RUN"+CHR$(13)
+
+'F5 = CLS — clear the text screen between runs (clean screenshots; does
+'NOT touch KEY defs, unlike ACLS — keep it CLS).
+KEY 5,"CLS"+CHR$(13)
+
+'Readiness signal: write a marker to result file O. The harness deletes O,
+'taps SMILE, confirms the SAVE dialog (YES), then polls disk for O=="__OK__".
+'This is the `ready` check — no screenshot/OCR. It also proves the exact
+'SAVE -> confirm-dialog -> disk path every case relies on.
+SAVE"TXT:O","__OK__"

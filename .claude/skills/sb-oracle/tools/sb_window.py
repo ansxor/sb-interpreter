@@ -113,6 +113,100 @@ def clear_line():
     time.sleep(0.1)
 
 
+# ── SAVE-dialog handling ─────────────────────────────────────────────────────────────────
+# A SmileBASIC SAVE is a TWO-dialog sequence on the bottom screen:
+#   1. "Confirm - Write file ... Do you want to proceed?"  -> tap YES (file is written)
+#   2. "Information - Write file ... written successfully"  -> tap OK  (same coord as YES)
+# Both dialogs COVER the keyboard with a light/cream body; the keyboard is dark. So we can
+# tell a dialog is open by sampling one point on the bottom screen and checking brightness,
+# then tap the YES/OK button until NO dialog remains. This makes every save self-closing —
+# no speculative "clear a stale dialog" tap (that one mis-fired onto a key when none was open).
+
+def _decode_png(path):
+    """Minimal PNG decode -> (w, h, channels, raw RGBA/RGB bytes). stdlib only (zlib)."""
+    import struct
+    import zlib
+    d = open(path, "rb").read()
+    if d[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a PNG")
+    off, w, h, ct, idat = 8, 0, 0, 0, b""
+    while off < len(d):
+        ln = struct.unpack(">I", d[off:off + 4])[0]
+        typ = d[off + 4:off + 8]
+        data = d[off + 8:off + 8 + ln]
+        if typ == b"IHDR":
+            w, h, _bd, ct = struct.unpack(">IIBB", data[:10])
+        elif typ == b"IDAT":
+            idat += data
+        elif typ == b"IEND":
+            break
+        off += 12 + ln
+    raw = zlib.decompress(idat)
+    ch = {0: 1, 2: 3, 4: 2, 6: 4}[ct]
+    stride = w * ch
+    out = bytearray(h * stride)
+    prev = bytearray(stride)
+    pos = 0
+    for y in range(h):
+        f = raw[pos]; pos += 1
+        line = bytearray(raw[pos:pos + stride]); pos += stride
+        if f == 1:
+            for i in range(ch, stride):
+                line[i] = (line[i] + line[i - ch]) & 255
+        elif f == 2:
+            for i in range(stride):
+                line[i] = (line[i] + prev[i]) & 255
+        elif f == 3:
+            for i in range(stride):
+                a = line[i - ch] if i >= ch else 0
+                line[i] = (line[i] + ((a + prev[i]) >> 1)) & 255
+        elif f == 4:
+            for i in range(stride):
+                a = line[i - ch] if i >= ch else 0
+                b = prev[i]
+                c = prev[i - ch] if i >= ch else 0
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (line[i] + pr) & 255
+        out[y * stride:(y + 1) * stride] = line
+        prev = line
+    return w, h, ch, bytes(out)
+
+
+def region_brightness(wx, wy, size=18):
+    """Mean RGB brightness (0-255) of a small box around window point (wx,wy). Captures only
+    that region (fast, no full-window decode)."""
+    bx, by, _, _ = bounds()
+    sx, sy = bx + wx - size // 2, by + wy - size // 2
+    p = "/tmp/_sb_px.png"
+    subprocess.run(["screencapture", "-x", "-o", f"-R{sx},{sy},{size},{size}", p])
+    w, h, ch, px = _decode_png(p)
+    tot = n = 0
+    for i in range(0, w * h * ch, ch):
+        tot += px[i] + px[i + 1] + px[i + 2]
+        n += 3
+    return tot / n if n else 0.0
+
+
+def dialog_open(sample=(180, 380), thresh=120.0):
+    """True if a SAVE dialog (Confirm or Information) is covering the bottom screen. The
+    dialog body is light (>=158); the keyboard at this point is dark (<=75)."""
+    return region_brightness(*sample) > thresh
+
+
+def confirm_dialogs(rounds=8, settle=0.9):
+    """Close every open SAVE dialog by tapping the YES/OK button (one screen position serves
+    both) until no dialog remains. Handles the two-step Confirm->Information sequence, and is
+    a safe no-op when nothing is open. Returns True if the screen is dialog-free at the end."""
+    for _ in range(rounds):
+        if not dialog_open():
+            return True
+        press("YES")
+        time.sleep(settle)
+    return not dialog_open()
+
+
 def main():
     a = sys.argv[1:]
     if not a:
@@ -140,6 +234,11 @@ def main():
         clear_line()
     elif cmd == "press":
         press(a[1])
+    elif cmd == "dialog":
+        print(f"brightness={region_brightness(180, 380):.0f} -> "
+              f"{'DIALOG OPEN' if dialog_open() else 'no dialog'}")
+    elif cmd == "confirm":
+        print("dialog-free:" , confirm_dialogs())
     else:
         print("usage: raise | bounds | shot [path] | tap WX WY | calibrate WX WY | "
               "type STR | enter | clear | press NAME")
