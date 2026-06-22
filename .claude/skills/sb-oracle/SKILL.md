@@ -25,6 +25,8 @@ python3 run_case.py batch cases.txt out.tsv        # RECOMMENDED: FAST harvest (
 python3 run_case.py prog 'FLOOR(-2.1)'             # one case via the program-file path -> -3
 python3 run_case.py expr 'MID$("ABCDE",2,3)' str   # one typed case, string -> BCD
 python3 run_case.py errcase 'A=SQR(-1)'            # error case -> {errored, errnum, errline}
+python3 run_case.py grp draw.sb out.png top        # GRAPHICS golden: draw -> SAVE GRPn -> PNG
+python3 run_case.py screenshot out.png             # COMPOSITE golden (sprites/BG): Ctrl+P
 ```
 Run `ready` FIRST — it cold-starts Azahar and confirms SB is usable, so cases don't each eat a
 timeout (a `sb_window.py bounds` that returns coords is NOT proof of readiness).
@@ -96,6 +98,27 @@ Path: `~/Library/Application Support/Azahar/sdmc/Nintendo 3DS/<0*32>/<0*32>/extd
 
 Source for the markers/prefixes/key: nnn1590/lpp-3ds-sbfm (`romfs/index.lua`, the SmileBASIC
 File Manager).
+
+## Graphics capture (O-T6) — `capture_grp` / `run_case.py grp`
+Deterministic pixel goldens **without screenshots**: a program draws to a GRP page, `SAVE"GRPn:NAME"`
+writes it to disk, and `sb_grp.decode_grp` decodes it to RGBA → PNG.
+- **GRP file body** = 28-byte internal header + raw pixels. Header: `"PCBN"`+`"0001"`, then
+  `width`(u32 LE @12)·`height`(u32 LE @16) = **512×512** (the full page; off-screen region included).
+- **Pixels:** 16-bit **RGBA5551** LE, row-major, top-left origin. Bits MSB→LSB `R:5 G:5 B:5 A:1`
+  (A = bit 0, 1=opaque). 5→8-bit expand = `v<<3` (matches sb-render `expand5` / `#WHITE=&HFFF8F8F8`).
+- **Verified on real SB 3.6.0:** red=`F801`, green=`07C1`, blue=`003F`, black=`0001`; a full
+  draw (square+circle+line) round-trips to the exact PNG.
+- **XSCREEN / both screens:** GRP pages (GRP0–5) are 512×512 buffers **independent of XSCREEN /
+  display mode** — this reads the page *buffer* off disk, not a screen, so the mode can't corrupt
+  it. For content on two screens, capture **each page** (`capture_grp(page=N)`, verified: GRP0 + GRP1
+  captured independently). **Don't change XSCREEN just to capture** — page content is mode-independent,
+  and XSCREEN 2/3 swap the touch screen to a keyboard / XSCREEN 4 forbids DIRECT mode, which would
+  strand the oracle's taps. Draw in the default mode, capture per page.
+- **One SAVE per run:** two `SAVE`s in one program fight over the confirm dialog — call `capture_grp`
+  once per page instead.
+- **Composite / actual display** (sprites + BG + XSCREEN 4 combined + 3D) isn't in a GRP page →
+  use `capture_screen` (Azahar **Ctrl+P** screenshot of the rendered layout, both screens).
+- Goldens go in `harness/corpus/golden/gfx/*.png` (see `harness/corpus/README.md`).
 
 ## Pitfalls
 - `LOAD"TXT:name"` needs an output variable (→ "Illegal function call"); use `LOAD"PRG0:name"` for programs.

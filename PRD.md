@@ -15,7 +15,7 @@ under `prd/` (start at `prd/README.md`). Task IDs here match those docs.
 |---|---|---|---|
 | M0 | Scaffolding & spec pipeline | `prd/M0.md` | ✅ done |
 | **S** | **Spec build-out (all sources)** | `prd/specs.md` | 🔥 active |
-| **O** | **Oracle engine — `sb-oracle` skill** | `prd/oracle.md` | 🔥 value + errnum harvest work; gfx/audio TODO |
+| **O** | **Oracle engine — `sb-oracle` skill** | `prd/oracle.md` | 🔥 value + errnum + graphics harvest work; audio TODO |
 | M1 | Core VM + a real window | `prd/M1.md` | ⬜ gated on S (pre-pivot lexer/AST exist — redo) |
 | M2 | Graphics (GRP + compositor) | `prd/M2.md` | ⬜ gated on S |
 | M3 | Sprites & BG | `prd/M3.md` | ⬜ gated on S |
@@ -140,7 +140,7 @@ and name the instructions they cover inline.
 - [x] O-T3 Program injection — write a VALID extdata file (header + HMAC-SHA1 footer; format cracked)
 - [x] O-T4 Value/stdout capture — program SAVEs result to TXT; read `body[80:-20]` off disk
 - [x] O-T5 ERRNUM/ERRLINE capture — `run_case.py errcase` / `|err` cases. SB has no error trapping (an error halts the program; `EXEC`/`RUN n` can't resume), so run `<stmt>`+sentinel; on halt read `ERRNUM`/`ERRLINE` in DIRECT mode. **Verified on real SB 3.6.0:** `A=SQR(-1)` → `errnum=10` (Out of range), `errline=1` — ERRNUM/ERRLINE do persist into DIRECT mode post-halt
-- [ ] O-T6 Framebuffer capture — `--dump-video` and/or RE the framebuffer addr; decode to RGBA (graphics goldens) → O-T1
+- [x] O-T6 Graphics capture — `run_case.py grp` / `capture_grp`: program draws → `SAVE"GRPn:..."` → decode GRP off disk (28-byte PCBN header + 512×512 RGBA5551 LE) → PNG. **Verified on real SB 3.6.0** (pixel-exact). GRP pages are 512×512 buffers independent of XSCREEN mode (capture per page for both screens). Composite/sprite/BG display → `screenshot` (Ctrl+P). Goldens → `harness/corpus/golden/gfx/`
 - [ ] O-T7 Audio capture — emulator audio dump (audio goldens) → O-T1
 - [ ] O-T8 harvest.py end-to-end — wire `run_case` into `harness/harvest`: batch spec/corpus cases → write `spec/tests` (`hw_verified`) + golden media; open PR → O-T5
 

@@ -17,6 +17,10 @@ Usage:
   run_case.py expr 'MID$("ABCDE",1,2)' str    # one case, string result (no STR$ wrap)
   run_case.py prog 'FLOOR(8.9)'               # one case via the efficient program-file path
   run_case.py errcase 'A=SQR(-1)'             # one error case -> {errored, errnum, errline}
+  run_case.py grp draw.sb out.png [crop] [page]  # graphics golden: draw -> SAVE GRPn -> PNG
+                                              #   crop: full(512²,default) | top(400×240) | bottom(320×240) | WxH
+                                              #   page: 0-5 GRP page the program drew to (default 0)
+  run_case.py screenshot out.png              # composite golden (sprites/BG/both screens): Azahar Ctrl+P
 Run `ready` FIRST so cold-start/not-ready doesn't make each case eat a timeout. SB should be
 on the DIRECT-mode screen (see SKILL.md Step 0). `batch` writes ONE program that SAVEs all
 VALUE results at once (≈one LOAD+RUN, not one per case) and bisects around any case that halts.
@@ -28,6 +32,7 @@ import sys
 import time
 
 import sb_extdata as X
+import sb_grp as G
 import sb_window as W
 
 
@@ -314,6 +319,66 @@ def harvest(cases, result_name="O", on_result=None):
     return results
 
 
+def capture_grp(program, out_png=None, page=0, name="G", crop=None, attempts=12):
+    """GRAPHICS GOLDEN: run a drawing program, SAVE graphics page <page> to disk, decode the
+    GRP to RGBA, and (optionally) write a PNG. `program` is SB source that draws to the page;
+    we append the `SAVE"GRP<page>:<name>"` for you. `crop=(w,h)` writes only the top-left
+    region (e.g. (400,240) top screen, (320,240) touch screen) instead of the full 512x512 page.
+    Returns (width, height, rgba8888). Deterministic — same program -> same pixels.
+
+    GRP pages (GRP0-5) are 512x512 buffers INDEPENDENT of XSCREEN/display mode — this reads the
+    page buffer off disk, not a screenshot, so the mode can't corrupt it. For content on both
+    screens, capture each page in use (`page=`). For the actual composited display (sprites+BG,
+    XSCREEN 4 combined, or 3D), use capture_screen instead."""
+    src = program.rstrip("\n") + f'\nSAVE"GRP{page}:{name}"\n'
+    X.write_file("P", src, "TXT")
+    W.raise_window()
+    time.sleep(0.4)
+    W.press("YES")
+    time.sleep(0.5)
+    before = X.result_mtime(name, "GRP")
+    W.clear_line()
+    time.sleep(0.3)
+    _trigger_run("P")
+    for _ in range(attempts):
+        time.sleep(1.2)
+        W.press("YES")
+        time.sleep(0.6)
+        mt = X.result_mtime(name, "GRP")
+        if mt is not None and mt != before:
+            w, h, rgba = G.decode_grp(X.read_raw(X.TYPE_PREFIX["GRP"] + name))
+            if crop:
+                rgba = G.crop(w, h, rgba, crop[0], crop[1])
+                w, h = crop
+            if out_png:
+                G.write_png(out_png, w, h, rgba)
+            return w, h, rgba
+    raise TimeoutError("no fresh GRP file — did the program draw + did SAVE's dialog confirm?")
+
+
+def capture_screen(out_png="/tmp/sb_screen.png"):
+    """COMPOSITE GOLDEN (sprites/BG/console): Azahar's Ctrl+P screenshot of the rendered screen.
+    Unlike capture_grp (the exact GRP page), this is the composited display (all layers) at the
+    emulator's output resolution — use it for sprite/BG goldens that GSAVE can't reach. Returns
+    the newest PNG path in Azahar's screenshot dir (copied to out_png)."""
+    import glob
+    import os
+    import shutil
+    shotdir = os.path.expanduser("~/Library/Application Support/Azahar/screenshots")
+    W.raise_window()
+    time.sleep(0.5)
+    pre = set(glob.glob(os.path.join(shotdir, "*.png")))
+    W.key_combo("ctrl", "p")                # Capture Screenshot shortcut
+    for _ in range(10):
+        time.sleep(0.6)
+        new = set(glob.glob(os.path.join(shotdir, "*.png"))) - pre
+        if new:
+            src = max(new, key=os.path.getmtime)
+            shutil.copy(src, out_png)
+            return out_png
+    raise TimeoutError("no new screenshot appeared (is Ctrl+P bound + window focused?)")
+
+
 def _load_done(outpath):
     """Names already harvested OK in a prior (possibly killed) run — for resume. ERROR rows
     are NOT counted as done, so a re-run retries them."""
@@ -398,6 +463,21 @@ if __name__ == "__main__":
         print(run_expr_prog(a[1], numeric=not (len(a) > 2 and a[2] == "str")))
     elif mode == "errcase":             # one error case: run a halting statement -> ERRNUM/ERRLINE
         print(run_error_case(a[1]))
+    elif mode == "grp":                 # graphics golden: draw (PROGFILE) -> SAVE GRP -> decode -> PNG
+        # grp PROGFILE OUT.png [crop] [page]
+        #   crop: full (512x512, default) | top (400x240) | bottom (320x240) | WxH
+        #   page: 0-5 (the GRP page the program drew to; default 0)
+        src = open(a[1]).read()
+        out = a[2] if len(a) > 2 else None
+        crops = {"full": None, "top": (400, 240), "bottom": (320, 240)}
+        carg = a[3] if len(a) > 3 else "full"
+        crop = crops[carg] if carg in crops else (
+            tuple(int(x) for x in carg.split("x")) if "x" in carg else None)
+        page = int(a[4]) if len(a) > 4 else 0
+        w, h, _ = capture_grp(src, out, page=page, crop=crop)
+        print(f"captured GRP{page} {w}x{h} -> {out or '(no png)'}")
+    elif mode == "screenshot":          # composite golden: Azahar Ctrl+P screenshot -> PNG
+        print("saved:", capture_screen(a[1] if len(a) > 1 else "/tmp/sb_screen.png"))
     elif mode == "progsrc":             # a full program (must SAVE its result)
         print(run_program(a[1]))
     else:                               # a verbatim DIRECT-mode command (must SAVE its result)

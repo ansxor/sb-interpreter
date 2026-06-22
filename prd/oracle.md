@@ -47,8 +47,13 @@ against real SB-saved files and by load+run of our written programs.
   `SAVE`; if the sentinel appears it didn't raise, else we read `STR$(ERRNUM)+CHR$(9)+STR$(ERRLINE)`
   via a DIRECT save. Each error case runs alone (can't batch). **Verified on real SB 3.6.0:**
   `A=SQR(-1)` → `errnum=10` (Out of range), `errline=1`. Feeds error-expecting spec tests and S-T14.
-- [ ] **O-T6 Framebuffer capture** — `azahar --dump-video` and/or RE the top/bottom framebuffer
-  addresses + pixel format; decode to RGBA8888 (graphics goldens for M2/M3).
+- [x] **O-T6 Graphics capture** — `run_case.py grp` / `capture_grp` (+ `sb_grp.py`): a program
+  draws to a GRP page, `SAVE"GRPn:NAME"` writes it to disk, and we decode the GRP (28-byte `PCBN`
+  header + 512×512 **RGBA5551** LE, row-major) to a PNG. **Verified pixel-exact on real SB 3.6.0**
+  (red `F801`/green `07C1`/blue `003F`; full draw round-trips). GRP pages are 512×512 buffers
+  **independent of XSCREEN mode** — capture each page for two-screen content; don't change XSCREEN
+  (it disrupts the oracle's keyboard). Composited display (sprites/BG, XSCREEN 4, 3D) → `screenshot`
+  (Azahar Ctrl+P). Goldens land in `harness/corpus/golden/gfx/*.png` (for M2/M3 / S-T7).
 - [ ] **O-T7 Audio capture** — emulator audio dump → PCM (audio goldens for M5).
 - [ ] **O-T8 harvest end-to-end** — wire `run_case` into `harness/harvest/harvest.py`: batch a
   category's spec/corpus cases, capture, write `spec/tests/<id>.yaml` (`hw_verified`) + golden

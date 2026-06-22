@@ -95,6 +95,12 @@ def press(name):
     return tap(*km[name])
 
 
+def key_combo(modifier, key):
+    """Send a keyboard chord to the focused window, e.g. key_combo('ctrl','p') = Ctrl+P
+    (Azahar's Capture-Screenshot shortcut). Uses cliclick: hold modifier, type key, release."""
+    subprocess.run(["cliclick", f"kd:{modifier}", f"t:{key}", f"ku:{modifier}"])
+
+
 def enter():
     press("ENTER")
 
