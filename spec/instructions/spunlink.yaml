@@ -1,0 +1,36 @@
+id: SPUNLINK
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the sprite to unlink from its parent. Must already be SPSET." }
+    note: "SPUNLINK mgmt — break a sprite's link to its parent (1 arg, no return)."
+
+summary: "Removes the parent link previously set by SPLINK, so the sprite's coordinates are no longer relative to a parent. Takes exactly one management number and returns nothing. The sprite must have been SPSET. Unlinking a sprite that has no link is harmless. Mirror of SPLINK."
+
+semantics:
+  - "Argument/return gate: the handler requires argcount [r0,#0x4]==1 AND return count [r0,#0xc]==0 (cmp r1,#1 / ldreq r1,[r0,#0xc] / cmpeq r1,#0 / beq @0x143fdc); any other shape raises errnum 4 (Illegal function call) with errline -1 (mov r2,#0 / mvn r1,#0 / mov r0,#0x4 / bl 0x1fffdc @0x143fc4-0x143fd0)."
+  - "The management number is resolved by the shared sprite-index getter FUN_001eece0 (bl 0x1eece0 @0x143fe8); a value outside 0..511 raises errnum 10 (Out of range). The slot address is sprite_base[0x144070] + (mgmt + page_base[0x44]) * 0x48 (@0x143ff8-0x144018)."
+  - "Sprite must exist: tst r0,#0x80000000 on the slot flags [r4,#0x4] @0x144020; if the active bit is clear it raises errnum 4 (used before SPSET) — mov r0,#0x4 / bl 0x1fffdc @0x144054-0x144060."
+  - "When the sprite is active the link is torn down by FUN_001edcc8 (bl 0x1edcc8 @0x144038), which detaches the child from its parent's child list; the handler then returns 0. Unlinking an already-unlinked sprite is a no-op (the detach routine handles a null parent). State pointer 0x315d60, sprite-base 0x19A5FB0 (literals @0x14406c/@0x144070). See [[splink]]."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET, the argument count is not 1, or the call is used in a return context" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spunlink.md (SPUNLINK mgmt; mgmt 0-511; 'Unlinks a sprite'; 'If used before SPSET, an error will occur')" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPUNLINK handler @0x143fa8: argcount==1 && ret==0 cmp r1,#1 ldreq r1,[r0,#0xc] cmpeq r1,#0 beq @0x143fdc else mov r2,#0 mvn r1,#0 mov r0,#0x4 bl 0x1fffdc errnum 4 errln -1 @0x143fc4; mgmt via bl 0x1eece0 @0x143fe8 (errnum 10); slot base[0x144070]+(mgmt+[0x44])*0x48 @0x143ff8; active-bit guard tst r0,#0x80000000 [r4,#0x4] @0x144020 beq -> mov r0,#0x4 bl 0x1fffdc errnum 4 @0x144054 (used before SPSET); unlink via FUN_001edcc8 bl 0x1edcc8 @0x144038 then return 0; state ptr 0x315d60 [0x14406c], sprite-base 0x19A5FB0 [0x144070]." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d sprite child-list detach (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8c): SPCLR:SPUNLINK 5 -> errnum 4 (used before SPSET); SPSET 0,0:SPUNLINK 512 -> errnum 10 (mgmt out of range); SPSET 0,0:SPUNLINK 0 on an unlinked sprite -> no error (no-op)." }
+  - { type: community, ref: "sbsave corpus: SPUNLINK used ~107x with literal and expression operands, e.g. `SPUNLINK 15`, `SPUNLINK 81+I` — proving the single-operand form (incl. expressions) is LEGAL syntax." }
+
+confidence: disassembled
+
+tests:
+  - { name: unlink_ok, code: "SPSET 4,0\nSPSET 15,0\nSPLINK 15,4\nSPUNLINK 15", expect: { stdout: "" } }
+  - { name: unlink_unlinked_noop, code: "SPSET 0,0\nSPUNLINK 0", expect: { stdout: "" } }
+  - { name: before_spset, code: "SPCLR\nSPUNLINK 5", expect: { error: { errnum: 4 } } }
+  - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPUNLINK 512", expect: { error: { errnum: 10 } } }

@@ -1,0 +1,41 @@
+id: SPSTART
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — start all sprites' animations.
+  - args: []
+    note: "SPSTART — resume animation of ALL sprites (0 args)."
+  # Form 2 — start one sprite's animation.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET." }
+    note: "SPSTART mgmt — resume animation of one sprite (1 arg)."
+
+summary: "Starts (resumes) sprite animation that was paused by SPSTOP. With no argument it resumes animation for ALL sprites; with a management number it resumes just that one sprite. SPSTART clears the per-sprite 'animation stopped' flag (bit 0x2000000); a freshly SPANIM'd sprite is already running, so SPSTART is only needed after SPSTOP. The single-sprite form requires the sprite to have been SPSET. Returns nothing."
+
+semantics:
+  - "Return-count gate: the return count [r0,#0xc] must be 0 (cmp r1,#0 / bne @0x143d64 -> errnum 4); SPSTART is a statement, never a function."
+  - "Form is chosen by argcount r1=[r0,#0x4]: 0 -> start-all (beq @0x143d7c), 1 -> start-one (cmp r1,#1 / beq @0x143e00), any other count raises errnum 4 (Illegal function call) with errline -1 (mvn r1,#0x0 / mov r0,#0x4 / bl 0x1fffdc @0x143d64-0x143d70)."
+  - "Start-all (no arg) iterates every sprite slot: it loads the page base and sprite count via ldrd r0,r1,[r0,#0x44] @0x143d88, and for each slot clears the stop flag bit 0x2000000 in [slot+0x4] (bic r2,r2,#0x2000000 @0x143db4 / @0x143dd0). It raises NO error — no SPSET / range checks — it simply walks the existing sprites."
+  - "Start-one resolves the management number via the shared sprite-index getter FUN_001eece0 (bl 0x1eece0 @0x143e0c); out of 0..511 raises errnum 10 (Out of range). It then checks the slot active bit tst r1,#0x80000000 [slot+0x4] @0x143e3c: if set it clears the stop bit (bicne r1,r1,#0x2000000 / strne @0x143e40), if clear it falls through to errnum 4 (used before SPSET) — mov r0,#0x4 / bl 0x1fffdc @0x143e4c-0x143e58."
+  - "The stop flag is shared with SPSTOP, which SETS bit 0x2000000 to pause; SPSTART CLEARS it to resume. State pointer 0x315d60, sprite-base 0x19A5FB0 (literals @0x143e64/@0x143e68). See [[spstop]]."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the single-sprite form targets a sprite that has not been SPSET, more than one argument is given, or the call is used in a return context" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spstart.md (SPSTART [mgmt]; mgmt 0-511; 'If the management number is omitted, animation of all sprites will be started'; 'If used before SPSET, an error will occur')" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPSTART handler @0x143d34: ret-count [r0,#0xc] must be 0 cmp r1,#0 bne @0x143d64; argcount [r0,#0x4] 0->all @0x143d7c, 1->one @0x143e00, else errln -1 mvn r1,#0 mov r0,#0x4 bl 0x1fffdc errnum 4 @0x143d64; all-form ldrd r0,r1,[r0,#0x44] count, per-slot bic r2,r2,#0x2000000 @0x143db4 (clear stop bit, no error); one-form mgmt via bl 0x1eece0 @0x143e0c (errnum 10), active-bit tst r1,#0x80000000 [slot+4] @0x143e3c bicne #0x2000000 else errnum 4 mov r0,#0x4 bl 0x1fffdc @0x143e4c; state ptr 0x315d60 [0x143e64], sprite-base 0x19A5FB0 [0x143e68]." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d sprite animation stop/run flag (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8c): SPCLR:SPSTART 5 -> errnum 4 (used before SPSET); SPSET 0,0:SPSTART 512 -> errnum 10 (mgmt out of range)." }
+  - { type: community, ref: "sbsave corpus: SPSTART used ~600x, both the bare all-sprites form `SPSTART` and the per-sprite form `SPSTART 0`..`SPSTART 5` (e.g. ______LAUNCHER) — proving both forms are LEGAL syntax." }
+
+confidence: disassembled
+
+tests:
+  - { name: start_all_no_arg, code: "SPSET 0,0\nSPSTART", expect: { stdout: "" } }
+  - { name: start_one, code: "SPSET 0,0\nSPSTOP 0\nSPSTART 0", expect: { stdout: "" } }
+  - { name: before_spset, code: "SPCLR\nSPSTART 5", expect: { error: { errnum: 4 } } }
+  - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPSTART 512", expect: { error: { errnum: 10 } } }

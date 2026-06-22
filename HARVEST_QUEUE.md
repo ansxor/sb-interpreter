@@ -276,3 +276,8 @@ oracle to confirm exact output and promote to `hw_verified`.
 - [ ] S-T8b remaining oracle-pending (need framebuffer oracle O-T6 or extra cases): SPOFS Z-depth round-trip
   (3-var OUT X,Y,Z value), SPCHR U+W/V+H>512 errnum (assumed 10, matching SPSET), SPCHR form-1 template round-trip
   (SPCHR mgmt,defn then OUT U,V/DEFNO — needs an SPDEF setup), and the actual on-screen transform (visible render).
+- [ ] S-T8c remaining oracle-pending (needs framebuffer/composite oracle O-T6, not a VALUE harvest): the actual
+  SPANIM on-screen animation output — keyframe interpolation values, negative-time linear-interp curve, the
+  per-frame timing ("starts on the frame following SPANIM"), relative ("+"/+8) base accumulation, and Loop 0
+  endless behavior. Error conditions + SPLINK function returns are now hw_verified (s_t8c batch 2026-06-22);
+  the visible render and interpolation math are not.

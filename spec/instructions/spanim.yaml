@@ -1,0 +1,60 @@
+id: SPANIM
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — animation data supplied in a numeric array.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET." }
+      - { name: target, type: any, desc: "Animation target: a number 0..7 or the matching string. 0/\"XY\" XY-coords, 1/\"Z\" Z-coord, 2/\"UV\" source UV, 3/\"I\" definition number, 4/\"R\" rotation, 5/\"S\" scale XY, 6/\"C\" display color, 7/\"V\" internal variable 7. Add 8 to the number (or suffix the string with \"+\") to make the values RELATIVE to the runtime value." }
+      - { name: data, type: num_array, desc: "1-D numeric array holding the keyframes in the order Time1,Item1[,Item2],Time2,Item1[,Item2],... (XY/UV/S take 2 items per keyframe; Z/I/R/C/V take 1). Up to 32 keyframes." }
+      - { name: loop, type: integer, optional: true, default: 1, desc: "Loop count (1+). 0 means loop endlessly." }
+    note: "SPANIM mgmt, target, data_array [,loop] — animate from an array."
+  # Form 2 — animation data read from DATA statements via an @label string.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET." }
+      - { name: target, type: any, desc: "Animation target (see form 1)." }
+      - { name: label, type: string, desc: "\"@Label\" string naming the first DATA line of the animation. The first DATA value is the keyframe count, then Time,Item[,Item] per keyframe." }
+      - { name: loop, type: integer, optional: true, default: 1, desc: "Loop count (1+). 0 means endless." }
+    note: "SPANIM mgmt, target, \"@LABEL\" [,loop] — animate from DATA."
+  # Form 3 — animation data given inline as a variable-length argument list.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET." }
+      - { name: target, type: any, desc: "Animation target (see form 1)." }
+      - { name: keyframes, type: varargs, desc: "Inline keyframes: Time1,Item1[,Item2][,Time2,Item1[,Item2]]... Up to 32 keyframes." }
+      - { name: loop, type: integer, optional: true, default: 1, desc: "Loop count (1+). 0 means endless. (Disambiguated by the items-per-keyframe count of the target.)" }
+    note: "SPANIM mgmt, target, Time,Item[,Item],... [,loop] — animate inline."
+
+summary: "Defines and starts a sprite animation: a sequence of up to 32 keyframes that vary one target channel (XY position, Z, UV, definition I, rotation R, scale S, color C, or internal variable V) over time. Each keyframe is a Time followed by 1 or 2 Items; a POSITIVE time holds for that many frames, a NEGATIVE time linearly interpolates over that many frames (smooth). Adding 8 to the numeric target (or suffixing the string target with \"+\") makes the items RELATIVE to the sprite's current runtime value. Data can come from a numeric array, an \"@label\" pointing at DATA lines, or an inline argument list. The animation begins on the frame after SPANIM. Requires at least 3 arguments and returns nothing; using it on a sprite that has not been SPSET raises an error."
+
+semantics:
+  - "Argument-count / return-count gate: r6=argcount [r0,#0x4], the return count is [r0,#0xc]. The handler requires argcount>=3 AND return-count==0 (cmp r6,#0x3 / cmpge r0,#0x0 / beq @0x141fc0); anything else raises errnum 4 (Illegal function call) with errline -1 (mvn r1,#0x0 / mov r0,#0x4 / bl 0x1fffdc @0x141fac-0x141fb4)."
+  - "Management number is resolved by the shared sprite-index getter FUN_001eece0 (bl 0x1eece0 @0x141fd0); a value outside 0..511 raises errnum 10 (Out of range). The slot address is base[0x1423b8] + (mgmt + page_base[0x44]) * 0x48 (rsb r1,r0,r0,lsl#5 / add r0,r1,r0,lsl#8 / add r4,r1,r0,lsl#3 @0x141ff8-0x142004)."
+  - "Sprite must exist: tst r0,#0x80000000 on the slot flags [r4,#0x4] @0x14200c; if the active bit is clear the handler raises errnum 4 (used before SPSET) — mov r0,#0x4 / bl 0x1fffdc @0x142054-0x142060."
+  - "Target may be a number OR a string. A string target ('XY','Z','UV','I','R','S','C','V', optionally with a trailing '+') is parsed to a number via FUN_001836cc (@0x1420a8); a non-string/non-numeric target raises errnum 8 (Type mismatch) (mov r0,#0x8 / bl 0x1fffdc @0x1420d8). The resolved target is validated: ldr r0,[sp,#0xc] / cmp r0,#0 / bge @0x1420ec, a negative result raises errnum 4 with errline 1 (mov r1,#1 / mov r0,#0x4 @0x1420bc-0x1420c4)."
+  - "Relative flag and channel: mov r1,r0,lsl#0x1c then r8=r1,lsr#0x1f extracts bit 3 (the +8 / '+' relative flag); and r0,r0,#0x7 masks the target to the channel 0..7 (@0x1420ec-0x1420f4). A switch over the 8 channels (switchD @0x142118, jump table @0x142120) builds the per-channel keyframe list and sets the channel's anim-active flag bit in [r4,#0x4] (e.g. orr #0x20000 for XY @0x142188, orr #0x40000 for Z @0x1421dc)."
+  - "Keyframe list is built from the variadic data by helpers FUN_001ee360 / FUN_001ee1a8 (the number of data arguments is r6-2, sub r1,r6,#0x2 @0x142178); each channel reads the sprite's current value (e.g. vldr.32 s0,[r4,#0x30]/[r4,#0x34] for XY, vcvt.s32.f32) as the base for relative animation. Up to 32 keyframes are accepted per target (documented cap). Time is the per-keyframe duration: positive = hold that many frames, negative = linear interpolation over |time| frames."
+  - "The animation starts on the frame FOLLOWING the SPANIM call (documented), and runs once unless a Loop count is given; Loop 0 means loop endlessly. SPSTOP pauses it and SPSTART resumes it (they toggle the 0x2000000 stop bit, see [[spstop]]/[[spstart]])."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET, fewer than 3 arguments are given, the call is used in a return context, or the resolved target number is negative" }
+  - { errnum: 8, name: "Type mismatch", when: "the target argument is neither a number nor a valid target string" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spanim.md (3 forms: array / \"@label\" DATA / inline; mgmt 0-511; target 0|XY,1|Z,2|UV,3|I,4|R,5|S,6|C,7|V; '+8' or trailing '+' = relative; data order Time,Item[,Item]; up to 32 keyframes; negative time = linear interpolation; Loop 1- with 0 = endless; 'animation starts from the frame following SPANIM'; 'If used before SPSET, an error will occur')" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPANIM handler @0x141f80: gate argcount>=3 && ret==0 cmp r6,#0x3 cmpge r0,#0x0 beq @0x141fc0 else mov r0,#0x4 bl 0x1fffdc errline -1 @0x141fb0; mgmt via FUN_001eece0 bl 0x1eece0 @0x141fd0 (errnum 10); slot base[0x1423b8]+(mgmt+[0x44])*0x48 @0x141ff8; active-bit guard tst r0,#0x80000000 [r4,#0x4] @0x14200c beq -> mov r0,#0x4 bl 0x1fffdc errnum 4 @0x142054 (used before SPSET); string target parse bl 0x1836cc @0x1420a8, bad type mov r0,#0x8 bl 0x1fffdc errnum 8 @0x1420d8; negative target mov r1,#1 mov r0,#0x4 errnum 4 @0x1420bc; relative bit mov r1,r0,lsl#0x1c lsr#0x1f and r0,r0,#0x7 @0x1420ec; channel switch switchD @0x142118 table @0x142120 sets anim-active flags orr #0x20000/#0x40000 [r4,#0x4]; keyframe build bl 0x1ee360 / bl 0x1ee1a8, data count r6-2 sub r1,r6,#0x2 @0x142178; state ptr 0x315d60 [0x1423b4], sprite-base [0x1423b8]." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteAnimState/SpriteAnimData, SpriteAnimTarget enum (XY..V, .relative flag), setAnimation(loop) (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8c): SPCLR:SPANIM 5,\"XY\",10,0,0 -> errnum 4 (used before SPSET); SPSET 0,0:SPANIM 0,\"XY\" -> errnum 4 (fewer than 3 args); SPSET 0,0:SPANIM 512,\"XY\",10,0,0 -> errnum 10 (mgmt out of range)." }
+  - { type: community, ref: "sbsave corpus: SPANIM used heavily. Confirms numeric targets `SPANIM 254,6,-10,0` (e.g. ______LAUNCHER), string targets `SPANIM 0,\"UV\",8,...`, RELATIVE string target `SPANIM SPN%,\"XY+\"` and `SPANIM 250,\"I+\",\"@_WALK10\"`, the DATA-label form `SPANIM 115,3,\"@ANIM_M1\"`, inline-vararg form `SPANIM 0,\"XY\",-60,200,100,-30,50,20`, negative time (smooth) `SPANIM 0,\"UV\",-1,0+UGH,72`, fractional items `SPANIM 0,5,-15,.8,.8`, and array-element values `SPANIM 10,6,30,0,-10,CYMA_THMSCH%[12]` — proving these forms are LEGAL syntax. Exact interpolation output is oracle-pending." }
+
+confidence: disassembled
+
+tests:
+  # Error cases hw_verified (sb-oracle 2026-06-22 s_t8c); runtime animation output is oracle-pending (no framebuffer harvest).
+  - { name: anim_ok, code: "SPSET 0,0\nSPANIM 0,\"XY\",-60,200,100,-30,50,20", expect: { stdout: "" } }
+  - { name: anim_numeric_target, code: "SPSET 0,0\nSPANIM 0,6,-10,0", expect: { stdout: "" } }
+  - { name: before_spset, code: "SPCLR\nSPANIM 5,\"XY\",10,0,0", expect: { error: { errnum: 4 } } }
+  - { name: too_few_args, code: "SPSET 0,0\nSPANIM 0,\"XY\"", expect: { error: { errnum: 4 } } }
+  - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPANIM 512,\"XY\",10,0,0", expect: { error: { errnum: 10 } } }

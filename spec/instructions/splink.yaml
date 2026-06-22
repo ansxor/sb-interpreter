@@ -1,0 +1,49 @@
+id: SPLINK
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — link a child sprite to a parent (the documented statement form).
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the link source (CHILD) sprite. Must already be SPSET." }
+      - { name: parent_number, type: integer, range: "0..511", desc: "Management number of the link destination (PARENT) sprite. Must be STRICTLY LOWER than the child's number, and must already be SPSET." }
+    note: "SPLINK child, parent — link child to parent (2 args, no return)."
+  # Form 2 — read a sprite's parent (undocumented function form, found in disassembly + corpus).
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the sprite to query. Must already be SPSET." }
+    returns: { type: integer, desc: "Management number of this sprite's current parent, or -1 if it is not linked." }
+    note: "Variable = SPLINK(mgmt) — UNDOCUMENTED function form: returns the parent's management number, or -1 if unlinked."
+
+summary: "Links one sprite (the child) to another (the parent) so that the child's display coordinates are computed relative to the parent. Only the position is inherited — rotation and scale are NOT. The parent must have a STRICTLY LOWER management number than the child; an equal-or-higher parent number raises an error. Link hierarchies may be nested arbitrarily. A second, undocumented FUNCTION form `=SPLINK(mgmt)` returns a sprite's current parent number (or -1 when unlinked); real programs rely on it (e.g. `N=SPLINK(SPN%):IF N<0 ...`). Both forms require the queried sprite to have been SPSET; SPUNLINK removes a link."
+
+semantics:
+  - "Form is chosen by the return count [r5,#0xc]: 0 returns -> link (SET) form (beq @0x142928); 1 return -> parent-query (GET/function) form (cmp r0,#1 / beq @0x142a00); any other return count branches to errnum 4 (b @0x142aa8)."
+  - "SET form requires exactly 2 arguments: argcount [r5,#0x4]==2 (cmp r0,#2 / bne @0x142a0c -> mov r0,#0x4 / bl 0x1fffdc errnum 4 errline -1). Child index (arg0) and parent index (arg1) are each resolved via the shared sprite-index getter FUN_001eece0 (bl 0x1eece0 @0x142944 / @0x142964); a value outside 0..511 raises errnum 10 (Out of range)."
+  - "Ordering rule: ldr r0,[sp,#0x4] (parent) / ldr r1,[sp,#0x0] (child) / cmp r1,r0 / ble @0x1429e8 — if child <= parent the handler raises errnum 4 (Illegal function call) with errline 1 (mov r1,#1 / mov r0,#0x4 / bl 0x1fffdc @0x1429e8). So the parent number must be STRICTLY LOWER than the child number (documented 'Management numbers that are not lower than that of the link source will give errors')."
+  - "Both slots must be active: tst [child+0x4],#0x80000000 @0x1429a8 (child not SPSET -> errnum 4 errline -1 at @0x142aa8) and tst [parent+0x4],#0x80000000 @0x1429b4 (parent not SPSET -> errnum 4 errline 1 at @0x1429e8). The link itself is installed by FUN_0017e688 (bl 0x17e688 @0x1429cc), which threads the child onto the parent's child list."
+  - "GET form (1 return) requires argcount 1 (cmp [r5,#0x4],#1 / beq @0x142a24, else errnum 4). It resolves the sprite, checks the active bit (not SPSET -> errnum 4 @0x142aa8), then reads the parent pointer [slot+0xa4] @0x142a64: if 0 (unlinked) it returns -1 (mvneq r1,#0x0 @0x142a6c); otherwise it converts the parent slot pointer back to a management number — sub r0,r0,sprite_base / smull by the reciprocal of the 0x48-byte slot size (ldr r1,[0x142acc]=0x1C8B265B / smull / asr #8) @0x142a74-0x142a88 — and returns it."
+  - "Only coordinates are linked, not rotation/scale (documented). The parent-list traversal in the renderer adds the parent's X/Y to the child (osb comment: 'SPLINKの親は子より小さい管理番号でしかなれないので...X座標を加算すればなんとかなる')."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "either sprite has not been SPSET, the parent number is not strictly lower than the child number, the SET form is given other than 2 arguments, or the GET form other than 1 argument" }
+  - { errnum: 10, name: "Out of range", when: "a management number is not in 0..511" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/splink.md (SPLINK mgmt, parent; mgmt/parent 0-511; 'Only the coordinates will be linked (The rotation angle and magnification information will not)'; 'Only a sprite with a lower management number can be specified as the link destination (parent)'; 'Management numbers that are not lower than that of the link source will give errors'; 'There are no restrictions on link hierarchies'; 'If used before SPSET, an error will occur')" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPLINK handler @0x1428f4: form by ret-count [r5,#0xc] 0->link @0x142928, 1->query @0x142a00, else b @0x142aa8 errnum 4; SET argcount==2 cmp r0,#2 bne @0x142a0c errnum 4 errln -1; child/parent via bl 0x1eece0 @0x142944/@0x142964 (errnum 10); ordering ldr r0,[sp,#4] ldr r1,[sp,#0] cmp r1,r0 ble @0x1429e8 (child<=parent -> errnum 4 mov r1,#1 mov r0,#0x4 bl 0x1fffdc); active bits tst #0x80000000 [child+4]@0x1429a8 / [parent+4]@0x1429b4; install link bl 0x17e688 @0x1429cc; GET argcount==1 @0x142a24, parent ptr [slot+0xa4]@0x142a64 ==0 -> mvneq r1,#0 (-1), else mgmt = (ptr-base)*recip 0x1C8B265B asr#8 @0x142a74; errnum 4 site @0x142aa8 errln -1; state ptr 0x315d60 [0x142ac0], sprite-base 0x19A5FB0 [0x142ac4]." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d SPLINK section: 'SPLINKの親は子より小さい管理番号でしかなれないので sprite->child->next の X座標を加算すればなんとかなる' (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8c): SPSET 4,0:SPSET 15,0:SPLINK 4,15 -> errnum 4 (parent not lower than child); SPSET 4,0:SPLINK 4,4 -> errnum 4 (parent == child); SPCLR:SPSET 0,0:SPLINK 5,0 -> errnum 4 (child before SPSET); SPSET 0,0:SPLINK 512,0 -> errnum 10 (mgmt out of range). Function form CONFIRMED: SPSET 0,0 then SPLINK(0) -> -1 (unlinked); SPSET 4,0:SPSET 15,0:SPLINK 15,4 then SPLINK(15) -> 4 (returns the parent's management number)." }
+  - { type: community, ref: "sbsave corpus: SPLINK used ~1,140x. SET form `SPLINK 251,250`, `SPLINK 125,0`, variable/expr operands `SPLINK N,MN%`, full-width var names `SPLINK ショット`. The UNDOCUMENTED function form `=SPLINK(mgmt)` appears ~25x — e.g. `OWN%=SPLINK(S%)` (2XVV233J/TXT/GAME.PRG), `N=SPLINK(SPN%):IF N<0 THEN@FB` (RRWECV3V/TXT/CYBURST) — the `IF N<0` corroborates the disassembly's -1 return for an unlinked sprite. Function form is disassembled+community; its exact return is oracle-pending." }
+
+confidence: disassembled
+
+tests:
+  # Link form, function form, and error cases — all hw_verified (sb-oracle 2026-06-22 s_t8c).
+  - { name: link_ok, code: "SPSET 4,0\nSPSET 15,0\nSPLINK 15,4", expect: { stdout: "" } }
+  - { name: func_unlinked, code: "SPSET 0,0\nPRINT SPLINK(0)", expect: { stdout: "-1" } }
+  - { name: func_linked, code: "SPSET 4,0\nSPSET 15,0\nSPLINK 15,4\nPRINT SPLINK(15)", expect: { stdout: "4" } }
+  - { name: parent_not_lower, code: "SPSET 4,0\nSPSET 15,0\nSPLINK 4,15", expect: { error: { errnum: 4 } } }
+  - { name: parent_equal, code: "SPSET 4,0\nSPLINK 4,4", expect: { error: { errnum: 4 } } }
+  - { name: child_before_spset, code: "SPCLR\nSPSET 0,0\nSPLINK 5,0", expect: { error: { errnum: 4 } } }
+  - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPLINK 512,0", expect: { error: { errnum: 10 } } }
