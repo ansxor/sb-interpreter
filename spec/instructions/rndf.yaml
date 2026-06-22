@@ -1,0 +1,38 @@
+id: RNDF
+kind: function
+category: Mathematics
+version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+
+signatures:
+  - args: []
+    returns: { type: double, desc: "Random Double in [0, 1)" }
+    note: "Niladic form draws from random series 0."
+  - args:
+      - { name: seed_id, type: integer, range: "0-7", desc: "Random series index" }
+    returns: { type: double, desc: "Random Double in [0, 1) drawn from series seed_id" }
+
+summary: "Returns a random Double in the range [0, 1), drawn from one of 8 TinyMT random series."
+
+semantics:
+  - "Uses the same 8 TinyMT128 series as RND (state table @0x1d08000); entropy-seeded at startup unless set with RANDOMIZE, so output is non-deterministic without prior seeding."
+  - "Computes the standard 53-bit double: (a * 2^26 + b) * 2^-53 where a = (next >> 5) (27 bits) and b = (next >> 6) (26 bits) from two TinyMT draws (@0x1ef958). Result is in [0, 1) — 0 is attainable, 1 is not."
+  - "Documentation phrases the range as 'greater than 0 and less than 1'; the algorithm actually yields [0, 1) (0 inclusive)."
+  - "The niladic form draws from series 0; the one-argument form selects the series."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is greater than 1" }
+  - { errnum: 10, name: OutOfRange, when: "seed_id is outside 0-7" }
+  - { errnum: 8, name: TypeMismatch, when: "the argument is a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/rndf.md (RNDF([Seed ID]); Seed ID 0-7; result >0 and <1)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst RNDF handler @0x1497b8; argcount>1 -> errnum 4 (@0x149800); seed_id>=8 -> errnum 10 (@0x149858); core @0x1eac60 builds 53-bit double via two TinyMT draws @0x1ef958, consts 2^26 (0x4190..)/2^-53 (0x3CA0..) -> [0,1)" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22 (errors only): RNDF(8) -> errnum 10; RNDF(\"x\") -> errnum 8. The random VALUE is non-deterministic and NOT frozen here (queued: seeded-sequence harvest)." }
+
+# Error behavior is hw_verified; the [0,1) 53-bit sequence is disassembled only (cannot be a
+# deterministic golden). Keep at disassembled.
+confidence: disassembled
+
+tests:
+  - { name: seed_id_out_of_range, code: "A=RNDF(8)", expect: { error: { errnum: 10 } } }
+  - { name: string_type_mismatch, code: 'A=RNDF("x")', expect: { error: { errnum: 8 } } }

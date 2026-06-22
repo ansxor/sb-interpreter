@@ -32,3 +32,14 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   (Illegal function call)? PI is niladic; the parser may reject `PI(1)` as a syntax error
   instead. · assumption: errnum 4 (consistent with other math builtins' argcount!=1 check).
   Value cases PI()=3.14159, PI()*2=6.28319 already harvested (hw_verified 2026-06-22).
+- [ ] S-T1f (RND/RNDF/RANDOMIZE) · Harvest a deterministic seeded RNG sequence: run
+  `RANDOMIZE 0,1` then capture `RND(0,100)` / `RNDF(0)` for several draws, to verify our
+  TinyMT128 implementation matches SB's exact sequence. · assumption: TinyMT128 per disasm
+  (core @0x1eb598/0x1eac60, seed @0x1ec22c, state table @0x1d08000). Needs RANDOMIZE-then-draw
+  sequencing the batch tool's single-expression cases can't express. Error/range cases
+  (errnum 4/8/10) + RND(1)=0 already hw_verified 2026-06-22.
+- [ ] S-T1f (MIN/MAX) · Harvest the array form `DIM TMP[2]:TMP[0]=50:TMP[1]=3:MIN(TMP)` /
+  `MAX(TMP)` and re-capture `MAX(1,"x")` (errnum 8 — capture flaked twice on 2026-06-22). ·
+  assumption: array form returns smallest/largest element (disasm @0x148558/0x148230);
+  MAX string -> errnum 8 (mirror of the verified MIN case). Varargs values + type preservation
+  already hw_verified.
