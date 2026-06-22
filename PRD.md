@@ -69,7 +69,7 @@ and name the instructions they cover inline.
 
 #### S-T5 Console I/O (12) → S-T0
 - [x] S-T5a Output — PRINT · LOCATE · COLOR · CLS
-- [ ] S-T5b Input — INPUT · LINPUT · INKEY$
+- [x] S-T5b Input — INPUT · LINPUT · INKEY$
 - [ ] S-T5c Attributes & font — ATTR · CHKCHR · FONTDEF · SCROLL · WIDTH
 
 #### S-T6 Bit-ops + operators (5) → S-T0

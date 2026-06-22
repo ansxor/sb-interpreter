@@ -170,3 +170,15 @@ oracle to confirm exact output and promote to `hw_verified`.
   1024.0 precisely (only Z=2000 -> errnum 10 is hw_verified so far). · assumption (disasm
   @0x14bce0 float constants 0xC3800000 = -256.0, 0x44800000 = 1024.0, inclusive): out raises
   errnum 10.
+- [ ] S-T5b INPUT/LINPUT array-element receivers · Confirm `INPUT "...";WORD$[0]` and
+  `LINPUT NAMES$[0]` runtime-assign into array elements (syntax proven by corpus:
+  D5243E8E/TXT/TXTDEMO:41, E3S34XGX/TXT/BATTLESHIP:84). · assumption (disasm @0x14b534 lvalue
+  tag 8/9 check): array elements are accepted lvalues. Needs live keyboard so output
+  oracle-pending (INPUT/LINPUT block).
+- [ ] S-T5b INPUT read/assign + "?Redo from start" · The actual read-line, comma-field-split,
+  numeric parse, and insufficient-items re-input loop are unharvested (INPUT blocks on the
+  keyboard; oracle has no input redirection). · assumption (docs + disasm @0x14b5a4 read line,
+  @0x14b5b8 field parse): line split on commas, redo on shortage.
+- [ ] S-T5b INKEY$ live keypress · INKEY$() returning an actual queued char is unharvested
+  (real-time keyboard); only the empty-buffer "" is hw_verified. · assumption (disasm @0x14b234
+  strh of one UTF-16 unit): returns a 1-char string of the popped key.

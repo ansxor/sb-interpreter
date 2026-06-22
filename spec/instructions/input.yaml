@@ -1,0 +1,41 @@
+id: INPUT
+kind: statement
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: guide, type: string, optional: true, desc: "Optional guiding text shown before reading input. Followed by `;` (shows a `?` prompt; a string variable is allowed here) or `,` (no `?` prompt; literal string only)." }
+      - { name: vars, type: any, variadic: true, desc: "One or more receiving variables (numeric or string), comma-delimited. Each must be an assignable variable reference, not an expression." }
+    note: "INPUT [\"guide\"; or ,] var[,var2 ...] — reads from the keyboard and assigns to the listed variables. At least one receiving variable is required."
+
+summary: "Reads numeric and/or string values typed at the keyboard (waiting for ENTER) and assigns them to the listed variables; an optional guiding string is shown first."
+
+semantics:
+  - "Waits for keyboard entry until ENTER is pressed, then splits the typed line on commas into fields and assigns the fields left-to-right to the receiving variables."
+  - "The optional guiding text is the first argument: if present (its operand type tag is non-zero @0x14b494) it is evaluated and printed before input (eval via vtable [r2+0x50] then output bl 0x2047e0 @0x14b4b4)."
+  - "Separator after the guide string controls the `?` prompt: `;` shows a `?` prompt, `,` suppresses it. The handler reads the separator subtype byte [r6+0x18] @0x14b50c and clears the show-prompt flag (movne r5,#0) when it is `,`. Only the `;` form permits a string variable as the guide text (a literal-only check applies to the `,` form)."
+  - "When the show-prompt flag is still set, a `?` prompt is printed before reading (adr r1,0x14b6ec prompt string; bl 0x1eee7c @0x14b578)."
+  - "Each receiving argument must be an assignable lvalue: the handler checks each operand's type tag is 8 or 9 (cmp #8/cmpne #9 @0x14b534) and otherwise raises errnum 3 (Syntax error) with the offending argument index (mov r0,#0x3 @0x14b554). Array elements are valid receivers (e.g. `INPUT \"name\";WORD$[0]`), not only scalar variables (sbsave corpus, oracle-pending)."
+  - "The guiding string may be empty (`INPUT \"\";VAR`) and may be omitted entirely (`INPUT VAR`); both are common real-world forms (sbsave corpus, oracle-pending)."
+  - "At least one receiving variable is required; a state/context guard and the argument-shape checks raise errnum 4 (Illegal function call) when the call shape is wrong (mov r0,#0x4 @0x14b4fc)."
+  - "If the user enters fewer fields than there are receiving variables, SmileBASIC displays \"?Redo from start\" and re-reads the whole line (documented behavior; insufficient-items re-input loop)."
+  - "Numeric fields are parsed into the numeric variables; a field that is not a valid number for a numeric receiver triggers the redo-from-start re-input. Commas always delimit fields, so a value containing a comma cannot be entered via INPUT (use LINPUT)."
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "a receiving argument is not an assignable variable (e.g. an expression or literal)" }
+  - { errnum: 4, name: "Illegal function call", when: "the call shape is invalid (e.g. no receiving variable, or used where not permitted)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/input.md (INPUT [\"Guiding text\";] Variable[,Variable2 ...]; waits for ENTER; if too few items entered shows \"?Redo from start\" for re-input; `,` after the guide suppresses the `?` mark; only `;` allows a string variable as the guide text; multiple variables comma-delimited)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst INPUT handler @0x14b464 (keyword table u\"INPUT\" @0x14be9c -> handler ptr 0x14b464 @0x14bea8). r7=argcount [r0+0x4]!, r6=arg array. Guide string: ldr r0,[r6]; ldrb r0,[r0,#0x2]; cmp #0; beq 0x14b520 (no guide) @0x14b49c; else eval ldr r2,[r2,#0x50]/blx r2 + output bl 0x2047e0 @0x14b4b4. Separator subtype byte [r6+0x18]: movne r5,#0 suppresses `?` for `,` @0x14b51c, r6+=0x20/r7-=2 skips the guide slots @0x14b510. Receiver-must-be-variable loop @0x14b52c: ldrb tag; cmp #8/cmpne #9; beq ok else mov r0,#0x3 (errnum 3 Syntax error) with index @0x14b554. Show-prompt path: cmp r5,#0; adr r1,0x14b6ec; bl 0x1eee7c (print `?`) @0x14b570. Errnum 4 guard mov r0,#0x4 @0x14b4fc. Read+parse: bl 0x1e99dc (read line) @0x14b5a4, bl 0x1eb280/0x1eb0c0 (field parse) @0x14b5b8.", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/console.d INPUT: prints guide, reads line, splits on commas, assigns to vars, redo on shortage (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: `,` separator after guide (suppresses `?`) in 124 programs, e.g. 2234N3Z4/TXT/ADRISH_LEARNER:481 (`INPUT \"Hi what is your name?\",NAME$`); bare `INPUT VAR` with no guide string, e.g. DR7VX3G4/TXT/TOTAL_WAR:58 (`INPUT NAME$`); empty guide `INPUT \"\";VAR`, e.g. J3434DKS/TXT/MPSETUP.CONFIG:63; array-element receiver `INPUT \"...\";WORD$[0]` in 4 programs, e.g. D5243E8E/TXT/TXTDEMO:41. Syntax proven legal by real programs; runtime output oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5b): `INPUT \"X\";1` (literal as receiver) -> errnum 3 errline 1 (Syntax error — receiver must be an assignable variable)." }
+
+confidence: disassembled
+
+tests:
+  # INPUT blocks on live keyboard input, so there is no deterministic stdout golden;
+  # the literal-receiver Syntax error (errnum 3) is hw_verified (sb-oracle 2026-06-22).
+  - { name: literal_receiver_syntax_error, code: 'INPUT "X";1', expect: { error: { errnum: 3 } } }

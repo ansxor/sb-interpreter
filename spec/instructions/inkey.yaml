@@ -1,0 +1,35 @@
+id: INKEY$
+kind: function
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    returns: { type: string, desc: "A single UTF-16 character pulled from the keyboard input buffer, or the empty string \"\" if no key is queued." }
+    note: "C$=INKEY$() — takes no arguments and does NOT wait; it returns immediately."
+
+summary: "Pops one character from the keyboard input buffer without waiting; returns it as a 1-character string, or \"\" when the buffer is empty."
+
+semantics:
+  - "Takes no arguments and never blocks: if a key character is queued it is returned, otherwise the empty string is returned immediately (non-waiting, unlike INPUT/LINPUT)."
+  - "The result is a single UTF-16 code unit packaged as a 1-character string (the handler stores the popped code unit with a 16-bit `strh r0,[r12]` into a freshly-allocated 1-length string buffer @0x14b234)."
+  - "When the buffer holds no key, INKEY$ returns the shared empty-string constant (the no-key branch loads it from [0x14b288] -> 0x306a7c @0x14b274)."
+  - "Calling INKEY$ with any argument raises errnum 4 (Illegal function call): the handler guards argcount==0 with the function-call/return-count check (ldr r0,[r0,#0x4]; cmp r0,#0x0; ldreq r0,[r4,#0xc]; cmpeq r0,#0x1) and otherwise raises mov r0,#0x4 @0x14b204."
+  - "INKEY$ reads only keyboard/keypad character input; button and touch state are read via BUTTON/TOUCH, not INKEY$."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "an argument is supplied (INKEY$ takes none)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/inkey.md (INKEY$() gets a character (UTF-16) from the keyboard WITHOUT waiting; if there is no input, \"\" is returned; form `String variable=INKEY$()`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst INKEY$ handler @0x14b1dc (dispatch table -> FUN_0014b1dc). Argcount guard: ldr r0,[r0,#0x4]; cmp r0,#0x0; ldreq r0,[r4,#0xc]; cmpeq r0,#0x1; beq 0x14b20c (ok) else mov r2,#0x0/mvn r1,#-1(ERRLINE)/mov r0,#0x4 (errnum 4)/b 0x1fffdc @0x14b204. Pop key: bl 0x180bc4 @0x14b210; cmp r0,#0x0; beq 0x14b268 (no key). Has-key path builds 1-char string: ldr r3,[0x14b280]->0x306b6c (string heap), ldr r1,[0x14b284]->0x19a5de4; add r12,r1,r2,lsl#0x1; strh r0,[r12] stores the UTF-16 unit; str (len=1) [r3,#0xc] @0x14b250; returns via vtable [r0+0x34] @0x14b25c. No-key path returns empty-string const ldr r1,[0x14b288]->0x306a7c @0x14b274.", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC structural cross-check: INKEY$ returns one buffered key char or empty string, non-blocking (3.5.0 structural reference only)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5b): INKEY$() with no key queued -> \"\" (LEN(INKEY$())=0); INKEY$(1) (argument supplied) -> errnum 4 errline 1." }
+
+confidence: hw_verified
+
+tests:
+  # Empty-buffer result and argcount error are hw_verified (sb-oracle 2026-06-22). No
+  # deterministic golden for a live keypress (real-time keyboard state).
+  - { name: empty_when_no_key, code: 'C$=INKEY$():PRINT LEN(C$)', expect: { stdout: "0" } }
+  - { name: with_arg_errors, code: 'C$=INKEY$(1)', expect: { error: { errnum: 4 } } }

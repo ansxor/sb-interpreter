@@ -1,0 +1,39 @@
+id: LINPUT
+kind: statement
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: guide, type: string, optional: true, desc: "Optional guiding text shown before reading, followed by `;`." }
+      - { name: var, type: string, desc: "A single string variable that receives the whole input line (including commas)." }
+    note: "LINPUT [\"guide\";] string_var — reads ONE whole line from the keyboard (waiting for ENTER) into a single string variable, preserving commas and other characters INPUT would split on."
+
+summary: "Reads a full line of text from the keyboard (waiting for ENTER) into one string variable, keeping commas and other characters that INPUT treats as delimiters."
+
+semantics:
+  - "Waits for keyboard entry until ENTER, then assigns the entire typed line — including `,` and other characters that INPUT would treat as field delimiters — to the single receiving string variable. Only one value is read per call."
+  - "The optional guiding text is shown first when present: the handler checks the guide operand's type tag (ldrb r12,[r2,#0x2] @0x14ba0c) and, if set, evaluates it (blx [r2+0x50]) and outputs it (bl 0x2047e0 @0x14ba38). LINPUT does not print a `?` prompt of its own."
+  - "Reads the line via the shared line-reader (bl 0x1e99dc @0x14ba58) and assigns it to the receiving string variable through the string-variable store vtable slot ([r4+0x10] -> [r1+0x30] blx @0x14ba9c)."
+  - "The receiver must be a string variable; the result is validated/assigned via bl 0x1ed8a8 @0x14ba80 before the store. A string array element is a valid receiver (e.g. `LINPUT NAMES$[0]`), not only a scalar (sbsave corpus, oracle-pending). The guide string may be omitted (`LINPUT S$`) or empty (`LINPUT \"\";S$`)."
+  - "Using LINPUT as a function / requesting a return value (e.g. `A=LINPUT(\"X\")`) raises errnum 3 (Syntax error): the parser rejects the function form before the handler runs (hw_verified)."
+  - "Argument-shape guard inside the handler: it checks argcount and return-count (cmp r0,#0x1; ldrle r1,[r4,#0xc]; cmple #0x1 @0x14b9bc) and raises errnum 4 (Illegal function call) when the runtime call shape is wrong (mov r0,#0x4 @0x14b9d4). A context-state byte equal to 4 also takes the errnum 4 path (ldrb r1,[r0]; cmp #4; beq @0x14b9dc)."
+  - "An empty / failed read takes an internal errnum 2 path (cmp r5,#0; moveq r0,#0x2 @0x14ba6c)."
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "used as a function / a return value is requested (e.g. `A=LINPUT(...)`)" }
+  - { errnum: 4, name: "Illegal function call", when: "the runtime call shape is invalid (wrong argument/return count, or used where not permitted)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/linput.md (LINPUT [\"Guiding text\";] String variable; gets a character string from the keyboard; ALSO accepts \",\" and other characters that INPUT does not allow; waits for ENTER; receiver is a single string variable for one line)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst LINPUT handler @0x14b994 (keyword table u\"LINPUT\" @0x14beac -> handler ptr 0x14b994 @0x14bec0). Context byte: ldr r0,[0x14bae4]; ldrb r1,[r0]; cmp #0x4; beq 0x14b9dc -> errnum 4 @0x14b9e4. Argcount/return guard: cmp r0,#0x1; ldrle r1,[r4,#0xc]; cmple #0x1; beq 0x14b9f4 else mov r0,#0x4 (errnum 4) @0x14b9d4. Guide string: ldr r0,[r4,#0x8]; ldrb r12,[r2,#0x2]; cmp #0 (skip if absent); eval blx [r2,#0x50] + output bl 0x2047e0 @0x14ba38. Read line: bl 0x1e99dc @0x14ba58; cmp r5,#0; moveq r0,#0x2 (empty-read path) @0x14ba6c. Validate/assign string: bl 0x1ed8a8 @0x14ba80; store via [r4,#0x10]->vtable [r1,#0x30] blx @0x14ba9c.", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/console.d LINPUT: prints guide, reads one full line (commas kept) into a string variable (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: bare `LINPUT S$` (no guide) in ~50 programs, e.g. 2KE3384V/TXT/BRAINF; empty guide `LINPUT \"\";C$`, e.g. 4KHEBXJ3/TXT/@BACKUP.PRG; string array-element receiver `LINPUT NAMES$[0]` in E3S34XGX/TXT/BATTLESHIP:84. Syntax proven legal by real programs; runtime output oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5b): `A=LINPUT(\"X\")` (used as a function) -> errnum 3 errline 1 (Syntax error — the function form is rejected before the handler's errnum 4 guard runs)." }
+
+confidence: disassembled
+
+tests:
+  # LINPUT blocks on live keyboard input -> no deterministic stdout golden; the
+  # function-use Syntax error (errnum 3) is hw_verified (sb-oracle 2026-06-22).
+  - { name: as_function_errors, code: 'A=LINPUT("X")', expect: { error: { errnum: 3 } } }
