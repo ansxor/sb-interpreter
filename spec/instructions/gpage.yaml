@@ -1,0 +1,46 @@
+id: GPAGE
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: display_page, type: integer, range: "0..5 (GRP0-GRP5)", desc: "Page shown on the currently selected DISPLAY screen." }
+      - { name: manipulation_page, type: integer, range: "0..5 (GRP0-GRP5)", desc: "Page that subsequent graphic draw instructions write to. By default GRP4 holds sprites and GRP5 holds BG." }
+    note: "GPAGE display, manipulation — selects the display page and the draw (write) page. Exactly 2 args, 0 return values."
+  - args: []
+    out:
+      - { name: VP, type: integer, desc: "Receives the current display page (0..5)." }
+      - { name: WP, type: integer, desc: "Receives the current manipulation/write page (0..5)." }
+    note: "GPAGE OUT VP,WP — reads back the current display and manipulation page numbers. 0 args, exactly 2 OUT receivers."
+
+summary: "Selects which graphic page (GRP0-GRP5) is displayed and which is the target of subsequent graphic drawing; the OUT form reads both back."
+
+semantics:
+  - "Two forms, chosen by the return-value count: 0 returns = SET (requires exactly 2 input args), 2 returns = GET (GPAGE OUT VP,WP, requires 0 input args). Any other (return count, arg count) combination raises errnum 4 (Illegal function call) — return-count check ldr [r0,#0xc] cmp #0 / cmp #2 @0x153b78, SET arg-count cmp #2 @0x153b90 else mov r0,#0x4 @0x153ba0."
+  - "SET: the first argument selects the display page, the second selects the manipulation (write) page. Each must be in 0..5 (GRP0..GRP5); a value < 0 or > 5 raises errnum 10 (Out of range) — display range guard cmp r0,#0/blt + cmp r0,#5/ble @0x153c20 else mov r0,#0xa @0x153c3c; manipulation guard @0x153c50 else mov r0,#0xa @0x153c6c."
+  - "The display page sets which GRP page is shown on the screen currently selected by DISPLAY; the manipulation page redirects all subsequent graphic drawing (GCLS/GPSET/GLINE/...) to that page. By default GRP4 backs sprites and GRP5 backs BG."
+  - "GET (GPAGE OUT VP,WP): reads the current graphics state and writes the display page into the first receiver and the manipulation page into the second — VP from state field +0x30, WP from state field +0x34 @0x153c80. Requires exactly 2 OUT receivers."
+  - "The SET arg count is strict (cmp #2): a 3-argument form GPAGE display,manip,extra raises errnum 4. (The sbsave corpus contains GPAGE 0,0,0 in 8ANQV384/TXT/3DED — dead/buggy code; oracle-confirmed that real SB raises errnum 4 on it, so the disassembly is right.)"
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the form is neither SET (0 returns + 2 args) nor GET (2 returns + 0 args) — e.g. wrong argument count or wrong OUT receiver count" }
+  - { errnum: 10, name: "Out of range", when: "a page number is not in 0..5 (SET form)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gpage.md (GPAGE Display page, Manipulation page — 0-5: GRP0-GRP5; GRP4 sprites / GRP5 BG by default; GPAGE OUT VP,WP returns the current display/manipulation page numbers 0-5)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GPAGE handler @0x153b68: return-count r0=[r0,#0xc] cmp #0 beq SET @0x153b8c, cmp #2 beq GET @0x153c80, else fall to errnum 4 @0x153ba0 (mov r0,#0x4); SET requires argcount [r4,#0x4]==2 (cmp #2 @0x153b90) else errnum 4; display page range cmp r0,#0/blt + cmp r0,#5/ble @0x153c20 else mov r0,#0xa (errnum 10) @0x153c3c; manipulation page range @0x153c50 else mov r0,#0xa @0x153c6c; GET reads VP=[state+0x30],WP=[state+0x34] @0x153c80 (state ptr 0x315d60).", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d GraphicPage / GRP0-GRP5 per-DISPLAY mapping (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: expression/array/BGPAGE() operands (e.g. GPAGE PAGE+2,(!PAGE)+2; GPAGE VP_,BGPAGE()) are common and legal; a 3-argument GPAGE 0,0,0 appears in 8ANQV384/TXT/3DED but oracle-confirmed to raise errnum 4 (dead code)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7a): GPAGE 6,0 -> errnum 10, errline 1; GPAGE 0,-1 -> errnum 10; GPAGE 0 (1 arg) -> errnum 4; GPAGE 0,0,0 (3 args) -> errnum 4 (resolves the corpus question — strict 2-arg form)." }
+
+confidence: disassembled
+
+tests:
+  # error expects are hw_verified (sb-oracle 2026-06-22 s_t7a); set/get round-trip is disassembled (no framebuffer harvest yet).
+  - { name: roundtrip_pages, code: 'GPAGE 1,2\nGPAGE OUT V,W\nPRINT V;W', expect: { stdout: "12" } }
+  - { name: roundtrip_zero, code: 'GPAGE 0,0\nGPAGE OUT V,W\nPRINT V;W', expect: { stdout: "00" } }
+  - { name: display_out_of_range, code: "GPAGE 6,0", expect: { error: { errnum: 10 } } }
+  - { name: manip_out_of_range, code: "GPAGE 0,-1", expect: { error: { errnum: 10 } } }
+  - { name: three_args_errors, code: "GPAGE 0,0,0", expect: { error: { errnum: 4 } } }
+  - { name: wrong_arg_count, code: "GPAGE 0", expect: { error: { errnum: 4 } } }

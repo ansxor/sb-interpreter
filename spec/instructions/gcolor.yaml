@@ -1,0 +1,42 @@
+id: GCOLOR
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: color_code, type: integer, range: "any 32-bit ARGB value", desc: "ARGB8888 draw color (8 bits each A,R,G,B); usually built with RGB(). A=255 opaque, otherwise transparent." }
+    note: "GCOLOR color — sets the current graphic draw color. Exactly 1 arg, no return value."
+  - args: []
+    returns: { type: integer }
+    note: "GCOLOR OUT C32 — reads back the current graphic draw color (0 args, exactly 1 OUT receiver); equivalently usable as the function GCOLOR() in an expression, since both produce return-count 1 with arg-count 0."
+
+summary: "Sets the color used by subsequent graphic drawing instructions; the OUT/function form reads the current draw color back."
+
+semantics:
+  - "Two forms, chosen by the return-value count: 0 returns = SET (requires exactly 1 input arg), 1 return = GET (requires 0 input args). Any other (return count, arg count) combination raises errnum 4 (Illegal function call) — return-count [r0,#0xc] cmp #0 (SET) / cmp #1 with argcount [r0,#0x4]==0 (GET) @0x154460..@0x154478 else mov r0,#0x4 @0x154494."
+  - "The GET form has two spellings that hit the same handler path (return-count 1, arg-count 0): the statement GCOLOR OUT C32, and the function GCOLOR() used inside an expression (e.g. C=GCOLOR() or passing GCOLOR() as an argument). Both return the current draw color. (sbsave corpus: GCOLOR() in 79 occurrences, e.g. 73AN3J9P/TXT/_CYW4SB3-LIB: C=GCOLOR().)"
+  - "SET stores the popped 32-bit ARGB value directly into the current draw color (str r0,[state+0xc] @0x1544cc); the value is NOT range-checked, so the full 32-bit ARGB code (8 bits each for A,R,G,B) is kept."
+  - "The color applies to subsequent graphic draw instructions (GPSET/GLINE/GBOX/GTRI/GCIRCLE/GFILL/GPAINT). The alpha byte controls opacity: A=255 is opaque, any other A is treated as transparent. Colors are usually built with the RGB() function, e.g. GCOLOR RGB(255,0,0)."
+  - "GET (GCOLOR OUT C32): reads the stored draw color back from state field +0xc and writes it into the single OUT receiver @0x1544d8."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the form is neither SET (0 returns + 1 arg) nor GET (1 return + 0 args) — e.g. wrong argument count or wrong OUT receiver count" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gcolor.md (GCOLOR Color code — sets the color of subsequent graphics; usually RGB(), e.g. GCOLOR RGB(255,0,0); a numeric ARGB code is 8 bits each, A=255 opaque otherwise transparent; GCOLOR OUT C32 returns the current draw color)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GCOLOR handler @0x154450: return-count r1=[r0,#0xc] cmp #0 beq SET @0x154480, cmp #1 + argcount [r0,#0x4]==0 beq GET @0x1544d8, else mov r0,#0x4 (errnum 4) @0x154494; SET requires argcount==1 (cmp #1 @0x154484) else errnum 4, pops color -> str r0,[state+0xc] @0x1544cc (no range check); GET reads [state+0xc] -> OUT receiver @0x1544d8 (state ptr 0x315d60)." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 draw color (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: GCOLOR() function-getter form in 79 occurrences, e.g. 73AN3J9P/TXT/_CYW4SB3-LIB (C=GCOLOR()) and 73AN3J9P/TXT/-SETUP- (GCOLOR() passed as an argument) — confirms the GET form is also callable as the function GCOLOR(); GCOLOR &H hex literals and GCOLOR #NAME constants also appear (legal integer color operands)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7a): GCOLOR (no argument, not OUT/function) -> errnum 4, errline 1; GCOLOR 1,2 (2 args) -> errnum 4, errline 1." }
+
+confidence: disassembled
+
+tests:
+  # error expects are hw_verified (sb-oracle 2026-06-22 s_t7a); set/get round-trip is disassembled (store/load of the raw color int).
+  - { name: roundtrip_color, code: 'GCOLOR 100\nGCOLOR OUT C\nPRINT C', expect: { stdout: "100" } }
+  - { name: roundtrip_function_get, code: 'GCOLOR 100\nC=GCOLOR()\nPRINT C', expect: { stdout: "100" } }
+  - { name: roundtrip_zero, code: 'GCOLOR 0\nGCOLOR OUT C\nPRINT C', expect: { stdout: "0" } }
+  - { name: set_rgb_ok, code: "GCOLOR RGB(255,0,0)", expect: { stdout: "" } }
+  - { name: no_arg_set_errors, code: "GCOLOR", expect: { error: { errnum: 4 } } }
+  - { name: too_many_args_errors, code: "GCOLOR 1,2", expect: { error: { errnum: 4 } } }

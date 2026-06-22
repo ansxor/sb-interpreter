@@ -190,3 +190,17 @@ oracle to confirm exact output and promote to `hw_verified`.
 - [ ] S-T5c visual side-effects (screenshot path) · ATTR rotation/inversion render, FONTDEF glyph
   pixels, SCROLL pixel movement, WIDTH 8↔16 reflow are not VALUE-harvestable — they need the
   framebuffer/screenshot oracle (not yet in the skill). Behavior is from docs + disassembly.
+
+- [x] S-T7a errnum cases · HARVESTED 2026-06-22 (sb-oracle batch s_t7a → specs hw_verified):
+  GPAGE 6,0 / 0,-1 → errnum 10, GPAGE 0 (1 arg) → errnum 4, **GPAGE 0,0,0 (3-arg corpus form)
+  → errnum 4** (disasm confirmed — strict 2-arg). GCLS() → errnum 4, GCLS 0,0 → errnum 4.
+  GPRIO 1025 / -257 → errnum 10 (confirms -256..1024 range), GPRIO(0) → errnum 4. GCLIP 0,1,2
+  → errnum 4, GCLIP(0) → errnum 4. GCOLOR (no arg) → errnum 4, GCOLOR 1,2 → errnum 4.
+- [ ] S-T7a remaining round-trip values (not value-batchable — need setup-then-PRINT program):
+  GPAGE 1,2 → OUT V,W = 1,2; GCOLOR 100 → OUT C / C=GCOLOR() = 100; GCLIP write-mode bad
+  rectangle → errnum 10 (which region triggers it?). These are disassembled-solid (store/load)
+  but not yet oracle-confirmed.
+- [ ] S-T7a visual side-effects (framebuffer path) · GCLS fill color, GCOLOR draw color applied
+  to primitives, GCLIP clip region, GPRIO layer Z-order, GPAGE display/draw page selection are
+  pixel effects — need the framebuffer oracle (O-T6, not yet in the skill). Behavior is from
+  docs + disassembly.

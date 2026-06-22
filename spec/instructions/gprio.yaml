@@ -1,0 +1,38 @@
+id: GPRIO
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: z, type: integer, range: "-256..1024 (Front -256 < Screen 0 < Rear 1024)", desc: "Z (depth) coordinate of the whole graphic screen relative to other layers." }
+    note: "GPRIO z — sets the display Z-priority of the graphic screen. Exactly 1 arg, no return value."
+
+summary: "Sets the display order (Z depth) of the entire graphic screen relative to the other layers; lower is nearer the viewer."
+
+semantics:
+  - "Takes exactly 1 argument and returns no value; any other argument count, or requesting a return value (used as a function), raises errnum 4 (Illegal function call) — guard argcount [r0,#0x4]==1 AND return-count [r0,#0xc]==0 (cmp #1 / ldreq [r0,#0xc] / cmpeq #0) else branch to errnum 4 @0x153d70 (mov r0,#0x4)."
+  - "The Z coordinate must be in -256..1024 inclusive; out of range raises errnum 10 (Out of range) — range guard cmn r0,#0x100 (z+256) blt + cmp r0,#0x400 (1024) ble @0x153d40 else mov r0,#0xa @0x153d5c."
+  - "Larger Z is further back (Rear:1024), 0 is the screen surface, and negative Z is toward the front (Front:-256) — the whole graphic screen moves in depth, so it can be placed in front of or behind sprites/BG/console."
+  - "The integer Z is converted to float (vcvt.f32.s32) before being applied to the layer @0x153d30; in 3D (stereoscopic) mode the depth affects the whole graphic screen."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is not 1, or a return value is requested (used as a function)" }
+  - { errnum: 10, name: "Out of range", when: "the Z coordinate is not in -256..1024" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gprio.md (GPRIO Z-coordinate — depth, Rear:1024 < Screen surface:0 < Front:-256; affects the whole graphic screen, incl. 3D mode)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GPRIO handler @0x153cd0: arg/return guard argcount [r0,#0x4] cmp #1 + return-count [r0,#0xc] cmpeq #0, bne -> errnum 4 @0x153d70 (mov r0,#0x4); Z range cmn r0,#0x100 (z+256) blt + cmp r0,#0x400 ble @0x153d40 else mov r0,#0xa (errnum 10) @0x153d5c; vcvt.f32.s32 s0,s0 then bl 0x13af80 to apply @0x153d30." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d graphic layer priority (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7a): GPRIO 1025 -> errnum 10, errline 1; GPRIO -257 -> errnum 10, errline 1 (confirms the -256..1024 range); A=GPRIO(0) (used as a function) -> errnum 4, errline 1." }
+
+confidence: disassembled
+
+tests:
+  # error/boundary expects are hw_verified (sb-oracle 2026-06-22 s_t7a); the -256..1024 range is confirmed at the edges.
+  - { name: front_ok, code: "GPRIO -100", expect: { stdout: "" } }
+  - { name: rear_max_ok, code: "GPRIO 1024", expect: { stdout: "" } }
+  - { name: front_min_ok, code: "GPRIO -256", expect: { stdout: "" } }
+  - { name: too_far_back_errors, code: "GPRIO 1025", expect: { error: { errnum: 10 } } }
+  - { name: too_far_front_errors, code: "GPRIO -257", expect: { error: { errnum: 10 } } }
+  - { name: as_function_errors, code: "A=GPRIO(0)", expect: { error: { errnum: 4 } } }

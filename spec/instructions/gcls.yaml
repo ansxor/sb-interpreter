@@ -1,0 +1,35 @@
+id: GCLS
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: color_code, type: integer, optional: true, range: "any 32-bit ARGB value", desc: "ARGB8888 fill color (8 bits each A,R,G,B). Omit to fill with black." }
+    note: "GCLS [color] — clears the current manipulation (write) graphic page. 0 or 1 arg, no return value."
+
+summary: "Clears the current graphic (manipulation) page, filling it with black or an optional ARGB color code."
+
+semantics:
+  - "Takes 0 or 1 argument and returns no value; requesting a return value (used as a function) raises errnum 4 (Illegal function call) — return-count guard ldr [r0,#0xc] cmp #0 / bne @0x1552e4..@0x1552ec; an argument count other than 0 or 1 also raises errnum 4 (cmp #0 / cmp #1 @0x1552f4 else mov r0,#0x4 @0x155310)."
+  - "With no argument, the whole page is filled with black (color 0) — the no-arg path passes color 0 (mov r1,#0) to the fill helper bl 0x18ffcc @0x155318."
+  - "With one argument, the page is filled with that ARGB color code (the popped 32-bit value [sp] is passed straight to the fill helper @0x155358); the color is NOT range-checked — it is a full 32-bit ARGB value (8 bits each for A,R,G,B), where A=255 is opaque and any other A is transparent (see GCOLOR)."
+  - "Clears only the graphic page selected by GPAGE for manipulation; the console screen (CLS) and other GRP pages are unaffected — graphic and console screens are managed separately."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "more than one argument is given, or a return value is requested (used as a function)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gcls.md (GCLS [Color code] — fills the whole graphic screen with black, or with an ARGB color code, e.g. GCLS RGB(32,32,32))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GCLS handler @0x1552d4: return-count r1=[r0,#0xc] cmp #0, bne -> errnum 4 (mov r0,#0x4 @0x155310); argcount r1=[r0,#0x4] cmp #0 beq no-arg @0x155318 (mov r1,#0 black + bl 0x18ffcc fill), cmp #1 beq 1-arg @0x155330 (pop color -> [sp], bl 0x18ffcc @0x155360), else errnum 4 @0x155304; no range check on the color value." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GCLS: fills the active graphic page (3.5.0 structural cross-check only); sbsave corpus: GCLS #NAME / GCLS &Hxxxxxxxx / GCLS var color operands are common (legal integer colors)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7a): A=GCLS() (used as a function) -> errnum 4, errline 1; GCLS 0,0 (2 args) -> errnum 4, errline 1." }
+
+confidence: disassembled
+
+tests:
+  # error/argument-count expects are hw_verified (sb-oracle 2026-06-22 s_t7a); fill side-effects need the framebuffer oracle.
+  - { name: clear_black_ok, code: "GCLS", expect: { stdout: "" } }
+  - { name: clear_color_ok, code: "GCLS RGB(32,32,32)", expect: { stdout: "" } }
+  - { name: as_function_errors, code: "A=GCLS()", expect: { error: { errnum: 4 } } }
+  - { name: too_many_args_errors, code: "GCLS 0,0", expect: { error: { errnum: 4 } } }
