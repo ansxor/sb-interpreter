@@ -44,7 +44,7 @@ and name the instructions they cover inline.
 - [x] S-T1b Sign & classify — ABS · SGN · CLASSIFY
 - [x] S-T1c Powers/roots/log — SQR · POW · EXP · LOG
 - [x] S-T1d Trigonometry — SIN · COS · TAN · ASIN · ACOS · ATAN
-- [ ] S-T1e Hyperbolic & angle — SINH · COSH · TANH · DEG · RAD · PI
+- [x] S-T1e Hyperbolic & angle — SINH · COSH · TANH · DEG · RAD · PI
 - [ ] S-T1f Min/max & RNG — MIN · MAX · RND · RNDF · RANDOMIZE
 
 #### S-T2 Strings (12) → S-T0

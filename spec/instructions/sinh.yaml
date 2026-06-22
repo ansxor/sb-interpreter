@@ -1,0 +1,33 @@
+id: SINH
+kind: function
+category: Mathematics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: value, type: number, range: "any", desc: "Real number" }
+    returns: { type: double, desc: "Hyperbolic sine of value" }
+
+summary: "Returns the hyperbolic sine of value, as a Double."
+
+semantics:
+  - "The argument is coerced to Double and the result is always a Double (e.g. SINH(0)=0)."
+  - "Computes sinh(x) = (e^x - e^-x) / 2 via libm; no domain restriction on finite input."
+  - "Large magnitude inputs overflow to infinity per IEEE-754 double range."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "argument is a string" }
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 1" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/sinh.md" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SINH handler @0x1498a4; argcount!=1 -> errnum 4; arg coerced via to-double method (vtable +0x44, non-number -> errnum 8); libm sinh called @0x299c48; result returned as Double; no range check" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: SINH(0)=0, SINH(1)=1.1752, SINH(-1)=-1.1752 (doubles to 6 significant figures); SINH(\"x\") -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: zero,        code: "PRINT SINH(0)",   expect: { stdout: "0" } }
+  - { name: one,         code: "PRINT SINH(1)",   expect: { stdout: "1.1752" } }
+  - { name: negative,    code: "PRINT SINH(-1)",  expect: { stdout: "-1.1752" } }
+  - { name: string_type_mismatch, code: 'A=SINH("x")', expect: { error: { errnum: 8 } } }

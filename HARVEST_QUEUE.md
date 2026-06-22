@@ -28,3 +28,7 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   assumption: returns whole-numbered Double (disasm: floor/ceil helpers @0x1ed970/0x1ed760
   are double->double; pushed via Double return path; osb agrees). Also needs STR$ formatting
   resolved (see the M1 STR$ line) to know the exact printed text.
+- [ ] S-T1e (PI) · Does supplying an argument to PI (e.g. `A=PI(1)`) raise errnum 4
+  (Illegal function call)? PI is niladic; the parser may reject `PI(1)` as a syntax error
+  instead. · assumption: errnum 4 (consistent with other math builtins' argcount!=1 check).
+  Value cases PI()=3.14159, PI()*2=6.28319 already harvested (hw_verified 2026-06-22).
