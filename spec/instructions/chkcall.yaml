@@ -1,0 +1,36 @@
+id: CHKCALL
+kind: function
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: name, type: string, desc: "Name of the instruction or function to check" }
+    returns: { type: integer, desc: "TRUE (1) if a callable instruction/function with that name exists, else FALSE (0)" }
+    note: "result = CHKCALL(\"name\") — test whether a callable of that name exists."
+
+summary: "Returns TRUE (1) if an instruction or function with the given name can be referenced, otherwise FALSE (0)."
+
+semantics:
+  - "CHKCALL(\"name\") returns 1 (TRUE) when a callable of that name exists in the builtin instruction/function dispatch table or as a user DEF, 0 (FALSE) otherwise."
+  - "IMPORTANT: parser special-form keywords are NOT callable per CHKCALL and return FALSE — e.g. CHKCALL(\"PRINT\") is 0 (PRINT is a syntactic keyword, not a dispatch-table builtin), whereas CHKCALL(\"FLOOR\") is 1 (FLOOR is a true builtin function). Other special forms (IF/FOR/AND/DATA/VAR…) likewise return 0."
+  - "User instructions/functions defined with DEF count as callable: CHKCALL(\"MYFUNC\") is 1 after DEF MYFUNC."
+  - "The argument is typically a runtime-built/variable string for dynamic dispatch (e.g. CHKCALL(prefix$+name$)); the result is commonly used directly in an IF or negated (IF !CHKCALL(F$))."
+  - "Used to feature-probe an optional builtin or a registered user function before invoking it dynamically."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "the argument is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/chkcall.md (Variable=CHKCALL(\"string\"); FALSE=does not exist, TRUE=exists)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst CHKCALL handler FUN_00146354 @0x146354: looks the name up in the builtin instruction/function dispatch table (and user DEF table) and returns a boolean (1/0); parser special-form keywords are absent from that table, hence FALSE" }
+  - { type: community, ref: "sbsave corpus: ~116 CHKCALL, dominantly with computed/variable names for module/plugin dispatch (CHKCALL(\"PhysStage_\"+KEY$) in 45WEV83E/TXT/DIST; CHKCALL(F$) in 2383C3HE/TXT/LOWERDASH), almost always inside IF/!IF conditions" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4e): CHKCALL(\"FLOOR\") -> 1; CHKCALL(\"PRINT\") -> 0 (special-form keyword, not a dispatch builtin); CHKCALL(\"NOTAREALNAME\") -> 0; user DEF MYF then CHKCALL(\"MYF\") -> 1; variable name N$=\"FLOOR\":CHKCALL(N$) -> 1" }
+
+confidence: hw_verified
+
+tests:
+  - { name: chkcall_function, code: "PRINT CHKCALL(\"FLOOR\")", expect: { stdout: "1" } }
+  - { name: chkcall_keyword_false, code: "PRINT CHKCALL(\"PRINT\")", expect: { stdout: "0" } }
+  - { name: chkcall_missing, code: "PRINT CHKCALL(\"NOTAREALNAME\")", expect: { stdout: "0" } }
+  - { name: chkcall_user_def, code: "DEF MYF\nEND\nPRINT CHKCALL(\"MYF\")", expect: { stdout: "1" } }

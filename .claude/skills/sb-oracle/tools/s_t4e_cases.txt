@@ -1,0 +1,24 @@
+# DTREAD
+dtread_ymd|DTREAD "2014/10/12" OUT Y,M,D|STR$(Y)+","+STR$(M)+","+STR$(D)|progstr
+dtread_weekday|DTREAD "2014/10/12" OUT Y,M,D,W|W|prog
+dtread_partial_out|DTREAD "2014/10/12" OUT Y,,D|STR$(Y)+","+STR$(D)|progstr
+# TMREAD
+tmread_hms|TMREAD "12:59:31" OUT H,M,S|STR$(H)+","+STR$(M)+","+STR$(S)|progstr
+tmread_midnight|TMREAD "00:00:00" OUT H,M,S|STR$(H)+","+STR$(M)+","+STR$(S)|progstr
+tmread_partial_out|TMREAD "12:59:31" OUT ,,S|S|prog
+tmread_array_out|DIM A[3]:TMREAD "01:02:03" OUT A[0],A[1],A[2]|STR$(A[0])+STR$(A[1])+STR$(A[2])|progstr
+# CHKCALL
+chkcall_builtin|CHKCALL("PRINT")
+chkcall_function|CHKCALL("FLOOR")
+chkcall_missing|CHKCALL("NOTAREALNAME")
+chkcall_def|DEF MYF\nEND|CHKCALL("MYF")|prog
+chkcall_var|N$="FLOOR":B=CHKCALL(N$)|B|prog
+# CHKVAR
+chkvar_exists|COUNTX=5|CHKVAR("COUNTX")|prog
+chkvar_missing|A=1|CHKVAR("NOSUCHVAR")|prog
+chkvar_array|DIM Q[3]|CHKVAR("Q")|prog
+# CHKLABEL
+chklabel_exists|@MAIN|CHKLABEL("@MAIN")|prog
+chklabel_missing|@MAIN|CHKLABEL("@NOPE")|prog
+chklabel_flag1|@MAIN|CHKLABEL("@MAIN",1)|prog
+chklabel_concat|@MAIN|CHKLABEL("@MA"+"IN")|prog

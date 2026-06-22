@@ -1,0 +1,37 @@
+id: CHKLABEL
+kind: function
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: label, type: string, desc: "\"@Label\" string to check (optionally slot-qualified \"n:@Label\")" }
+      - { name: flag, type: integer, range: "0..1", optional: true, default: 0, desc: "0 = search only within the current DEF; 1 = if not found in DEF, also search global labels" }
+    returns: { type: integer, desc: "TRUE (1) if the label exists, else FALSE (0)" }
+    note: "result = CHKLABEL(\"@Label\" [, flag]) — test whether a label exists."
+
+summary: "Returns TRUE (1) if a label with the given name can be referenced, otherwise FALSE (0). The optional flag widens the search from DEF-local to global labels."
+
+semantics:
+  - "CHKLABEL(\"@Label\") returns 1 (TRUE) if the label exists, 0 (FALSE) otherwise."
+  - "Flag 0 (default): search only within the current DEF scope. Flag 1: if not found within the DEF, also search global labels."
+  - "A cross-slot label may be checked as CHKLABEL(\"n:@Label\") — the target slot must be enabled first with USE n (see [[use]])."
+  - "The argument must include the leading @ as part of the label name."
+  - "Used to probe for optional DATA blocks / jump targets before RESTORE/GOTO."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "the label argument is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/chklabel.md (Variable=CHKLABEL(\"@Label\"[,Flag]); Flag 0=within DEF only, 1=also global; cross-slot \"1:@Label\" with USE; FALSE/TRUE)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst CHKLABEL handler FUN_001464e4 @0x1464e4: resolves the label name (honoring the DEF-scope/global flag and optional slot prefix) and returns a boolean (1/0)" }
+  - { type: community, ref: "sbsave corpus: ~465 CHKLABEL; flag=1 (global fallback) real (~63 uses); variable/concatenated labels common (CHKLABEL(\"@GENERAL_\"+N$,1) in 43AE1XG3/TXT/AXE); cross-slot \"n:@Label\" real (~61, CHKLABEL(\"1:@CALE_DB\",1) in 1BWX7ENV/TXT/AND-OS); ~87% used directly in IF/WHILE conditions, often negated" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4e): CHKLABEL(\"@MAIN\") with @MAIN present -> 1; CHKLABEL(\"@NOPE\") -> 0; CHKLABEL(\"@MAIN\",1) (global flag) -> 1; concatenated CHKLABEL(\"@MA\"+\"IN\") -> 1" }
+
+confidence: hw_verified
+
+tests:
+  - { name: chklabel_exists, code: "PRINT CHKLABEL(\"@MAIN\")\n@MAIN", expect: { stdout: "1" } }
+  - { name: chklabel_missing, code: "PRINT CHKLABEL(\"@NOPE\")\n@MAIN", expect: { stdout: "0" } }
+  - { name: chklabel_global_flag, code: "PRINT CHKLABEL(\"@MAIN\",1)\n@MAIN", expect: { stdout: "1" } }
+  - { name: chklabel_concat, code: "PRINT CHKLABEL(\"@MA\"+\"IN\")\n@MAIN", expect: { stdout: "1" } }
