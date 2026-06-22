@@ -24,17 +24,27 @@ python3 run_case.py setupkeys                       # OPTIONAL: assign F1 = LOAD
 python3 run_case.py batch cases.txt out.tsv        # RECOMMENDED: FAST harvest (one mega-program)
 python3 run_case.py prog 'FLOOR(-2.1)'             # one case via the program-file path -> -3
 python3 run_case.py expr 'MID$("ABCDE",2,3)' str   # one typed case, string -> BCD
+python3 run_case.py errcase 'A=SQR(-1)'            # error case -> {errored, errnum, errline}
 ```
 Run `ready` FIRST — it cold-starts Azahar and confirms SB is usable, so cases don't each eat a
 timeout (a `sb_window.py bounds` that returns coords is NOT proof of readiness).
 
 **`batch` is fast** — instead of typing each case into DIRECT mode (the slow part: dozens of
-on-screen taps + a confirm dialog *per case*), it writes ONE program that evaluates ALL cases
-into a single string and `SAVE`s it once, then does a single LOAD+RUN+read. A 60-case slice is
-~one run, not 60. SmileBASIC has **no error trapping**, so if a case raises a runtime error the
-program halts before the SAVE; `batch` then **bisects** the group to isolate the offender
-(marked `ERROR`) and still collects every other case. Lines are `name|expr`, `name|expr|str`
-(string result, no `STR$` wrap), or bare `expr`.
+on-screen taps + a confirm dialog *per case*), it writes ONE program that evaluates ALL value
+cases into a single string and `SAVE`s it once, then does a single LOAD+RUN+read. A 60-case
+slice is ~one run, not 60. SmileBASIC has **no error trapping**, so if a value case unexpectedly
+raises, the program halts before the SAVE; `batch` then **bisects** the group to isolate the
+offender (marked `ERROR`) and still collects every other case. Lines are `name|expr`,
+`name|expr|str` (string result, no `STR$` wrap), `name|stmt|err` (error case, below), or bare `expr`.
+
+**Error cases (`errnum`/`errline`) — O-T5.** No error trapping means an error HALTS the program
+and there is **no way to resume or catch it** (even `EXEC`/`RUN n` into another slot can't return
+after an error — so the multi-slot idea doesn't help). But after the halt, `ERRNUM`/`ERRLINE`
+hold that error and are readable in DIRECT mode. So an `err` case runs ALONE: the program is
+`<stmt>` + a sentinel `SAVE"TXT:O","__OK__"`; if the sentinel file appears the statement didn't
+raise (`NOERR`), otherwise it halted and we read `ERRNUM`/`ERRLINE` via a DIRECT save. Write the
+case as a **statement** (`A=SQR(-1)`), not a bare expression. These can't batch (one run each),
+but errors are a minority of cases.
 
 **Always pass an OUTFILE** (each `name<TAB>result` is appended + flushed as it resolves): a run
 that's killed keeps everything so far — re-running with the same OUTFILE skips OK rows and
@@ -70,6 +80,10 @@ LEN("ABCDE")=5, ABS(-9)=9, POW(2,10)=1024, SQR(144)=12.
   run trigger uses F1 when `keymap.json` has an `"F1"` coord; otherwise it types `LOAD…+RUN`
   (fine — with the mega-program that's ~once per slice). **To enable one-tap: calibrate F1 once**
   (`sb_window.py calibrate <wx> <wy>` against a screenshot, add `"F1": [wx,wy]` to `keymap.json`).
+- **Error capture (`run_error_case`):** run `<stmt>` + a `SAVE"TXT:O","__OK__"` sentinel; if the
+  sentinel appears it didn't raise, else read `SAVE"TXT:O",STR$(ERRNUM)+CHR$(9)+STR$(ERRLINE)` in
+  DIRECT mode (the error halted the program; `ERRNUM`/`ERRLINE` persist into DIRECT mode and were
+  set by this run, so no stale-value risk). Freeze `errnum` into the spec test's `expect.error`.
 
 ## extdata file format (fully cracked, validated both directions)
 Path: `~/Library/Application Support/Azahar/sdmc/Nintendo 3DS/<0*32>/<0*32>/extdata/00000000/000016DE/user/###/<DISKNAME>`.

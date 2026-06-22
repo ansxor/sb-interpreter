@@ -155,9 +155,11 @@ check that `sb-core`'s output matches real SB. From `.claude/skills/sb-oracle/to
     python3 run_case.py prog 'FLOOR(-2.1)'             # one case -> -3
 - FIRST run `run_case.py ready` (it launches Azahar + confirms SB is usable). Then `batch` your
   slice's cases — ONE process, NO backgrounding/sleep (the harness blocks `sleep N; cmd`).
-  `batch` is FAST: it writes ONE program that evaluates all cases and SAVEs them in a single
-  file (≈one LOAD+RUN, not one-per-case), and bisects around any case that halts (SB has no
-  error trapping). Case lines: `name|expr`, `name|expr|str` (string result), or bare `expr`.
+  `batch` is FAST: it writes ONE program that evaluates all value cases and SAVEs them in a
+  single file (≈one LOAD+RUN, not one-per-case), and bisects around any case that halts (SB has
+  no error trapping). Case lines: `name|expr`, `name|expr|str` (string result), `name|stmt|err`
+  (a statement EXPECTED to raise → captures ERRNUM/ERRLINE; runs alone), or bare `expr`. Use
+  `|err` for error-expecting spec tests (e.g. `sqr_neg|X=SQR(-1)|err`).
   ALWAYS pass an OUTFILE: each result is written + flushed as it resolves, so if this run is cut
   off the partials survive and re-running `batch` with the same OUTFILE skips done cases and
   retries only failures. If `ready` says NOT READY or a case errors, fall back to
