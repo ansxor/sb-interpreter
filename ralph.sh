@@ -172,6 +172,19 @@ if [ -f RALPH_PROMPT.md ]; then
   PROMPT="$(cat RALPH_PROMPT.md)"
 fi
 
+# jq filter that renders the stream-json transcript into a readable line-per-event view.
+# Used both for the live stdout tail (during the run) and the persisted $log (after).
+read -r -d '' RENDER_FILTER <<'JQ_EOF' || true
+if .type=="assistant" then (.message.content[]? |
+  if .type=="text" then .text
+  elif .type=="tool_use" then "🔧 "+.name+"  "+((.input|tostring)[0:160])
+  else empty end)
+elif .type=="result" then
+  "\n=== "+(.subtype//"done")+" · turns="+((.num_turns//0)|tostring)
+  +" · $"+((.total_cost_usd//0)|tostring)+" · "+((.duration_ms//0)|tostring)+"ms ==="
+else empty end
+JQ_EOF
+
 # ── Loop ─────────────────────────────────────────────────────────────────────────────
 iter=0
 noprogress=0
@@ -199,24 +212,35 @@ while :; do
 
   before="$(git rev-parse HEAD 2>/dev/null || echo none)"
 
+  : > "$jsonl"                                       # create now so the live tailer can follow it
+  ln -sf "$(basename "$jsonl")" "$LOG_DIR/latest.jsonl"
+
+  # Live progress: follow the transcript as the agent writes it and render to stdout in real
+  # time. This is a READ-ONLY tail of a growing file — it can't SIGPIPE the agent, which still
+  # writes straight to disk below.
+  live_pid=""
+  if command -v jq >/dev/null 2>&1; then
+    ( tail -n +1 -f "$jsonl" 2>/dev/null | jq --unbuffered -r "$RENDER_FILTER" 2>/dev/null ) &
+    live_pid=$!
+  fi
+
   # Full stream-json transcript: every assistant message, tool call, tool result, and the
   # final result event. Written straight to disk (not through a pipe) so nothing downstream
   # can SIGPIPE-kill the agent mid-task. `--verbose` is required for stream-json in -p mode.
   printf '%s\n' "$PROMPT" | claude -p --dangerously-skip-permissions --model "$MODEL" \
       --output-format stream-json --verbose >"$jsonl" 2>&1 || true
-  ln -sf "$(basename "$jsonl")" "$LOG_DIR/latest.jsonl"
 
-  # Render a readable view of the JSON transcript to console + $log (best effort).
+  # Stop the live tailer (give it a beat to flush the final lines first).
+  if [ -n "$live_pid" ]; then
+    sleep 1
+    pkill -P "$live_pid" 2>/dev/null   # the tail + jq children of the subshell
+    kill "$live_pid" 2>/dev/null       # the subshell itself
+    wait "$live_pid" 2>/dev/null
+  fi
+
+  # Persist a readable rendering of the transcript to $log (console already saw it live).
   if command -v jq >/dev/null 2>&1; then
-    jq -r '
-      if .type=="assistant" then (.message.content[]? |
-        if .type=="text" then .text
-        elif .type=="tool_use" then "🔧 "+.name+"  "+((.input|tostring)[0:160])
-        else empty end)
-      elif .type=="result" then
-        "\n=== "+(.subtype//"done")+" · turns="+((.num_turns//0)|tostring)
-        +" · $"+((.total_cost_usd//0)|tostring)+" · "+((.duration_ms//0)|tostring)+"ms ==="
-      else empty end' "$jsonl" 2>/dev/null | tee "$log"
+    jq -r "$RENDER_FILTER" "$jsonl" 2>/dev/null > "$log"
   else
     cp "$jsonl" "$log"; tail -n 20 "$jsonl"
   fi
