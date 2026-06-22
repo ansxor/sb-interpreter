@@ -1,0 +1,3 @@
+fontdef_code_unchanged|CLS:F$="FFFF"*64:FONTDEF ASC("A"),F$:PRINT "A"|CHKCHR(0,0)|prog
+fontdef_reset_runs|FONTDEF:A=5|A|prog
+fontdef_len_check|F$="FFFF"*64|LEN(F$)|prog

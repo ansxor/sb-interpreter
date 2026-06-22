@@ -10,6 +10,12 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T5c (ATTR/FONTDEF) · Visual — verify via screenshot/graphics oracle: ATTR rotation
+  (#TROT0-270) and inversion (#TREVH/#TREVV) actually rotate/flip the rendered glyph; FONTDEF
+  redefines the on-screen glyph (and the GRP page -1 font image). Also resolve the corpus
+  `(ATTR>>8) AND 7` value-read form — bare ATTR returns 0 after a console ATTR set, so what is
+  it reading? · assumption: per docs/disasm. ATTR constants, CHKCHR, WIDTH (8/16 + WIDTH()),
+  SCROLL direction all hw_verified 2026-06-22.
 - [ ] S-T5b (INPUT/LINPUT) · Interactive — block on keyboard, NOT value-harvestable by the
   batch oracle. Verify via screenshot+typed input: INPUT parses the typed line into the var
   list (numeric vs string), ';' shows '?' and ',' suppresses it, string-var prompt with ';',

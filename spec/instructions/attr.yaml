@@ -1,0 +1,39 @@
+id: ATTR
+kind: statement
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: attribute, type: integer, range: "0..15", desc: "Bitfield: b0..b1 rotation (0/90/180/270), b2 horizontal flip, b3 vertical flip" }
+    note: "ATTR attribute — set the rotation/inversion attributes applied to subsequently printed console characters."
+
+summary: "Sets the rotation and inversion attributes for characters drawn to the console. The attribute is a bitfield; named constants #TROT0..#TROT270, #TREVH, #TREVV are provided."
+
+semantics:
+  - "ATTR sets a per-character display attribute applied to subsequent console output (e.g. ATTR 3:PRINT \"ABC\" prints rotated 270 degrees)."
+  - "The attribute is a bitfield: bits 0-1 select rotation (0=#TROT0/0deg, 1=#TROT90, 2=#TROT180, 3=#TROT270); bit 2 (=4, #TREVH) flips horizontally; bit 3 (=8, #TREVV) flips vertically."
+  - "Constants combine with OR, e.g. ATTR #TROT90 OR #TREVH."
+  - "The named constants are integers: #TROT0=0, #TROT90=1, #TROT180=2, #TROT270=3, #TREVH=4, #TREVV=8."
+  - "ATTR affects how glyphs are rendered (a visual effect); the on-screen rotation/flip result is verified via the graphics/screenshot oracle, not the value oracle (queued). The character CODE stored in the cell is unchanged (CHKCHR still returns the base code)."
+  - "An attribute value outside 0..15 raises errnum 10 (Out of range) — oracle-pending."
+  - "The attribute argument is commonly a variable or expression (e.g. ATTR X, ATTR 8*flag) as well as a literal/constant."
+  - "A bare value-read form `ATTR` appears in the corpus (e.g. (ATTR>>8) AND 7), but reading ATTR right after setting the console attribute returns 0 in testing — it does NOT read back the console text attribute; its exact meaning is oracle-pending (queued)."
+
+errors:
+  - { errnum: 10, name: "Out of range", when: "the attribute is outside the valid bitfield range (oracle-pending)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/attr.md (ATTR DisplayAttribute; b0-b1 rotation #TROT0-270, b2 #TREVH horizontal, b3 #TREVV vertical)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst ATTR handler FUN_0014bec4/@0x14c090: sets the console character display-attribute state used by the console renderer" }
+  - { type: community, ref: "sbsave corpus: ~56 literal ATTR (0-3), variable args (ATTR X) common, expression args (ATTR 8*HANTEN_F in EK7EX3KJ/TXT/CNSL_KAIZOU); #TROT* constants used but combined-constant forms (#TROT90 OR #TREVH) absent; a value-read form (ATTR>>8) AND 7 in D3E8YE9F/TXT/TEST-GRPOD2 (meaning unclear, returns 0 after a console ATTR set)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5c): the ATTR constant values are #TROT0=0, #TROT90=1, #TROT180=2, #TROT270=3, #TREVH=4, #TREVV=8; ATTR 3:PRINT \"A\" leaves the stored cell code unchanged (CHKCHR=65); reading bare ATTR after setting it returns 0 (does not echo the console attr). NOTE: only these are oracle-verified; the on-screen rotation/inversion is a visual effect (queued), so the top-level confidence stays disassembled." }
+
+confidence: disassembled
+
+tests:
+  - { name: attr_const_rot0, code: "PRINT #TROT0", expect: { stdout: "0" } }
+  - { name: attr_const_rot270, code: "PRINT #TROT270", expect: { stdout: "3" } }
+  - { name: attr_const_revh, code: "PRINT #TREVH", expect: { stdout: "4" } }
+  - { name: attr_const_revv, code: "PRINT #TREVV", expect: { stdout: "8" } }
+  - { name: attr_preserves_code, code: "CLS\nATTR 3\nPRINT \"A\"\nATTR 0\nPRINT CHKCHR(0,0)", expect: { stdout: "65" } }

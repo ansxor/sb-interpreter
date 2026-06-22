@@ -1,0 +1,32 @@
+id: SCROLL
+kind: statement
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: dx, type: integer, desc: "Horizontal viewpoint movement in characters (negative = left, positive = right)" }
+      - { name: dy, type: integer, desc: "Vertical viewpoint movement in characters (negative = up, positive = down)" }
+    note: "SCROLL dx, dy — shift the whole console display by (dx,dy) characters."
+
+summary: "Shifts the entire console display by a whole number of character cells, as if moving the viewpoint. Characters appear to move opposite to the viewpoint; cells pushed off-screen are lost."
+
+semantics:
+  - "SCROLL dx,dy moves the console viewpoint by dx columns and dy rows; on-screen characters move in the OPPOSITE direction to the viewpoint shift by exactly (dx,dy) cells."
+  - "Concretely (oracle-verified): a positive dx moves characters LEFT (a char at column c moves to c-dx); a positive dy moves them UP (row r -> r-dy). Negative values move right/down."
+  - "Characters pushed off the edge of the screen are discarded (not wrapped)."
+  - "The shift is in whole character cells (console units), affecting the whole text layer at once."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/scroll.md (SCROLL X,Y; viewpoint movement, characters move opposite; off-screen characters disappear)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SCROLL handler FUN_0014baf0/@0x14bd08: shifts the console character/attribute planes by (dx,dy) cells, discarding cells moved off-screen" }
+  - { type: community, ref: "sbsave corpus: ~311 SCROLL; literal small steps dominant (SCROLL 0,-1 / 0,1 / 0,2); variable args in animation loops (SCROLL X,Y in L1NV3344/TXT/EX8TECHDEMO); rapid repeated SCROLL for scrolling animations (KXJJ333/TXT/AEAAG2)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5c): a char PRINTed at (5,5) then SCROLL 1,0 lands at (4,5) (moved left by 1; CHKCHR(4,5)=65, (5,5)=0); SCROLL 0,1 lands at (5,4) (moved up by 1). Confirms chars move opposite the viewpoint by (dx,dy)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: scroll_x_moves_left, code: "CLS\nLOCATE 5,5\nPRINT \"A\"\nSCROLL 1,0\nPRINT CHKCHR(4,5)", expect: { stdout: "65" } }
+  - { name: scroll_y_moves_up, code: "CLS\nLOCATE 5,5\nPRINT \"A\"\nSCROLL 0,1\nPRINT CHKCHR(5,4)", expect: { stdout: "65" } }

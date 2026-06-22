@@ -1,0 +1,42 @@
+id: FONTDEF
+kind: statement
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: code, type: integer, desc: "UTF-16 character code whose glyph to redefine" }
+      - { name: def_string, type: string, desc: "256-char hex string: 64 pixels x a 4-hex-digit RGBA5551 color each (8x8 glyph)" }
+    note: "FONTDEF code, def$ — define a glyph from a 256-character hex pixel string (form 1)."
+  - args:
+      - { name: code, type: integer, desc: "UTF-16 character code whose glyph to redefine" }
+      - { name: def_array, type: array, desc: "64-element numeric array, one RGBA5551 color per pixel (8x8 glyph)" }
+    note: "FONTDEF code, arr — define a glyph from a 64-element color array (form 2)."
+  - args: []
+    note: "FONTDEF — reset all font definitions to their initial state (form 3)."
+
+summary: "Redefines the glyph for a character code (8x8 pixels, RGBA5551 per pixel) from a hex string or a numeric array, or — with no arguments — resets all fonts to default."
+
+semantics:
+  - "FONTDEF code,def$ replaces the 8x8 glyph of the given character code; def$ is 256 characters = 64 pixels x a 4-hex-digit color."
+  - "FONTDEF code,arr does the same from a 64-element numeric array (one color per pixel)."
+  - "Each pixel is a 16-bit RGBA5551 color: 5 bits each R/G/B (0-31) + 1 alpha bit (0=transparent, 1=opaque); e.g. white=FFFF, black=0001, red=F801."
+  - "FONTDEF with no arguments resets every glyph to its built-in default."
+  - "The font image can also be manipulated as graphics page -1 with GCOPY/GSAVE/GLOAD."
+  - "FONTDEF changes how glyphs render (a visual effect); the resulting on-screen/font-page pixels are verified via the graphics oracle, not the value oracle (queued). A malformed definition length raises errnum 10/illegal (oracle-pending)."
+
+errors:
+  - { errnum: 10, name: "Out of range", when: "the definition string/array is the wrong length or a value is out of range (oracle-pending)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/fontdef.md (3 forms: FONTDEF code,\"hex256\"; FONTDEF code,array[64]; FONTDEF reset; RGBA5551 per pixel; font is GRP page -1)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst FONTDEF handler FUN_0014c2ac/@0x14c430: parses the hex-string or array glyph definition into the font page for the given code, or resets the font table when called with no arguments" }
+  - { type: community, ref: "sbsave corpus: ~1,751 FONTDEF over 162 files; all 3 forms used — hex-string dominant (~1,460, FONTDEF &HE225,\"...256hex...\"), bare reset confirmed (~71, FONTDEF alone), array/variable form (~220, FONTDEF CHRCODE%,PAT$); loop-based glyph tables common (e.g. 13D4DV3V/TXT/MAIN_PRG_V2 defines codes 192+ in a FOR loop). All match the documented syntax." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5c): a 256-char hex def is the right length (\"FFFF\"*64 has LEN 256 = 64 pixels x 4 hex); FONTDEF ASC(\"A\"),def$ then PRINT \"A\" leaves the stored cell code unchanged (CHKCHR=65 — only the glyph is redefined); bare FONTDEF (reset) runs without error. NOTE: the rendered glyph pixels are a visual effect (queued for the graphics oracle), so top-level confidence stays disassembled." }
+
+confidence: disassembled
+
+tests:
+  - { name: fontdef_string_len, code: "F$=\"FFFF\"*64\nPRINT LEN(F$)", expect: { stdout: "256" } }
+  - { name: fontdef_keeps_code, code: "CLS\nF$=\"FFFF\"*64\nFONTDEF ASC(\"A\"),F$\nPRINT \"A\"\nPRINT CHKCHR(0,0)", expect: { stdout: "65" } }
+  - { name: fontdef_reset_runs, code: "FONTDEF\nPRINT 5", expect: { stdout: "5" } }
