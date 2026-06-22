@@ -1,0 +1,29 @@
+id: ENDIF
+kind: statement
+category: Control
+version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+
+signatures:
+  - args: []
+    note: "Closes a multi-line IF block: IF cond THEN <newline> ... ENDIF."
+
+summary: "Ends a multi-line IF block."
+
+semantics:
+  - "Required when an IF construct spans multiple lines; the single-line form (IF cond THEN stmt) does not use ENDIF."
+  - "Marks where control rejoins after whichever branch ran."
+  - "Each multi-line IF (including those opened by ELSE IF) needs its own matching ENDIF."
+  - "See [[if]] for full conditional semantics."
+
+errors:
+  - { errnum: 3, name: SyntaxError, when: "ENDIF has no matching multi-line IF, or a multi-line IF block is missing its ENDIF" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/endif.md (ends multi-line IF processing)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst ENDIF is a parser keyword (token @0x2ed5c8), not in the builtin dispatch table; handled by the IF compiler" }
+
+confidence: disassembled
+
+tests:
+  - { name: closes_block, code: "IF 1 THEN\nPRINT \"IN\"\nENDIF\nPRINT \"OUT\"", expect: { stdout: "IN\nOUT" } }
+  - { name: skipped_block_rejoins, code: "IF 0 THEN\nPRINT \"IN\"\nENDIF\nPRINT \"OUT\"", expect: { stdout: "OUT" } }

@@ -50,3 +50,9 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   assumption: returns total element count (disasm @0x147f68 array path vtable +0x5c/+0x14).
   String forms LEN("ABC123")=6 etc. already hw_verified 2026-06-22 (multi-statement DIM not
   batch-harvestable).
+- [ ] S-T3a (IF/ENDIF) · Harvest multi-line IF blocks (IF cond THEN <nl> ... ELSE ... ENDIF),
+  ENDIF rejoin, ELSE IF (spaced) nesting, and the GOTO-omission form (IF cond THEN @label /
+  IF cond GOTO @label). The batch tool's |err cases are single-line (newlines can't be embedded
+  in a cases.txt line), so these need a multi-line program harness. · assumption: standard
+  block semantics (disasm: keyword table @0x2ed5c8..0x2ed678). Single-line THEN/ELSE/ELSEIF
+  branch selection + truthiness already hw_verified 2026-06-22 (error-as-signal).

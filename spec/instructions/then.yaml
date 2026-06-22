@@ -1,0 +1,30 @@
+id: THEN
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    note: "Keyword introducing the branch run when the IF condition is true: IF cond THEN process."
+
+summary: "Marks the start of the branch executed when an IF condition is true."
+
+semantics:
+  - "Always part of an IF construct; never used standalone."
+  - "On the same line, the process after THEN runs when the condition is true; with nothing but a newline after THEN the construct is multi-line and is closed by ENDIF."
+  - "GOTO may be omitted after THEN: a bare @label means GOTO @label."
+  - "See [[if]] for full conditional semantics and truthiness."
+
+errors:
+  - { errnum: 3, name: SyntaxError, when: "THEN appears outside a well-formed IF construct" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/then.md (control destination when the IF condition is satisfied)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst THEN is a parser keyword (token @0x2ed678), not in the builtin dispatch table; handled by the IF compiler" }
+  - { type: hw_verified, ref: "sb-oracle branch-selection probe 2026-06-22: the THEN process runs when the condition is true (IF 1 THEN A=ASC(\"\") -> errnum 4) and is skipped when false (IF 0 THEN ... -> no error). See [[if]]." }
+
+confidence: hw_verified
+
+tests:
+  - { name: then_runs_when_true, code: 'IF 1 THEN PRINT "OK"', expect: { stdout: "OK" } }
+  - { name: then_skipped_when_false, code: 'IF 0 THEN PRINT "OK"', expect: { stdout: "" } }

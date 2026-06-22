@@ -1,0 +1,33 @@
+id: ELSEIF
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: condition, type: number, range: "any", desc: "Additional condition, tested only if earlier conditions were false" }
+    note: "ELSEIF cond THEN process — chains another condition onto an IF block."
+
+summary: "Adds another condition to an IF block, evaluated only when all earlier conditions were false."
+
+semantics:
+  - "Used inside a multi-line IF block: each ELSEIF condition is tested in order, and the first true one's process runs."
+  - "Once any branch (IF, ELSEIF, or ELSE) runs, the remaining branches are skipped."
+  - "Truthiness is the same as IF: nonzero is true, zero is false."
+  - "Distinct from writing ELSE IF (with a space), which opens a nested IF that needs its own ENDIF."
+  - "See [[if]] for full conditional semantics."
+
+errors:
+  - { errnum: 3, name: SyntaxError, when: "ELSEIF appears outside a well-formed IF block, or its THEN/ENDIF structure is malformed" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/elseif.md (additional conditional evaluation; note ELSE IF vs ELSEIF)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst ELSEIF is a parser keyword (token @0x2ed5f8), not in the builtin dispatch table; handled by the IF compiler" }
+  - { type: hw_verified, ref: "sb-oracle branch-selection probe 2026-06-22: the ELSEIF process runs only when earlier conditions were false and its own is true (IF 0 THEN A=1 ELSEIF 1 THEN A=ASC(\"\") -> errnum 4) and is skipped when an earlier condition was true (IF 1 THEN A=1 ELSEIF 1 THEN A=ASC(\"\") -> no error). Single-line ELSEIF parses. See [[if]]." }
+
+confidence: hw_verified
+
+tests:
+  - { name: elseif_branch, code: "IF 0 THEN\nPRINT \"A\"\nELSEIF 1 THEN\nPRINT \"B\"\nELSE\nPRINT \"C\"\nENDIF", expect: { stdout: "B" } }
+  - { name: first_true_wins, code: "IF 1 THEN\nPRINT \"A\"\nELSEIF 1 THEN\nPRINT \"B\"\nENDIF", expect: { stdout: "A" } }
+  - { name: all_false_else, code: "IF 0 THEN\nPRINT \"A\"\nELSEIF 0 THEN\nPRINT \"B\"\nELSE\nPRINT \"C\"\nENDIF", expect: { stdout: "C" } }
