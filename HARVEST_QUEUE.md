@@ -10,6 +10,12 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T8a (sprite visuals) · Visual / O-T6 — verify via screenshot that an SPSET sprite with
+  display ON actually renders at its position with the SPPAGE source image, that SPSHOW/SPHIDE
+  toggle on-screen visibility, and the attribute bits (rotation/flip/additive). Also confirm
+  SPCLR's argument-less "clear all" form. Lifecycle state (SPSET OUT-IX alloc, SPCLR frees,
+  SPPAGE() read, show/hide-before-SPSET -> errnum 4) already hw_verified 2026-06-22.
+
 - [ ] S-T7d (GSAVE/GLOAD format) · Resolve the GSAVE element packing for convert_flag 1 (16-bit
   physical) and large regions — 16x16 flag0 = LEN 256 (one 32-bit element/pixel, hw_verified),
   but flag1/16x16 and 32x32 gave inconsistent/halting LEN in the batch oracle; determine the

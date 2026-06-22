@@ -1,0 +1,31 @@
+id: SPCLR
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: id, type: integer, range: "0..511", desc: "Management number of the sprite to release" }
+    note: "SPCLR id — stop using a sprite and free its slot."
+
+summary: "Stops using the specified sprite and releases its memory/slot, making the management number available again for SPSET. Required to avoid running out of sprite memory."
+
+semantics:
+  - "SPCLR id releases the sprite at the given management number; the slot becomes free and SPSET's OUT-IX allocator can reuse it."
+  - "Freeing sprites is necessary: without SPCLR, repeated SPSET eventually has no free slots (SPSET OUT IX returns -1)."
+  - "After SPCLR the management number is no longer a live sprite (using it with SPSHOW/SPHIDE/etc. before a new SPSET errors)."
+  - "Per the corpus/docs SPCLR is also used argument-less to clear all sprites (oracle-pending exact form)."
+
+errors:
+  - { errnum: 10, name: "Out of range", when: "id is outside 0..511 (oracle-pending)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spclr.md (SPCLR Management; stops using the sprite and releases memory)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPCLR handler FUN_0013f7a8 @0x13f7a8: marks the sprite slot free and releases its resources" }
+  - { type: community, ref: "sbsave corpus: SPCLR common to free sprites; also seen argument-less to clear all (oracle-pending)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8a): after ACLS, SPSET 0,0,16,16,1 OUT A (A=0), SPCLR A, then SPSET 0,0,16,16,1 OUT B returns B=0 — the freed slot is reused, confirming SPCLR releases the management number" }
+
+confidence: hw_verified
+
+tests:
+  - { name: spclr_frees_slot, code: "ACLS\nSPSET 0,0,16,16,1 OUT A\nSPCLR A\nSPSET 0,0,16,16,1 OUT B\nPRINT B", expect: { stdout: "0" } }

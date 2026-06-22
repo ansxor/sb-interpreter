@@ -1,0 +1,9 @@
+spset_out_first	0
+spset_out_next	1
+spclr_frees	0
+sppage_default	4
+sppage_set	2
+spshow_after	1
+sphide_after	1
+spshow_err	errnum=4 errline=1
+sphide_err	errnum=4 errline=1

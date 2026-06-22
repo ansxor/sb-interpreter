@@ -1,0 +1,32 @@
+id: SPSHOW
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: id, type: integer, range: "0..511", desc: "Management number of the sprite to display" }
+    note: "SPSHOW id — turn on display of a sprite."
+
+summary: "Starts displaying (makes visible) a previously-SPSET sprite. Using it before the sprite is SPSET raises an error."
+
+semantics:
+  - "SPSHOW id sets the sprite's display flag ON; the sprite (already created with SPSET) becomes visible in the composite."
+  - "It only toggles visibility — the sprite continues to exist either way (see [[sphide]] to hide)."
+  - "Using SPSHOW on a management number that has not been SPSET raises errnum 4 (Illegal function call) — oracle-confirmed."
+  - "Equivalent to setting attribute bit 0 (#SPSHOW) which SPSET also controls."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "the sprite was never SPSET (used before creation)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spshow.md (SPSHOW Management; starts displaying; error if used before SPSET)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPSHOW handler FUN_00142ad0/@0x142b80: sets the sprite display flag" }
+  - { type: community, ref: "sbsave corpus: SPSHOW used to reveal sprites after SPSET (common in game show/hide toggles)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8a): ACLS:SPSHOW 5 (sprite never SPSET) -> errnum 4 (Illegal function call); after SPSET 5,... the sprite shows/hides without error" }
+
+confidence: hw_verified
+
+tests:
+  - { name: spshow_before_spset_errors, code: "ACLS\nSPSHOW 5", expect: { error: { errnum: 4 } } }
+  - { name: spshow_after_spset_ok, code: "ACLS\nSPSET 5,0,0,16,16,1\nSPSHOW 5\nPRINT 1", expect: { stdout: "1" } }
