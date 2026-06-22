@@ -9,15 +9,19 @@ Full flow (all verified):
 Usage:
   run_case.py ready                           # launch Azahar if needed + probe (READY/NOT READY)
   run_case.py setupkeys                        # assign F1 = LOAD+RUN macro (one tap runs a program)
-  run_case.py batch FILE [OUTFILE]            # FAST harvest: ONE mega-program for all cases
-                                              #   lines: `name|expr` / `name|expr|str` / bare `expr`
+  run_case.py batch FILE [OUTFILE]            # FAST harvest: ONE mega-program for value cases
+                                              #   lines: `name|expr` / `name|expr|str` /
+                                              #          `name|stmt|err` (expects a raise) / bare `expr`
                                               #   OUTFILE -> incremental + resumable (survives a kill)
   run_case.py expr 'FLOOR(-2.1)'              # one case -> "-3" (numeric wraps in STR$)
   run_case.py expr 'MID$("ABCDE",1,2)' str    # one case, string result (no STR$ wrap)
   run_case.py prog 'FLOOR(8.9)'               # one case via the efficient program-file path
+  run_case.py errcase 'A=SQR(-1)'             # one error case -> {errored, errnum, errline}
 Run `ready` FIRST so cold-start/not-ready doesn't make each case eat a timeout. SB should be
 on the DIRECT-mode screen (see SKILL.md Step 0). `batch` writes ONE program that SAVEs all
-results at once (≈one LOAD+RUN, not one per case) and bisects around any case that halts.
+VALUE results at once (≈one LOAD+RUN, not one per case) and bisects around any case that halts.
+SB has no error trapping, so `err` cases can't batch — each runs alone, and ERRNUM/ERRLINE are
+read in DIRECT mode after the halt.
 """
 import re
 import sys
@@ -160,32 +164,81 @@ def _trigger_run(prog="P"):
     W.enter()
 
 
+_MODE_TAGS = {"str": "str", "s": "str", "string": "str", "num": "num", "n": "num",
+              "number": "num", "err": "err", "error": "err", "e": "err"}
+
+
 def _parse_case_line(line):
-    """`name|expr`, `name|expr|str`, or bare `expr`. Trailing `str`/`num` tags pick string vs
-    numeric (STR$-wrapped) capture. Returns (name, expr, numeric)."""
+    """`name|expr`, `name|expr|<mode>`, or bare `expr`. Mode tag picks capture: `num` (default,
+    STR$-wrapped), `str` (string result, no wrap), or `err` (statement EXPECTED to raise —
+    capture ERRNUM/ERRLINE). Returns (name, expr, mode)."""
     parts = line.split("|")
     name = parts[0].strip()
     if not re.match(r"^[\w.\-]+$", name):
         raise ValueError(f"case name {name!r} must be identifier-like (letters/digits/_.-)")
     if len(parts) == 1:
-        return (name, name, True)
+        return (name, name, "num")
     tag = parts[-1].strip().lower()
-    if tag in ("str", "s", "string"):
-        return (name, "|".join(parts[1:-1]).strip(), False)
-    if tag in ("num", "n", "number"):
-        return (name, "|".join(parts[1:-1]).strip(), True)
-    return (name, "|".join(parts[1:]).strip(), True)
+    if tag in _MODE_TAGS:
+        return (name, "|".join(parts[1:-1]).strip(), _MODE_TAGS[tag])
+    return (name, "|".join(parts[1:]).strip(), "num")
 
 
 def _build_batch_program(cases, result_name="O"):
-    """One SB program: evaluate every case into R$ as `name<TAB>value` lines (LF-separated),
-    SAVE once. `cases` = list of (name, expr, numeric)."""
+    """One SB program: evaluate every value case into R$ as `name<TAB>value` lines (LF-
+    separated), SAVE once. `cases` = list of (name, expr, mode); `err` cases are NOT included
+    (they halt the program — capture them with run_error_case)."""
     lines = ['R$=""']
-    for name, expr, numeric in cases:
-        val = f"STR$({expr})" if numeric else f"({expr})"
+    for name, expr, mode in cases:
+        val = f"({expr})" if mode == "str" else f"STR$({expr})"
         lines.append(f'R$=R$+"{name}"+CHR$(9)+{val}+CHR$(10)')
     lines.append(f'SAVE"TXT:{result_name}",R$')
     return "\n".join(lines)
+
+
+def run_error_case(stmt, result_name="O", prog="P", sentinel_attempts=3):
+    """Capture the error of a statement EXPECTED to raise. SB has no error trapping, so the
+    statement halts the program; afterwards ERRNUM/ERRLINE hold that error and are readable in
+    DIRECT mode. Flow: run `<stmt>` followed by a sentinel SAVE — if the sentinel file appears
+    the statement did NOT raise; otherwise it halted, and we read ERRNUM/ERRLINE via a DIRECT
+    save. `stmt` must be a STATEMENT (e.g. `A=SQR(-1)`), not a bare expression. Returns
+    {"errored": bool, "errnum": int|None, "errline": int|None}."""
+    X.write_file(prog, f'{stmt}\nSAVE"TXT:{result_name}","__OK__"\n', "TXT")
+    W.raise_window()
+    time.sleep(0.4)
+    W.press("YES")
+    time.sleep(0.5)
+    before = X.result_mtime(result_name, "TXT")
+    W.clear_line()
+    time.sleep(0.3)
+    _trigger_run(prog)
+    for _ in range(sentinel_attempts):
+        time.sleep(1.2)
+        W.press("YES")
+        time.sleep(0.6)
+        mt = X.result_mtime(result_name, "TXT")
+        if mt is not None and mt != before:
+            if X.read_result(result_name, "TXT").strip() == "__OK__":
+                return {"errored": False, "errnum": None, "errline": None}
+            break  # a file appeared but it isn't the sentinel — treat as halted
+    # Halted on the error: read ERRNUM/ERRLINE (set by THIS run's error) in DIRECT mode.
+    before2 = X.result_mtime(result_name, "TXT")
+    W.clear_line()
+    time.sleep(0.3)
+    W.type_str(f'SAVE"TXT:{result_name}",STR$(ERRNUM)+CHR$(9)+STR$(ERRLINE)')
+    time.sleep(0.2)
+    W.enter()
+    for _ in range(5):
+        time.sleep(1.2)
+        W.press("YES")
+        time.sleep(0.6)
+        mt = X.result_mtime(result_name, "TXT")
+        if mt is not None and mt != before2:
+            f = X.read_result(result_name, "TXT").strip().split("\t")
+            num = int(f[0]) if f and f[0].lstrip("-").isdigit() else None
+            line = int(f[1]) if len(f) > 1 and f[1].lstrip("-").isdigit() else None
+            return {"errored": True, "errnum": num, "errline": line}
+    return {"errored": True, "errnum": None, "errline": None}  # halted but couldn't read
 
 
 def _parse_batch_result(text):
@@ -309,7 +362,20 @@ def batch(path, outpath=None):
             out.write(f"{name}\t{value}\n")
             out.flush()
 
-    harvest(remaining, on_result=on_result)
+    # Value cases batch into one mega-program; `err` cases must each run alone (they halt).
+    value_cases = [c for c in remaining if c[2] != "err"]
+    error_cases = [c for c in remaining if c[2] == "err"]
+    if value_cases:
+        harvest(value_cases, on_result=on_result)
+    for name, stmt, _ in error_cases:
+        r = run_error_case(stmt)
+        if not r["errored"]:
+            on_result(name, "NOERR (statement did not raise)")
+        elif r["errnum"] is not None:
+            el = f" errline={r['errline']}" if r["errline"] is not None else ""
+            on_result(name, f"errnum={r['errnum']}{el}")
+        else:
+            on_result(name, "ERROR errnum capture failed (halted but no read)")
     if out:
         out.close()
 
@@ -330,6 +396,8 @@ if __name__ == "__main__":
         print(run_expr(a[1], numeric=not (len(a) > 2 and a[2] == "str")))
     elif mode == "prog":                # one case, efficient: write program to disk, LOAD+RUN
         print(run_expr_prog(a[1], numeric=not (len(a) > 2 and a[2] == "str")))
+    elif mode == "errcase":             # one error case: run a halting statement -> ERRNUM/ERRLINE
+        print(run_error_case(a[1]))
     elif mode == "progsrc":             # a full program (must SAVE its result)
         print(run_program(a[1]))
     else:                               # a verbatim DIRECT-mode command (must SAVE its result)

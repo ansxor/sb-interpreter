@@ -1,0 +1,37 @@
+id: ABS
+kind: function
+category: Mathematics
+version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+
+signatures:
+  - args:
+      - { name: value, type: number, range: "any", desc: "Numerical value for which to get the absolute value" }
+    returns: { type: number, desc: "Absolute value (Integer in -> Integer out; Double in -> Double out)" }
+
+summary: "Returns the absolute value of value, preserving the argument's numeric type."
+
+semantics:
+  - "ABS(-12.345)=12.345, ABS(-5)=5, ABS(5)=5, ABS(0)=0."
+  - "An Integer argument is negated with a reverse-subtract (0 - value) and returned as Integer; a Double argument uses VABS (clears the sign bit) and is returned as Double. Type is preserved."
+  - "Edge case (disassembled): ABS(-2147483648) overflows the i32 reverse-subtract and wraps back to -2147483648 (the integer path is `rsblt r1,r1,#0`, no saturation). The literal is not directly expressible, so this is documented from the handler, not harvested."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "value is a string" }
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 1" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/abs.md" }
+  - { type: disassembled, ref: "cia_3.6.0.lst ABS handler @0x147a34; Integer path @0x147ac4 = `rsblt r1,r1,#0` (negate if <0); Double path @0x147ae4 = `vabs.f64 d0,d0`; non-number arg -> `mov r0,#0x8` (errnum 8, not oracle-trappable)" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: ABS(-12.345)=12.345, ABS(-5)=5, ABS(5)=5, ABS(0)=0, ABS(-3.5)=3.5 (type-preserving abs confirmed)" }
+
+confidence: hw_verified
+
+tests:
+  # numeric expects below are hw_verified (sb-oracle 2026-06-22); the INT_MIN-wrap edge and
+  # the string-error case are disassembled.
+  - { name: doc_negative_double, code: "PRINT ABS(-12.345)", expect: { stdout: "12.345" } }
+  - { name: negative_integer,    code: "PRINT ABS(-5)",      expect: { stdout: "5" } }
+  - { name: positive_integer,    code: "PRINT ABS(5)",       expect: { stdout: "5" } }
+  - { name: zero,                code: "PRINT ABS(0)",        expect: { stdout: "0" } }
+  - { name: negative_fraction,   code: "PRINT ABS(-3.5)",     expect: { stdout: "3.5" } }
+  - { name: string_type_mismatch, code: 'A=ABS("x")',         expect: { error: { errnum: 8 } } }
