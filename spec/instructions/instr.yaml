@@ -1,0 +1,44 @@
+id: INSTR
+kind: function
+category: Strings
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: haystack, type: string, desc: "String to search in" }
+      - { name: needle, type: string, desc: "String to search for" }
+    returns: { type: integer, desc: "0-based index of the first match, or -1 if not found" }
+    note: "2-arg form: search starts at position 0."
+  - args:
+      - { name: start, type: integer, range: "0..", desc: "0-based position to start searching from" }
+      - { name: haystack, type: string, desc: "String to search in" }
+      - { name: needle, type: string, desc: "String to search for" }
+    returns: { type: integer, desc: "0-based index of the first match at/after start, or -1 if not found" }
+
+summary: "Finds the first occurrence of needle within haystack, returning its 0-based position or -1."
+
+semantics:
+  - "Returns the 0-based character index of the first match: INSTR(\"ABCDEF\",\"CD\")=2."
+  - "Returns -1 when the needle is not found: INSTR(\"ABC\",\"X\")=-1."
+  - "The optional start argument begins the search at that 0-based position: INSTR(2,\"ABAB\",\"A\")=2."
+  - "An empty needle matches at the start position (returns start, default 0)."
+  - "Positions are in characters (UTF-16 code units)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 2 or 3" }
+  - { errnum: 8, name: TypeMismatch, when: "haystack or needle is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/instr.md (INSTR([start,] haystack, needle); returns position or -1; example INSTR(0,\"ABC\",\"B\"))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst INSTR handler @0x144948; argcount!=2,3 -> errnum 4; non-string haystack/needle -> errnum 8 (@0x144a94/0x144ab0); 3-arg start coerced via @0x1ed910; empty needle -> returns start (@0x144a10); substring compare via @0x2012bc; not found -> -1 (mvn r6,#0)" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: INSTR(\"ABCDEF\",\"CD\")=2, INSTR(\"ABC\",\"A\")=0, INSTR(\"ABC\",\"X\")=-1, INSTR(2,\"ABAB\",\"A\")=2, INSTR(1,\"ABC\",\"A\")=-1; INSTR(\"ABC\",5) -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: found,        code: 'PRINT INSTR("ABCDEF","CD")', expect: { stdout: "2" } }
+  - { name: at_start,     code: 'PRINT INSTR("ABC","A")',     expect: { stdout: "0" } }
+  - { name: not_found,    code: 'PRINT INSTR("ABC","X")',     expect: { stdout: "-1" } }
+  - { name: with_start,   code: 'PRINT INSTR(2,"ABAB","A")',  expect: { stdout: "2" } }
+  - { name: start_skips,  code: 'PRINT INSTR(1,"ABC","A")',   expect: { stdout: "-1" } }
+  - { name: non_string_type_mismatch, code: 'A=INSTR("ABC",5)', expect: { error: { errnum: 8 } } }

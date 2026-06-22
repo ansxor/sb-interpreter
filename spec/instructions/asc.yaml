@@ -1,0 +1,35 @@
+id: ASC
+kind: function
+category: Strings
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: char, type: string, desc: "String whose first character's code is returned" }
+    returns: { type: integer, desc: "UTF-16 code of the first character" }
+
+summary: "Returns the UTF-16 character code of the first character of a string."
+
+semantics:
+  - "Returns the code unit of the first character only: ASC(\"A\")=65, ASC(\"AB\")=65."
+  - "Codes are UTF-16, so ASC of a full-width/kana character returns its UTF-16 value."
+  - "Calling ASC on an empty string is an error (no character to read)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 1, or the string is empty" }
+  - { errnum: 8, name: TypeMismatch, when: "the argument is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/asc.md (ASC(char) -> UTF-16 code; example ASC(\"A\"))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst ASC handler @0x147b00; argcount!=1 -> errnum 4; non-string -> errnum 8 (@0x147b8c); empty string (len==0) -> errnum 4 (@0x147b9c); first code unit read via ldrh @0x147b60" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: ASC(\"A\")=65, ASC(\"a\")=97, ASC(\"0\")=48, ASC(\"AB\")=65 (first char); ASC(\"\") -> errnum 4; ASC(5) -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: upper_a,     code: 'PRINT ASC("A")',  expect: { stdout: "65" } }
+  - { name: lower_a,     code: 'PRINT ASC("a")',  expect: { stdout: "97" } }
+  - { name: zero_digit,  code: 'PRINT ASC("0")',  expect: { stdout: "48" } }
+  - { name: first_only,  code: 'PRINT ASC("AB")', expect: { stdout: "65" } }
+  - { name: empty_illegal, code: 'A=ASC("")',     expect: { error: { errnum: 4 } } }
+  - { name: non_string_type_mismatch, code: 'A=ASC(5)', expect: { error: { errnum: 8 } } }

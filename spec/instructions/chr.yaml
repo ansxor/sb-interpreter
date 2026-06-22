@@ -1,0 +1,34 @@
+id: CHR$
+kind: function
+category: Strings
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: code, type: integer, range: "0-65535", desc: "UTF-16 character code" }
+    returns: { type: string, desc: "One-character string for the given code" }
+
+summary: "Returns a one-character string for the given UTF-16 character code."
+
+semantics:
+  - "Builds a 1-character string from the low 16 bits of code: CHR$(65)=\"A\", CHR$(97)=\"a\"."
+  - "Codes are UTF-16, so CHR$(&H3042) yields the hiragana character あ."
+  - "The code is coerced to Integer and stored as a 16-bit code unit (strh)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 1" }
+  - { errnum: 8, name: TypeMismatch, when: "the argument is a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/chr.md (CHR$(code) -> character; example CHR$(65))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst CHR$ handler @0x147c24; argcount!=1 -> errnum 4; arg coerced to int (vtable +0x40; non-number -> errnum 8); allocates a 1-char string and stores the low 16 bits via strh @0x147cbc; alloc fail -> errnum 11" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: CHR$(65)=A, CHR$(97)=a, CHR$(48)=0, ASC(CHR$(72))=72 (roundtrip); CHR$(\"x\") -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: upper_a,   code: 'PRINT CHR$(65)',  expect: { stdout: "A" } }
+  - { name: lower_a,   code: 'PRINT CHR$(97)',  expect: { stdout: "a" } }
+  - { name: digit,     code: 'PRINT CHR$(48)',  expect: { stdout: "0" } }
+  - { name: roundtrip, code: 'PRINT ASC(CHR$(72))', expect: { stdout: "72" } }
+  - { name: string_type_mismatch, code: 'A$=CHR$("x")', expect: { error: { errnum: 8 } } }

@@ -1,0 +1,37 @@
+id: LEN
+kind: function
+category: Strings
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: string, type: string, desc: "String whose character count is returned" }
+    returns: { type: integer, desc: "Number of characters in the string" }
+  - args:
+      - { name: array, type: any_array, desc: "Array whose element count is returned" }
+    returns: { type: integer, desc: "Number of elements in the array" }
+
+summary: "Returns the number of characters in a string, or the number of elements in an array."
+
+semantics:
+  - "For a string, returns its length in characters (UTF-16 code units): LEN(\"ABC123\")=6, LEN(\"\")=0."
+  - "For an array, returns the total element count (for a 1-D array, its length)."
+  - "Each character counts as one, including full-width/kana characters."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 1" }
+  - { errnum: 8, name: TypeMismatch, when: "the argument is a plain number (neither string nor array)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/len.md (LEN(string or array); example LEN(\"ABC123\"))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst LEN handler @0x147f68; argcount!=1 -> errnum 4; string (type byte 2) -> length via vtable +0x58; array (type byte 1) -> element count via vtable +0x5c/+0x14; plain number -> errnum 8 (@0x147ffc)" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: LEN(\"ABC123\")=6, LEN(\"\")=0, LEN(\"X\")=1; LEN(5) -> errnum 8. Array form LEN(arr) queued (multi-statement DIM, not batch-harvestable)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: basic,      code: 'PRINT LEN("ABC123")', expect: { stdout: "6" } }
+  - { name: empty,      code: 'PRINT LEN("")',       expect: { stdout: "0" } }
+  - { name: single,     code: 'PRINT LEN("X")',      expect: { stdout: "1" } }
+  - { name: array_form, code: 'DIM A[5]:PRINT LEN(A)', expect: { stdout: "5" } }
+  - { name: number_type_mismatch, code: 'A=LEN(5)',  expect: { error: { errnum: 8 } } }

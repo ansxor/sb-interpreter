@@ -46,3 +46,7 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 - [ ] S-T2b (VAL) · Re-capture `A=VAL(5)` (non-string -> errnum 8). Oracle ERRNUM capture
   flaked twice on 2026-06-22 ("halted but no read"). · assumption: errnum 8 (disasm @0x148f34,
   and sibling STR$/HEX$/FORMAT$ non-string cases all hw_verified errnum 8 same run).
+- [ ] S-T2c (LEN) · Harvest the array form `DIM A[5]:LEN(A)` (-> 5) and a 2-D case. ·
+  assumption: returns total element count (disasm @0x147f68 array path vtable +0x5c/+0x14).
+  String forms LEN("ABC123")=6 etc. already hw_verified 2026-06-22 (multi-statement DIM not
+  batch-harvestable).

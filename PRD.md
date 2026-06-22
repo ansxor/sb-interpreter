@@ -50,7 +50,7 @@ and name the instructions they cover inline.
 #### S-T2 Strings (12) → S-T0
 - [x] S-T2a Extract — LEFT$ · RIGHT$ · MID$ · SUBST$
 - [x] S-T2b Convert — STR$ · VAL · HEX$ · FORMAT$
-- [ ] S-T2c Char/search/len — ASC · CHR$ · INSTR · LEN
+- [x] S-T2c Char/search/len — ASC · CHR$ · INSTR · LEN
 
 #### S-T3 Control + Advanced control (27) → S-T0
 - [ ] S-T3a Conditionals — IF · THEN · ELSE · ELSEIF · ENDIF
