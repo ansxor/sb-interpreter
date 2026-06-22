@@ -1,6 +1,5 @@
 # EXEMPLAR — the v2 spec contract. Authored from all sources per prd/specs.md.
-# Copy this shape for other instructions. Keep `confidence` honest (this one is still
-# `documented` until the disassembly handler + oracle confirm it — see HARVEST_QUEUE.md).
+# Copy this shape for other instructions. Keep `confidence` honest.
 id: FLOOR
 kind: function
 category: Mathematics
@@ -9,27 +8,29 @@ version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
 signatures:
   - args:
       - { name: value, type: number, range: "any", desc: "Source numerical value" }
-    returns: { type: integer, desc: "Largest integer <= value" }
+    returns: { type: number, desc: "Largest whole number <= value (Double in, Double out; Integer in, Integer out)" }
 
-summary: "Returns the largest integer not greater than value (rounds toward negative infinity)."
+summary: "Returns the largest whole number not greater than value (rounds toward negative infinity)."
 
 semantics:
-  - "Integer input is returned unchanged (no coercion error)."
-  - "Result type is always Integer, even for a Double input."
   - "Rounds toward negative infinity: FLOOR(3.7)=3, FLOOR(-2.1)=-3 (NOT -2), FLOOR(-12.5)=-13."
+  - "An Integer argument is returned unchanged (Integer); a Double argument yields a whole-numbered Double (the floor helper @0x1ed970 returns a double, pushed via the Double return path at vtable +0x18 — NOT coerced to Integer). The docs' \"Integer value\" means mathematically whole, not the %-typed value."
 
 errors:
   - { errnum: 8, name: TypeMismatch, when: "value is a string" }
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 1" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/floor.md" }
-  # TODO(S-T1/O): confirm rounding + the string-arg errnum against the disassembly handler
-  # and the oracle, then add `disassembled`/`hw_verified` sources and raise `confidence`.
+  - { type: disassembled, ref: "cia_3.6.0.lst FLOOR handler @0x1448b4; Double path -> floor helper @0x1ed970 (double->double, bit-manipulation); Integer arg passthrough; non-number arg -> `mov r0,#0x8` (errnum 8, not oracle-trappable)" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: FLOOR(3.7)=3, FLOOR(-2.1)=-3, FLOOR(-12.5)=-13, FLOOR(5)=5" }
 
-confidence: documented
+confidence: hw_verified
 
 tests:
+  # numeric expects below are hw_verified (sb-oracle 2026-06-22); error case is disassembled.
   - { name: positive_fraction,   code: "PRINT FLOOR(3.7)",  expect: { stdout: "3" } }
   - { name: negative_rounds_down, code: "PRINT FLOOR(-2.1)", expect: { stdout: "-3" } }
+  - { name: negative_half,        code: "PRINT FLOOR(-12.5)", expect: { stdout: "-13" } }
   - { name: integer_passthrough,  code: "PRINT FLOOR(5)",   expect: { stdout: "5" } }
   - { name: string_type_mismatch, code: 'A=FLOOR("x")',     expect: { error: { errnum: 8 } } }

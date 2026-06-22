@@ -1,0 +1,37 @@
+id: CEIL
+kind: function
+category: Mathematics
+version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+
+signatures:
+  - args:
+      - { name: value, type: number, range: "any", desc: "Source numerical value" }
+    returns: { type: number, desc: "Smallest whole number >= value (Double in, Double out; Integer in, Integer out)" }
+
+summary: "Returns the smallest whole number not less than value (rounds toward positive infinity)."
+
+semantics:
+  - "Rounds toward positive infinity: CEIL(12.5)=13, CEIL(-12.5)=-12, CEIL(12.345)=13."
+  - "An Integer argument is returned unchanged (Integer); a Double argument yields a whole-numbered Double (the ceil helper @0x1ed760 returns a double, pushed via the Double return path at vtable +0x18 — NOT coerced to Integer)."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "value is a string" }
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 1" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/ceil.md" }
+  - { type: disassembled, ref: "cia_3.6.0.lst CEIL handler @0x149548; Double path -> ceil helper @0x1ed760 (double->double, bit-manipulation); Integer arg passthrough; non-number arg -> `mov r0,#0x8` (errnum 8, not oracle-trappable)" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: CEIL(12.5)=13, CEIL(-12.5)=-12, CEIL(12.345)=13, CEIL(-2.1)=-2" }
+
+confidence: hw_verified
+
+tests:
+  # CEIL(12.5)/CEIL(-12.5)/CEIL(12.345)/CEIL(-2.1) hw_verified (sb-oracle 2026-06-22);
+  # the fraction/passthrough/error cases are disassembled (same confirmed algorithm).
+  - { name: positive_half,        code: "PRINT CEIL(12.5)",   expect: { stdout: "13" } }
+  - { name: negative_half,        code: "PRINT CEIL(-12.5)",  expect: { stdout: "-12" } }
+  - { name: doc_example,          code: "PRINT CEIL(12.345)", expect: { stdout: "13" } }
+  - { name: rounds_up_fraction,   code: "PRINT CEIL(3.1)",    expect: { stdout: "4" } }
+  - { name: negative_fraction,    code: "PRINT CEIL(-2.1)",   expect: { stdout: "-2" } }
+  - { name: integer_passthrough,  code: "PRINT CEIL(5)",      expect: { stdout: "5" } }
+  - { name: string_type_mismatch, code: 'A=CEIL("x")',        expect: { error: { errnum: 8 } } }

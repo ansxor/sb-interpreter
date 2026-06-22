@@ -40,7 +40,7 @@ and name the instructions they cover inline.
 - [x] S-T0 Spec schema v2 + authoring guide — v2 contract (typed sigs/ranges/errors/cases) + 4-source process in `prd/specs.md`; `sb-spec` structs updated; **concept-spec** kind (Markdown) added; FLOOR exemplar + screen-and-color-model exemplar written
 
 #### S-T1 Mathematics (27) → S-T0
-- [ ] S-T1a Rounding — FLOOR · ROUND · CEIL
+- [x] S-T1a Rounding — FLOOR · ROUND · CEIL
 - [ ] S-T1b Sign & classify — ABS · SGN · CLASSIFY
 - [ ] S-T1c Powers/roots/log — SQR · POW · EXP · LOG
 - [ ] S-T1d Trigonometry — SIN · COS · TAN · ASIN · ACOS · ATAN

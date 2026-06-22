@@ -17,3 +17,9 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   threshold, trailing zeros) · assumption: best-effort Rust formatting (see M7-T4).
 - [ ] M1-T1 (lexer) · Is `1E5` lexed as `1` + ident `E5` (no exponent literal)? · assumption:
   yes (osb behavior) — confirm against 3.6.0.
+- [ ] S-T1a (FLOOR/ROUND/CEIL) · Do these return a Double for a Double argument (not an
+  Integer)? Discriminate with a whole magnitude > i32 max, e.g. `PRINT FLOOR(3000000000.0)` —
+  Double return prints the full number, Integer return would overflow (errnum 9) or wrap. ·
+  assumption: returns whole-numbered Double (disasm: floor/ceil helpers @0x1ed970/0x1ed760
+  are double->double; pushed via Double return path; osb agrees). Also needs STR$ formatting
+  resolved (see the M1 STR$ line) to know the exact printed text.
