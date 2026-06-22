@@ -54,8 +54,8 @@ behavior.
 - Where osb disagrees with the docs or the disassembly, **the docs/disassembly win.**
 - **Every behavior task must add a spec-derived conformance test** (`spec/tests/<id>.yaml`
   and/or `harness/corpus/cases/*.yaml`) using the concrete values the docs give.
-- Set `confidence` honestly: `documented` or `disassembled`. **Never `hw_verified`** unless
-  it came from the offline Citra oracle harvest.
+- Set `confidence` honestly: `documented`, `disassembled`, or `hw_verified` — the last ONLY
+  when confirmed via the **`sb-oracle` skill** (real SB 3.6.0) and committed as a fixture.
 - Can't determine a 3.6.0 edge case from docs/disassembly? Implement the documented
   behavior, add a test, and append the open question to `HARVEST_QUEUE.md` for the oracle —
   do not silently inherit it from osb.
@@ -69,7 +69,7 @@ behavior.
 | **Disassembly** | `sb-disassembly/listings/cia_3.6.0.lst` | Exact numeric behavior (rounding, RNG, float→string, pixel math). |
 | **osb (D, 3.5.0)** | `osb/SMILEBASIC/*.d` | Design template + behavioral cross-check. **Never authoritative** where it disagrees with the docs/disassembly (it targets 3.5.0). |
 | **Real programs** | `harness/corpus/sbsave/` (`INDEX.json`) | 3,329 scraped real-world programs + 2,773 resources. Test *inputs* (parser fuel, e2e runs, oracle-diff candidates) — **never** expected values. See its README. |
-| **Oracle** | `harness/` + `tools/citra.py` | Ground truth (`hw_verified`). |
+| **Oracle** | the **`sb-oracle` skill** (`.claude/skills/sb-oracle/`) | Drives real SB 3.6.0 in Azahar → `hw_verified`. `run_case.py prog '<expr>'` (needs Azahar running). |
 
 ### Disassembly gotchas (read before grepping)
 - The binary is loaded at base **`0x00100000`**; **runtime addr = file offset + 0x100000**.

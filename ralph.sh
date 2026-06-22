@@ -77,9 +77,10 @@ Do EXACTLY ONE task this run, fully and correctly, then commit. Then stop.
   `spec/instructions/<id>.yaml` (one per instruction in the category), authored to the v2
   contract in `prd/specs.md` from docs + disassembly + osb cross-check — typed signatures
   (ranges/defaults), semantics, error conditions (errnum), and test cases (code → expect).
-  Set `confidence` honestly; **NEVER hw_verified** (that's the oracle's job) — queue
-  oracle-needed cases to `HARVEST_QUEUE.md`. Write NO interpreter code. Verify with
-  `cargo test -p sb-spec`, then commit. (The rest of section 3 is for code tasks.)
+  Set `confidence` from your source; if Azahar is up, harvest the `expect:` values via the
+  sb-oracle skill and set `hw_verified` (commit them), else queue in `HARVEST_QUEUE.md`.
+  Write NO interpreter code. Verify with `cargo test -p sb-spec`, then commit. (The rest of
+  section 3 is for code tasks.)
 - SPEC-FIRST: the contract is the spec (`spec/instructions/<id>.yaml` + `spec/reference/*`)
   and the task's Acceptance criteria — what SmileBASIC 3.6.0 does per the docs. Implement
   to the spec, not to osb.
@@ -101,15 +102,29 @@ Do EXACTLY ONE task this run, fully and correctly, then commit. Then stop.
   `--get KEY`). Use as test INPUTS — parser/e2e "doesn't panic" sweeps over small
   `type:"TXT"` entries — NEVER as expected output (no oracle = no verified golden). See
   `harness/corpus/sbsave/README.md`.
-- Set `confidence` HONESTLY: `documented` (from docs) or `disassembled` (you read the
-  listing and confirmed it). NEVER `hw_verified` — only the offline Citra oracle harvest
-  sets that.
-- If a 3.6.0 edge case is NOT determinable from the docs or disassembly, implement the
-  documented behavior, add a test, and QUEUE it for the oracle by appending one line to
-  `HARVEST_QUEUE.md` (task id · the question · your assumption). Never silently inherit an
-  unverified behavior from osb.
+- Set `confidence` HONESTLY: `documented` (docs), `disassembled` (you read the listing), or
+  `hw_verified` (confirmed via the sb-oracle skill AND committed the result).
+- If a 3.6.0 edge case is NOT determinable from docs/disassembly: prefer harvesting it via
+  the sb-oracle skill (then it's `hw_verified`). If the oracle isn't available, implement the
+  documented behavior, add a test, and QUEUE it in `HARVEST_QUEUE.md` (task id · question ·
+  your assumption). Never silently inherit an unverified behavior from osb.
 - Keep `sb-core` free of I/O / GUI / threads (must build for wasm32); platform code goes in
   the `sb-platform-*` crates.
+
+### Ground truth: the sb-oracle skill (real SmileBASIC 3.6.0)
+The `.claude/skills/sb-oracle/` skill drives REAL SB 3.6.0 in Azahar — it IS the ground-truth
+oracle. Use it to (a) HARVEST `hw_verified` expects for spec/test cases and (b) differentially
+check that `sb-core`'s output matches real SB. From `.claude/skills/sb-oracle/tools/`:
+    python3 run_case.py prog 'FLOOR(-2.1)'             # -> -3   (numeric; wraps in STR$)
+    python3 run_case.py prog 'MID$("ABCDE",2,3)' str   # -> BCD  (string result)
+- It needs Azahar RUNNING with SB on the DIRECT-mode screen (GUI automation). Probe first
+  (`python3 sb_window.py bounds`); if it's not up or a case errors, fall back to
+  documented/disassembled and queue the case in `HARVEST_QUEUE.md` — do NOT block the task.
+- The oracle result is the SOURCE OF TRUTH: if `sb-core` disagrees, `sb-core` is wrong.
+- When you get an oracle result, write it into the spec's `spec/tests/<id>.yaml` `expect:`
+  (and/or `harness/corpus/cases`), set that source `confidence: hw_verified`, and COMMIT it.
+  It's now a frozen fixture the deterministic gate replays forever WITHOUT the emulator.
+- Don't re-harvest a case that already has a committed `hw_verified` expect.
 
 ## 4. Verify — must be fully green before you mark a task done
 Run these and make them ALL pass:
@@ -134,13 +149,15 @@ If you changed Python, also: `python3 -m py_compile` the changed files; if you c
 ## 999. Guardrails (the most important rules)
 - ONE task per run. Never start a second.
 - NEVER mark a task `[x]` unless it is complete AND the entire verification gate is green.
-- NEVER run the emulator, fuzzer, or oracle/harvest — they are offline/manual.
+- The deterministic gate (`cargo test`) stays hermetic — it never needs the emulator. DO use
+  the sb-oracle skill to harvest ground truth, freezing results into committed fixtures.
+  Don't run the fuzzer in-loop.
 - NEVER weaken, skip, or delete a test to make the suite pass. Fix the code instead.
 - NEVER touch git history or remotes.
 - NEVER write a line-by-line osb port or inherit osb's limitations — implement to the spec;
   osb is a structural hint only. Don't even write "port of osb" in comments; describe the
   3.6.0 behavior you implemented and cite the spec/disassembly.
-- NEVER set a spec to `confidence: hw_verified` — only the offline Citra oracle harvest may.
+- Set `confidence: hw_verified` ONLY from a committed sb-oracle result — never guess it.
 - A task that implements behavior is NOT done without a new spec/corpus conformance test.
 - The task's Acceptance criteria in `prd/<Mx>.md` is the definition of done.
 PROMPT_EOF
