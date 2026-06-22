@@ -1,0 +1,32 @@
+id: GOSUB
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: label, type: label, desc: "Subroutine @label, or a label string (\"@LABEL\" / \"SLOT:@LABEL\")" }
+    note: "GOSUB @label — calls the subroutine at the label; RETURN comes back to the next statement."
+
+summary: "Calls a subroutine at a label, saving a return address so RETURN comes back to the caller."
+
+semantics:
+  - "Pushes the return location, then transfers control to the named @label."
+  - "Execution continues at the label until a RETURN, which pops back to the statement after the GOSUB."
+  - "The target may be a bare @label or a label string (with SLOT:@LABEL for another slot enabled via USE); GOSUB calls may nest."
+  - "An undefined label is an error."
+
+errors:
+  - { errnum: 14, name: "Undefined label", when: "the target label does not exist" }
+  - { errnum: 34, name: "Illegal symbol string", when: "a label string is malformed" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gosub.md (GOSUB @Label; calls a sub-routine)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GOSUB is a parser keyword (token @0x2ed6cc), not in the builtin dispatch table; compiled to push-return-address + jump to the label; paired with RETURN" }
+  - { type: hw_verified, ref: "sb-oracle branch probe 2026-06-22: GOSUB @S calls the subroutine (which sets N=1) and RETURN comes back so a later IF N==1 fires (errnum 4) - confirming call + return; GOSUB @NOPE (undefined) raises errnum 14." }
+
+confidence: hw_verified
+
+tests:
+  - { name: calls_and_returns, code: "GOSUB @S\nPRINT \"B\"\nEND\n@S\nPRINT \"A\"\nRETURN", expect: { stdout: "A\nB" } }
+  - { name: undefined_label, code: "GOSUB @NOPE", expect: { error: { errnum: 14 } } }

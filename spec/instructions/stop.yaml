@@ -1,0 +1,26 @@
+id: STOP
+kind: statement
+category: Control
+version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+
+signatures:
+  - args: []
+    note: "STOP — suspends the running program (breakpoint-like); resumable with CONT."
+
+summary: "Suspends a running program, displaying the slot:line where it paused; CONT resumes it."
+
+semantics:
+  - "Pauses execution and reports the program SLOT and line number of the STOP."
+  - "Unlike END (which terminates), a STOPped program can be resumed with CONT — though resuming is not available in certain situations."
+  - "Primarily a debugging aid."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/stop.md (suspends a running program; SLOT:line shown; resume with CONT)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst STOP is a parser keyword (token @0x2ed598), not in the builtin dispatch table; suspends the VM (resumable) rather than halting" }
+
+confidence: disassembled
+
+tests:
+  - { name: suspends_before_next, code: "PRINT \"A\"\nSTOP\nPRINT \"B\"", expect: { stdout: "A" } }

@@ -1,0 +1,26 @@
+id: END
+kind: statement
+category: Control
+version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+
+signatures:
+  - args: []
+    note: "END — terminates the running program."
+
+summary: "Ends the program, stopping execution."
+
+semantics:
+  - "Halts the program immediately; statements after END (textually or by fall-through) are not executed."
+  - "Used to stop before subroutine/label definitions that follow the main code."
+  - "Unlike STOP, END is a clean termination and is not resumable with CONT."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/end.md (exits the program)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst END is a parser keyword (token @0x2ed5a4), not in the builtin dispatch table; halts the VM cleanly" }
+
+confidence: disassembled
+
+tests:
+  - { name: halts, code: "PRINT \"A\"\nEND\nPRINT \"B\"", expect: { stdout: "A" } }

@@ -1,0 +1,31 @@
+id: GOTO
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: label, type: label, desc: "Target @label, or a label string (e.g. \"@LABEL\" / \"1:@LABEL\" for another slot)" }
+    note: "GOTO @label — unconditionally transfers control to the label."
+
+summary: "Unconditionally branches execution to a label."
+
+semantics:
+  - "Transfers control to the named @label; statements between the GOTO and the label are skipped."
+  - "The target may be written as a bare @label or as a label string (\"@LABEL\", or \"SLOT:@LABEL\" with the slot enabled via USE)."
+  - "An undefined label is an error."
+
+errors:
+  - { errnum: 14, name: "Undefined label", when: "the target label does not exist" }
+  - { errnum: 34, name: "Illegal symbol string", when: "a label string is malformed" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/goto.md (GOTO @Label; label string / SLOT:@Label forms)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GOTO is a parser keyword (token @0x2ed694), not in the builtin dispatch table; compiled to an unconditional jump to the resolved label address; undefined label -> errnum 14" }
+  - { type: hw_verified, ref: "sb-oracle branch probe 2026-06-22 (error-as-signal): GOTO @SK skips an intervening A=ASC(\"\") (no error raised), confirming the unconditional jump; GOTO @NOPE (undefined) raises errnum 14." }
+
+confidence: hw_verified
+
+tests:
+  - { name: skips_code, code: "GOTO @SK\nPRINT \"NO\"\n@SK\nPRINT \"YES\"", expect: { stdout: "YES" } }
+  - { name: undefined_label, code: "GOTO @NOPE", expect: { error: { errnum: 14 } } }

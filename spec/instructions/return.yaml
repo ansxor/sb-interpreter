@@ -1,0 +1,29 @@
+id: RETURN
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    note: "RETURN — returns from a GOSUB subroutine to the statement after the call."
+
+summary: "Returns from a GOSUB subroutine to the statement following the call."
+
+semantics:
+  - "Pops the most recent GOSUB return address and continues execution there."
+  - "A RETURN reached without a pending GOSUB is an error."
+  - "(For user-defined functions, a RETURN may carry a value — see DEF; the bare form here is the GOSUB return.)"
+
+errors:
+  - { errnum: 30, name: "RETURN without GOSUB", when: "a RETURN is reached with no pending GOSUB" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/return.md (returns from a sub-routine to the caller)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst RETURN is a parser keyword (token @0x2ed558), not in the builtin dispatch table; pops the GOSUB return stack; empty stack -> errnum 30" }
+  - { type: hw_verified, ref: "sb-oracle branch probe 2026-06-22: RETURN returns from a GOSUB to the statement after the call (verified via a GOSUB roundtrip); a bare RETURN with no pending GOSUB raises errnum 30 (RETURN without GOSUB)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: returns_to_caller, code: "GOSUB @S\nPRINT \"B\"\nEND\n@S\nPRINT \"A\"\nRETURN", expect: { stdout: "A\nB" } }
+  - { name: return_without_gosub, code: "RETURN", expect: { error: { errnum: 30 } } }

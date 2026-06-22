@@ -1,0 +1,25 @@
+id: OUT
+kind: statement
+category: Control
+version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+
+signatures:
+  - args: []
+    note: "OUT var[,var...] — receives multiple return values from a DEF or a built-in that returns several values."
+
+summary: "Receives the additional (multiple) return values of a DEF function or a multi-output built-in."
+
+semantics:
+  - "Used on the calling side to capture the extra outputs of an instruction/function that returns more than one value."
+  - "Also used in a DEF header to declare the multiple values a user function returns."
+  - "Belongs to the multiple-return-value mechanism (see DEF / CALL); it has no standalone effect."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/out.md (used when multiple outputs are required; DEF multi-return)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst OUT is a parser keyword (token @0x2ed528), not in the builtin dispatch table; part of the DEF/CALL multiple-return-value protocol" }
+
+confidence: disassembled
+
+tests: []

@@ -66,3 +66,10 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   syntax error? ignored?). Both oracle captures flaked twice on 2026-06-22. · assumption: WEND
   alone -> errnum 25 (table; sibling UNTIL-without-REPEAT=23 confirmed live). BREAK/CONTINUE
   outside a loop: unknown, not in the errors table. Loop behavior + UNTIL/23 already hw_verified.
+- [ ] S-T3d (END/STOP/OUT) · Verify END/STOP halt behavior and OUT multi-return. The
+  error-as-signal harness can't distinguish a clean halt (END/STOP) from an error-halt because
+  the halt also stops the sentinel SAVE (reads stale ERRNUM). Need a stdout-diff harness (e.g.
+  PRINT before/after END). OUT needs a DEF context (see S-T3e). · assumption: END halts cleanly
+  (not resumable), STOP suspends (CONT-resumable), OUT receives DEF multi-returns -- all from
+  docs+disasm (tokens END@0x2ed5a4, STOP@0x2ed598, OUT@0x2ed528). GOTO/GOSUB/RETURN/ON already
+  hw_verified 2026-06-22 (incl. errnum 14 undefined label, 30 RETURN-without-GOSUB).
