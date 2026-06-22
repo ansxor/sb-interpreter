@@ -1,0 +1,59 @@
+id: GCOPY
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x1, type: integer, range: "graphic-page coordinate (visible 0-399 x, 0-239 y)", desc: "Copy-source rectangle start X (one corner)" }
+      - { name: y1, type: integer, range: "graphic-page coordinate", desc: "Copy-source rectangle start Y" }
+      - { name: x2, type: integer, range: "graphic-page coordinate", desc: "Copy-source rectangle end X (opposite corner)" }
+      - { name: y2, type: integer, range: "graphic-page coordinate", desc: "Copy-source rectangle end Y" }
+      - { name: dx, type: integer, range: "graphic-page coordinate", desc: "Copy-destination start X (top-left of the pasted rect)" }
+      - { name: dy, type: integer, range: "graphic-page coordinate", desc: "Copy-destination start Y" }
+      - { name: copy_mode, type: integer, range: "0/1 (any non-zero -> 1)", desc: "TRUE = copy the transparent color too, FALSE = skip transparent pixels" }
+    note: "GCOPY x1,y1,x2,y2,dx,dy,mode — copies from the CURRENT drawing page to itself (source page omitted; 7 args, no return value)."
+  - args:
+      - { name: src_page, type: integer, range: "0-5 (GRP0-GRP5) or -1 (GRPF)", desc: "Transfer source graphic page; omitted = current drawing page" }
+      - { name: x1, type: integer, range: "graphic-page coordinate", desc: "Copy-source rectangle start X" }
+      - { name: y1, type: integer, range: "graphic-page coordinate", desc: "Copy-source rectangle start Y" }
+      - { name: x2, type: integer, range: "graphic-page coordinate", desc: "Copy-source rectangle end X" }
+      - { name: y2, type: integer, range: "graphic-page coordinate", desc: "Copy-source rectangle end Y" }
+      - { name: dx, type: integer, range: "graphic-page coordinate", desc: "Copy-destination start X" }
+      - { name: dy, type: integer, range: "graphic-page coordinate", desc: "Copy-destination start Y" }
+      - { name: copy_mode, type: integer, range: "0/1 (any non-zero -> 1)", desc: "TRUE = copy the transparent color too, FALSE = skip transparent pixels" }
+    note: "GCOPY src,x1,y1,x2,y2,dx,dy,mode — copies the source rectangle from src_page onto the current drawing page at (dx,dy) (8 args, no return value)."
+
+summary: "Copies a rectangular image region from a graphic page (or the current page) to the current drawing page, optionally skipping the transparent color."
+
+semantics:
+  - "Takes exactly 7 args (x1,y1,x2,y2,dx,dy,mode — source = current drawing page) or 8 args (src_page first). Any other argument count, or requesting a return value, raises errnum 4 (Illegal function call): return-count [r4,#0xc] cmp #0 bne -> errnum 4 @0x152eb4; argcount [r4,#0x4] cmp #7 beq @0x152f38, cmp #8 beq @0x152f08, else mov r0,#0x4 @0x152f00."
+  - "The source rectangle is the axis-aligned box spanned by the two corners (x1,y1)-(x2,y2); corners may be given in any order. The destination is the rectangle of the same size with its top-left at (dx,dy)."
+  - "With 7 args the source page defaults to the current drawing page (loaded from the graphics-context page field +0x34 into sp+0x28 @0x152edc). With 8 args the first popped value is the source page and is range-checked: it must be -1 (GRPF) through 5 (GRP5) — cmn r0,#0x1 blt / cmp #5 ble @0x152f60-0x152f6c — otherwise errnum 10 (Out of range), mov r0,#0xa with the offending arg index in r1 @0x152f78."
+  - "copy_mode is the LAST arg. It is normalized to a boolean: any non-zero value becomes 1 (cmp r2,#0 / movne r2,#1 @0x1530b4). TRUE copies the transparent color (transparent pixels overwrite the destination); FALSE skips transparent pixels (destination shows through)."
+  - "Coordinates are integer-coerced from the popped args via the numeric arg-fetch vtable slot [r2,#0x40]; the array/page operand uses the same slot. Coordinates are clipped by the copy helper rather than rejected, so off-screen / reversed rectangles do not raise a range error."
+  - "If the resolved source page is not a usable graphic plane (the per-page guard byte [page+0x60] is set), errnum 49 is raised (mov r0,#0x31 @0x1530f0). Exact error name not yet harvested (oracle-pending). The actual copy is performed by the blit helper bl 0x193020 @0x1530d8, reading the graphics context via the global at [0x153100]=0x315d60."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not 7 or 8, or a return value is requested (used as a function)" }
+  - { errnum: 10, name: "Out of range", when: "an explicit source page is outside -1..5 (GRPF..GRP5)" }
+  - { errnum: 49, name: "(graphic-plane availability guard)", when: "the resolved source graphic plane is not currently available — raised as mov r0,#0x31 @0x1530f0. Exact error name not yet harvested (oracle-pending)." }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gcopy.md (GCOPY [Transfer source page,] Start point X,Y, End point X,Y, Transfer destination X,Y, Copy mode — copies an image from another graphic page; src page 0-5 / -1 GRPF / omitted=current; coords X:0-399 Y:0-239; Copy mode TRUE copies the transparent color, FALSE does not; e.g. GCOPY 0,0,0,100,100,200,100,1)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GCOPY handler @0x152e9c (FUN_00152e9c): graphics-context global ldr [0x153100]->0x315d60; return-count r0=[r4,#0xc] cmp #0 beq 0x152ecc else mov r2,#0/mvn r1/mov r0,#0x4 bl 0x1fffdc @0x152eb4 (errnum 4); default src page = [[..]+0x0]+0x34 -> sp+0x28 @0x152edc; argcount r0=[r4,#0x4] cmp #7 beq 0x152f38 (7-arg, default page), cmp #8 beq 0x152f08 (8-arg), else mov r0,#0x4 b 0x1530f4 @0x152ef8; 8-arg page range cmn r0,#0x1 blt 0x152f70 / cmp #5 ble 0x152f34, else mov r0,#0xa (errnum 10, r1=arg idx) bl 0x1fffdc @0x152f78; coords/page fetched via vtable [r2,#0x40] (blx); copy_mode normalize cmp r2,#0 movne r2,#1 @0x1530b4; page-availability guard ldrb [page+0x60] -> mov r0,#0x31 (errnum 49) @0x1530f0; blit helper bl 0x193020 @0x1530d8." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GCOPY: page-to-page rectangular blit with a transparent-color copy flag (3.5.0 structural cross-check only)." }
+  - { type: community, ref: "sbsave corpus: GCOPY appears ~3100x — only the documented 8-arg (with source page) and 7-arg (no source page) forms occur; no other arg count. Confirms both signatures are legal; runtime output unproven (framebuffer oracle pending, O-T6)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7d): GCOPY 0,0,100,100,200,100 (6 args) -> errnum 4, errline 1; GCOPY 0,0,0,100,100,200,100,1,2 (9 args) -> errnum 4; GCOPY 6,0,0,100,100,200,100,1 (source page 6, out of -1..5) -> errnum 10; A=GCOPY(0,0,100,100,200,100,1) (used as a function) -> errnum 4." }
+
+confidence: disassembled
+
+tests:
+  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7d). Pixel side-effects need the framebuffer oracle (O-T6, queued).
+  - { name: copy_same_page_ok, code: "GCOPY 0,0,100,100,200,100,1", expect: { stdout: "" } }
+  - { name: copy_with_src_page_ok, code: "GCOPY 0,0,0,100,100,200,100,1", expect: { stdout: "" } }
+  - { name: copy_grpf_src_ok, code: "GCOPY -1,0,0,100,100,0,0,0", expect: { stdout: "" } }
+  - { name: six_args_errors, code: "GCOPY 0,0,100,100,200,100", expect: { error: { errnum: 4 } } }
+  - { name: nine_args_errors, code: "GCOPY 0,0,0,100,100,200,100,1,2", expect: { error: { errnum: 4 } } }
+  - { name: bad_src_page_errors, code: "GCOPY 6,0,0,100,100,200,100,1", expect: { error: { errnum: 10 } } }
+  - { name: as_function_errors, code: "A=GCOPY(0,0,100,100,200,100,1)", expect: { error: { errnum: 4 } } }

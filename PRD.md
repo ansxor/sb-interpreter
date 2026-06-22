@@ -79,7 +79,7 @@ and name the instructions they cover inline.
 - [x] S-T7a Page/clip/color — GPAGE · GCLS · GCLIP · GPRIO · GCOLOR
 - [x] S-T7b Primitives — GPSET · GLINE · GBOX · GTRI · GCIRCLE
 - [x] S-T7c Fill & char — GFILL · GPAINT · GPUTCHR
-- [ ] S-T7d Buffer copy/load/save — GCOPY · GLOAD · GSAVE
+- [x] S-T7d Buffer copy/load/save — GCOPY · GLOAD · GSAVE
 - [ ] S-T7e Color read — GSPOIT · RGB · RGBREAD
 
 #### S-T8 Sprites (27) → S-T0

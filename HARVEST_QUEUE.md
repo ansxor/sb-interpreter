@@ -232,3 +232,18 @@ oracle to confirm exact output and promote to `hw_verified`.
   path, GPAINT flood-fill region (border-omitted = start-point color region vs explicit
   border), GPUTCHR glyph rendering/positioning/scale/font — all pixel effects needing the
   framebuffer oracle (O-T6, not yet in the skill). Behavior is from docs + disassembly + corpus.
+- [x] S-T7d arg-count + page-range guards · HARVESTED 2026-06-22 (sb-oracle batch s_t7d → specs hw_verified):
+  all 10 confirmed — GCOPY 6args/9args/A=GCOPY(...) → errnum 4, GCOPY 6,... (src page>5) → errnum 10;
+  GLOAD W,1 (2 args)/0,0,8,8,W (5 args)/A=GLOAD(W,1,0) → errnum 4; GSAVE 0,0,W,1 (4 args)/A=GSAVE(W,1)
+  → errnum 4, GSAVE 6,W,1 (src page>5) → errnum 10. Matches the disasm guards (GCOPY @0x152f00/@0x152f78,
+  GLOAD @0x153580, GSAVE @0x153f14/@0x153f78).
+- [ ] S-T7d errnum 49 page-availability guard · GCOPY (mov r0,#0x31 @0x1530f0) and GSAVE (@0x154294)
+  raise errnum 49 when the resolved source plane is unusable (guard byte [page+0x60] set) — confirm the
+  exact error NAME and the precise triggering state. Not in errors.yaml (stops at 47); oracle-pending.
+- [ ] S-T7d GLOAD/GSAVE error edges · GLOAD with too-small image_array → errnum 31 (disasm @0x15381c);
+  GLOAD non-numeric image_array → errnum 8 (@0x1539a8); GSAVE multi-dim too-small dest_array → errnum 31
+  (@0x154218); negative Width/Height → errnum 10 (GSAVE @0x154108, GLOAD @0x153728). Disassembled, oracle-pending.
+- [ ] S-T7d visual/array side-effects (framebuffer path) · GCOPY page-to-page blit (transparent copy mode
+  on/off), GSAVE pixel→array element format (convert flag 0 = 32-bit logical, 1 = 16-bit physical) + 1-D
+  auto-expand to width*height, GLOAD array→page restore (flag vs palette form). All need the framebuffer
+  oracle (O-T6, not yet in the skill). Behavior is from docs + disassembly + corpus.

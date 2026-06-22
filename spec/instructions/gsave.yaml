@@ -1,0 +1,67 @@
+id: GSAVE
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: dest_array, type: "integer array", desc: "1-D numeric array variable to receive the image data (auto-expanded if too short)" }
+      - { name: convert_flag, type: integer, range: "0 or 1", desc: "0 = store 32-bit logical (converted) colors, 1 = store raw 16-bit physical codes" }
+    note: "GSAVE dest_array,flag — saves the WHOLE current drawing area from the current drawing page (2 args, no return value)."
+  - args:
+      - { name: src_page, type: integer, range: "0-5 (GRP0-GRP5) or -1 (GRPF)", desc: "Transfer source graphic page; omitted = current drawing page" }
+      - { name: dest_array, type: "integer array", desc: "1-D numeric array variable to receive the image data" }
+      - { name: convert_flag, type: integer, range: "0 or 1", desc: "0 = 32-bit logical colors, 1 = raw 16-bit physical codes" }
+    note: "GSAVE src_page,dest_array,flag — saves the whole drawing area from src_page (3 args)."
+  - args:
+      - { name: x, type: integer, range: "graphic-page coordinate", desc: "Copy-source start X" }
+      - { name: y, type: integer, range: "graphic-page coordinate", desc: "Copy-source start Y" }
+      - { name: width, type: integer, range: ">= 1 (pixels)", desc: "Copy-source width in pixels" }
+      - { name: height, type: integer, range: ">= 1 (pixels)", desc: "Copy-source height in pixels" }
+      - { name: dest_array, type: "integer array", desc: "1-D numeric array variable to receive the image data" }
+      - { name: convert_flag, type: integer, range: "0 or 1", desc: "0 = 32-bit logical colors, 1 = raw 16-bit physical codes" }
+    note: "GSAVE x,y,width,height,dest_array,flag — saves a sub-rectangle of the current drawing page (6 args)."
+  - args:
+      - { name: src_page, type: integer, range: "0-5 (GRP0-GRP5) or -1 (GRPF)", desc: "Transfer source graphic page; omitted = current drawing page" }
+      - { name: x, type: integer, range: "graphic-page coordinate", desc: "Copy-source start X" }
+      - { name: y, type: integer, range: "graphic-page coordinate", desc: "Copy-source start Y" }
+      - { name: width, type: integer, range: ">= 1 (pixels)", desc: "Copy-source width in pixels" }
+      - { name: height, type: integer, range: ">= 1 (pixels)", desc: "Copy-source height in pixels" }
+      - { name: dest_array, type: "integer array", desc: "1-D numeric array variable to receive the image data" }
+      - { name: convert_flag, type: integer, range: "0 or 1", desc: "0 = 32-bit logical colors, 1 = raw 16-bit physical codes" }
+    note: "GSAVE src_page,x,y,width,height,dest_array,flag — saves a sub-rectangle from src_page (7 args)."
+
+summary: "Copies an image (the whole drawing area, or a given sub-rectangle, of a graphic page) into a numeric array, in either converted 32-bit logical colors or raw 16-bit physical codes."
+
+semantics:
+  - "Accepts exactly 2, 3, 6, or 7 args. The optional leading src_page and the optional X,Y,Width,Height block are independent: 2 = array,flag; 3 = page,array,flag; 6 = x,y,w,h,array,flag; 7 = page,x,y,w,h,array,flag. Any other count, or requesting a return value, raises errnum 4 (Illegal function call): return-count [r5,#0xc] cmp #0 bne -> errnum 4 @0x153f0c; the count is matched at cmp #3/cmpne #7 @0x153edc then cmp #2 @0x153ef8 / cmp #6 @0x153f04, else mov r0,#0x4 @0x153f14."
+  - "When a leading src_page is present (count 3 or 7) it is fetched and range-checked: -1 (GRPF) through 5 (GRP5) — cmn r0,#0x1 blt / cmp #5 ble @0x153f60-0x153f68 — otherwise errnum 10 (Out of range), mov r0,#0xa @0x153f78. When omitted, the source defaults to the current drawing page (page field +0x34 -> sp+0x24 @0x153eec)."
+  - "When X,Y,Width,Height are omitted (count 2 or 3), the whole current drawing area is saved: the drawable rectangle is computed via bl 0x18fec0 and its width/height derived as (x2-x1+1), (y2-y1+1) @0x153fd8-0x154020."
+  - "When X,Y,Width,Height are given (count 6 or 7), Width and Height must be valid: a negative / out-of-range width or height raises errnum 10 (cmp #0 blt / cmn #0x80000001 ble guards at @0x1540ec and @0x15411c, each mov r0,#0xa)."
+  - "dest_array must be a numeric array; if it is one-dimensional and too small it is AUTO-EXPANDED to hold width*height elements (resize helper bl 0x1ef4d0 @0x154238). If the array is multi-dimensional (or otherwise cannot grow) and too small, errnum 31 (Subscript out of range) is raised — dim-count cmp #1 / mov r0,#0x1f @0x154218."
+  - "convert_flag selects the element format: 0 converts each pixel to a 32-bit logical (ARGB) color; 1 stores the raw 16-bit physical color code unchanged. The save is performed by the helper at bl 0x1ef... reached after the array is sized; if the resolved source page is unusable (guard byte [page+0x60] set) errnum 49 is raised (mov r0,#0x31 @0x154294, oracle-pending name). The graphics context is read via globals [0x15435c]/[0x154360]."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not 2, 3, 6, or 7, or a return value is requested (used as a function)" }
+  - { errnum: 10, name: "Out of range", when: "an explicit source page is outside -1..5, or a given Width/Height is negative/out of range" }
+  - { errnum: 31, name: "Subscript out of range", when: "dest_array is multi-dimensional (cannot auto-grow) and has fewer than width*height elements" }
+  - { errnum: 49, name: "(graphic-plane availability guard)", when: "the resolved source graphic plane is not currently available — raised as mov r0,#0x31 @0x154294. Exact error name not yet harvested (oracle-pending)." }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gsave.md (GSAVE [Transfer source page,] [X,Y,Width,Height,] Transfer destination array, Color conversion flag — copies an image (whole screen) to an array; src page 0-5 / -1 GRPF / omitted=current; coords omitted=current drawing area; if the 1-D array is too short the needed elements are added automatically; flag 0 converts to 32-bit logical colors, 1 leaves the 16-bit physical codes; e.g. DIM WORK[0] : GSAVE 0,0,0,512,512,WORK,1)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GSAVE handler @0x153eb8 (FUN_00153eb8): ctx globals ldr [0x15435c]/[0x154360]; return-count r0=[r5,#0xc] cmp #0 bne 0x153f0c -> mov r0,#0x4 bl 0x1fffdc (errnum 4); argcount r6=[r5,#0x4] cmp #3/cmpne #7 beq 0x153f24 (page present), then cmp #2 beq 0x153f8c (whole area) / cmp #6 beq 0x154024 (sub-rect), else mov r0,#0x4 @0x153f14; default page [[..]+0x34]->sp+0x24 @0x153eec; page range cmn r0,#0x1 blt 0x153f70 / cmp #5 ble 0x153f54 else mov r0,#0xa (errnum 10) @0x153f78; whole-area rect via bl 0x18fec0 @0x153ff4 (w=x2-x1+1,h=y2-y1+1); W/H guard cmp #0 blt / cmn #0x80000001 ble -> mov r0,#0xa @0x154108/@0x154138; array dim cmp #1 else mov r0,#0x1f (errnum 31) @0x154218; array auto-expand bl 0x1ef4d0 @0x154238; page guard ldrb [page+0x60] -> mov r0,#0x31 (errnum 49) @0x154294; values fetched via vtable numeric [r2,#0x40] / array [r2,#0x48]." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GSAVE: dumps a graphic-page rectangle into a numeric array with a color-conversion flag (3.5.0 structural cross-check only)." }
+  - { type: community, ref: "sbsave corpus: GSAVE appears ~520x — all four documented arg counts occur: 3-arg page,array,flag (e.g. 4K24P3MD/TXT/VFONT.LIB 'GSAVE 3,GRPF%,1'), 7-arg page,x,y,w,h,array,flag ('GSAVE 5,SX,SY,16,16,T%,1'), and GRPF -1 source ('GSAVE -1,0,0,512,512,T%,0'). convert_flag is commonly written as TRUE/FALSE/#TRUE (= 1/0). Confirms the signatures are legal; runtime output unproven (framebuffer oracle pending, O-T6)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7d): GSAVE 0,0,W,1 (4 args, W a DIM'd array) -> errnum 4, errline 1; GSAVE 6,W,1 (source page 6, out of -1..5) -> errnum 10; A=GSAVE(W,1) (used as a function) -> errnum 4." }
+
+confidence: disassembled
+
+tests:
+  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7d). Pixel/array-content checks need the framebuffer oracle (O-T6, queued).
+  - { name: save_whole_default_ok, code: "DIM WORK[0]\nGSAVE WORK,1", expect: { stdout: "" } }
+  - { name: save_page_whole_ok, code: "DIM WORK[0]\nGSAVE 0,WORK,1", expect: { stdout: "" } }
+  - { name: save_subrect_ok, code: "DIM WORK[0]\nGSAVE 0,0,64,64,WORK,1", expect: { stdout: "" } }
+  - { name: save_page_subrect_ok, code: "DIM WORK[0]\nGSAVE 0,0,0,64,64,WORK,1", expect: { stdout: "" } }
+  - { name: four_args_errors, code: "DIM WORK[0]\nGSAVE 0,0,WORK,1", expect: { error: { errnum: 4 } } }
+  - { name: bad_src_page_errors, code: "DIM WORK[0]\nGSAVE 6,WORK,1", expect: { error: { errnum: 10 } } }
+  - { name: as_function_errors, code: "DIM WORK[0]\nA=GSAVE(WORK,1)", expect: { error: { errnum: 4 } } }
