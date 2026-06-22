@@ -267,3 +267,12 @@ oracle to confirm exact output and promote to `hw_verified`.
   image, attribute bits applied), SPSHOW/SPHIDE display-flag toggle, SPCLR slot-free + bulk clear-all (0-arg),
   SPPAGE render-page redirect, SPSET OUT -1 pool-exhaustion result, SPSET reinit (SPVAR -> 0). All disassembled
   + documented; runtime visual confirmation queued.
+- [x] S-T8b error + round-trip values HARVESTED (2026-06-22 s_t8b): mgmt out-of-range (512) -> errnum 10 for
+  SPOFS/SPROT/SPSCALE/SPHOME/SPCHR; used-before-SPSET -> errnum 4 (all five); bad argcount -> errnum 4
+  (SPOFS 0,0 / SPROT 0); SPCHR defn 4096 -> errnum 10. Round-trips: SPOFS 0,50,80 OUT->50,80; SPROT 0,45->45;
+  SPSCALE 0,2,0.5 OUT->2,0.5; SPHOME 0,16,16 OUT->16,16; SPCHR 0,64,64,16,16,1 OUT U,V->64,64 and full->64,64,32,32,1.
+  KEY FINDING: SPROT does NOT wrap/normalize — SPROT 0,-25->-25, SPROT 0,450->450, SPROT 0,11.2->11 (truncated, verbatim).
+  Spec semantics corrected; raised those sources to hw_verified.
+- [ ] S-T8b remaining oracle-pending (need framebuffer oracle O-T6 or extra cases): SPOFS Z-depth round-trip
+  (3-var OUT X,Y,Z value), SPCHR U+W/V+H>512 errnum (assumed 10, matching SPSET), SPCHR form-1 template round-trip
+  (SPCHR mgmt,defn then OUT U,V/DEFNO — needs an SPDEF setup), and the actual on-screen transform (visible render).

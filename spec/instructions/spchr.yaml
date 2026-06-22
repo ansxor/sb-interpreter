@@ -1,0 +1,72 @@
+id: SPCHR
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — set the character from an SPDEF template.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the sprite to redefine." }
+      - { name: definition_number, type: integer, range: "0..4095", desc: "SPDEF template number to use for image/size/origin." }
+    note: "SPCHR mgmt, defn — redefine the sprite from an SPDEF template (2 args, no return)."
+  # Form 2 — set the character from a directly-specified image.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite." }
+      - { name: u, type: integer, optional: true, range: "0..511", desc: "X of the source rectangle. May be omitted (empty arg) to keep current." }
+      - { name: v, type: integer, optional: true, range: "0..511", desc: "Y of the source rectangle." }
+      - { name: w, type: integer, optional: true, default: 16, range: "1..512 (U+W <= 512)", desc: "Width of the source rectangle. Default 16." }
+      - { name: h, type: integer, optional: true, default: 16, range: "1..512 (V+H <= 512)", desc: "Height of the source rectangle. Default 16." }
+      - { name: attribute, type: integer, optional: true, default: 1, range: "attribute bitfield (see below)", desc: "Display/rotation/flip/additive bits. Default &H01 (display ON only)." }
+    note: "SPCHR mgmt,[U],[V],[W],[H],[attr] — redefine from a direct image (3..6 args, no return). Any argument other than mgmt may be omitted/empty; W,H default 16,16 and attribute defaults to &H01."
+  # Form 3 — read the directly-specified character info.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite." }
+    out:
+      - { name: U, type: integer, desc: "Receives the source-rectangle X." }
+      - { name: V, type: integer, desc: "Receives the source-rectangle Y." }
+      - { name: W, type: integer, optional: true, desc: "Receives the width." }
+      - { name: H, type: integer, optional: true, desc: "Receives the height." }
+      - { name: A, type: integer, optional: true, desc: "Receives the attribute." }
+    note: "SPCHR mgmt OUT U,V[,W,H[,A]] — read the character image info (1 arg, 2/4/5 returns; a 3-return U,V,W form is also accepted)."
+  # Form 4 — read the character definition number.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite." }
+    out:
+      - { name: DEFNO, type: integer, desc: "Receives the definition (template) number." }
+    note: "SPCHR mgmt OUT DEFNO — read the definition number (1 arg, 1 return)."
+
+summary: "Sets or gets a sprite's character (image) definition. The set forms redefine the sprite either from an SPDEF template (mgmt,defn) or from a directly-specified source rectangle (mgmt,U,V[,W,H][,attr]); omitted direct args keep current/default values. The get forms return either the image rectangle/attribute (OUT U,V[,W,H[,A]]) or the template number (OUT DEFNO), selected by the number of OUT targets. Using SPCHR on a sprite that has not been SPSET raises an error."
+
+semantics:
+  - "Form family is chosen first by the return count r7=[r0,#0xc]: r7==0 selects the SET forms (cmp r7,#0 beq @0x13ee78 then cmp r6,#0x2 / blt error @0x13ee7c — SET needs argcount >= 2); r7!=0 selects the GET forms, which require argcount 1 (cmp r6,#0x1 / beq @0x13ee70 else b error @0x13ee74)."
+  - "Management number is fetched via the sprite-index getter FUN_001eece0 (bl 0x1eece0 @0x13ee8c); out of 0..511 raises errnum 10 (Out of range). The slot address is base[0x13f21c] + index*0x48 (rsb r1,r0,r0,lsl#5 / add r4,r1,r0,lsl#3 @0x13eeb0-0x13eebc)."
+  - "The sprite must exist: tst r0,#0x80000000 on the slot flags [r4,#0x4]; if the active bit is clear, errnum 4 (Illegal function call) is raised — mov r0,#0x4 / bl 0x1fffdc @0x13eefc — the documented 'used before SPSET' error (errnum 4, hw_verified via oracle)."
+  - "After the guards, the handler switches on the RETURN count via a jump table: cmp r7,#0x6 / ldrcc pc,[pc,r7,lsl#2] @0x13eed0 with table @0x13eed8 -> r7=0 SET (@0x13ef0c), r7=1 GET DEFNO (@0x13f504, form 4), r7=2 GET U,V (@0x13f524), r7=3 GET U,V,W (@0x13f560), r7=4 GET U,V,W,H (@0x13f59c), r7=5 GET U,V,W,H,A (@0x13f690, form 3 full); r7>=6 -> default b 0x13f798 error."
+  - "SET dispatch (@0x13ef0c) branches on argcount: r6==2 is form 1 (mgmt,defn) at @0x13ef64 — defn fetched via the bounded getter FUN_001eec7c with upper bound from [0x13f230] (4095), out of range raises errnum 10; the template (stride 14 bytes: rsb r1,r0,r0,lsl#3 / add lsl#1 @0x13efa8) supplies U,V (ldrsh @0x13efb0/0x13efb4) and W,H (ldrh @0x13efd4/0x13efd8) and the template-mode flag bit 0x40 is set (orr r0,r0,#0x40 @0x13f004) on [r4,#0x4]. r6 in 3..6 is form 2 (direct image) — default W,H=16.0 (vldr.32 s16,s17 @0x13ef18-0x13ef1c) and default attribute=1 (mov r8,#1 @0x13ef20); r6<2 or r6>6 raises errnum 4 with errline -1 (mvn r1 / mov r0,#0x4 / bl 0x1fffdc @0x13ef50)."
+  - "Form 2 supports SKIPPED middle arguments: each direct param may be left empty (e.g. `SPCHR 6,,,32,32,1` sets only W,H,attr; `SPCHR M0,,,,,AV` sets only the attribute) — an empty arg keeps the sprite's current value rather than the default (the per-arg getter checks [arg+0x4] and reads the existing slot field, ldrsh [r4,#0x40]/[r4,#0x42] @0x13f03c/0x13f088, when empty)."
+  - "Attribute bitfield (shared with SPSET): b00 = display 0/1 (#SPSHOW &H01); b01-b02 = 90-degree rotation #SPROT0/#SPROT90/#SPROT180/#SPROT270 = &H00/&H02/&H04/&H06; b03 = horizontal flip (#SPREVH &H08); b04 = vertical flip (#SPREVV &H10); b05 = additive blending (#SPADD &H20). See spec/reference/constants.yaml."
+  - "Per the docs, U+W and/or V+H greater than 512 raises an error (errnum oracle-pending; assumed errnum 10 Out of range, matching SPSET)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET (used before SPSET); the SET form is given fewer than 2 or more than 6 arguments; or the GET form requests more than 5 OUT values" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511, the definition number (form 1) is not in 0..4095, or (per docs) U+W / V+H exceeds 512 (errnum pending oracle)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spchr.md (4 forms: SPCHR mgmt,defn (defn 0-4095, from SPDEF template); SPCHR mgmt,[U],[V],[W],[H],[attr] direct (U,V 0-511, W,H default 16,16, U+W/V+H>512 errors, attr default 0x01, args other than mgmt omittable, example `SPCHR 6,,,32,32,1`); SPCHR mgmt OUT U,V[,W,H[,A]] get image info; SPCHR mgmt OUT DEFNO get definition number; mgmt 0-511; 'If used before SPSET, an error will occur'. Attribute bits b00 #SPSHOW, b01-02 rotation #SPROT0/90/180/270, b03 #SPREVH, b04 #SPREVV, b05 #SPADD)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPCHR handler @0x13ee4c: return-count r7=[r0,#0xc] argcount r6=[r0,#0x4]; r7==0 -> SET cmp r6,#0x2 blt error @0x13ee7c, r7!=0 -> GET requires r6==1 cmp r6,#0x1 beq @0x13ee70; mgmt via sprite-index getter bl 0x1eece0 @0x13ee8c (errnum 10 out-of-range); slot = base[0x13f21c]+index*0x48 (rsb r1,r0,r0,lsl#5 @0x13eeb0 / add r4,r1,r0,lsl#3 @0x13eebc); active-bit guard tst r0,#0x80000000 on [r4,#0x4] @0x13eec4 beq -> mov r0,#0x4 bl 0x1fffdc errnum 4 @0x13eefc (used before SPSET); return-count switch cmp r7,#0x6 ldrcc pc,[pc,r7,lsl#2] @0x13eed0 table @0x13eed8 (0->0x13ef0c,1->0x13f504,2->0x13f524,3->0x13f560,4->0x13f59c,5->0x13f690) default b 0x13f798; SET form1 r6==2 defn via bounded getter bl 0x1eec7c upper=[0x13f230] @0x13ef7c (errnum 10), template stride 14 rsb r1,r0,r0,lsl#3 @0x13efa8 ldrsh U,V @0x13efb0/0x13efb4 ldrh W,H @0x13efd4/0x13efd8, sets template flag orr r0,r0,#0x40 [r4,#0x4] @0x13f004; SET form2 default W,H=16.0 vldr.32 s16/s17 @0x13ef18 attr default mov r8,#1 @0x13ef20, bad argcount mvn r1 mov r0,#0x4 bl 0x1fffdc @0x13ef50; empty-arg keeps current ldrsh [r4,#0x40]/[r4,#0x42] @0x13f03c/0x13f088; state ptr [0x13f218]=0x315d60, sprite-base [0x13f21c]." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteData/SpriteAttr char definition + SPDEF template (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: SPCHR used ~8,651x. Confirms skip-middle-args attribute form `SPCHR M0,,,,,AV` and `SPCHR SPADNO,,,,,#SPREVH` (~37x e.g. 43Y5BEH3/TXT/ENEMY50, 227YK34J/TXT/JINTRI102), OUT DEFNO single-value `SPCHR 0 OUT NAC` (~125x e.g. 43XP43Q3/TXT/MG_AQUASP), OUT 2-value `SPCHR 24+I OUT U,V` (~43x e.g. 4K2KNDZS/TXT/ARCS), and OUT 5-value `SPCHR FN OUT U,V,CX,CY,AV` (~55x e.g. 43XP43Q3/TXT/MG_AQUASP) — proving the skip-args set form and the 1/2/5-return get forms are LEGAL. Output values oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8b): SPSET 0,0:SPCHR 512,0 -> errnum 10, errline 1 (mgmt out of range); SPSET 0,0:SPCHR 0,4096 -> errnum 10 (defn out of range); SPCLR:SPCHR 5,0 -> errnum 4 (used before SPSET). Round-trips: SPSET 0,0:SPCHR 0,64,64,16,16,1:SPCHR 0 OUT U,V -> U,V = 64,64; SPSET 0,0:SPCHR 0,64,64,32,32,1:SPCHR 0 OUT U,V,W,H,A -> 64,64,32,32,1." }
+
+confidence: disassembled
+
+tests:
+  # Round-trips and error cases are hw_verified (sb-oracle 2026-06-22 s_t8b).
+  - { name: set_from_template_ok, code: "SPSET 0,0\nSPCHR 0,0", expect: { stdout: "" } }
+  - { name: set_direct_ok, code: "SPSET 0,0\nSPCHR 0,64,64,16,16,1", expect: { stdout: "" } }
+  - { name: set_skip_uv_ok, code: "SPSET 0,0\nSPCHR 0,,,32,32,1", expect: { stdout: "" } }
+  - { name: get_uv_round_trip, code: "SPSET 0,0\nSPCHR 0,64,64,16,16,1\nSPCHR 0 OUT U,V\nPRINT U;\",\";V", expect: { stdout: "64,64" } }
+  - { name: get_full_round_trip, code: "SPSET 0,0\nSPCHR 0,64,64,32,32,1\nSPCHR 0 OUT U,V,W,H,A\nPRINT U;\",\";V;\",\";W;\",\";H;\",\";A", expect: { stdout: "64,64,32,32,1" } }
+  - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPCHR 512,0", expect: { error: { errnum: 10 } } }
+  - { name: defn_out_of_range, code: "SPSET 0,0\nSPCHR 0,4096", expect: { error: { errnum: 10 } } }
+  - { name: before_spset, code: "SPCLR\nSPCHR 5,0", expect: { error: { errnum: 4 } } }

@@ -1,0 +1,50 @@
+id: SPSCALE
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — set the display magnification.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite." }
+      - { name: scale_x, type: number, desc: "Horizontal magnification (1.0 = 100%). Documented use 0.5..2.0; other values accepted." }
+      - { name: scale_y, type: number, desc: "Vertical magnification (1.0 = 100%)." }
+    note: "SPSCALE mgmt, scaleX, scaleY — set the display magnification (3 args, no return)."
+  # Form 2 — read the magnification.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite." }
+    out:
+      - { name: SX, type: number, desc: "Receives the horizontal magnification." }
+      - { name: SY, type: number, desc: "Receives the vertical magnification." }
+    note: "SPSCALE mgmt OUT SX,SY — read the magnification (1 arg, 2 returns)."
+
+summary: "Sets or gets a sprite's display magnification (scale). The set form takes the management number and X,Y magnification factors; the get form returns them via two OUT targets. Scale is stored as 32-bit floats. For collision detection that accounts for scale, SPCOL must be called first. Using SPSCALE on a sprite that has not been SPSET raises an error."
+
+semantics:
+  - "Form is chosen by the return count r0=[r5,#0xc]: 0 returns is the SET form, 2 returns is the GET form. At least 1 argument is required: cmp r6,#0x1 / blt @0x143ca8 (r6=[r5,#0x4]=argcount)."
+  - "Management number is fetched via the sprite-index getter FUN_001eece0 (bl 0x1eece0 @0x143bbc); out of 0..511 raises errnum 10 (Out of range). The slot address is base[0x143d28] + index*0x48 (rsb r1,r0,r0,lsl#5 / add r4,r1,r0,lsl#3 @0x143bdc-0x143be8)."
+  - "The sprite must exist: tst r0,#0x80000000 on the slot flags [r4,#0x4]; if the active bit is clear, errnum 4 (Illegal function call) is raised — mov r0,#0x4 / bl 0x1fffdc @0x143c20 — the documented 'used before SPSET' error (errnum 4, hw_verified via oracle)."
+  - "SET form (0 returns) requires exactly 3 arguments (mgmt, scaleX, scaleY): cmp r6,#0x3 / beq @0x143c54; any other count raises errnum 4 with errline -1 (mvn r1 / mov r0,#0x4 / bl 0x1fffdc @0x143c44). A default magnification 1.0 is preloaded (vldr.32 s16 from a pc-relative literal @0x143c54, vstr to scratch @0x143c5c) so an omitted scale defaults to 1.0; scaleX,scaleY are fetched via the float getter FUN_001eec18 (bl 0x1eec18 @0x143c6c/0x143c90). The scale flag bit 0x400000 of [r4,#0x4] is cleared (bic r0,r0,#0x400000 @0x143cac) and the scale is applied via FUN_0017ebf8 (bl 0x17ebf8 @0x143cc0)."
+  - "GET form (2 returns) requires argcount 1: cmp r0,#0x2 / cmpeq r6,#1 / beq @0x143ce0; it reads the stored scale as a 32-bit float — vldr.32 s0,[r4,#0x10] @0x143ce4 — converts f32->f64 (vcvt.f64.f32 d0,s0 @0x143cec) and returns SX (and SY similarly)."
+  - "Scale is stored as f32 [r4,#0x10] (and the Y component adjacently). Real programs pass asymmetric scales (`SPSCALE 91,6,3`), fractional scales below 0.5 (`SPSCALE I,0.125,0.125`), and large scales far above 2.0 (`SPSCALE 3,400,8`); the documented 0.5..2.0 is a guideline only — values outside it are accepted with no range error."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET (used before SPSET), or the SET form is given other than 3 arguments" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spscale.md (2 forms: SPSCALE mgmt,magX,magY set — magnification 0.5(50%)-1.0(100%)-2.0(200%), 'For collision detection that takes scale into account, SPCOL should first be executed'; SPSCALE mgmt OUT SX,SY get; mgmt 0-511; 'If used before SPSET, an error will occur')" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPSCALE handler @0x143b94: argcount r6=[r5,#0x4] return-count [r5,#0xc]; cmp r6,#0x1 blt @0x143ca8; mgmt via sprite-index getter bl 0x1eece0 @0x143bbc (errnum 10 out-of-range); slot = base[0x143d28]+index*0x48 (rsb r1,r0,r0,lsl#5 @0x143bdc / add r4,r1,r0,lsl#3 @0x143be8); active-bit guard tst r0,#0x80000000 on [r4,#0x4] @0x143bf0 beq -> mov r0,#0x4 bl 0x1fffdc errnum 4 @0x143c20 (used before SPSET); SET requires argcount==3 cmp r6,#0x3 beq @0x143c54 else mvn r1 mov r0,#0x4 bl 0x1fffdc @0x143c44; default scale 1.0 vldr.32 s16 @0x143c54, scaleX/scaleY via float getter bl 0x1eec18 @0x143c6c/0x143c90, clears scale flag bic r0,r0,#0x400000 [r4,#0x4] @0x143cac then bl 0x17ebf8 @0x143cc0; GET path cmp [r5,#0xc]==2 cmpeq r6,#1 beq @0x143ce0 reads f32 vldr.32 s0,[r4,#0x10] @0x143ce4 vcvt.f64.f32 d0,s0 @0x143cec; state ptr [0x143d24]=0x315d60, sprite-base [0x143d28]." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteData scale fields (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: SPSCALE used ~9,421x. Confirms asymmetric scales X!=Y `SPSCALE 91,6,3` (e.g. 2J7443A4/TXT/30_DAYS), sub-0.5 fractional scales `SPSCALE I,0.125,0.125` (1DVK34J/TXT/HNZLND), and large >2.0 scales `SPSCALE 3,400,8` (1233728E/TXT/MG_DOG) — proving values outside the documented 0.5..2.0 range are LEGAL and not rejected. Output round-trip values oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8b): SPSET 0,0:SPSCALE 512,1,1 -> errnum 10, errline 1 (mgmt out of range); SPCLR:SPSCALE 5,1,1 -> errnum 4 (used before SPSET). Round-trip: SPSET 0,0:SPSCALE 0,2,0.5:SPSCALE 0 OUT SX,SY -> SX,SY = 2,0.5." }
+
+confidence: disassembled
+
+tests:
+  # Scale is float state with no stdout side-effect; set then read-back round-trips.
+  - { name: set_ok, code: "SPSET 0,0\nSPSCALE 0,0.75,0.75", expect: { stdout: "" } }
+  - { name: set_asymmetric_ok, code: "SPSET 0,0\nSPSCALE 0,2,0.5", expect: { stdout: "" } }
+  - { name: get_round_trip, code: "SPSET 0,0\nSPSCALE 0,2,0.5\nSPSCALE 0 OUT SX,SY\nPRINT SX;\",\";SY", expect: { stdout: "2,0.5" } }
+  - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPSCALE 512,1,1", expect: { error: { errnum: 10 } } }
+  - { name: before_spset, code: "SPCLR\nSPSCALE 5,1,1", expect: { error: { errnum: 4 } } }

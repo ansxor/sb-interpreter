@@ -1,0 +1,54 @@
+id: SPOFS
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — set the sprite's screen position (and optional depth).
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite." }
+      - { name: x, type: number, optional: true, desc: "Screen X. May be omitted (empty arg) to keep the current X." }
+      - { name: y, type: number, optional: true, desc: "Screen Y. May be omitted (empty arg) to keep the current Y." }
+      - { name: z, type: number, optional: true, desc: "Depth coordinate (Rear 1024 < Screen surface 0 < Front -256). Omitted leaves Z unchanged." }
+    note: "SPOFS mgmt, X, Y [,Z] — move the sprite (3 or 4 args, no return). Empty arguments (e.g. `SPOFS 23,,,1000`) keep the current value of that coordinate."
+  # Form 2 — read the sprite's current position.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite." }
+    out:
+      - { name: X, type: number, desc: "Receives the screen X." }
+      - { name: Y, type: number, desc: "Receives the screen Y." }
+      - { name: Z, type: number, optional: true, desc: "Receives the depth coordinate (optional third OUT target)." }
+    note: "SPOFS mgmt OUT X,Y[,Z] — read the sprite position (1 arg, 2 or 3 returns)."
+
+summary: "Sets or gets a sprite's screen coordinates. The set form (0 returns) takes the management number plus X,Y and an optional depth Z; any omitted coordinate keeps its current value. The get form (OUT) returns X,Y and optionally Z. Coordinates are stored as 32-bit floats. Using SPOFS on a sprite that has not been SPSET raises an error."
+
+semantics:
+  - "Form is chosen by the return-value count r7=[r0,#0xc]: 0 returns is the SET form (1), a non-zero count is the GET/OUT form (2). At least 1 argument is required: cmp r6,#0x1 / blt error @0x141088 (r6=[r0,#0x4]=argcount)."
+  - "The management number is fetched via the sprite-index getter FUN_001eece0 (bl 0x1eece0 @0x141098); out of 0..511 raises errnum 10 (Out of range) inside the getter (count = [[0x315d60]+0x48] = sprite count 512). The sprite slot address is computed as base[0x14144c] + index*0x48 (rsb r1,r0,r0,lsl#5 / add r0,r1,r0,lsl#8 / add r4,r1,r0,lsl#3 @0x1410b8-0x1410c4)."
+  - "The sprite must already exist: tst r0,#0x80000000 on the slot flags [r4,#0x4]; if the active bit is clear the SET path raises errnum 4 (Illegal function call) — mov r0,#0x4 / bl 0x1fffdc @0x1410f8 — this is the documented 'used before SPSET' error (errnum 4, hw_verified via oracle)."
+  - "SET form (0 returns) requires argcount 3 or 4 (mgmt + X,Y [+Z]): sub r0,r6,#3 / cmp r0,#0x2 / bcs error @0x14110c; any other count raises errnum 4 with errline -1 (mvn r1 @0x141334-style site). X is stored at slot+0x30 and Y at slot+0x34; an EMPTY argument is detected (ldrb r1,[arg+0x4] / cmp #0 @0x141120) and, when empty, the existing stored value [r4,#0x30]/[r4,#0x34] is reused (strne @0x14112c) — this is the `SPOFS 23,,,1000` skip form (community-confirmed in the corpus)."
+  - "The 3-arg form (no Z) clears the depth-enable flag (bic r0,r0,#0x20000 on [r4,#0x4] @0x1411a8) and sets X,Y via FUN_0017ee54 (bl 0x17ee54 @0x1411bc). The 4-arg form (cmp r6,#4 beq @0x1411d8) takes the Z path: a default depth constant (vldr.32 s0/s1 from a pc-relative literal @0x1411d8) is loaded for any omitted coordinate before the position+depth are written."
+  - "GET form (OUT, non-zero returns): returns X (slot+0x30) and Y (slot+0x34); a third OUT target receives Z. `SPOFS 12 OUT X,Y` (2 returns) and `SPOFS 12 OUT X,Y,Z` (3 returns) are both valid (corpus: the 3-var OUT form appears ~273x)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET (used before SPSET), or the SET form is given other than 3..4 arguments" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spofs.md (2 forms: SPOFS mgmt,X,Y[,Z] set — Z depth Rear:1024<Screen:0<Front:-256, examples include `SPOFS 23,,,1000` skip-X-Y form; SPOFS mgmt OUT X,Y[,Z] get; mgmt 0-511; 'If used before SPSET, an error will occur')" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPOFS handler @0x141070: argcount r6=[r0,#0x4] return-count r7=[r0,#0xc]; cmp r6,#0x1 blt @0x141088; mgmt via sprite-index getter bl 0x1eece0 @0x141098 (errnum 10 out-of-range, count=[[0x315d60]+0x48]); slot = base[0x14144c]+index*0x48 (rsb r1,r0,r0,lsl#5 @0x1410b8 / add r4,r1,r0,lsl#3 @0x1410c4); active-bit guard tst r0,#0x80000000 on [r4,#0x4] @0x1410cc beq -> mov r0,#0x4 bl 0x1fffdc errnum 4 @0x1410f8 (used before SPSET); SET argcount check sub r0,r6,#3 cmp #0x2 bcs error @0x14110c; X store [r4,#0x30] Y store [r4,#0x34], empty-arg detect ldrb r1,[arg,#0x4] cmp #0 reuse current strne @0x141120-0x14112c; no-Z path bic r0,r0,#0x20000 on [r4,#0x4] @0x1411a8 then bl 0x17ee54 set X,Y @0x1411bc; 4-arg Z path cmp r6,#4 beq @0x1411d8 with default-depth vldr.32 literal; state ptr 0x315d60, sprite-base 0x14144c." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteData position fields (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: SPOFS is among the most common sprite calls (~23,592 uses). Confirms: empty-arg skip form `SPOFS ID,,,1` / `SPOFS 38,,Y+119` (keep current X/Y) ~264x e.g. 455X32QE/TXT/MAIN; 3-var OUT `SPOFS I% OUT X,Y,Z` ~273x e.g. 2XVV233J/TXT/GAME.PRG; array-element management target `SPOFS SPID[0],300,16+32,-150` ~369x e.g. 13D4DV3V/TXT/MAIN_PRG_V2. Output values oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8b): SPSET 0,0:SPOFS 512,0,0 -> errnum 10, errline 1 (mgmt out of range); SPCLR:SPOFS 5,0,0 -> errnum 4 (used before SPSET); SPSET 0,0:SPOFS 0,0 (2-arg SET) -> errnum 4 (bad argcount). Round-trip: SPSET 0,0:SPOFS 0,50,80:SPOFS 0 OUT QX,QY -> QX,QY = 50,80." }
+
+confidence: disassembled
+
+tests:
+  # Round-trips and error cases are hw_verified (sb-oracle 2026-06-22 s_t8b). Visible-render
+  # side-effects (actual on-screen position) still need the sprite-framebuffer oracle (O-T6).
+  - { name: set_ok, code: "SPSET 0,0\nSPOFS 0,50,80", expect: { stdout: "" } }
+  - { name: set_with_z_ok, code: "SPSET 0,0\nSPOFS 0,150,180,0", expect: { stdout: "" } }
+  - { name: set_skip_xy_ok, code: "SPSET 0,0\nSPOFS 0,,,1000", expect: { stdout: "" } }
+  - { name: get_round_trip, code: "SPSET 0,0\nSPOFS 0,50,80\nSPOFS 0 OUT X,Y\nPRINT X;\",\";Y", expect: { stdout: "50,80" } }
+  - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPOFS 512,0,0", expect: { error: { errnum: 10 } } }
+  - { name: before_spset, code: "SPCLR\nSPOFS 5,0,0", expect: { error: { errnum: 4 } } }

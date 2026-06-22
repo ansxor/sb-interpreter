@@ -1,0 +1,50 @@
+id: SPHOME
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — set the reference (home) point.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite." }
+      - { name: home_x, type: number, desc: "Reference-point X, relative to the sprite's top-left (0,0). May be negative or fractional." }
+      - { name: home_y, type: number, desc: "Reference-point Y, relative to the sprite's top-left (0,0)." }
+    note: "SPHOME mgmt, X, Y — set the reference/home point (3 args, no return)."
+  # Form 2 — read the reference point.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite." }
+    out:
+      - { name: HX, type: number, desc: "Receives the reference-point X." }
+      - { name: HY, type: number, desc: "Receives the reference-point Y." }
+    note: "SPHOME mgmt OUT HX,HY — read the reference/home point (1 arg, 2 returns)."
+
+summary: "Sets or gets a sprite's reference point (home position): the origin used for SPOFS positioning, the center for rotation and scaling, and the center for collision detection. Coordinates are relative to the sprite's top-left corner and stored as 32-bit floats (negative and fractional values are accepted). Using SPHOME on a sprite that has not been SPSET raises an error."
+
+semantics:
+  - "Form is chosen by the return count r0=[r5,#0xc]: 0 returns is the SET form, 2 returns is the GET form. At least 1 argument is required: cmp r6,#0x1 / blt @0x142784 (r6=[r5,#0x4]=argcount)."
+  - "Management number is fetched via the sprite-index getter FUN_001eece0 (bl 0x1eece0 @0x142794); out of 0..511 raises errnum 10 (Out of range). The slot address is base[0x1428e8] + index*0x48 (rsb r1,r0,r0,lsl#5 / add r4,r1,r0,lsl#3 @0x1427b4-0x1427c0)."
+  - "The sprite must exist: tst r0,#0x80000000 on the slot flags [r4,#0x4]; if the active bit is clear, errnum 4 (Illegal function call) is raised — mov r0,#0x4 / bl 0x1fffdc @0x1427f8 — the documented 'used before SPSET' error (errnum 4, hw_verified via oracle)."
+  - "SET form (0 returns) requires exactly 3 arguments (mgmt, X, Y): cmp r6,#0x3 / beq @0x142808; any other count raises errnum 4 with errline -1 (mvn r1 / mov r0,#0x4 / bl 0x1fffdc @0x142818). The X,Y values are fetched (via the slot getter chain, blx [r2,#0x60] @0x142838/0x14285c) and the home point is applied via FUN_001ee524 (vldmia sp,{s0,s1} / bl 0x1ee524 @0x142884)."
+  - "GET form (2 returns) requires argcount 1: cmp r0,#0x2 / cmpeq r6,#1 / beq @0x1428a0; it reads the stored home as a 32-bit float — vldr.32 s0,[r4,#0x18] @0x1428a4 (the HY component follows adjacently) — and returns HX,HY."
+  - "Home is stored as f32 at [r4,#0x18]. Real programs pass negative home offsets (`SPHOME I,-16,-16`) and fractional offsets (`SPHOME 2,127.5,127.5`), confirming the coordinates are floats with no non-negativity or integer constraint."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET (used before SPSET), or the SET form is given other than 3 arguments" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/sphome.md (2 forms: SPHOME mgmt,X,Y set — reference point used as SPOFS origin, rotation/scale center, and collision center; X,Y relative to sprite top-left (0,0); SPHOME mgmt OUT HX,HY get; mgmt 0-511; 'If used before SPSET, an error will occur')" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPHOME handler @0x142770: argcount r6=[r5,#0x4] return-count [r5,#0xc]; cmp r6,#0x1 blt @0x142784; mgmt via sprite-index getter bl 0x1eece0 @0x142794 (errnum 10 out-of-range); slot = base[0x1428e8]+index*0x48 (rsb r1,r0,r0,lsl#5 @0x1427b4 / add r4,r1,r0,lsl#3 @0x1427c0); active-bit guard tst r0,#0x80000000 on [r4,#0x4] @0x1427c8 beq -> mov r0,#0x4 bl 0x1fffdc errnum 4 @0x1427f8 (used before SPSET); SET requires argcount==3 cmp r6,#0x3 beq @0x142808 else mvn r1 mov r0,#0x4 bl 0x1fffdc @0x142818; home applied vldmia sp,{s0,s1} bl 0x1ee524 @0x142884; GET path cmp [r5,#0xc]==2 cmpeq r6,#1 beq @0x1428a0 reads f32 vldr.32 s0,[r4,#0x18] @0x1428a4; state ptr [0x1428e4]=0x315d60, sprite-base [0x1428e8]." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteData home/origin fields (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: SPHOME used ~3,068x. Confirms negative home offsets `SPHOME I,-16,-16` (e.g. 43LEDEAE/TXT/XCMD.LIB), fractional offsets `SPHOME 2,127.5,127.5` (~85x e.g. 1233728E/TXT/MG_DOG), and OUT-to-array targets `SPHOME I OUT SPHX[I],SPHY[I]` (Q3HE34KD/TXT/OTW) — proving negative/fractional home coords are LEGAL. Output round-trip values oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8b): SPSET 0,0:SPHOME 512,0,0 -> errnum 10, errline 1 (mgmt out of range); SPCLR:SPHOME 5,0,0 -> errnum 4 (used before SPSET). Round-trip: SPSET 0,0:SPHOME 0,16,16:SPHOME 0 OUT HX,HY -> HX,HY = 16,16." }
+
+confidence: disassembled
+
+tests:
+  # Home is float state with no stdout side-effect; set then read-back round-trips.
+  - { name: set_ok, code: "SPSET 0,0\nSPHOME 0,16,16", expect: { stdout: "" } }
+  - { name: set_negative_ok, code: "SPSET 0,0\nSPHOME 0,-8,-8", expect: { stdout: "" } }
+  - { name: get_round_trip, code: "SPSET 0,0\nSPHOME 0,16,16\nSPHOME 0 OUT HX,HY\nPRINT HX;\",\";HY", expect: { stdout: "16,16" } }
+  - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPHOME 512,0,0", expect: { error: { errnum: 10 } } }
+  - { name: before_spset, code: "SPCLR\nSPHOME 5,0,0", expect: { error: { errnum: 4 } } }
