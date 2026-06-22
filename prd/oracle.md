@@ -62,6 +62,9 @@ against real SB-saved files and by load+run of our written programs.
   REFERENCE capture exists for manual ear-checks: `sb_audio.py` drives Azahar `Tools > Dump
   Video` and extracts the audio with ffmpeg → WAV. The ffmpeg extraction is verified; the live
   menu/save-dialog orchestration is UNTESTED (kept off the running oracle). Never a CI golden.
+  **⚠ Audio output accuracy is NOT end-to-end verifiable here** — there's no audio e2e test
+  setup, so the capture orchestration and any fidelity claim are practical-only/unverified.
+  Full verification is a **deferred refining layer**, not a gate for now.
 - [ ] **O-T8 harvest end-to-end** — wire `run_case` into `harness/harvest/harvest.py`: batch a
   category's spec/corpus cases, capture, write `spec/tests/<id>.yaml` (`hw_verified`) + golden
   media, open a PR. The deterministic gate then replays them without the emulator. → O-T5

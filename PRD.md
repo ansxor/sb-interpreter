@@ -141,7 +141,7 @@ and name the instructions they cover inline.
 - [x] O-T4 Value/stdout capture — program SAVEs result to TXT; read `body[80:-20]` off disk
 - [x] O-T5 ERRNUM/ERRLINE capture — `run_case.py errcase` / `|err` cases. SB has no error trapping (an error halts the program; `EXEC`/`RUN n` can't resume), so run `<stmt>`+sentinel; on halt read `ERRNUM`/`ERRLINE` in DIRECT mode. **Verified on real SB 3.6.0:** `A=SQR(-1)` → `errnum=10` (Out of range), `errline=1` — ERRNUM/ERRLINE do persist into DIRECT mode post-halt
 - [x] O-T6 Graphics capture — `run_case.py grp` / `capture_grp`: program draws → `SAVE"GRPn:..."` → decode GRP off disk (28-byte PCBN header + 512×512 RGBA5551 LE) → PNG. **Verified on real SB 3.6.0** (pixel-exact). GRP pages are 512×512 buffers independent of XSCREEN mode (capture per page for both screens). Composite/sprite/BG display → `screenshot` (Ctrl+P). Goldens → `harness/corpus/golden/gfx/`
-- [~] O-T7 Audio — NO deterministic emulator golden possible (SB can't render audio to disk; emulator audio is real-time/timing-dependent). Deterministic gate moves to **MML→note-events + synth params** from docs+disasm (no emulator; see M5/S-T10/S-C5). Reference-only capture built: `sb_audio.py` (Azahar `Tools>Dump Video` + ffmpeg→WAV); ffmpeg extract verified, live dump orchestration UNTESTED (non-deterministic, manual ear-check only)
+- [~] O-T7 Audio — NO deterministic emulator golden possible (SB can't render audio to disk; emulator audio is real-time/timing-dependent). Deterministic gate moves to **MML→note-events + synth params** from docs+disasm (no emulator; see M5/S-T10/S-C5). Reference-only capture built: `sb_audio.py` (Azahar `Tools>Dump Video` + ffmpeg→WAV); ffmpeg extract verified, live dump orchestration UNTESTED. **⚠ audio output accuracy is NOT end-to-end verifiable — we have no audio e2e test setup; the mechanism works as far as tested (ffmpeg extract) but the capture orchestration + any fidelity claim are practical-only/unverified. Full verification is a deferred refining layer.**
 - [ ] O-T8 harvest.py end-to-end — wire `run_case` into `harness/harvest`: batch spec/corpus cases → write `spec/tests` (`hw_verified`) + golden media; open PR → O-T5
 
 ## M0 — Scaffolding & spec pipeline ✅
@@ -191,12 +191,17 @@ and name the instructions they cover inline.
 - [ ] M4-T5 Host input mapping → M4-T1, M4-T2
 
 ## M5 — Audio (MML)  (gated on S-T10)
-- [ ] M5-T1 MML parser → S-C5
-- [ ] M5-T2 Synth engine → M5-T1
+> **⚠ Audio output accuracy can't be e2e-verified — no audio test setup (see O-T7).** MML
+> parsing + synth params (M5-T1..T4) ARE verifiable deterministically (MML→note-events vs
+> docs/disasm); the *rendered sound's* fidelity is practical-only (ear-check / loose spectral)
+> until a real audio e2e harness exists. Treat audio-fidelity claims as unverified; full
+> verification is a deferred refining layer.
+- [ ] M5-T1 MML parser → S-C5  (parse-to-events: deterministically verifiable)
+- [ ] M5-T2 Synth engine → M5-T1  (⚠ output fidelity not e2e-verifiable; param tables are)
 - [ ] M5-T3 BGM commands → M5-T2, S-T10
 - [ ] M5-T4 SFX/voice → M5-T2, S-T10
 - [ ] M5-T5 Audio backend → M5-T2
-- [ ] M5-T6 Golden WAV harvest + diff → M5-T3, M5-T4, O-T7
+- [ ] M5-T6 Golden WAV harvest + diff → M5-T3, M5-T4, O-T7  (⚠ NOT a deterministic golden — reference/loose-spectral only; deferred refining layer)
 
 ## M6 — Files, projects, system, faithful stubs  (gated on S-T12)
 - [ ] M6-T1 Storage abstraction → S-T12
