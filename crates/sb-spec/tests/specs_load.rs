@@ -41,3 +41,178 @@ fn reference_tables_present() {
         assert!(dir.join(f).exists(), "missing reference table: {f}");
     }
 }
+
+// ── `disassembled`-provenance guardrail ──────────────────────────────────────────────
+//
+// The confidence ladder is the contract, and `disassembled` is the load-bearing rung:
+// it asserts "I read the ARM/VFP handler BODY in the listing", not "I looked up the
+// dispatch address and wrote plausible prose from the docs". Commit df691b1 reverted 14
+// spec slices that did exactly the latter — they cited the `dispatch` handler address but
+// never ran `disasm.py show` to read the body, then labeled docs-inference `disassembled`.
+//
+// This test makes that fraud mechanically detectable. For every `type: disassembled`
+// source ref it requires EVIDENCE OF A BODY READ, and rejects the two tells the reverted
+// batch carried. It is honest about its limits (a determined faker can satisfy the shape),
+// but it raises the floor from "free text" to "must look like you read the listing", and
+// it is the only check in the gate that bites every commit (the 34 MB `.lst` is gitignored
+// and absent in CI, so the listing cross-check below is a local-only bonus).
+
+/// True if `needle` occurs in `hay` as a whole word (not inside a longer identifier) —
+/// so `mov` matches `mov r0,#0x8` but not `remove`. `hay` must be lowercase.
+fn whole_word(hay: &str, needle: &str) -> bool {
+    let is_word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    hay.match_indices(needle).any(|(i, _)| {
+        let before = hay[..i].chars().next_back().map(is_word).unwrap_or(false);
+        let after = hay[i + needle.len()..]
+            .chars()
+            .next()
+            .map(is_word)
+            .unwrap_or(false);
+        !before && !after
+    })
+}
+
+/// Numeric values of hex tokens in `s`. With `prefix = "0x"` matches `0x…`/`@0x…`; with
+/// `prefix = "FUN_"` matches Ghidra `FUN_<hex>` names. Both `FUN_001415a0` and `@0x1415a0`
+/// yield `0x1415a0`, so a FUN_ address can be compared against the plain-`0x` address set.
+fn hex_values(s: &str, prefix: &str) -> Vec<u64> {
+    let b = s.as_bytes();
+    let mut out = Vec::new();
+    for (idx, _) in s.match_indices(prefix) {
+        let mut j = idx + prefix.len();
+        let k = j;
+        while j < b.len() && b[j].is_ascii_hexdigit() {
+            j += 1;
+        }
+        if j - k >= 4 {
+            if let Ok(v) = u64::from_str_radix(&s[k..j], 16) {
+                out.push(v);
+            }
+        }
+    }
+    out
+}
+
+/// The structural rules (R2 + R3) on one `disassembled` ref string. Returns one message
+/// per violation (empty = the ref looks like a genuine body read). Pure + listing-free so
+/// it can be unit-tested against the actual reverted refs (see `reverted_refs_are_caught`).
+fn body_read_violations(id: &str, r: &str) -> Vec<String> {
+    // ARM/VFP mnemonics, matched as WHOLE WORDS so they can't hide inside prose
+    // ("move"/"remove" don't contain the mnemonic `mov`). The prose-ambiguous ones
+    // (`add`/`sub`/`and`/`or`/`b`) are deliberately omitted — when a ref genuinely quotes
+    // them it also carries a `#0x` immediate or a second address, which the rules below
+    // already credit.
+    const MNEMONICS: [&str; 26] = [
+        "vmov", "vldr", "vstr", "vcmpe", "vcmp", "vcvt", "vsqrt", "vneg", "vabs", "vmrs", "vmla",
+        "ldrb", "strb", "blx", "mov", "movw", "movt", "cmp", "cmn", "tst", "ldr", "orr", "eor",
+        "bic", "lsl", "lsr",
+    ];
+    let rl = r.to_lowercase();
+    let mut out = Vec::new();
+
+    // R2 — the dual-address tell: a `FUN_<hex>` whose address never appears as a real
+    // `0x<hex>` token. A genuine body read produces consistent addresses; the reverted
+    // ATTR ref glued `FUN_0014bec4` to a different `@0x14c090`.
+    let addrs: Vec<u64> = hex_values(r, "0x");
+    for fun in hex_values(r, "FUN_") {
+        if !addrs.contains(&fun) {
+            out.push(format!(
+                "{id}: disassembled ref cites FUN_…(0x{fun:x}) but that address never \
+                 appears as a plain 0x token (mismatched FUN_/@0x — the cited address was \
+                 not actually read): {r:.90}"
+            ));
+        }
+    }
+
+    // R3 — evidence of a body read: a quoted ARM immediate (`#0x8`) or whole-word
+    // mnemonic, OR ≥2 distinct addresses (handler + an internal site/const/helper), OR a
+    // parser-keyword form (verified-not-dispatched, so it has no single handler body).
+    let is_parser = rl.contains("parser keyword")
+        || rl.contains("not in the builtin dispatch table")
+        || rl.contains("special form");
+    let has_arm = rl.contains("#0x") || MNEMONICS.iter().any(|m| whole_word(&rl, m));
+    let distinct: std::collections::HashSet<u64> = addrs.iter().copied().collect();
+    if !(is_parser || has_arm || distinct.len() >= 2) {
+        out.push(format!(
+            "{id}: disassembled ref shows no evidence of a body read (no ARM/VFP mnemonic, \
+             <2 distinct addresses, not a parser-keyword form) — looks like docs-inference \
+             cited as `disassembled`. Run `disasm.py show <addr>` and cite real listing \
+             detail: {r:.90}"
+        ));
+    }
+    out
+}
+
+#[test]
+fn disassembled_sources_show_evidence_of_a_body_read() {
+    // TEXT segment (handlers live here): runtime base 0x100000 .. 0x2C8000.
+    const TEXT: std::ops::Range<u64> = 0x100000..0x2C8000;
+
+    let listing = {
+        let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../sb-disassembly/listings/cia_3.6.0.lst");
+        p.exists()
+            .then(|| std::fs::read_to_string(&p).unwrap_or_default())
+    };
+
+    let specs = sb_spec::load_all(&spec_dir()).expect("specs should load");
+    let mut failures = Vec::new();
+    for s in &specs {
+        for src in &s.sources {
+            if src.source_type != "disassembled" {
+                continue;
+            }
+            let r = &src.reference;
+            failures.extend(body_read_violations(&s.id, r));
+
+            // Local-only cross-check (skipped in CI where the .lst is absent): every
+            // TEXT-range address cited must actually occur in the listing.
+            if let Some(lst) = &listing {
+                for a in hex_values(r, "0x").iter().filter(|&&a| TEXT.contains(&a)) {
+                    let needle = format!("{a:08X}");
+                    if !lst.contains(&needle) {
+                        failures.push(format!(
+                            "{}: disassembled ref cites @0x{a:x} but {needle} is not in \
+                             cia_3.6.0.lst (fabricated/typo'd handler address): {r:.90}",
+                            s.id
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "disassembled-provenance violations ({}):\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn reverted_refs_are_caught() {
+    // The exact ref shapes from commit df691b1 (the 14 reverted slices) must be flagged.
+    // SPSET: handler address + plausible prose, no body detail (FUN_ == @0x, 1 distinct addr).
+    let spset = "cia_3.6.0.lst SPSET handler FUN_001415a0 @0x1415a0: registers the sprite \
+                 slot and initializes its transform/SPVAR state; OUT-IX forms scan for a \
+                 free management number";
+    assert!(
+        !body_read_violations("SPSET", spset).is_empty(),
+        "SPSET-style docs-prose-with-address must be flagged"
+    );
+    // ATTR: mismatched FUN_/@0x (0x14bec4 vs 0x14c090) — never produced by a real read.
+    let attr = "cia_3.6.0.lst ATTR handler FUN_0014bec4/@0x14c090: sets the console \
+                character display-attribute state used by the console renderer";
+    assert!(
+        !body_read_violations("ATTR", attr).is_empty(),
+        "ATTR-style mismatched FUN_/@0x must be flagged"
+    );
+    // A genuine body-read ref (real ACOS spec) must NOT be flagged.
+    let acos = "cia_3.6.0.lst ACOS handler @0x149258; argcount!=1 -> errnum 4; range guard \
+                vcmpe against -1.0 (0xBFF0000000000000 @0x149348) / 1.0 @0x149350 -> errnum \
+                10 when outside [-1,1]; acos computed @0x2988d8";
+    assert!(
+        body_read_violations("ACOS", acos).is_empty(),
+        "a genuine multi-address body-read ref must pass"
+    );
+}

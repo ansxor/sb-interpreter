@@ -157,6 +157,26 @@ def cmd_show(addr, n=40):
     print("\n".join(out) if out else f"(addr {target} not found in listing)")
 
 
+def _first_arm_line(addr, scan=14):
+    """A representative ARM line from the handler body, condensed for a citation example
+    (e.g. `cmp r0,#0x1` / `vcmpe.f64 d0,d1`). Returns a placeholder if the listing is
+    missing. Used to seed the paste-ready `disassembled` ref so it carries real evidence."""
+    a = int(addr, 16) if isinstance(addr, str) else addr
+    if not LST.exists():
+        return "mov r0,#0x4 (errnum) — read the body"
+    target = f"{a:08X}"
+    hit = False
+    for line in LST.read_text(errors="replace").splitlines():
+        if not hit and target in line:
+            hit = True
+        if hit:
+            # listing rows look like `00149258 e3500001  cmp r0,#0x1`; grab the mnemonic+ops
+            parts = line.split(None, 2)
+            if len(parts) == 3 and all(c in "0123456789abcdefABCDEF" for c in parts[1]):
+                return parts[2].strip()
+    return "mov r0,#0x4 (errnum) — read the body"
+
+
 def _wstr_at(data, addr, maxlen=24):
     """Decode a NUL-terminated UTF-16LE string at a runtime addr; None if it isn't a
     plausible (printable-ASCII) command name. Used to read dispatch-table name pointers."""
@@ -214,6 +234,18 @@ def cmd_dispatch(name=None):
                 f = _func_at(h, funcs)
                 fn = f[2] if f else "?"
                 print(f"{u}\thandler={h:#08x}\t{fn}")
+            # The address ALONE is not a citation. Auto-show the body so the next thing in
+            # your context is real ARM, and emit a paste-ready `disassembled` ref skeleton
+            # built from an actual listing line — the spec gate (sb-spec specs_load) rejects
+            # a `disassembled` source that carries no body evidence (mnemonic / ≥2 addrs).
+            h0 = hits[0]
+            print(f"\n# --- {u} handler body @{h0:#08x} (first 14 lines) ---")
+            print("# `disassembled` means you READ THIS. Cite a real line below, not docs prose.")
+            cmd_show(h0, 14)
+            arm = _first_arm_line(h0)
+            print(f"\n# paste-ready source (fill in the behavior FROM the body above):")
+            print(f'  - {{ type: disassembled, ref: "cia_3.6.0.lst {u} handler @{h0:#08x}; '
+                  f'<errnum/range/rounding from the body, e.g. {arm}>" }}')
         else:
             print(f"# {u!r} not in the dispatch table — it's likely an operator or special-")
             print(f"# form keyword (AND/OR/MOD/PRINT/PI…) handled in the parser, not dispatched.")

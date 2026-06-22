@@ -35,3 +35,6 @@ RALPH_PROMPT.md
 
 # --- OS / editor ---
 .DS_Store
+
+# Ralph interactive-loop sentinels (DONE/STOP signals)
+.ralph/

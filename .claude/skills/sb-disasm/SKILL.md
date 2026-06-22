@@ -47,7 +47,11 @@ python3 disasm.py near 0x<kwtbl> 16   # dump words around a table addr, classifi
    ~217 dispatched builtins (functions + most commands).
 2. `show <handler>` → read the ARM/VFP and write down the exact behavior (rounding mode,
    overflow, format; look for `vcvt`/`vsqrt`/`vmul` for floats, calls to format/RNG helpers).
-   Cite the handler address in the spec `sources:` as `type: disassembled`.
+   **This step is what `disassembled` certifies — the address alone is NOT.** Your
+   `type: disassembled` ref MUST quote real body detail (an errnum site like `mov r0,#0x4`, a
+   range guard `vcmpe …`, a constant, or ≥2 real addresses). A ref that is just an address +
+   prose is rejected by `cargo test -p sb-spec` and got commit df691b1 reverted — if you only
+   have the address, label it `confidence: hypothesis`, not `disassembled`.
 3. Reading several handlers in a category? Put `ADDR N label` lines in a file and run
    `showmany` (or pipe via `showmany -`) — ONE call, no fragile bash `for`-loop quoting.
 
@@ -61,5 +65,7 @@ mark that source `confidence: hypothesis`.
 ## When to use vs. skip
 - USE for anything where the exact algorithm matters: rounding (FLOOR/ROUND/CEIL), integer
   overflow/wrap, `STR$`/PRINT float formatting, RND/RNDF/RANDOMIZE, bit ops, error conditions.
-- For plain IEEE-double math (SIN/COS/EXP…) the handler will be standard VFP/libm — note that
-  and lean on the oracle + docs; still cite the handler address you confirmed.
+- For plain IEEE-double math (SIN/COS/EXP…) the handler will be standard VFP/libm — you STILL
+  `show` the body (confirm the argcount/errnum checks and the VFP/libm call), quote that detail
+  in the ref, and lean on the oracle + docs for the numeric result. "It's just libm" is not a
+  reason to skip `show` and label it `disassembled` from the address alone.

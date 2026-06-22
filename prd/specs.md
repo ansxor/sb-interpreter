@@ -59,8 +59,11 @@ writes there). Either way the conformance suite runs them against `sb-core`.
 
 1. Read the doc page; draft `id/kind/category/signatures/summary/semantics`.
 2. Find the handler via the **sb-disasm skill** — `disasm.py dispatch <NAME>` pins the handler
-   address authoritatively (operators/special forms: `handler`/`find`+`xref` fallback). Read it
-   with `show`/`showmany` and confirm exact behavior, ranges, rounding, errors; cite the addr.
+   address authoritatively (operators/special forms: `handler`/`find`+`xref` fallback). You MUST
+   then `show`/`showmany` the BODY and confirm exact behavior, ranges, rounding, errors. A
+   `type: disassembled` source must quote real body detail (errnum site / range guard / constant
+   / ≥2 addresses) — an address + prose is not `disassembled`, it's `hypothesis`, and the spec
+   gate (`cargo test -p sb-spec`) rejects a faked one.
 3. Cross-check against osb's implementation; note any 3.5.0-vs-3.6.0 divergence.
 4. Write **test cases**: at least normal + boundary + error per signature, with `expect`.
 5. **Verify expects against the oracle** (harvest) → set those to `hw_verified`. If the
