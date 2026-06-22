@@ -24,6 +24,7 @@ python3 run_case.py batch cases.txt out.tsv        # RECOMMENDED: FAST harvest (
 python3 run_case.py prog 'FLOOR(-2.1)'             # one value case via the key/program path -> -3
 python3 run_case.py prog 'MID$("ABCDE",1,2)' str   # one value case, string result -> BC
 python3 run_case.py errcase 'A=SQR(-1)'            # error case -> {errored, errnum, errline}
+python3 run_case.py progcase 'DIM A[5]' 'LEN(A)'   # multi-statement case (setup -> result) -> 5
 python3 run_case.py grp draw.sb out.png top        # GRAPHICS golden: draw -> SAVE GRPn -> PNG
 python3 run_case.py screenshot out.png             # COMPOSITE golden (sprites/BG): Ctrl+P
 ```
@@ -42,7 +43,18 @@ cases into a single string and `SAVE`s it once, then does a single LOAD+RUN+read
 slice is ~one run, not 60. SmileBASIC has **no error trapping**, so if a value case unexpectedly
 raises, the program halts before the SAVE; `batch` then **bisects** the group to isolate the
 offender (marked `ERROR`) and still collects every other case. Lines are `name|expr`,
-`name|expr|str` (string result, no `STR$` wrap), `name|stmt|err` (error case, below), or bare `expr`.
+`name|expr|str` (string result, no `STR$` wrap), `name|stmt|err` (error case, below),
+`name|setup|result|prog` / `…|progstr` (multi-statement case, below), or bare `expr`.
+
+**Multi-statement cases (`prog`/`progstr`).** A case that needs SETUP before its value —
+`DIM A[5]` then `LEN(A)`, `MIN`/`MAX` array form, a multi-line `IF…ENDIF` block, a fractional-
+`STEP` FOR pass-count, a seeded `RANDOMIZE`-then-`RND` sequence — can't be a single `STR$(expr)`.
+Write it `name|<setup>|<result>|prog` (numeric) or `|progstr` (string). `setup` runs first and
+may use `:` (native SB single-line multi-statement) or `\n` (escaped, for real newlines like an
+IF block); `result` is the captured expression. These run ALONE (their own LOAD+RUN), not in the
+value mega-program — where `DIM`/loop setup would collide across cases. E.g.
+`min_arr|DIM T[2]:T[0]=50:T[1]=3|MIN(T)|prog` → `3`;
+`if_blk|IF 1 THEN\nA=5\nELSE\nA=9\nENDIF|A|prog` → `5`.
 
 **Error cases (`errnum`/`errline`) — O-T5.** No error trapping means an error HALTS the program
 and there is **no way to resume or catch it** (even `EXEC`/`RUN n` into another slot can't return
@@ -56,6 +68,21 @@ but errors are a minority of cases.
 **Always pass an OUTFILE** (each `name<TAB>result` is appended + flushed as it resolves): a run
 that's killed keeps everything so far — re-running with the same OUTFILE skips OK rows and
 retries only `ERROR` ones. Harvest a slice, fold it into the spec, harvest the next.
+
+### Harvesting limits (queue these, don't force them)
+- **END / STOP — clean-halt is indistinguishable from an error-halt** via the `err` harness:
+  both stop the sentinel SAVE, so F2 then reads a stale/irrelevant `ERRNUM`. To probe halt
+  behavior, use a **file-based stdout-diff** instead: a program like
+  `SAVE"TXT:O","BEFORE":END:SAVE"TXT:O","AFTER"` leaves `O=="BEFORE"` iff `END` halted before the
+  second SAVE (the first SAVE's dialog must be confirmed before the halt). `END` (not resumable)
+  vs `STOP` (CONT-resumable) then needs a CONT tap after the halt to see if the second SAVE runs.
+  Not yet automated — queue in HARVEST_QUEUE.
+- **XON / XOFF and other hardware-feature commands** can pop a feature-confirmation dialog that
+  may hang the harness (and need an emulated peripheral). Don't drive these live; spec them from
+  docs + disassembly and queue. (`confirm_dialogs` would tap through a normal dialog, but a
+  feature prompt may differ or block.)
+- **Cross-slot behavior (COMMON / USE, EXEC into another slot)** needs a multi-program-slot
+  harness; the single-`P` flow can't express it. Queue.
 
 Verified: FLOOR(3.7)=3, FLOOR(-2.1)=-3, FLOOR(5)=5, FLOOR(8.9)=8, 7 DIV 2=3, 7 MOD 3=1,
 LEN("ABCDE")=5, ABS(-9)=9, POW(2,10)=1024, SQR(144)=12.

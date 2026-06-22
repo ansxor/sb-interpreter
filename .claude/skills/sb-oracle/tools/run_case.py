@@ -67,19 +67,34 @@ def _clean():
     time.sleep(0.6)
 
 
+def _wait_dialog(rounds=3, settle=0.5):
+    """Poll (bounded) until a dialog is on screen. Returns True once one appears. Used after a
+    tap that is EXPECTED to raise a dialog, so we don't conclude "clear" before it has rendered
+    (and then fire the next key into a half-open dialog — the load-race that re-ran the prior
+    program). Returns False if none appeared (e.g. an error-halt raises no save dialog)."""
+    for _ in range(rounds):
+        if W.dialog_open():
+            return True
+        time.sleep(settle)
+    return False
+
+
 def _load_prog():
-    """F1 = LOAD"PRG0:P",0, then clear the load-confirm dialog. (The ,0 auto-dismisses only
-    when typed, not from a key slot — so a single YES is needed; confirm_dialogs handles it.)"""
+    """F1 = LOAD"PRG0:P",0. A key-slot LOAD raises a confirm dialog (the ,0 auto-dismisses only
+    when TYPED), so wait for it to render, then clear it. Waiting first prevents F4 from firing
+    before the load settled and re-running the previously-loaded program."""
     W.press("F1")
-    time.sleep(RUN_SETTLE)
+    time.sleep(0.4)
+    _wait_dialog()
     W.confirm_dialogs()
 
 
 def _run_prog():
     """F4 = RUN, then clear the program's SAVE dialogs (Confirm + Information). If the program
-    halted on an error before its SAVE, no dialog is up and confirm_dialogs is a no-op."""
+    halted on an error before its SAVE, no dialog renders and this is a no-op after the wait."""
     W.press("F4")
-    time.sleep(RUN_SETTLE)
+    time.sleep(0.4)
+    _wait_dialog()
     W.confirm_dialogs()
 
 
@@ -167,22 +182,36 @@ def run_expr(expr, result_name="O", numeric=True):
 # no file; `harvest` bisects the batch to isolate the offender and still collect every other case.
 
 _MODE_TAGS = {"str": "str", "s": "str", "string": "str", "num": "num", "n": "num",
-              "number": "num", "err": "err", "error": "err", "e": "err"}
+              "number": "num", "err": "err", "error": "err", "e": "err",
+              "prog": "prog", "p": "prog", "progstr": "progstr", "progs": "progstr",
+              "ps": "progstr"}
 
 
 def _parse_case_line(line):
-    """`name|expr`, `name|expr|<mode>`, or bare `expr`. Mode tag picks capture: `num` (default,
-    STR$-wrapped), `str` (string result, no wrap), or `err` (statement EXPECTED to raise —
-    capture ERRNUM/ERRLINE). Returns (name, expr, mode)."""
+    """Parse a case line. Modes:
+      `name|expr`          -> num   (default: STR$-wrapped value)
+      `name|expr|str`      -> str   (string value, no STR$ wrap)
+      `name|stmt|err`      -> err   (statement EXPECTED to raise — capture ERRNUM/ERRLINE)
+      `name|setup|result|prog`     -> prog     (isolated multi-statement program, numeric result)
+      `name|setup|result|progstr`  -> progstr  (isolated multi-statement program, string result)
+    For prog/progstr, `setup` runs first (may use `:` for native single-line multi-statement, or
+    `\\n` for real newlines — e.g. an IF/ENDIF block) and `result` is the expression to capture;
+    these run ALONE (their own LOAD+RUN), not in the value mega-program. Returns
+    (name, expr_or_(setup,result), mode)."""
     parts = line.split("|")
     name = parts[0].strip()
     if not re.match(r"^[\w.\-]+$", name):
         raise ValueError(f"case name {name!r} must be identifier-like (letters/digits/_.-)")
     if len(parts) == 1:
         return (name, name, "num")
-    tag = parts[-1].strip().lower()
-    if tag in _MODE_TAGS:
-        return (name, "|".join(parts[1:-1]).strip(), _MODE_TAGS[tag])
+    mode = _MODE_TAGS.get(parts[-1].strip().lower())
+    if mode in ("prog", "progstr"):
+        if len(parts) < 4:
+            raise ValueError(f"{mode} case {name!r} needs `name|setup|result|{parts[-1].strip()}` "
+                             f"(setup may be empty)")
+        return (name, ("|".join(parts[1:-2]).strip(), parts[-2].strip()), mode)
+    if mode is not None:
+        return (name, "|".join(parts[1:-1]).strip(), mode)
     return (name, "|".join(parts[1:]).strip(), "num")
 
 
@@ -227,6 +256,18 @@ def run_error_case(stmt, result_name="O"):
         line = int(f[1]) if len(f) > 1 and f[1].lstrip("-").isdigit() else None
         return {"errored": True, "errnum": num, "errline": line}
     return {"errored": True, "errnum": None, "errline": None}
+
+
+def run_prog_case(setup, result, result_name="O", numeric=True):
+    """Harvest a case that needs SETUP statements before its value (array DIM+LEN, MIN/MAX array
+    form, multi-line IF/ENDIF, FOR pass-counts, seeded RND sequences) — things a single
+    STR$(expr) can't express. `setup` runs first (`\\n` -> real newlines; `:` is native SB),
+    then `result` is captured. Runs ISOLATED as its own program (not in the value mega-program,
+    where setup statements would collide). Returns the value, or None if the program halted."""
+    setup = setup.replace("\\n", "\n")
+    inner = f"STR$({result})" if numeric else f"({result})"
+    body = ([setup] if setup.strip() else []) + [f'SAVE"TXT:{result_name}",{inner}']
+    return run_program("\n".join(body), result_name)
 
 
 def _parse_batch_result(text):
@@ -382,11 +423,15 @@ def batch(path, outpath=None):
             out.write(f"{name}\t{value}\n")
             out.flush()
 
-    # Value cases batch into one mega-program; `err` cases must each run alone (they halt).
-    value_cases = [c for c in remaining if c[2] != "err"]
+    # Value cases (num/str) batch into one mega-program; prog/progstr + err cases each run alone.
+    value_cases = [c for c in remaining if c[2] in ("num", "str")]
+    prog_cases = [c for c in remaining if c[2] in ("prog", "progstr")]
     error_cases = [c for c in remaining if c[2] == "err"]
     if value_cases:
         harvest(value_cases, on_result=on_result)
+    for name, (setup, result), mode in prog_cases:
+        v = run_prog_case(setup, result, numeric=(mode == "prog"))
+        on_result(name, v if v is not None else "ERROR prog case halted (no result — runtime error?)")
     for name, stmt, _ in error_cases:
         r = run_error_case(stmt)
         if not r["errored"]:
@@ -418,6 +463,9 @@ if __name__ == "__main__":
         print(run_expr(a[1], numeric=not (len(a) > 2 and a[2] == "str")))
     elif mode == "errcase":             # one error case: run a halting statement -> ERRNUM/ERRLINE
         print(run_error_case(a[1]))
+    elif mode == "progcase":            # one multi-statement case: progcase SETUP RESULT [str]
+        # SETUP may use ':' (native) or '\n' (escaped) for newlines; RESULT is captured.
+        print(run_prog_case(a[1], a[2], numeric=not (len(a) > 3 and a[3] == "str")))
     elif mode == "grp":                 # graphics golden: draw (PROGFILE) -> SAVE GRP -> decode -> PNG
         # grp PROGFILE OUT.png [crop] [page]
         src = open(a[1]).read()
