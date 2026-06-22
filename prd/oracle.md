@@ -20,12 +20,15 @@ Run it locally/supervised; never in CI — PR CI replays the frozen fixtures har
 ```bash
 cd .claude/skills/sb-oracle/tools
 python3 run_case.py ready                           # cold-start Azahar + probe (run FIRST)
-python3 run_case.py batch cases.txt out.tsv         # harvest a slice: incremental + resumable (recommended)
+python3 run_case.py batch cases.txt out.tsv         # FAST harvest: ONE mega-program for all cases
 python3 run_case.py prog 'FLOOR(-2.1)'              # -> -3   (write program -> LOAD,0 -> RUN -> read file)
 python3 run_case.py expr 'MID$("ABCDE",2,3)' str    # typed-command path
 ```
-`batch` with an OUTFILE flushes each `name<TAB>result` as it lands, so a run cut off mid-harvest
-keeps its partials and a re-run skips OK rows / retries only `ERROR` ones. Harvest small slices.
+`batch` writes ONE program that evaluates every case into a single file and SAVEs it once
+(≈one LOAD+RUN, not one-per-case — typing each case in was the bottleneck), bisecting around any
+case that halts (SB has no error trapping). With an OUTFILE it flushes each `name<TAB>result` as
+it resolves, so a run cut off mid-harvest keeps its partials and a re-run skips OK rows / retries
+only `ERROR` ones. `setupkeys` assigns F1 = a one-tap LOAD+RUN macro (optional; needs F1 calibrated).
 Requires Azahar running with SB on the DIRECT-mode screen. The file format (header markers +
 HMAC-SHA1 footer key, recovered from `nnn1590/lpp-3ds-sbfm`) is in `sb_extdata.py`; verified
 against real SB-saved files and by load+run of our written programs.

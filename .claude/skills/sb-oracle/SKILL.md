@@ -20,17 +20,26 @@ Capture ground truth from real SB 3.6.0 to fill `hw_verified` specs (see `prd/or
 ```bash
 cd .claude/skills/sb-oracle/tools
 python3 run_case.py ready                          # STEP 0: launch Azahar (if needed) + probe -> READY
-python3 run_case.py batch cases.txt out.tsv        # RECOMMENDED: many `name|expr`, incremental + resumable
+python3 run_case.py setupkeys                       # OPTIONAL: assign F1 = LOAD+RUN macro (one-tap runs)
+python3 run_case.py batch cases.txt out.tsv        # RECOMMENDED: FAST harvest (one mega-program)
 python3 run_case.py prog 'FLOOR(-2.1)'             # one case via the program-file path -> -3
 python3 run_case.py expr 'MID$("ABCDE",2,3)' str   # one typed case, string -> BCD
 ```
 Run `ready` FIRST — it cold-starts Azahar and confirms SB is usable, so cases don't each eat a
-timeout (a `sb_window.py bounds` that returns coords is NOT proof of readiness). Prefer `batch`
-(one process, no backgrounding/sleep) over many single calls — the harness blocks `sleep N; cmd`.
-**Always pass an OUTFILE** to `batch` (each `name<TAB>result` is appended + flushed as it lands):
-the oracle is slow (~tens of seconds/case), so a run that's killed mid-harvest (timeout, out of
-credits) keeps everything so far — re-running `batch` with the same OUTFILE skips OK rows and
-retries only `ERROR` ones. Harvest a small slice, fold it into the spec, then harvest the next.
+timeout (a `sb_window.py bounds` that returns coords is NOT proof of readiness).
+
+**`batch` is fast** — instead of typing each case into DIRECT mode (the slow part: dozens of
+on-screen taps + a confirm dialog *per case*), it writes ONE program that evaluates ALL cases
+into a single string and `SAVE`s it once, then does a single LOAD+RUN+read. A 60-case slice is
+~one run, not 60. SmileBASIC has **no error trapping**, so if a case raises a runtime error the
+program halts before the SAVE; `batch` then **bisects** the group to isolate the offender
+(marked `ERROR`) and still collects every other case. Lines are `name|expr`, `name|expr|str`
+(string result, no `STR$` wrap), or bare `expr`.
+
+**Always pass an OUTFILE** (each `name<TAB>result` is appended + flushed as it resolves): a run
+that's killed keeps everything so far — re-running with the same OUTFILE skips OK rows and
+retries only `ERROR` ones. Harvest a slice, fold it into the spec, harvest the next.
+
 Verified: FLOOR(3.7)=3, FLOOR(-2.1)=-3, FLOOR(5)=5, FLOOR(8.9)=8, 7 DIV 2=3, 7 MOD 3=1,
 LEN("ABCDE")=5, ABS(-9)=9, POW(2,10)=1024, SQR(144)=12.
 
@@ -50,6 +59,17 @@ LEN("ABCDE")=5, ABS(-9)=9, POW(2,10)=1024, SQR(144)=12.
   `LOAD"PRG0:<name>",0` (the `,0` auto-dismisses the load dialog) + `RUN`. The program SAVEs
   its result; the **Write-file/overwrite dialog** is confirmed by a polled **YES** tap; the
   result file is read from disk.
+- **Mega-program (the fast harvest):** `batch` writes ONE program — `R$=""` then a
+  `R$=R$+"<name>"+CHR$(9)+STR$(<expr>)+CHR$(10)` line per case, then `SAVE"TXT:O",R$` — so all
+  results come back in a single file (`name<TAB>value`, LF-separated). One LOAD+RUN for the whole
+  slice. No in-program error handling exists in SB, so a halting case yields no file → `harvest`
+  bisects to find it. (Only the program *source* is on disk; nothing long is typed.)
+- **One-tap run macro (KEY/F1):** `setup_keys` assigns `KEY 1,"LOAD"+CHR$(34)+"PRG0:P"+CHR$(34)
+  +",0:RUN"+CHR$(13)` — the trailing **`CHR$(13)`** (carriage return, per the `KEY` docs — *not*
+  `CHR$(10)`) makes pressing **F1** load+run program `P` in a single tap (a "reset & run"). The
+  run trigger uses F1 when `keymap.json` has an `"F1"` coord; otherwise it types `LOAD…+RUN`
+  (fine — with the mega-program that's ~once per slice). **To enable one-tap: calibrate F1 once**
+  (`sb_window.py calibrate <wx> <wy>` against a screenshot, add `"F1": [wx,wy]` to `keymap.json`).
 
 ## extdata file format (fully cracked, validated both directions)
 Path: `~/Library/Application Support/Azahar/sdmc/Nintendo 3DS/<0*32>/<0*32>/extdata/00000000/000016DE/user/###/<DISKNAME>`.

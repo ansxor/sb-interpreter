@@ -151,15 +151,17 @@ The `.claude/skills/sb-oracle/` skill drives REAL SB 3.6.0 in Azahar — it IS t
 oracle. Use it to (a) HARVEST `hw_verified` expects for spec/test cases and (b) differentially
 check that `sb-core`'s output matches real SB. From `.claude/skills/sb-oracle/tools/`:
     python3 run_case.py ready                          # FIRST: launch Azahar if needed + probe -> READY
-    python3 run_case.py batch cases.txt out.tsv        # harvest a slice (name|expr lines), incremental
+    python3 run_case.py batch cases.txt out.tsv        # FAST harvest: ONE mega-program for all cases
     python3 run_case.py prog 'FLOOR(-2.1)'             # one case -> -3
 - FIRST run `run_case.py ready` (it launches Azahar + confirms SB is usable). Then `batch` your
   slice's cases — ONE process, NO backgrounding/sleep (the harness blocks `sleep N; cmd`).
-  ALWAYS pass an OUTFILE: each result is written + flushed as it lands, so if this run is cut
-  off mid-harvest the partial results survive and re-running `batch` with the same OUTFILE skips
-  done cases and retries only failures. The oracle is SLOW (~tens of seconds/case) — keep the
-  slice small. If `ready` says NOT READY or a case errors, fall back to documented/disassembled
-  + queue in `HARVEST_QUEUE.md` — do NOT block the task.
+  `batch` is FAST: it writes ONE program that evaluates all cases and SAVEs them in a single
+  file (≈one LOAD+RUN, not one-per-case), and bisects around any case that halts (SB has no
+  error trapping). Case lines: `name|expr`, `name|expr|str` (string result), or bare `expr`.
+  ALWAYS pass an OUTFILE: each result is written + flushed as it resolves, so if this run is cut
+  off the partials survive and re-running `batch` with the same OUTFILE skips done cases and
+  retries only failures. If `ready` says NOT READY or a case errors, fall back to
+  documented/disassembled + queue in `HARVEST_QUEUE.md` — do NOT block the task.
 - The oracle result is the SOURCE OF TRUTH: if `sb-core` disagrees, `sb-core` is wrong.
 - When you get an oracle result, write it into the spec's `spec/tests/<id>.yaml` `expect:`
   (and/or `harness/corpus/cases`), set that source `confidence: hw_verified`, and COMMIT it.

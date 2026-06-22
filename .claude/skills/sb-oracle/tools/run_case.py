@@ -8,14 +8,18 @@ Full flow (all verified):
 
 Usage:
   run_case.py ready                           # launch Azahar if needed + probe (READY/NOT READY)
-  run_case.py batch FILE [OUTFILE]            # harvest many `name|expr` lines in ONE process (recommended)
+  run_case.py setupkeys                        # assign F1 = LOAD+RUN macro (one tap runs a program)
+  run_case.py batch FILE [OUTFILE]            # FAST harvest: ONE mega-program for all cases
+                                              #   lines: `name|expr` / `name|expr|str` / bare `expr`
                                               #   OUTFILE -> incremental + resumable (survives a kill)
   run_case.py expr 'FLOOR(-2.1)'              # one case -> "-3" (numeric wraps in STR$)
   run_case.py expr 'MID$("ABCDE",1,2)' str    # one case, string result (no STR$ wrap)
   run_case.py prog 'FLOOR(8.9)'               # one case via the efficient program-file path
 Run `ready` FIRST so cold-start/not-ready doesn't make each case eat a timeout. SB should be
-on the DIRECT-mode screen (see SKILL.md Step 0).
+on the DIRECT-mode screen (see SKILL.md Step 0). `batch` writes ONE program that SAVEs all
+results at once (≈one LOAD+RUN, not one per case) and bisects around any case that halts.
 """
+import re
 import sys
 import time
 
@@ -113,6 +117,150 @@ def ready(tries=3):
     return False
 
 
+# ── Fast harvest: one mega-program for many cases + a one-tap KEY run macro ──────────────
+#
+# Typing each `SAVE"TXT:O",STR$(<expr>)` into DIRECT mode is the slow part (~tens of seconds
+# per case: dozens of on-screen key taps + a confirm dialog). Instead we write ONE program
+# that evaluates ALL cases into a single string and SAVEs it once — so a 60-case harvest is
+# ONE LOAD+RUN+read instead of 60. SmileBASIC has NO error trapping, so if a case raises a
+# runtime error the program halts before the SAVE and we get no file; `harvest` bisects the
+# batch to isolate the offender and still collect every other case.
+
+def setup_keys(prog="P"):
+    """Assign function key F1 = `LOAD"PRG0:<prog>",0:RUN` + CHR$(13) (the trailing CR auto-
+    runs it). Run ONCE per session, after `ready`. Then every program runs in a SINGLE F1 tap
+    — the user's "reset & run" macro. NOTE: pressing F1 needs its tap coordinate in
+    keymap.json under "F1"; calibrate it once (`sb_window.py calibrate X Y` + screenshot).
+    Until then the run trigger falls back to typing LOAD+RUN (fine — it fires ~once/batch)."""
+    W.raise_window()
+    time.sleep(0.4)
+    W.press("YES")
+    time.sleep(0.4)
+    W.clear_line()
+    time.sleep(0.3)
+    macro = f'KEY 1,"LOAD"+CHR$(34)+"PRG0:{prog}"+CHR$(34)+",0:RUN"+CHR$(13)'
+    W.type_str(macro)
+    time.sleep(0.2)
+    W.enter()
+    return macro
+
+
+def _trigger_run(prog="P"):
+    """Load+run PRG0:<prog>. One F1 tap if the KEY macro is calibrated (setup_keys), else type
+    the LOAD+RUN (with the mega-program this fires ~once per batch, so typing it is cheap)."""
+    if "F1" in W.load_keymap():
+        W.press("F1")                       # KEY 1 macro: LOAD"PRG0:P",0:RUN + CHR$(13)
+        return
+    W.type_str(f'LOAD"PRG0:{prog}",0')
+    time.sleep(0.2)
+    W.enter()
+    time.sleep(1.2)                         # line is empty after LOAD+ENTER; no clear needed
+    W.type_str("RUN")
+    time.sleep(0.2)
+    W.enter()
+
+
+def _parse_case_line(line):
+    """`name|expr`, `name|expr|str`, or bare `expr`. Trailing `str`/`num` tags pick string vs
+    numeric (STR$-wrapped) capture. Returns (name, expr, numeric)."""
+    parts = line.split("|")
+    name = parts[0].strip()
+    if not re.match(r"^[\w.\-]+$", name):
+        raise ValueError(f"case name {name!r} must be identifier-like (letters/digits/_.-)")
+    if len(parts) == 1:
+        return (name, name, True)
+    tag = parts[-1].strip().lower()
+    if tag in ("str", "s", "string"):
+        return (name, "|".join(parts[1:-1]).strip(), False)
+    if tag in ("num", "n", "number"):
+        return (name, "|".join(parts[1:-1]).strip(), True)
+    return (name, "|".join(parts[1:]).strip(), True)
+
+
+def _build_batch_program(cases, result_name="O"):
+    """One SB program: evaluate every case into R$ as `name<TAB>value` lines (LF-separated),
+    SAVE once. `cases` = list of (name, expr, numeric)."""
+    lines = ['R$=""']
+    for name, expr, numeric in cases:
+        val = f"STR$({expr})" if numeric else f"({expr})"
+        lines.append(f'R$=R$+"{name}"+CHR$(9)+{val}+CHR$(10)')
+    lines.append(f'SAVE"TXT:{result_name}",R$')
+    return "\n".join(lines)
+
+
+def _parse_batch_result(text):
+    """Parse `name<TAB>value` lines back into {name: value}. A line with no TAB is a
+    continuation of the previous value (values may contain newlines)."""
+    recs, cur = {}, None
+    for raw in text.split("\n"):
+        line = raw.rstrip("\r")
+        if "\t" in line:
+            name, _, val = line.partition("\t")
+            recs[name], cur = val, name
+        elif cur is not None and line:
+            recs[cur] += "\n" + line
+    return recs
+
+
+def _run_batch_program(cases, result_name="O", attempts=7):
+    """Write+run the mega-program for `cases`; return the result file text, or None if the
+    program halted (no fresh file within the confirm window — a case errored)."""
+    X.write_file("P", _build_batch_program(cases, result_name), "TXT")
+    W.raise_window()
+    time.sleep(0.4)
+    W.press("YES")                          # clear any stale dialog
+    time.sleep(0.5)
+    before = X.result_mtime(result_name, "TXT")
+    W.clear_line()
+    time.sleep(0.3)
+    _trigger_run("P")
+    for _ in range(attempts):
+        time.sleep(1.2)
+        W.press("YES")                      # confirm the program's SAVE dialog
+        time.sleep(0.6)
+        try:
+            mt = X.result_mtime(result_name, "TXT")
+            if mt is not None and mt != before:
+                return X.read_result(result_name, "TXT")
+        except Exception:                   # noqa: BLE001
+            pass
+    return None
+
+
+def harvest(cases, result_name="O", on_result=None):
+    """Harvest values for many (name, expr, numeric) cases via the mega-program, bisecting
+    around any case that halts the program (SB has no error trapping). Returns {name: value
+    or 'ERROR ...'}. `on_result(name, value)` is called as each case resolves (for streaming
+    + resumable persistence)."""
+    results = {}
+
+    def emit(n, v):
+        results[n] = v
+        if on_result:
+            on_result(n, v)
+
+    def rec(group):
+        if not group:
+            return
+        text = _run_batch_program(group, result_name)
+        if text is not None:
+            recs = _parse_batch_result(text)
+            if all(n in recs for n, _, _ in group):
+                for n, _, _ in group:
+                    emit(n, recs[n])
+                return
+        # No (complete) file: one case in this group raised a runtime error and halted.
+        if len(group) == 1:
+            emit(group[0][0], "ERROR halted (no result — runtime error?)")
+            return
+        mid = len(group) // 2
+        rec(group[:mid])
+        rec(group[mid:])
+
+    rec(cases)
+    return results
+
+
 def _load_done(outpath):
     """Names already harvested OK in a prior (possibly killed) run — for resume. ERROR rows
     are NOT counted as done, so a re-run retries them."""
@@ -130,42 +278,38 @@ def _load_done(outpath):
 
 
 def batch(path, outpath=None):
-    """Harvest many cases in ONE process (no backgrounding, no sleep-polling). Input file:
-    one case per line, `name|expr` (or just `expr`); `#` comments allowed. Prints
+    """Harvest many cases FAST via one mega-program (see `harvest`). Input file: one case per
+    line, `name|expr` (or `name|expr|str`, or bare `expr`); `#` comments allowed. Prints
     `name<TAB>result` (or `name<TAB>ERROR ...`) to stdout.
 
     Give an OUTFILE to make harvest INCREMENTAL + RESUMABLE: each result is appended (and
-    flushed) the instant it lands, so a run killed mid-batch (timeout, out-of-credits) keeps
-    everything harvested so far; re-running skips names already present with an OK value and
-    retries only the failures. This is the recommended harvest path — point OUTFILE at a file
-    the spec pass reads."""
-    cases = []
-    for line in open(path):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        name, expr = line.split("|", 1) if "|" in line else (line, line)
-        cases.append((name.strip(), expr.strip()))
+    flushed) the instant it resolves, so a run that's killed keeps everything so far; re-running
+    skips names already present with an OK value and retries only the failures. This is the
+    recommended harvest path — point OUTFILE at a file the spec pass reads."""
+    cases = [_parse_case_line(line.strip()) for line in open(path)
+             if line.strip() and not line.strip().startswith("#")]
     done = _load_done(outpath) if outpath else {}
     if done:
         print(f"# resume: {len(done)} case(s) already harvested in {outpath}, skipping them",
               flush=True)
-    out = open(outpath, "a") if outpath else None
+    for name, _, _ in cases:
+        if name in done:
+            print(f"{name}\t{done[name]}\t(cached)", flush=True)
+    remaining = [c for c in cases if c[0] not in done]
+    if not remaining:
+        return
     if not ready():
         sys.exit("ORACLE NOT READY — launch Azahar and put SmileBASIC on the DIRECT-mode "
                  "screen (Step 0 in SKILL.md), then retry.")
-    for name, expr in cases:
-        if name in done:
-            print(f"{name}\t{done[name]}\t(cached)", flush=True)
-            continue
-        try:
-            row = f"{name}\t{run_expr(expr)}"
-        except Exception as e:  # noqa: BLE001
-            row = f"{name}\tERROR {e}"
-        print(row, flush=True)
+    out = open(outpath, "a") if outpath else None
+
+    def on_result(name, value):
+        print(f"{name}\t{value}", flush=True)
         if out:
-            out.write(row + "\n")
+            out.write(f"{name}\t{value}\n")
             out.flush()
+
+    harvest(remaining, on_result=on_result)
     if out:
         out.close()
 
@@ -178,7 +322,9 @@ if __name__ == "__main__":
     mode = a[0]
     if mode == "ready":                 # probe: is the oracle usable right now?
         print("READY" if ready() else "NOT READY")
-    elif mode == "batch":               # recommended: harvest many cases from a file
+    elif mode == "setupkeys":           # assign F1 = LOAD+RUN macro (one-tap runs, once/session)
+        print("KEY 1 set:", setup_keys())
+    elif mode == "batch":               # recommended: FAST harvest via one mega-program
         batch(a[1], a[2] if len(a) > 2 else None)
     elif mode == "expr":                # one case, typed: SAVE"TXT:O",STR$(<expr>)
         print(run_expr(a[1], numeric=not (len(a) > 2 and a[2] == "str")))
