@@ -1,0 +1,45 @@
+id: RGB
+kind: function
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: red, type: integer, range: "0..255", desc: "Red component" }
+      - { name: green, type: integer, range: "0..255", desc: "Green component" }
+      - { name: blue, type: integer, range: "0..255", desc: "Blue component" }
+    returns: { type: integer, desc: "32-bit ARGB color with alpha forced to 255 (opaque)" }
+    note: "color = RGB(red, green, blue) — build an opaque color (form 1)."
+  - args:
+      - { name: transparency, type: integer, range: "0..255", desc: "Alpha (255 opaque, lower = more transparent)" }
+      - { name: red, type: integer, range: "0..255", desc: "Red component" }
+      - { name: green, type: integer, range: "0..255", desc: "Green component" }
+      - { name: blue, type: integer, range: "0..255", desc: "Blue component" }
+    returns: { type: integer, desc: "32-bit ARGB color with the given alpha" }
+    note: "color = RGB(transparency, red, green, blue) — build a color with explicit alpha (form 2; alpha is FIRST)."
+
+summary: "Builds a 32-bit ARGB color code from 8-bit components. The 3-arg form is opaque (alpha=255); the 4-arg form takes the transparency/alpha FIRST, then R,G,B."
+
+semantics:
+  - "RGB(r,g,b) packs the components into a 32-bit color 0xAARRGGBB with alpha=255 (opaque); since the alpha high bit is set, the result is a NEGATIVE i32 for opaque colors."
+  - "The 4-arg form RGB(a,r,g,b) puts the alpha/transparency FIRST (255 opaque, lower = more transparent) — note this is alpha-first, not alpha-last."
+  - "Each component is an 8-bit value 0-255."
+  - "The result feeds GCOLOR/GCLS/GPSET/etc.; when actually stored into a GRP pixel it is reduced to RGBA5551 (so a GSPOIT read-back is rounded), but the RGB() value itself is the full 32-bit code."
+  - "Reference colors (from the docs): black RGB(0,0,0), white RGB(255,255,255), red RGB(255,0,0), gray RGB(128,128,128)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "wrong number of arguments (not 3 or 4)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/rgb.md (Variable=RGB([Transparency,]Red,Green,Blue); 8-bit each; ARGB code; alpha 255=opaque; reference color list)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst RGB handler FUN_00154ed0 @0x154ed0: packs A/R/G/B into a 32-bit color (alpha=255 for the 3-arg form)" }
+  - { type: community, ref: "sbsave corpus: RGB pervasive (~tens of thousands of lines) for building draw colors; 3-arg opaque form dominant, 4-arg alpha-first form for transparency" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7a/e): RGB(255,0,0)=-65536 (0xFFFF0000), RGB(0,255,0)=-16711936 (0xFF00FF00), RGB(255,255,255)=-1 (0xFFFFFFFF), RGB(0,0,0)=-16777216 (0xFF000000, opaque black); 4-arg RGB(128,255,0,0) (alpha-first) = the 0x80FF0000 code (alpha 128)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: rgb_red, code: "PRINT RGB(255,0,0)", expect: { stdout: "-65536" } }
+  - { name: rgb_white, code: "PRINT RGB(255,255,255)", expect: { stdout: "-1" } }
+  - { name: rgb_black_opaque, code: "PRINT RGB(0,0,0)", expect: { stdout: "-16777216" } }
+  - { name: rgb_alpha_form, code: "PRINT RGB(128,255,0,0)", expect: { stdout: "-2130771968" } }
