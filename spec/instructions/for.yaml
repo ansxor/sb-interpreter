@@ -1,0 +1,39 @@
+id: FOR
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: variable, type: number, desc: "Loop control variable (assigned the initial value, incremented each pass)" }
+      - { name: initial, type: number, range: "any", desc: "Starting value of the loop variable" }
+      - { name: end, type: number, range: "any", desc: "End value (TO); loop continues while not past it" }
+      - { name: step, type: number, range: "any", optional: true, default: 1, desc: "Increment added each pass (STEP); defaults to 1" }
+    note: "FOR var=initial TO end [STEP step] ... NEXT — counts var from initial by step until it passes end."
+
+summary: "Repeats the block between FOR and NEXT, counting a loop variable from an initial value to an end value by an optional step."
+
+semantics:
+  - "STEP defaults to 1 when omitted."
+  - "The continue test is evaluated at the TOP of the loop, so the body may run zero times: with a positive step the loop runs while variable <= end; with a negative step, while variable >= end."
+  - "FOR I=5 TO 1 (default step +1) runs the body zero times; FOR I=5 TO 1 STEP -1 runs it (5,4,3,2,1)."
+  - "After the loop ends, the variable holds the first value that failed the test (FOR I=1 TO 3 leaves I=4; FOR I=0 TO 9 STEP 2 leaves I=10)."
+  - "The step may be fractional; floating-point error can make the iteration count differ from the naive expectation (documented caveat)."
+  - "Loops may be nested; each FOR pairs with one NEXT."
+
+errors:
+  - { errnum: 3, name: SyntaxError, when: "the FOR/TO/NEXT structure is malformed (e.g. NEXT missing, or NEXT J,I multi-variable form)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/for.md, to.md, step.md (FOR var=init TO end [STEP inc]; 'may not be executed at all'; STEP default 1)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst FOR/TO/STEP/NEXT are parser keywords (not in builtin dispatch table); tokens in the compiler keyword table (NEXT @0x2ed6e0, STEP @0x2ee638); compiled to an init + top-of-loop compare + body + increment + back-jump" }
+  - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22 (error-as-signal, : -chained programs): FOR I=1 TO 3 runs 3x (S==3) and leaves I=4; FOR I=0 TO 9 STEP 2 runs 5x and leaves I=10; FOR I=5 TO 1 (default +1) runs 0x (top-checked); FOR I=5 TO 1 STEP -1 runs (counts down, leaves I=0); FOR I=1 TO 5 STEP -1 runs 0x. STEP default 1 confirmed." }
+
+confidence: hw_verified
+
+tests:
+  - { name: basic_sum,    code: "S=0\nFOR I=1 TO 5\nS=S+I\nNEXT\nPRINT S", expect: { stdout: "15" } }
+  - { name: step_two,     code: "FOR I=0 TO 9 STEP 2\nPRINT I;\",\";\nNEXT", expect: { stdout: "0,2,4,6,8," } }
+  - { name: zero_iterations, code: "FOR I=5 TO 1\nPRINT \"X\"\nNEXT\nPRINT \"DONE\"", expect: { stdout: "DONE" } }
+  - { name: negative_step, code: "FOR I=3 TO 1 STEP -1\nPRINT I;\nNEXT", expect: { stdout: "321" } }
+  - { name: final_value,  code: "FOR I=1 TO 3\nNEXT\nPRINT I", expect: { stdout: "4" } }

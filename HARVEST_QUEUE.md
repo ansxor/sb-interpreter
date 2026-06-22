@@ -56,3 +56,8 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   in a cases.txt line), so these need a multi-line program harness. · assumption: standard
   block semantics (disasm: keyword table @0x2ed5c8..0x2ed678). Single-line THEN/ELSE/ELSEIF
   branch selection + truthiness already hw_verified 2026-06-22 (error-as-signal).
+- [ ] S-T3b (FOR/STEP) · Harvest fractional-STEP iteration counts (e.g. FOR I=0 TO 1 STEP 0.25
+  -> how many passes given float error; FOR I=0 TO 2 STEP 0.1) and confirm the loop variable is
+  Double in that case. · assumption: standard accumulate-by-step with float drift (documented
+  caveat). Integer-step counts/finals/direction + NEXT-without-FOR (errnum 21) already
+  hw_verified 2026-06-22.

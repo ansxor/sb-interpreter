@@ -54,7 +54,7 @@ and name the instructions they cover inline.
 
 #### S-T3 Control + Advanced control (27) → S-T0
 - [x] S-T3a Conditionals — IF · THEN · ELSE · ELSEIF · ENDIF
-- [ ] S-T3b Counted loops — FOR · NEXT · TO · STEP
+- [x] S-T3b Counted loops — FOR · NEXT · TO · STEP
 - [ ] S-T3c While/repeat & flow — WHILE · WEND · REPEAT · UNTIL · BREAK · CONTINUE
 - [ ] S-T3d Branch & halt — GOTO · GOSUB · RETURN · ON · OUT · END · STOP
 - [ ] S-T3e Advanced control — CALL · COMMON · DEF · XON · XOFF

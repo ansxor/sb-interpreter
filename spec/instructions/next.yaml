@@ -1,0 +1,33 @@
+id: NEXT
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: variable, type: number, optional: true, desc: "Control variable (accepted but IGNORED)" }
+    note: "NEXT [variable] — marks the end of a FOR loop; adds the step and jumps back to the test."
+
+summary: "Marks the end of a FOR loop: adds the step to the loop variable and returns to the loop's continue test."
+
+semantics:
+  - "Closes the nearest open FOR; on each pass it adds the step and re-tests the loop condition."
+  - "An optional control variable may be written (NEXT I) but it is IGNORED — it behaves exactly like a bare NEXT."
+  - "The multi-variable form NEXT J,I is not allowed."
+  - "See [[for]] for full loop semantics."
+
+errors:
+  - { errnum: 21, name: "NEXT without FOR", when: "a NEXT is reached with no matching open FOR" }
+  - { errnum: 3, name: SyntaxError, when: "the NEXT J,I multi-variable form is used" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/next.md (NEXT [var]; control variable ignored; NEXT J,I not allowed)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst NEXT is a parser keyword (token @0x2ed6e0), not in the builtin dispatch table; compiled as the increment + back-jump of the FOR loop" }
+  - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: NEXT closes the FOR (FOR I=1 TO 3 ... NEXT runs 3x); the control variable is ignored (NEXT I behaves as NEXT, S==2 for a 2-pass loop); a bare NEXT with no FOR raises errnum 21 (NEXT without FOR)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: closes_loop,  code: "S=0\nFOR I=1 TO 3\nS=S+1\nNEXT\nPRINT S", expect: { stdout: "3" } }
+  - { name: var_ignored,  code: "S=0\nFOR I=1 TO 3\nS=S+1\nNEXT I\nPRINT S", expect: { stdout: "3" } }
+  - { name: next_without_for, code: "NEXT", expect: { error: { errnum: 21 } } }

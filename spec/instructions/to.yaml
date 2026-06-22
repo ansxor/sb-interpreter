@@ -1,0 +1,29 @@
+id: TO
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: end, type: number, range: "any", desc: "End value of the FOR loop count" }
+    note: "Keyword separating the initial value from the end value in FOR var=initial TO end."
+
+summary: "Introduces the end value of a FOR loop."
+
+semantics:
+  - "Always part of a FOR statement; the expression after TO is the loop's end value."
+  - "The loop continues while the variable has not passed end (direction depends on the sign of STEP)."
+  - "See [[for]] for full loop semantics."
+
+errors:
+  - { errnum: 3, name: SyntaxError, when: "TO appears outside a well-formed FOR statement" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/to.md (specifies the loop count end value)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst TO is a parser keyword, not in the builtin dispatch table; consumed by the FOR compiler" }
+  - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: the value after TO is the loop end; FOR I=1 TO 4 runs exactly 4 times (S==4). See [[for]]." }
+
+confidence: hw_verified
+
+tests:
+  - { name: end_value, code: "S=0\nFOR I=1 TO 4\nS=S+1\nNEXT\nPRINT S", expect: { stdout: "4" } }
