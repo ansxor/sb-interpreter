@@ -1,0 +1,42 @@
+id: SPOFS
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: id, type: integer, range: "0..511", desc: "Sprite management number" }
+      - { name: x, type: number, optional: true, desc: "Screen X (omit to keep current)" }
+      - { name: y, type: number, optional: true, desc: "Screen Y (omit to keep current)" }
+      - { name: z, type: integer, optional: true, desc: "Depth (rear 1024 < surface 0 < front -256)" }
+    note: "SPOFS id, x, y [, z] — set a sprite's position (form 1; any coord may be skipped, e.g. SPOFS id,,,z)."
+  - args:
+      - { name: id, type: integer, range: "0..511", desc: "Sprite management number" }
+      - { name: x, type: number, desc: "OUT: current X" }
+      - { name: y, type: number, desc: "OUT: current Y" }
+      - { name: z, type: integer, optional: true, desc: "OUT: current Z" }
+    note: "SPOFS id OUT x, y [, z] — read a sprite's position (form 2)."
+
+summary: "Sets or (OUT form) reads the display position of a sprite. Coordinates may be skipped to keep their current value; the optional Z sets depth. The sprite must be SPSET first."
+
+semantics:
+  - "SPOFS id,x,y moves the sprite to (x,y); an optional z sets depth (rear 1024 / surface 0 / front -256)."
+  - "Any coordinate argument may be omitted to leave it unchanged (e.g. SPOFS id,,,z changes only depth)."
+  - "SPOFS id OUT x,y[,z] reads the current position back; integer positions read back as integers."
+  - "Using SPOFS on a sprite that was not SPSET raises errnum 4 (Illegal function call)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "the sprite was not SPSET" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spofs.md (SPOFS id,X,Y[,Z] and SPOFS id OUT X,Y[,Z]; coords skippable; Z depth; error before SPSET)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPOFS handler FUN_00141070 @0x141070: sets/returns the sprite position+depth" }
+  - { type: community, ref: "sbsave corpus: SPOFS pervasive for moving sprites every frame; SPOFS id OUT X,Y read-back common; skip-coord forms used" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8b): ACLS:SPSET 0,0,0,16,16,1:SPOFS 0,100,50 then SPOFS 0 OUT X,Y -> X=100,Y=50; with a Z (SPOFS 0,10,20,30) -> 10,20,30; SPOFS on a non-SPSET sprite -> errnum 4" }
+
+confidence: hw_verified
+
+tests:
+  - { name: spofs_set_read, code: "ACLS\nSPSET 0,0,0,16,16,1\nSPOFS 0,100,50\nSPOFS 0 OUT X,Y\nPRINT X;\",\";Y", expect: { stdout: "100,50" } }
+  - { name: spofs_with_z, code: "ACLS\nSPSET 0,0,0,16,16,1\nSPOFS 0,10,20,30\nSPOFS 0 OUT X,Y,Z\nPRINT X;\",\";Y;\",\";Z", expect: { stdout: "10,20,30" } }
+  - { name: spofs_before_spset_errors, code: "ACLS\nSPOFS 5,10,10", expect: { error: { errnum: 4 } } }

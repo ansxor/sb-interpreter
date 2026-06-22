@@ -1,0 +1,38 @@
+id: SPHOME
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: id, type: integer, range: "0..511", desc: "Sprite management number" }
+      - { name: x, type: integer, desc: "Home X, relative to the sprite's top-left (0,0)" }
+      - { name: y, type: integer, desc: "Home Y, relative to the sprite's top-left (0,0)" }
+    note: "SPHOME id, x, y — set a sprite's reference (home) point (form 1)."
+  - args:
+      - { name: id, type: integer, range: "0..511", desc: "Sprite management number" }
+      - { name: hx, type: integer, desc: "OUT: current home X" }
+      - { name: hy, type: integer, desc: "OUT: current home Y" }
+    note: "SPHOME id OUT hx, hy — read a sprite's home point (form 2)."
+
+summary: "Sets or reads a sprite's reference point (home), relative to its top-left corner. The home is the anchor for SPOFS positioning, the center for SPROT rotation and SPSCALE scaling, and the center for collision. The sprite must be SPSET first."
+
+semantics:
+  - "SPHOME id,x,y sets the reference point (relative to the sprite's top-left origin 0,0): SPOFS positions the sprite by this point, and SPROT/SPSCALE rotate/scale about it."
+  - "It is also the center used for collision detection."
+  - "Read it back via SPHOME id OUT hx,hy."
+  - "Using SPHOME on a sprite that was not SPSET raises errnum 4 (Illegal function call)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "the sprite was not SPSET" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/sphome.md (SPHOME id,X,Y; SPHOME id OUT HX,HY; reference point relative to top-left; anchor for SPOFS/rotation/scale/collision; error before SPSET)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPHOME handler FUN_00142770 @0x142770: sets/returns the sprite home/reference point" }
+  - { type: community, ref: "sbsave corpus: SPHOME common to center sprites (e.g. SPHOME id,8,8 for a 16x16) before rotation" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8b): ACLS:SPSET 0,0,0,16,16,1:SPHOME 0,8,8 then SPHOME 0 OUT HX,HY -> HX=8,HY=8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: sphome_set_read, code: "ACLS\nSPSET 0,0,0,16,16,1\nSPHOME 0,8,8\nSPHOME 0 OUT HX,HY\nPRINT HX;\",\";HY", expect: { stdout: "8,8" } }

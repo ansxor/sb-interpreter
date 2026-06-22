@@ -10,6 +10,11 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T8b (sprite transform visuals) · Visual / O-T6 — confirm via screenshot that SPOFS/SPROT/
+  SPSCALE/SPHOME actually move/rotate/scale the rendered sprite about the home point, and SPCHR
+  swaps the on-screen image. Set/read state round-trips (position, angle, scale double, home,
+  image rect) + before-SPSET errnum 4 already hw_verified 2026-06-22.
+
 - [ ] S-T8a (sprite visuals) · Visual / O-T6 — verify via screenshot that an SPSET sprite with
   display ON actually renders at its position with the SPPAGE source image, that SPSHOW/SPHIDE
   toggle on-screen visibility, and the attribute bits (rotation/flip/additive). Also confirm

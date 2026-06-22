@@ -1,0 +1,38 @@
+id: SPSCALE
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: id, type: integer, range: "0..511", desc: "Sprite management number" }
+      - { name: scale_x, type: number, desc: "X magnification (e.g. 0.5=50%, 1.0=100%, 2.0=200%)" }
+      - { name: scale_y, type: number, desc: "Y magnification" }
+    note: "SPSCALE id, scale_x, scale_y — set a sprite's scale (form 1)."
+  - args:
+      - { name: id, type: integer, range: "0..511", desc: "Sprite management number" }
+      - { name: sx, type: number, desc: "OUT: current X magnification" }
+      - { name: sy, type: number, desc: "OUT: current Y magnification" }
+    note: "SPSCALE id OUT sx, sy — read a sprite's scale (form 2)."
+
+summary: "Sets or reads a sprite's display magnification (X and Y, as floating-point factors). Scaling is about the SPHOME reference point. The sprite must be SPSET first."
+
+semantics:
+  - "SPSCALE id,sx,sy sets the X/Y magnification as floating-point factors (0.5=half, 1.0=normal, 2.0=double, larger allowed)."
+  - "The values are stored as doubles and read back exactly via SPSCALE id OUT sx,sy (e.g. 2.0 reads as 2, 0.5 reads as 0.5)."
+  - "Scaling is centered on the sprite's home/reference point (see [[sphome]]); for scale-aware collision call SPCOL first."
+  - "Using SPSCALE on a sprite that was not SPSET raises errnum 4 (Illegal function call)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "the sprite was not SPSET" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spscale.md (SPSCALE id,MagX,MagY; SPSCALE id OUT SX,SY; 0.5-2.0+; error before SPSET)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPSCALE handler FUN_00143b94 @0x143b94: sets/returns the sprite X/Y magnification (double)" }
+  - { type: community, ref: "sbsave corpus: SPSCALE common for grow/shrink effects; fractional factors (0.75 etc.) typical" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8b): ACLS:SPSET 0,0,0,16,16,1:SPSCALE 0,2.0,0.5 then SPSCALE 0 OUT SX,SY -> SX=2, SY=0.5 (stored as doubles)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: spscale_set_read, code: "ACLS\nSPSET 0,0,0,16,16,1\nSPSCALE 0,2.0,0.5\nSPSCALE 0 OUT SX,SY\nPRINT SX;\",\";SY", expect: { stdout: "2,0.5" } }
