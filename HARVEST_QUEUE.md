@@ -305,3 +305,11 @@ oracle to confirm exact output and promote to `hw_verified`.
   - SPCLIP visual clipping rectangle effect (needs framebuffer oracle O-T6); confirm coordinate clamp vs error
     for out-of-range (X 0-399 / Y 0-239) and the start/end normalization (sx>ex swap).
   - SPVAR variable-number out-of-range (n>7) behavior — no explicit guard seen in the handler.
+
+- [ ] S-T9a BG setup — render/side-effect harvests (error cases already hw_verified, s_t9a batch
+  2026-06-22: BGSCREEN layer/area/bad-tile -> errnum 10/10/4, BGPAGE/BGCLR/BGSHOW/BGHIDE layer-oob ->
+  errnum 10, BGSHOW/BGHIDE no-arg -> errnum 4). Need the BG framebuffer oracle (O-T6) for:
+  - BGSCREEN 4th-arg tile-size effect (8/16/32 px tiles) on rendered output and on BGGET/coord math.
+  - BGPAGE GET default value (expected 5/GRP5) and that SET changes which GRP layers fetch tiles from.
+  - BGCLR clear effect (map filled with empty tiles) — one layer vs all-layers form.
+  - BGSHOW/BGHIDE visibility toggle on rendered output (and idempotence).

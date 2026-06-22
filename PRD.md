@@ -90,7 +90,7 @@ and name the instructions they cover inline.
 - [x] S-T8e Vars/funcs/state — SPVAR · SPFUNC · SPDEF · SPCHK · SPUSED · SPCLIP · SPCOLOR
 
 #### S-T9 BG (24) → S-T0
-- [ ] S-T9a Setup — BGSCREEN · BGPAGE · BGCLR · BGSHOW · BGHIDE
+- [x] S-T9a Setup — BGSCREEN · BGPAGE · BGCLR · BGSHOW · BGHIDE
 - [ ] S-T9b Tiles — BGPUT · BGFILL · BGGET · BGCOPY · BGCLIP
 - [ ] S-T9c Transform — BGOFS · BGROT · BGSCALE · BGHOME · BGCOORD
 - [ ] S-T9d Animation & state — BGANIM · BGSTART · BGSTOP · BGVAR · BGFUNC · BGCHK

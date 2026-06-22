@@ -1,0 +1,51 @@
+id: BGSCREEN
+kind: statement
+category: BG
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+      - { name: width, type: integer, range: "1..", desc: "Map width in character (tile) units. Width*Height must be <= 16383." }
+      - { name: height, type: integer, range: "1..", desc: "Map height in character (tile) units. Width*Height must be <= 16383." }
+    note: "BGSCREEN layer, width, height — set the BG map size for a layer (3 args, no return value). Default tile size is 16x16 px."
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+      - { name: width, type: integer, range: "1..", desc: "Map width in character (tile) units." }
+      - { name: height, type: integer, range: "1..", desc: "Map height in character (tile) units." }
+      - { name: tile_size, type: integer, range: "8 | 16 | 32", desc: "Tile (character) size in pixels: 8, 16, or 32. Default 16. Undocumented 4th arg, real in the corpus." }
+    note: "BGSCREEN layer, width, height, tileSize — undocumented 4-argument form selecting the per-tile pixel size (8/16/32, default 16)."
+
+summary: "Sets the BG screen (tilemap) size, in character units, for one BG layer. Initial state is 25x15 (sized to fill the top screen). An undocumented 4th argument selects the tile pixel size (8/16/32, default 16)."
+
+semantics:
+  - "Statement only: if a return value is requested (used as a function) the handler raises errnum 4 (Illegal function call) — return-count r0=[r0,#0xc] cmp #0 / bne -> mov r0,#0x4 @0x16696c-0x166970."
+  - "Accepts exactly 3 OR 4 arguments. Any other argument count raises errnum 4 — argcount r1=[r4,#0x4] cmp #3 (beq 3-arg @0x166a14), cmp #4 (beq 4-arg @0x1669b0), else mov r0,#0x4 @0x1669a8."
+  - "LAYER must be in 0..3. The layer argument is evaluated and range-checked by the shared layer getter FUN_001e2504: a value < 0, or >= the live BG-layer count [[0x315d60]+0x60] (= 4), raises errnum 10 (Out of range) — cmp r1(layer),#0 blt / cmp count,layer bgt(ok) else mov r0,#0xa @0x1e2560."
+  - "WIDTH and HEIGHT must each be >= 1: width<1 or height<1 raises errnum 10 (Out of range) — cmp r5(=1),value ble(ok) else mov r0,#0xa @0x166aac (width) / @0x166ad4 (height)."
+  - "WIDTH * HEIGHT must be <= 16383: the handler computes the product (smull r4,r0,height,width @0x166af4) and compares it against the constant 0x3fff (16383) @0x166b64; a product greater than 16383 raises errnum 10 (Out of range) — bcs(ok) else mov r0,#0xa @0x166b0c."
+  - "TILE SIZE (4-argument form): the 4th argument is evaluated and mapped to an internal format code — 8 -> 3, 16 -> 4, 32 -> 5 (cmp #0x8 moveq r0,#3 @0x1669d8 / cmp #0x10 keep 4 @0x1669e4 / cmp #0x20 moveq r0,#5 @0x1669f0). Any other value raises errnum 4 (Illegal function call) — mov r0,#0x4 @0x166a00. With only 3 arguments the code defaults to 4 (= 16 px) — mov r7,#4 / str r7,[sp,#0x8] @0x16697c."
+  - "Initial (power-on / ACLS) map size for a layer is 25 x 15 — the right size to fill the upper (top) screen with 16x16 tiles (documented)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "used as a function (return requested), the argument count is not 3 or 4, or the 4-arg tile size is not 8/16/32" }
+  - { errnum: 10, name: "Out of range", when: "layer not in 0..3, width<1 or height<1, or width*height > 16383" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgscreen.md (BGSCREEN Layer,Width,Height — 'Sets the BG screen size per layer'; Layer 0-3; 'Width x Height should be equal to or less than 16383'; 'Initial state: 25 x 15 (Right size to fill the upper screen with BG)'; e.g. BGSCREEN 0,128,127)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGSCREEN handler @0x16694c: return-count [r0,#0xc] bne -> mov r0,#0x4 errnum 4 @0x16696c; argcount [r4,#0x4] cmp #3 beq 0x166a14 / cmp #4 beq 0x1669b0 else mov r0,#0x4 @0x1669a8; layer range-check via bl 0x1e2504 (errnum 10 @0x1e2560 when layer<0 or layer>=[[0x315d60]+0x60]); 4th-arg tile size 8->3/16->4/32->5 @0x1669d8-0x1669f0 else errnum 4 @0x166a00 (default code 4 @0x16697c); width>=1/height>=1 -> errnum 10 @0x166aac/@0x166ad4; smull product vs const 0x3fff(16383) @0x166b64 -> errnum 10 @0x166b0c." }
+  - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer/map-size handling (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: the 4-argument BGSCREEN layer,width,height,tileSize form is real (~100+ programs), tile size always 8/16/32, e.g. 'BGSCREEN 3,50,120,8' in 2XVV233J/TXT/GAME.PRG and 'BGSCREEN 1,64,64,16' in 1DVK34J/TXT/HNZTL. (oracle-pending: exact tile-size effect, queued)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9a): BGSCREEN 4,32,32 -> errnum 10; BGSCREEN -1,32,32 -> errnum 10; BGSCREEN 0,128,128 (16384>16383) -> errnum 10; BGSCREEN 0,32,32,10 (bad tile size) -> errnum 4. All errline 1." }
+
+confidence: disassembled
+
+tests:
+  # Map-size side effects need the BG framebuffer oracle (O-T6, queued); error expects are
+  # hw_verified (sb-oracle 2026-06-22 s_t9a).
+  - { name: set_ok_3arg, code: "BGSCREEN 0,32,32", expect: { stdout: "" } }
+  - { name: set_ok_4arg, code: "BGSCREEN 1,64,64,16", expect: { stdout: "" } }
+  - { name: layer_out_of_range, code: "BGSCREEN 4,32,32", expect: { error: { errnum: 10 } } }
+  - { name: layer_negative, code: "BGSCREEN -1,32,32", expect: { error: { errnum: 10 } } }
+  - { name: area_too_big, code: "BGSCREEN 0,128,128", expect: { error: { errnum: 10 } } }
+  - { name: bad_tile_size, code: "BGSCREEN 0,32,32,10", expect: { error: { errnum: 4 } } }
