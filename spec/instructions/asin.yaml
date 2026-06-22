@@ -1,0 +1,32 @@
+# v2 spec contract — authored from docs + osb cross-check + oracle (prd/specs.md).
+id: ASIN
+kind: function
+category: Mathematics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: value, type: number, range: "-1.0 to 1.0", desc: "Sine value" }
+    returns: { type: double, desc: "Arc sine in radians, -PI/2 to PI/2" }
+
+summary: "Returns the arc sine (in radians) of value."
+
+semantics:
+  - "Domain is -1.0 to 1.0; result ranges -PI/2 to PI/2 radians."
+  - "Result is always Double. ASIN(0)=0, ASIN(1)=1.5708 (PI/2)."
+
+errors:
+  - { errnum: 10, name: OutOfRange, when: "value is outside -1.0 to 1.0" }
+  - { errnum: 8,  name: TypeMismatch, when: "value is a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/asin.md" }
+  - { type: hw_verified, ref: "sb-oracle run 2026-06-21: ASIN(0)=0, ASIN(1)=1.5708", confidence: hw_verified }
+  # Out-of-range errnum is documented/osb (OutOfRange) — confirm via O-T5 (error capture).
+
+confidence: hw_verified
+
+tests:
+  - { name: zero,          code: "PRINT ASIN(0)", expect: { stdout: "0" } }
+  - { name: one_is_halfpi, code: "PRINT ASIN(1)", expect: { stdout: "1.5708" } }
+  - { name: out_of_range,  code: "A=ASIN(2)",     expect: { error: { errnum: 10 } } }

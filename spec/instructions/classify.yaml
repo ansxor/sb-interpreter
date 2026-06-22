@@ -1,0 +1,32 @@
+# v2 spec contract — authored from docs + osb cross-check + oracle (prd/specs.md).
+id: CLASSIFY
+kind: function
+category: Mathematics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: value, type: number, range: "any", desc: "Real number to check" }
+    returns: { type: integer, desc: "0=ordinary, 1=infinity, 2=NaN" }
+
+summary: "Classifies value as an ordinary number (0), infinity (1), or not-a-number / NaN (2)."
+
+semantics:
+  - "Returns 0 for an ordinary finite number (including subnormals and zero)."
+  - "Returns 1 for +/- infinity (e.g. an overflowing computation like 1E300*1E300)."
+  - "Returns 2 for NaN."
+  - "Result is always Integer."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "value is a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/classify.md" }
+  - { type: hw_verified, ref: "sb-oracle run 2026-06-21: CLASSIFY(0.5)=0, CLASSIFY(1E300*1E300)=1", confidence: hw_verified }
+
+confidence: hw_verified
+
+tests:
+  - { name: ordinary,    code: "PRINT CLASSIFY(0.5)",         expect: { stdout: "0" } }
+  - { name: infinity,    code: "PRINT CLASSIFY(1E300*1E300)", expect: { stdout: "1" } }
+  - { name: string_type_mismatch, code: 'A=CLASSIFY("x")',    expect: { error: { errnum: 8 } } }

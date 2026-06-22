@@ -1,0 +1,32 @@
+# v2 spec contract — authored from docs + osb cross-check + oracle (prd/specs.md).
+id: SGN
+kind: function
+category: Mathematics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: value, type: number, range: "any", desc: "Numerical value" }
+    returns: { type: integer, desc: "-1, 0, or 1" }
+
+summary: "Returns the sign of value: -1 if negative, 0 if zero, 1 if positive."
+
+semantics:
+  - "Result is always Integer: -1, 0, or +1."
+  - "SGN(12.345)=1, SGN(-5)=-1, SGN(0)=0."
+  - "Sign of a Double zero (0.0) is 0."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "value is a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/sgn.md" }
+  - { type: hw_verified, ref: "sb-oracle run 2026-06-21: SGN(12.345)=1, SGN(-5)=-1, SGN(0)=0", confidence: hw_verified }
+
+confidence: hw_verified
+
+tests:
+  - { name: positive,        code: "PRINT SGN(12.345)", expect: { stdout: "1" } }
+  - { name: negative,        code: "PRINT SGN(-5)",     expect: { stdout: "-1" } }
+  - { name: zero,            code: "PRINT SGN(0)",      expect: { stdout: "0" } }
+  - { name: string_type_mismatch, code: 'A=SGN("x")',   expect: { error: { errnum: 8 } } }

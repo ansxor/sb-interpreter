@@ -1,0 +1,33 @@
+# v2 spec contract — authored from docs + osb cross-check + oracle (prd/specs.md).
+id: RANDOMIZE
+kind: statement
+category: Mathematics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: seed_id, type: integer, range: "0-7", desc: "Which random-number series to (re)initialize" }
+      - { name: seed,    type: integer, range: "any", optional: true, default: 0, desc: "Seed value; 0 or omitted uses available entropy" }
+
+summary: "Initializes (reseeds) one of the 8 random-number series (0-7) used by RND and RNDF."
+
+semantics:
+  - "Statement (no return value). Reseeds the TinyMT32 generator for the given series."
+  - "If seed is 0 or omitted, the series is initialized from available entropy (non-deterministic)."
+  - "A non-zero seed makes the series deterministic: RANDOMIZE 0,12345 then RND(0,100000) yields 6142, 87877, 84271; then RNDF(0) yields 0.801218."
+
+errors:
+  - { errnum: 10, name: OutOfRange, when: "seed_id is outside 0-7" }
+
+see_also: "RND (integer random), RNDF (real random)"
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/randomize.md" }
+  - { type: hw_verified, ref: "sb-oracle run 2026-06-21: RANDOMIZE 0,12345 produces RND(0,100000)=6142,87877,84271 and RNDF(0)=0.801218", confidence: hw_verified }
+
+confidence: hw_verified
+
+tests:
+  - name: deterministic_seed
+    code: "RANDOMIZE 0,12345:PRINT RND(0,100000)"
+    expect: { stdout: "6142" }

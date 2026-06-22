@@ -33,7 +33,7 @@ A category is done when every instruction in it is specced with cases, and oracl
 cases are harvested (`hw_verified`) or queued in `HARVEST_QUEUE.md`.
 
 - [x] S-T0 Spec schema v2 + authoring guide — v2 contract (typed sigs/ranges/errors/cases) + 4-source process in `prd/specs.md`; `sb-spec` structs updated; **concept-spec** kind (Markdown) added; FLOOR exemplar + screen-and-color-model exemplar written
-- [ ] S-T1 Mathematics (27) — author specs + cases → S-T0
+- [x] S-T1 Mathematics (27) — all 27 specced (v2 contract); 91 cases, **100% hw_verified** via sb-oracle (rounding modes, 6-sig-fig float format, seeded TinyMT streams). Error errnums queued for O-T5. → S-T0
 - [ ] S-T2 Strings (12) → S-T0
 - [ ] S-T3 Control + Advanced control (22+5) → S-T0
 - [ ] S-T4 Variables/arrays + Data-ops (13+14) → S-T0

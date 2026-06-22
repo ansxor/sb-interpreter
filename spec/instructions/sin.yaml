@@ -1,0 +1,30 @@
+# v2 spec contract — authored from docs + osb cross-check + oracle (prd/specs.md).
+id: SIN
+kind: function
+category: Mathematics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: angle, type: number, range: "any", desc: "Angle in radians" }
+    returns: { type: double, desc: "Sine of angle" }
+
+summary: "Returns the sine of angle (angle is in radians)."
+
+semantics:
+  - "Argument is in radians (use RAD() to convert from degrees)."
+  - "Result is always Double, in -1.0 to 1.0. SIN(0)=0, SIN(RAD(45))=0.707107."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "angle is a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/sin.md" }
+  - { type: hw_verified, ref: "sb-oracle run 2026-06-21: SIN(0)=0, SIN(RAD(45))=0.707107", confidence: hw_verified }
+
+confidence: hw_verified
+
+tests:
+  - { name: zero,    code: "PRINT SIN(0)",       expect: { stdout: "0" } }
+  - { name: deg45,   code: "PRINT SIN(RAD(45))", expect: { stdout: "0.707107" } }
+  - { name: string_type_mismatch, code: 'A=SIN("x")', expect: { error: { errnum: 8 } } }

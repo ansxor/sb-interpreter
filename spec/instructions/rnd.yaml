@@ -1,0 +1,43 @@
+# v2 spec contract — authored from docs + osb cross-check + oracle (prd/specs.md).
+id: RND
+kind: function
+category: Mathematics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: max, type: integer, range: ">=1", desc: "Exclusive upper bound" }
+    returns: { type: integer, desc: "Random integer in 0 .. max-1, drawn from series 0" }
+    note: "RND (1): default series."
+  - args:
+      - { name: seed_id, type: integer, range: "0-7", desc: "Random number series" }
+      - { name: max,     type: integer, range: ">=1", desc: "Exclusive upper bound" }
+    returns: { type: integer, desc: "Random integer in 0 .. max-1, drawn from series seed_id" }
+    note: "RND (2): explicit series."
+
+summary: "Returns an integer pseudo-random number in the range 0 to max-1, from one of 8 random-number series (0-7)."
+
+semantics:
+  - "Result is an Integer uniformly in [0, max). With max=1 the only possible value is 0."
+  - "Eight independent series (0-7); the one-arg form uses series 0. Seed a series with RANDOMIZE."
+  - "Each series is a TinyMT32 generator. After RANDOMIZE 0,12345 the series-0 stream begins 6142, 87877, 84271 for RND(0,100000)."
+
+errors:
+  - { errnum: 10, name: OutOfRange, when: "seed_id is outside 0-7" }
+
+see_also: "RNDF (real random), RANDOMIZE (seed a series)"
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/rnd.md" }
+  - { type: hw_verified, ref: "sb-oracle run 2026-06-21: RND(1)=0; RANDOMIZE 0,12345 then RND(0,100000) stream = 6142,87877,84271", confidence: hw_verified }
+
+confidence: hw_verified
+
+tests:
+  - { name: max_one_always_zero, code: "PRINT RND(1)", expect: { stdout: "0" } }
+  - name: seeded_first
+    code: "RANDOMIZE 0,12345:PRINT RND(0,100000)"
+    expect: { stdout: "6142" }
+  - name: seeded_sequence
+    code: 'RANDOMIZE 0,12345:R$=STR$(RND(0,100000)):R$=R$+","+STR$(RND(0,100000)):R$=R$+","+STR$(RND(0,100000)):PRINT R$'
+    expect: { stdout: "6142,87877,84271" }
