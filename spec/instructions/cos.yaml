@@ -1,0 +1,33 @@
+id: COS
+kind: function
+category: Mathematics
+version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+
+signatures:
+  - args:
+      - { name: angle, type: number, range: "any", desc: "Angle in radians" }
+    returns: { type: double, desc: "Cosine of angle" }
+
+summary: "Returns the cosine of an angle given in radians, as a Double."
+
+semantics:
+  - "The argument is coerced to Double and the result is always a Double (e.g. COS(0)=1)."
+  - "Angle is interpreted in radians; use RAD() to convert from degrees (COS(RAD(60))=0.5)."
+  - "No domain restriction — every finite input is valid."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "argument is a string" }
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 1" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/cos.md" }
+  - { type: disassembled, ref: "cia_3.6.0.lst COS handler @0x147cfc; argcount!=1 -> errnum 4; arg coerced via to-double method (vtable +0x44, non-number -> errnum 8); libm cos called @0x1ebf70; result returned as Double; no range check" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: COS(0)=1, COS(RAD(60))=0.5, COS(RAD(45))=0.707107 (SB prints doubles to 6 significant figures)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: zero,            code: "PRINT COS(0)",        expect: { stdout: "1" } }
+  - { name: sixty_deg,       code: "PRINT COS(RAD(60))",  expect: { stdout: "0.5" } }
+  - { name: forty_five_deg,  code: "PRINT COS(RAD(45))",  expect: { stdout: "0.707107" } }
+  - { name: string_type_mismatch, code: 'A=COS("x")',     expect: { error: { errnum: 8 } } }

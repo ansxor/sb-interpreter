@@ -1,0 +1,41 @@
+id: ATAN
+kind: function
+category: Mathematics
+version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+
+signatures:
+  # Form 1: single-argument arc tangent.
+  - args:
+      - { name: value, type: number, range: "any", desc: "Tangent value to invert" }
+    returns: { type: double, desc: "Arc tangent (radians) of value, in (-pi/2, pi/2)" }
+  # Form 2: two-argument arc tangent of Y/X (note: Y comes first).
+  - args:
+      - { name: y, type: number, range: "any", desc: "Y-coordinate (given first)" }
+      - { name: x, type: number, range: "any", desc: "X-coordinate" }
+    returns: { type: double, desc: "Arc tangent (radians) of the point (x, y), in (-pi, pi]" }
+
+summary: "Returns the arc tangent in radians. One arg = atan(value); two args = atan2(y, x) (Y first)."
+
+semantics:
+  - "The argument(s) are coerced to Double and the result is always a Double (e.g. ATAN(0)=0)."
+  - "Single-argument form returns an angle in (-pi/2, pi/2) (ATAN(1)=pi/4)."
+  - "Two-argument form is atan2(y, x): the Y-coordinate is passed first, then X; the result covers (-pi, pi] and respects the quadrant (ATAN(1,1)=pi/4)."
+  - "No domain restriction — every finite input is valid."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "an argument is a string" }
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 1 or 2" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/atan.md" }
+  - { type: disassembled, ref: "cia_3.6.0.lst ATAN handler @0x149458; argcount must be 1 or 2 else errnum 4; args coerced via to-double (non-number -> errnum 8); 1-arg -> atan @0x1eacc0; 2-arg -> atan2 @0x298da0 with Y loaded first then X (vldmia d0,d1 = {y,x}); result returned as Double; no range check" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: ATAN(0)=0, ATAN(1)=0.785398 (pi/4), ATAN(1,1)=0.785398, ATAN(1,-1)=2.35619 (3pi/4) — confirms atan2 takes Y first; 6 sig figs" }
+
+confidence: hw_verified
+
+tests:
+  - { name: zero,            code: "PRINT ATAN(0)",    expect: { stdout: "0" } }
+  - { name: one_quarter_pi,  code: "PRINT ATAN(1)",    expect: { stdout: "0.785398" } }
+  - { name: atan2_quarter,   code: "PRINT ATAN(1,1)",  expect: { stdout: "0.785398" } }
+  - { name: atan2_three_quarter, code: "PRINT ATAN(1,-1)", expect: { stdout: "2.35619" } }
+  - { name: string_type_mismatch, code: 'A=ATAN("x")', expect: { error: { errnum: 8 } } }
