@@ -40,14 +40,13 @@ against real SB-saved files and by load+run of our written programs.
 - [x] **O-T2 Autorun** — `LOAD"PRG0:P",0` (auto-dismiss) + `RUN`, typed via cliclick.
 - [x] **O-T3 Program injection** — write a valid extdata file (header + HMAC-SHA1 footer).
 - [x] **O-T4 Value/stdout capture** — program `SAVE"TXT:O",STR$(...)`; read `body[80:-20]` off disk.
-- [~] **O-T5 ERRNUM/ERRLINE capture** — mechanism implemented (`run_case.py errcase`, and
-  `name|stmt|err` lines in `batch`). SB has **no error trapping**: a runtime error halts the
-  program and you can't resume or catch it (even `EXEC`/`RUN n` into another slot can't return
-  after an error). But `ERRNUM`/`ERRLINE` persist into DIRECT mode after the halt — so we run
-  `<stmt>` + a sentinel `SAVE`; if the sentinel appears it didn't raise, else we read
-  `STR$(ERRNUM)+CHR$(9)+STR$(ERRLINE)` via a DIRECT save. Each error case runs alone (can't
-  batch). Still NEEDS live-oracle verification (actual errnum values; confirm they persist
-  post-halt and that a fresh RUN starts clean). Needed for error-expecting spec tests and S-T14.
+- [x] **O-T5 ERRNUM/ERRLINE capture** — `run_case.py errcase`, and `name|stmt|err` lines in
+  `batch`. SB has **no error trapping**: a runtime error halts the program and you can't resume
+  or catch it (even `EXEC`/`RUN n` into another slot can't return after an error). But
+  `ERRNUM`/`ERRLINE` persist into DIRECT mode after the halt — so we run `<stmt>` + a sentinel
+  `SAVE`; if the sentinel appears it didn't raise, else we read `STR$(ERRNUM)+CHR$(9)+STR$(ERRLINE)`
+  via a DIRECT save. Each error case runs alone (can't batch). **Verified on real SB 3.6.0:**
+  `A=SQR(-1)` → `errnum=10` (Out of range), `errline=1`. Feeds error-expecting spec tests and S-T14.
 - [ ] **O-T6 Framebuffer capture** — `azahar --dump-video` and/or RE the top/bottom framebuffer
   addresses + pixel format; decode to RGBA8888 (graphics goldens for M2/M3).
 - [ ] **O-T7 Audio capture** — emulator audio dump → PCM (audio goldens for M5).

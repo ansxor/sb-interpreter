@@ -15,7 +15,7 @@ under `prd/` (start at `prd/README.md`). Task IDs here match those docs.
 |---|---|---|---|
 | M0 | Scaffolding & spec pipeline | `prd/M0.md` | ✅ done |
 | **S** | **Spec build-out (all sources)** | `prd/specs.md` | 🔥 active |
-| **O** | **Oracle engine — `sb-oracle` skill** | `prd/oracle.md` | 🔥 value harvest works; errnum mechanism done (unverified); gfx/audio TODO |
+| **O** | **Oracle engine — `sb-oracle` skill** | `prd/oracle.md` | 🔥 value + errnum harvest work; gfx/audio TODO |
 | M1 | Core VM + a real window | `prd/M1.md` | ⬜ gated on S (pre-pivot lexer/AST exist — redo) |
 | M2 | Graphics (GRP + compositor) | `prd/M2.md` | ⬜ gated on S |
 | M3 | Sprites & BG | `prd/M3.md` | ⬜ gated on S |
@@ -139,7 +139,7 @@ and name the instructions they cover inline.
 - [x] O-T2 Autorun — cliclick types `LOAD"PRG0:P",0` + `RUN` (sb-oracle skill)
 - [x] O-T3 Program injection — write a VALID extdata file (header + HMAC-SHA1 footer; format cracked)
 - [x] O-T4 Value/stdout capture — program SAVEs result to TXT; read `body[80:-20]` off disk
-- [~] O-T5 ERRNUM/ERRLINE capture — mechanism implemented (`run_case.py errcase` / `|err` cases): SB has no error trapping (an error halts the program, `EXEC`/`RUN n` can't resume), so run `<stmt>`+sentinel; on halt read `ERRNUM`/`ERRLINE` in DIRECT mode. NEEDS live-oracle verification (errnum values + that they persist post-halt) → O-T1
+- [x] O-T5 ERRNUM/ERRLINE capture — `run_case.py errcase` / `|err` cases. SB has no error trapping (an error halts the program; `EXEC`/`RUN n` can't resume), so run `<stmt>`+sentinel; on halt read `ERRNUM`/`ERRLINE` in DIRECT mode. **Verified on real SB 3.6.0:** `A=SQR(-1)` → `errnum=10` (Out of range), `errline=1` — ERRNUM/ERRLINE do persist into DIRECT mode post-halt
 - [ ] O-T6 Framebuffer capture — `--dump-video` and/or RE the framebuffer addr; decode to RGBA (graphics goldens) → O-T1
 - [ ] O-T7 Audio capture — emulator audio dump (audio goldens) → O-T1
 - [ ] O-T8 harvest.py end-to-end — wire `run_case` into `harness/harvest`: batch spec/corpus cases → write `spec/tests` (`hw_verified`) + golden media; open PR → O-T5
