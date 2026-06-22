@@ -1,0 +1,37 @@
+id: DEF
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: name, type: identifier, desc: "User-instruction/function name" }
+      - { name: params, type: any, optional: true, desc: "Comma-separated parameter variable names (optionally $ for strings)" }
+      - { name: out_params, type: any, optional: true, desc: "After OUT: variable names for multiple return values" }
+    note: "DEF name [(params)] [OUT outs] ... END — defines a user instruction/function spanning DEF to END."
+
+summary: "Defines a user instruction/function, from DEF to END, optionally taking arguments and returning one or more values."
+
+semantics:
+  - "Three call shapes: niladic (USER), single-return (A=USER(X)), and multi-return (USER(X) OUT A,B)."
+  - "The body spans DEF to END; variables and labels declared inside are LOCAL to the function."
+  - "Argument types are not strictly checked; a return value's type is taken from the value first assigned to the output variable (e.g. A=100 is Integer, A=100.0 is Double)."
+  - "If a return value's type differs from what the caller expects, an error occurs."
+  - "GOTO out of the DEF..END range is not allowed; GOSUB/ON GOSUB inside a DEF require a slot-qualified label (e.g. GOSUB \"0:@SUB\")."
+  - "A DEF may not be nested inside another DEF; prefix COMMON to share the definition across slots (see [[common]])."
+
+errors:
+  - { errnum: 29, name: "DEF without END", when: "a DEF has no matching END" }
+  - { errnum: 32, name: "Nested DEF", when: "a DEF is defined inside another DEF" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/def.md (DEF user instructions; 3 forms; local vars/labels; type-from-first-assignment)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst DEF is a parser keyword (name @0x2ccbfe), not in the builtin dispatch table; compiled to a user-function definition with a local scope; DEF-without-END -> errnum 29, nested DEF -> errnum 32 (spec/reference/errors.yaml)" }
+  - { type: hw_verified, ref: "sb-oracle DEF probe 2026-06-22 (error-as-signal): a defined instruction runs when invoked; DEF DBL(X):RETURN X*2:END gives DBL(5)=10; a variable assigned inside DEF is LOCAL (does not leak to the caller); DEF without END -> errnum 29; a DEF nested in a DEF -> errnum 32." }
+
+confidence: hw_verified
+
+tests:
+  - { name: niladic_runs, code: "DEF HELLO\nPRINT \"HI\"\nEND\nHELLO", expect: { stdout: "HI" } }
+  - { name: function_returns, code: "DEF DBL(X)\nRETURN X*2\nEND\nPRINT DBL(5)", expect: { stdout: "10" } }
+  - { name: def_without_end, code: "DEF F\nA=1", expect: { error: { errnum: 29 } } }

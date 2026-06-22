@@ -1,0 +1,27 @@
+id: XON
+kind: statement
+category: Control
+version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+
+signatures:
+  - args:
+      - { name: feature, type: keyword, desc: "Feature to enable: MOTION, EXPAD, or MIC" }
+    note: "XON feature — declares use of a special hardware feature."
+
+summary: "Enables a special hardware feature (motion/gyro, Circle Pad Pro, or microphone) so its instructions become usable."
+
+semantics:
+  - "Features must be declared before use: MOTION (motion/gyro sensors), EXPAD (Circle Pad Pro), MIC (microphone)."
+  - "On a successful XON EXPAD, RESULT is set to TRUE."
+  - "If the feature is already on, the command does not show its confirmation dialog."
+  - "Disabled again with [[xoff]]."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/xon.md (XON feature; MOTION/EXPAD/MIC; XON EXPAD sets RESULT TRUE; no dialog if already on)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst XON is a parser keyword (token @0x2ee5e4), not in the builtin dispatch table; enables the named hardware-feature flag and may prompt a confirmation dialog" }
+
+confidence: disassembled
+
+tests: []

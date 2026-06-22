@@ -1,0 +1,32 @@
+id: CALL
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: name, type: string, desc: "Name of the user-defined instruction to call (string or string variable)" }
+      - { name: args, type: any, optional: true, desc: "Arguments passed to the instruction" }
+      - { name: out_vars, type: any, optional: true, desc: "After OUT: variables to receive returned values" }
+    note: "CALL \"name\" [,args...] [OUT vars...] — dynamically calls a DEF-defined instruction by name."
+
+summary: "Calls a user-defined (DEF) instruction selected by a name string at runtime, optionally with arguments and OUT result variables."
+
+semantics:
+  - "The instruction name is a string (literal or string variable), so the target is chosen at runtime rather than written literally."
+  - "Arguments after the name are passed to the instruction; OUT names receive its return values."
+  - "There is also a CALL SPRITE / CALL BG / CALL TInTEGER form for calling registered callbacks (separate from user DEF dispatch)."
+
+errors:
+  - { errnum: 16, name: "Undefined function", when: "no user instruction with the given name exists" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/call.md (CALL \"name\" [,args] [OUT vars]; calls a user-defined instruction by name string)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst CALL is a parser keyword, not in the builtin dispatch table; resolves the name string to a DEF at runtime and invokes it; unknown name -> errnum 16 (Undefined function)" }
+  - { type: hw_verified, ref: "sb-oracle CALL probe 2026-06-22: CALL \"F\" invokes the DEF-defined instruction F by name (its body runs); CALL \"NOPE\" for an undefined name raises errnum 16 (Undefined function)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: calls_by_name, code: "DEF GREET\nPRINT \"HI\"\nEND\nCALL \"GREET\"", expect: { stdout: "HI" } }
+  - { name: undefined_instruction, code: 'CALL "NOPE"', expect: { error: { errnum: 16 } } }

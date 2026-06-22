@@ -57,7 +57,7 @@ and name the instructions they cover inline.
 - [x] S-T3b Counted loops — FOR · NEXT · TO · STEP
 - [x] S-T3c While/repeat & flow — WHILE · WEND · REPEAT · UNTIL · BREAK · CONTINUE
 - [x] S-T3d Branch & halt — GOTO · GOSUB · RETURN · ON · OUT · END · STOP
-- [ ] S-T3e Advanced control — CALL · COMMON · DEF · XON · XOFF
+- [x] S-T3e Advanced control — CALL · COMMON · DEF · XON · XOFF
 
 #### S-T4 Variables/arrays + Data-ops (27) → S-T0
 - [ ] S-T4a Declaration & inc — VAR · DIM · DEC · INC · SWAP

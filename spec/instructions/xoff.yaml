@@ -1,0 +1,25 @@
+id: XOFF
+kind: statement
+category: Control
+version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+
+signatures:
+  - args:
+      - { name: feature, type: keyword, desc: "Feature to disable: MOTION, EXPAD, or MIC" }
+    note: "XOFF feature — stops using a special feature previously enabled with XON."
+
+summary: "Disables a special hardware feature that was enabled with XON."
+
+semantics:
+  - "Turns off a feature declared with XON: MOTION, EXPAD, or MIC."
+  - "After XOFF, that feature's instructions are no longer available until re-enabled with [[xon]]."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/xoff.md (XOFF feature; stops a feature declared with XON; MOTION/EXPAD/MIC)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst XOFF is a parser keyword (token @0x2ee3e8), not in the builtin dispatch table; clears the named hardware-feature flag set by XON" }
+
+confidence: disassembled
+
+tests: []

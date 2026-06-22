@@ -73,3 +73,9 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   (not resumable), STOP suspends (CONT-resumable), OUT receives DEF multi-returns -- all from
   docs+disasm (tokens END@0x2ed5a4, STOP@0x2ed598, OUT@0x2ed528). GOTO/GOSUB/RETURN/ON already
   hw_verified 2026-06-22 (incl. errnum 14 undefined label, 30 RETURN-without-GOSUB).
+- [ ] S-T3e (XON/XOFF/COMMON) · Harvest XON EXPAD -> RESULT=TRUE (and XON MOTION/MIC), XOFF,
+  and COMMON cross-slot visibility. XON may pop a confirmation dialog (could hang the headless
+  |err harness) and needs a feature that the emulator supports; COMMON cross-slot needs a
+  multi-slot harness. · assumption: XON enables MOTION/EXPAD/MIC (RESULT TRUE on EXPAD success),
+  XOFF disables; COMMON DEF is callable from another slot after USE. DEF/CALL + same-slot
+  COMMON + errnum 16/29/32 already hw_verified 2026-06-22.

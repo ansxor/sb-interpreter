@@ -1,0 +1,27 @@
+id: COMMON
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    note: "COMMON DEF ... — prefix on a DEF that makes the user instruction usable from other program slots."
+
+summary: "Marks a DEF user instruction as shared, so it can be called from a different program slot."
+
+semantics:
+  - "Written as a prefix to DEF: COMMON DEF USER, COMMON DEF USER(X), or COMMON DEF USER(X) OUT A,B."
+  - "Without COMMON a DEF is private to its own slot; with COMMON it can be invoked from another slot (USE of that slot is required first)."
+  - "Only affects visibility/scope; the function body and call semantics are those of [[def]]."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/common.md (COMMON DEF forms; allows a unique instruction to be used from a different SLOT; USE required)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst COMMON is a parser keyword (token @0x2ed6b0), not in the builtin dispatch table; a modifier on DEF that registers the definition in the cross-slot scope" }
+  - { type: hw_verified, ref: "sb-oracle probe 2026-06-22: COMMON DEF F ... END defines a working instruction callable in the same slot (its body runs when invoked). Cross-slot visibility (the point of COMMON) needs a multi-slot harness -> queued." }
+
+confidence: hw_verified
+
+tests:
+  - { name: common_def_same_slot, code: "COMMON DEF SHOUT\nPRINT \"HEY\"\nEND\nSHOUT", expect: { stdout: "HEY" } }
