@@ -73,7 +73,7 @@ and name the instructions they cover inline.
 - [x] S-T5c Attributes & font — ATTR · CHKCHR · FONTDEF · SCROLL · WIDTH
 
 #### S-T6 Bit-ops + operators (5) → S-T0
-- [ ] S-T6a Bit/logic operators — AND · OR · XOR · DIV · MOD
+- [x] S-T6a Bit/logic operators — AND · OR · XOR · DIV · MOD
 
 #### S-T7 Graphics (19) → S-T0  (no framebuffer harvest yet → O-T6; spec from docs+disasm)
 - [ ] S-T7a Page/clip/color — GPAGE · GCLS · GCLIP · GPRIO · GCOLOR

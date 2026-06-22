@@ -1,0 +1,37 @@
+id: XOR
+kind: operator
+category: Bit Operations
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: value1, type: number, range: "any", desc: "Left numeric operand (bit string 1)" }
+      - { name: value2, type: number, range: "any", desc: "Right numeric operand (bit string 2)" }
+    returns: { type: integer, desc: "Bitwise exclusive-OR of the two operands as 32-bit integers" }
+    note: "Infix binary operator: value1 XOR value2"
+
+summary: "Bitwise exclusive-OR of two numeric values (1 where the bits differ, 0 where they match). Operands are converted to 32-bit integers; the result is always Integer."
+
+semantics:
+  - "Bitwise XOR over 32-bit two's-complement integers: each result bit is 1 where the operand bits differ, 0 where they are the same. 100 XOR &H4C == 40."
+  - "A value XORed with itself is 0 (12345 XOR 12345 == 0); XOR with -1 flips every bit (bitwise NOT)."
+  - "Each operand is converted to a 32-bit integer by truncation toward zero BEFORE the operation (same coercion as AND/OR — fractional parts are dropped, not rounded). The result type is always Integer."
+  - "Negative operands and wide hex literals use the full 32-bit two's-complement pattern, identical to AND/OR."
+  - "Precedence (getOPRank): XOR binds looser than +/- and */DIV/MOD, and sits at the same level as OR (a looser level than AND)."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "either operand is a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/xor.md (Exclusive OR of Numerical value 1 and Numerical value 2 — if the values are the same, 0; if not, inversion; example A=100 XOR &H4C)" }
+  - { type: community, ref: "sbsave corpus: hash/scramble and color-toggle XOR uses e.g. `&HC7ED XOR` (1DVK34J region); chained bit ops alongside AND/OR" }
+  - { type: hypothesis, ref: "cia_3.6.0.lst: XOR is not in the builtin dispatch table (parsed as an operator, compiled to a VM bytecode opcode); keyword name region @0x2ed6xx. Handler body not pinned — index-dispatched in the expression VM; behavior here is fixed by the oracle harvest" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t6a): 100 XOR &H4C=40; 12345 XOR 12345=0 (operand truncation, Integer result, shares the AND/OR coercion path)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: doc_example,    code: "PRINT 100 XOR &H4C", expect: { stdout: "40" } }
+  - { name: self_is_zero,   code: "PRINT 12345 XOR 12345", expect: { stdout: "0" } }
+  - { name: flip_all_bits,  code: "PRINT 0 XOR -1",     expect: { stdout: "-1" } }
+  - { name: string_mismatch, code: 'X=1 XOR "A"',       expect: { error: { errnum: 8 } } }

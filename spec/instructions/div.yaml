@@ -1,0 +1,46 @@
+id: DIV
+kind: operator
+category: Bit Operations
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: value1, type: number, range: "any", desc: "Dividend (number or expression to divide)" }
+      - { name: value2, type: number, range: "any", desc: "Divisor (number or expression to divide by; must be non-zero)" }
+    returns: { type: integer, desc: "Integer quotient, truncated toward zero" }
+    note: "Infix binary operator: value1 DIV value2"
+
+summary: "Integer division: the integer quotient of value1 divided by value2, truncated toward zero. Both operands are truncated to integers first; the result is always Integer."
+
+semantics:
+  - "Both operands are converted to 32-bit integers by truncation toward zero BEFORE dividing — DIV is a pure integer operation, NOT a float divide that is then rounded. 3 DIV 1.5 == 3 (computed as 3 DIV 1, because TRUNC(1.5)=1), NOT 2; 7 DIV 1.5 == 7; 6 DIV 2.5 == 3; -3 DIV 1.5 == -3."
+  - "The quotient itself truncates toward zero (C-style integer division): 7 DIV 2 == 3, -7 DIV 2 == -3 (not -4), 7 DIV -2 == -3, -7 DIV -2 == 3. 200 DIV 5 == 40."
+  - "The result type is always Integer."
+  - "Integer overflow WRAPS (32-bit two's-complement), it does NOT raise Overflow: -2147483648 DIV -1 == -2147483648 (the mathematical 2147483648 wraps back to INT_MIN). This differs from osb 3.5.0's `// TODO 範囲外だとOverflow` note."
+  - "Precedence (getOPRank): DIV sits at the same level as * / and MOD (tighter than +/-), and is left-associative: 10 DIV 3 * 2 == (10 DIV 3) * 2 == 6."
+  - "Dividing by zero raises errnum 7 (Divide by zero); because the divisor is truncated first, a divisor whose truncation is zero (e.g. 0.5) also divides by zero."
+
+errors:
+  - { errnum: 7, name: DivideByZero, when: "the divisor (after truncation to integer) is zero" }
+  - { errnum: 8, name: TypeMismatch, when: "either operand is a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/div.md (Gets the integer value of Numerical value 1 divided by Numerical value 2; 'Dividing by zero gives an error'; example A=200 DIV 5)" }
+  - { type: community, ref: "sbsave corpus: 2D index decomposition `(I DIV 5)*48`, `ROUND(BX[N]+C_RR) DIV 8` (1DVENVAE/TXT/PICS_R1_1V, 1DVK34J/TXT/HNZHS); ~4138 DIV uses, overwhelmingly integer-grid math" }
+  - { type: hypothesis, ref: "cia_3.6.0.lst: DIV is not in the builtin dispatch table (parsed as an operator, compiled to a VM bytecode opcode); keyword name @0x2ed3e2/0x2ed68c/0x2ef9ac. Handler body not pinned — index-dispatched in the expression VM; behavior here is fixed by the oracle harvest" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t6a): 200 DIV 5=40; 7 DIV 2=3; -7 DIV 2=-3; 7 DIV -2=-3; -7 DIV -2=3 (truncates toward zero); 3 DIV 1.5=3; 7 DIV 1.5=7; 6 DIV 2.5=3; -3 DIV 1.5=-3 (operands truncated to int FIRST, not float-divided); 10 DIV 3 * 2=6 (precedence); -2147483648 DIV -1=-2147483648 (overflow wraps, NOERR); 1 DIV 0 -> errnum 7; 10 DIV \"A\" -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: doc_example,       code: "PRINT 200 DIV 5", expect: { stdout: "40" } }
+  - { name: trunc_positive,    code: "PRINT 7 DIV 2",   expect: { stdout: "3" } }
+  - { name: neg_dividend,      code: "PRINT -7 DIV 2",  expect: { stdout: "-3" } }
+  - { name: neg_divisor,       code: "PRINT 7 DIV -2",  expect: { stdout: "-3" } }
+  - { name: both_negative,     code: "PRINT -7 DIV -2", expect: { stdout: "3" } }
+  - { name: operands_trunc_first, code: "PRINT 3 DIV 1.5", expect: { stdout: "3" } }
+  - { name: operands_trunc_first2, code: "PRINT 6 DIV 2.5", expect: { stdout: "3" } }
+  - { name: precedence_mul,    code: "PRINT 10 DIV 3 * 2", expect: { stdout: "6" } }
+  - { name: overflow_wraps,    code: "PRINT -2147483648 DIV -1", expect: { stdout: "-2147483648" } }
+  - { name: divide_by_zero,    code: "X=1 DIV 0",       expect: { error: { errnum: 7 } } }
+  - { name: string_mismatch,   code: 'X=10 DIV "A"',    expect: { error: { errnum: 8 } } }

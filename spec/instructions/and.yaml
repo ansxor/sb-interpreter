@@ -1,0 +1,44 @@
+id: AND
+kind: operator
+category: Bit Operations
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: value1, type: number, range: "any", desc: "Left numeric operand (bit string 1)" }
+      - { name: value2, type: number, range: "any", desc: "Right numeric operand (bit string 2)" }
+    returns: { type: integer, desc: "Bitwise AND of the two operands as 32-bit integers" }
+    note: "Infix binary operator: value1 AND value2"
+
+summary: "Bitwise AND of two numeric values (the bit-by-bit product). Operands are converted to 32-bit integers; the result is always Integer."
+
+semantics:
+  - "Bitwise AND over 32-bit two's-complement integers: each result bit is 1 only where both operand bits are 1. 200 AND &HE7 == 192."
+  - "Each operand is converted to a 32-bit integer by truncation toward zero BEFORE the operation: a Double operand drops its fractional part (1 AND 1.9 == 1, not 0; 7 AND 2.9 == 2; 7 AND -1.9 == 7 because TRUNC(-1.9)=-1=all-ones-low-bits). It does NOT round."
+  - "The result type is always Integer, even when an operand was a Double (2.0 OR 1 / 2.0 AND ... yield an Integer with no fractional part)."
+  - "Negative operands use the full 32-bit two's-complement pattern: -1 is all ones, so -1 AND 255 == 255 and 255 AND -16 == 240."
+  - "Literals wider than 32 bits wrap to i32: &HFFFFFFFF AND 12345 == 12345 (&HFFFFFFFF == -1), and a value like &HFF000000 is the negative i32 -16777216."
+  - "Used pervasively as a bit-flag test in conditionals (IF BTN AND 4 THEN ...): SmileBASIC has no separate boolean type, so AND is bitwise even in IF — TRUE is 1 / non-zero, FALSE is 0."
+  - "Precedence (getOPRank): AND binds looser than +/- and */DIV/MOD, so 1+2 AND 4 parses as (1+2) AND 4 == 0. AND is a distinct (looser) level from OR/XOR."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "either operand is a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/and.md (Logical AND of Numerical value 1 and Numerical value 2 — Multiplication of bits; example A=200 AND &HE7)" }
+  - { type: community, ref: "sbsave corpus: bit-flag test idiom `IF BTN AND 4 THEN` / `IF (X AND Y)!=0 THEN` in ~1289 programs (e.g. 1K237KNV/TXT/FREEBGM_RWI2); hex-mask color ORs `&HFF000000 OR(C<<16)` (1DVK34J/TXT/HNZMBRT); Double-var operand `(BTKY# AND 15)` (7ECYA3DJ/TXT/E-OSCILLO_6.03); negative-mask uses in ~185 programs" }
+  - { type: hypothesis, ref: "cia_3.6.0.lst: AND is not in the builtin dispatch table (parsed as an operator, compiled to a VM bytecode opcode); keyword name @0x2ed684-region. Handler body not pinned — index-dispatched in the expression VM; behavior here is fixed by the oracle harvest, not a read handler" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t6a): 200 AND &HE7=192; -1 AND 255=255; 255 AND -16=240; &HFFFFFFFF AND 12345=12345; 1 AND 1.9=1; 7 AND 2.9=2; 7 AND -1.9=7 (operand truncation toward zero, not rounding); 1+2 AND 4=0 (precedence); 1 AND \"A\" -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: doc_example,      code: "PRINT 200 AND &HE7", expect: { stdout: "192" } }
+  - { name: neg_all_ones,     code: "PRINT -1 AND 255",   expect: { stdout: "255" } }
+  - { name: neg_mask,         code: "PRINT 255 AND -16",  expect: { stdout: "240" } }
+  - { name: wide_literal,     code: "PRINT &HFFFFFFFF AND 12345", expect: { stdout: "12345" } }
+  - { name: double_truncates, code: "PRINT 1 AND 1.9",    expect: { stdout: "1" } }
+  - { name: double_trunc2,    code: "PRINT 7 AND 2.9",    expect: { stdout: "2" } }
+  - { name: double_trunc_neg, code: "PRINT 7 AND -1.9",   expect: { stdout: "7" } }
+  - { name: precedence_plus,  code: "PRINT 1+2 AND 4",    expect: { stdout: "0" } }
+  - { name: string_mismatch,  code: 'X=1 AND "A"',        expect: { error: { errnum: 8 } } }
