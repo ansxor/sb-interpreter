@@ -1,0 +1,37 @@
+id: CHKCALL
+kind: function
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: name, type: string, desc: "Name of the instruction or function to look up" }
+    returns: { type: integer }
+    note: 'V = CHKCALL("NAME") — returns TRUE(1) if a command/function of that name can be referenced, FALSE(0) otherwise.'
+
+summary: "Returns TRUE(1) if an instruction or function with the given name can be referenced, FALSE(0) if not."
+
+semantics:
+  - "Returns the integer 1 (TRUE) when the name resolves to a callable, 0 (FALSE) when it does not."
+  - "Resolution covers user DEF functions in the active slot, common (COMMON DEF) functions, and built-in instructions/functions."
+  - 'A slot prefix "N:NAME" looks the name up in slot N instead of the current slot; an invalid/disabled slot number yields FALSE rather than an error. [community: corpus form "0:LncHandler", oracle-pending]'
+  - "Exactly one argument and exactly one return value are required; otherwise errnum 4 (Illegal function call)."
+  - "The argument must be a string; a non-string argument raises errnum 8 (Type mismatch)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "called with other than one argument / one return value" }
+  - { errnum: 8, name: "Type mismatch", when: "the argument is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/chkcall.md (Variable = CHKCALL(\"string\"); FALSE=not exist, TRUE=exists; A=CHKCALL(\"KEYCHECK\"))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst CHKCALL handler @0x146354: guard cmp r0,#0x1 / ldreq r0,[r5,#0xc] / cmpeq r0,#0x1 / beq @0x146384 else mov r0,#0x4 @0x14637c -> errnum 4; string-type check ldrb r1,[r2,#0x2]/cmp #0x0 @0x146390, non-string mov r0,#0x8 @0x1463e0 -> errnum 8; name lookup bl @0x1ede08 then movne r4,#0x1 / else mov r4,#0x0 (FALSE) @0x1463f8; context table @0x305614", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/VM.d:437-460 chkcall: parses optional slot prefix; checks slot.functions, builtinFunctions, then commonFunctions; bad slot -> false" }
+  - { type: community, ref: "sbsave corpus: slot-prefixed 'CHKCALL(\"0:LncHandler\")' in corpus; CHKCALL used directly as a boolean in IF guards" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4e): CHKCALL(\"LOCATE\") -> 1; CHKCALL(\"NOSUCHCMD\") -> 0; CHKCALL(5) (non-string) -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: builtin_exists, code: 'PRINT CHKCALL("LOCATE")', expect: { stdout: "1" } }
+  - { name: missing_returns_false, code: 'PRINT CHKCALL("NOSUCHCMD")', expect: { stdout: "0" } }
+  - { name: nonstring_errors, code: "A=CHKCALL(5)", expect: { error: { errnum: 8 } } }

@@ -128,3 +128,14 @@ oracle to confirm exact output and promote to `hw_verified`.
 - [ ] VAL (&B binary) · Confirm `VAL("&B1010")`=10 (and `VAL("&B"+bits$)` parses binary). ·
   assumption: &B is a recognized binary literal prefix like &H. Corpus: 11 programs (e.g.
   13D4DV3V/TXT/MAIN_PRG_V2). &H/exponent/strict-whole-string already hw_verified 2026-06-22.
+- [ ] S-T4e DTREAD errnum-10 trigger · The handler has an out-of-range branch (errnum 10
+  @0x146174) but `DTREAD "2014/13/12"` is ACCEPTED (oracle 2026-06-22, no error). · find what
+  DOES trigger it (e.g. impossible day like "2014/02/30", or a non-Gregorian/zero date) so the
+  errnum-10 condition can be specced. assumption: it's a day-vs-month-length check, not a month
+  range. DTREAD value/weekday/format/type-mismatch cases already hw_verified 2026-06-22.
+- [ ] S-T4e slot-prefix + CHKLABEL flag · Confirm `CHKCALL("0:CHR$")`/`CHKVAR("N:VAR")`/
+  `CHKLABEL("1:@L")` (slot prefix) and bad-slot → FALSE (not error); confirm CHKLABEL flag=1
+  searches global labels when not found inside a DEF, flag=0 restricts to the DEF. · assumption
+  (from disasm @0x28e5c0 + osb VM.d): slot prefix routes the lookup to slot N, invalid slot
+  yields FALSE; flag is boolean. Needs a multi-slot/USE + DEF oracle setup. Base CHK* true/false
+  + non-string-errnum-8 cases already hw_verified 2026-06-22.

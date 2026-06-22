@@ -1,0 +1,36 @@
+id: CHKVAR
+kind: function
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: name, type: string, desc: "Name of the variable to look up" }
+    returns: { type: integer }
+    note: 'V = CHKVAR("NAME") — returns TRUE(1) if a variable of that name can be referenced, FALSE(0) otherwise.'
+
+summary: "Returns TRUE(1) if a variable with the given name can be referenced, FALSE(0) if not."
+
+semantics:
+  - "Returns the integer 1 (TRUE) when the name resolves to a defined variable, 0 (FALSE) when it does not."
+  - "Resolution covers the active slot's global variable table and (when inside a DEF) the current function's local variables."
+  - 'A slot prefix "N:NAME" looks the name up in slot N; an invalid/disabled slot number yields FALSE rather than an error. [community: oracle-pending]'
+  - "Exactly one argument and exactly one return value are required; otherwise errnum 4 (Illegal function call)."
+  - "The argument must be a string; a non-string argument raises errnum 8 (Type mismatch)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "called with other than one argument / one return value" }
+  - { errnum: 8, name: "Type mismatch", when: "the argument is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/chkvar.md (Variable = CHKVAR(\"string\"); FALSE=not exist, TRUE=exists; A=CHKVAR(\"COUNTX\"))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst CHKVAR handler @0x1456a8: guard cmp r0,#0x1 / ldreq r0,[r5,#0xc] / cmpeq r0,#0x1 / beq @0x1456d8 else mov r0,#0x4 @0x1456d0 -> errnum 4; string-type check ldrb r1,[r2,#0x2]/cmp #0x0 @0x1456e4, non-string mov r0,#0x8 @0x145744 -> errnum 8; variable lookup bl @0x28e450 then movne r4,#0x1 / else mov r4,#0x0 (FALSE) @0x14575c; context table @0x305614", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/VM.d:489-512 chkvar: parses optional slot prefix; checks slot.globalTable then current function locals; bad slot -> false" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4e): COUNTX=5:CHKVAR(\"COUNTX\") -> 1; CHKVAR(\"NOSUCHVAR\") -> 0; CHKVAR(5) (non-string) -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: defined_var_exists, code: 'COUNTX=5\nPRINT CHKVAR("COUNTX")', expect: { stdout: "1" } }
+  - { name: missing_returns_false, code: 'PRINT CHKVAR("NOSUCHVAR")', expect: { stdout: "0" } }
+  - { name: nonstring_errors, code: "A=CHKVAR(5)", expect: { error: { errnum: 8 } } }

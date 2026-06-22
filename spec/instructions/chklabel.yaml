@@ -1,0 +1,39 @@
+id: CHKLABEL
+kind: function
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: label, type: string, desc: 'Label string, e.g. "@MAIN"; may carry a slot prefix "N:@LABEL"' }
+      - { name: flag, type: integer, optional: true, default: 0, range: "0|1", desc: "0 (default) = search only within the current DEF; nonzero = also search global labels if not found in the DEF" }
+    returns: { type: integer }
+    note: 'V = CHKLABEL("@LABEL"[,flag]) — returns TRUE(1) if the label can be referenced, FALSE(0) otherwise.'
+
+summary: "Returns TRUE(1) if a label with the given name can be referenced, FALSE(0) if not."
+
+semantics:
+  - "Returns the integer 1 (TRUE) when the label resolves, 0 (FALSE) when it does not."
+  - "When called inside a DEF, only that function's local labels are searched by default (flag 0/omitted)."
+  - "The optional flag is treated as a boolean: any nonzero value means \"if not found within the DEF, also search global labels\"; 0 restricts the search to the DEF. Outside a DEF, the search is over global labels regardless of flag."
+  - 'A slot prefix "N:@LABEL" looks the label up in slot N (the slot must be enabled beforehand, e.g. USE 1); an invalid/disabled slot yields FALSE rather than an error. [community: corpus form "1:@...", oracle-pending]'
+  - "One or two arguments and exactly one return value are required; any other arity raises errnum 4 (Illegal function call)."
+  - "The label argument must be a string; a non-string label raises errnum 8 (Type mismatch)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "called with zero or more than two arguments, or without a return value" }
+  - { errnum: 8, name: "Type mismatch", when: "the label argument is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/chklabel.md (Variable = CHKLABEL(\"@Label\"[,Flag]); Flag 0=within DEF only (default), 1=also global; slot via \"1:@Label\" + USE; A=CHKLABEL(\"@MAIN\"))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst CHKLABEL handler @0x1464e4: return-count cmp r0,#0x1 / bne and arg-count cmp r0,#0x1 (1-arg @0x146530) / cmp r0,#0x2 (2-arg @0x1465a8) else mov r0,#0x4 @0x146528 -> errnum 4; label string-type check ldrb r1,[r2,#0x2]/cmp #0x0, non-string mov r0,#0x8 @0x146588/@0x146610 -> errnum 8; flag coerced to boolean (movne r3,#0x1 @0x146658) and passed to label lookup bl @0x28e5c0; found -> mov r5,#0x1 @0x146578 else mov r5,#0x0 @0x1465a0; context table @0x305614", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/VM.d:462-487 chklabel: parses optional slot prefix; in a DEF checks currentFunction.label, then (if global flag) slot.globalLabel; bad slot -> false" }
+  - { type: community, ref: "sbsave corpus: 2-arg flag form 'CHKLABEL(\"@LVL\"+STR$(LVL),1)' and 'CHKLABEL(LBL$,1)' common; slot-prefixed 'CHKLABEL(\"1:@...\")' in 13D4DV3V/TXT/MAIN_PRG_V2; used directly as boolean in IF" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4e): @MAIN:CHKLABEL(\"@MAIN\") -> 1 (global label found at top level with flag omitted); CHKLABEL(\"@NOSUCH\") -> 0; CHKLABEL(5) (non-string) -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: existing_label, code: '@MAIN\nPRINT CHKLABEL("@MAIN")', expect: { stdout: "1" } }
+  - { name: missing_returns_false, code: 'PRINT CHKLABEL("@NOSUCH")', expect: { stdout: "0" } }
+  - { name: nonstring_errors, code: "A=CHKLABEL(5)", expect: { error: { errnum: 8 } } }

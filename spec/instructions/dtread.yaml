@@ -1,0 +1,48 @@
+id: DTREAD
+kind: statement
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: date_string, type: string, optional: true, desc: 'Date in "YYYY/MM/DD" format; if omitted, the current system date is used' }
+    out:
+      - { name: Y, type: integer, desc: "Receives the year" }
+      - { name: M, type: integer, desc: "Receives the month (1-12)" }
+      - { name: D, type: integer, desc: "Receives the day (1-31)" }
+      - { name: W, type: integer, optional: true, desc: "Receives the day of the week (0=Sunday .. 6=Saturday)" }
+    note: 'DTREAD ["YYYY/MM/DD"] OUT Y,M,D[,W] — splits a date string (or the current date) into numeric fields.'
+
+summary: "Converts a date string (or the current system date) into numeric year/month/day (and optionally weekday) values."
+
+semantics:
+  - 'The date string must be exactly "YYYY/MM/DD": four digits, "/", two digits, "/", two digits. The handler checks each character position individually (digits at char offsets 0-3, 5-6, 8-9; "/" at offsets 4 and 7).'
+  - "If the date string argument is omitted, the current system date is read from the runtime clock state and split into Y/M/D/W."
+  - "W (4th OUT receiver) receives the day of the week as 0=Sunday through 6=Saturday; the weekday is computed from Y/M/D, so it is filled even when reading the current date."
+  - "OUT must list exactly 3 receivers (Y,M,D) or exactly 4 (Y,M,D,W); any other receiver count raises errnum 4 (Illegal function call)."
+  - "At most one input value (the date string) may precede OUT; supplying more than one input raises errnum 4."
+  - "A receiver position may be left empty to discard that field (e.g. DTREAD OUT ,M,D skips the year) — the empty commas still count toward the required 3-or-4 receiver total. Oracle-confirmed: DTREAD \"2014/10/12\" OUT ,M,D yields M=10,D=12."
+  - "An input value that is not a string raises errnum 8 (Type mismatch)."
+  - "A string that does not match the YYYY/MM/DD shape raises errnum 4 (Illegal function call)."
+  - "The handler contains an out-of-range branch (errnum 10) reached after the format check, but it does NOT fire for an out-of-range month — oracle: DTREAD \"2014/13/12\" is accepted (no error). The exact trigger for the errnum-10 branch is not a simple month/day-range guard; left oracle-pending."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "OUT receiver count is not 3 or 4, more than one input value is given, or the string is not in YYYY/MM/DD format" }
+  - { errnum: 8, name: "Type mismatch", when: "the input argument is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/dtread.md (DTREAD [\"Date string\"] OUT Y,M,D[,W]; YYYY/MM/DD; omitted=current; W: 0=Sunday)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst DTREAD handler @0x145e0c: arg-count guard cmp r0,#0x1 / bgt + cmp r9,#0x3 / cmp r9,#0x4 (receivers must be 3 or 4) else mov r0,#0x4 @0x145e40 -> errnum 4; per-char format check sub #0x30/cmp #0x9/bhi + cmp #0x2f ('/') @0x145ecc.., failure @0x1460b4 mov r0,#0x4; non-string arg @0x145eb0 mov r0,#0x8 -> errnum 8; out-of-range date @0x146174 mov r0,#0xa -> errnum 10; current-date load from clock state @0x315e68+0x28 @0x145e90; weekday computed via the smull/lookup at @0x14619c", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d:812-829 DTREAD: current date when no string (W = dayOfWeek, Sunday=0); formattedRead \"%d/%d/%d\" otherwise" }
+  - { type: community, ref: "sbsave corpus: partial-receiver form 'DTREAD OUT ,M,D' / 'DTREAD OUT Y%,,' in 51VVV3NJ/TXT/XCMD.LIB; parenthesized input 'DTREAD(DATE$) OUT ...' and 'DTREAD DATE$ OUT YEAR,MONTH,DAY' common" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4e): DTREAD \"2014/10/12\" OUT Y,M,D -> 2014,10,12; OUT Y,M,D,W -> W=0 (Sunday); DTREAD \"2024/01/01\" -> W=1 (Monday); partial OUT ,M,D -> 10,12; \"2014-10-12\" -> errnum 4; numeric (non-string) input -> errnum 8; \"2014/13/12\" -> NO error (month 13 accepted)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: literal_date, code: 'DTREAD "2014/10/12" OUT Y,M,D\nPRINT Y;M;D', expect: { stdout: "20141012" } }
+  - { name: weekday_sunday, code: 'DTREAD "2014/10/12" OUT Y,M,D,W\nPRINT W', expect: { stdout: "0" } }
+  - { name: weekday_monday, code: 'DTREAD "2024/01/01" OUT Y,M,D,W\nPRINT W', expect: { stdout: "1" } }
+  - { name: partial_receivers, code: 'DTREAD "2014/10/12" OUT ,M,D\nPRINT M;D', expect: { stdout: "1012" } }
+  - { name: bad_format_errors, code: 'DTREAD "2014-10-12" OUT Y,M,D', expect: { error: { errnum: 4 } } }
+  - { name: nonstring_errors, code: 'DTREAD 20141012 OUT Y,M,D', expect: { error: { errnum: 8 } } }

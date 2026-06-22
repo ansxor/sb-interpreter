@@ -1,0 +1,45 @@
+id: TMREAD
+kind: statement
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: time_string, type: string, optional: true, desc: 'Time in "HH:MM:SS" format; if omitted, the current system time is used' }
+    out:
+      - { name: H, type: integer, desc: "Receives the hours (0-23)" }
+      - { name: M, type: integer, desc: "Receives the minutes (0-59)" }
+      - { name: S, type: integer, desc: "Receives the seconds (0-59)" }
+    note: 'TMREAD ["HH:MM:SS"] OUT H,M,S — splits a time string (or the current time) into numeric fields.'
+
+summary: "Converts a time string (or the current system time) into numeric hour/minute/second values."
+
+semantics:
+  - 'The time string must be exactly "HH:MM:SS": two digits, ":", two digits, ":", two digits. The handler checks each character position (digits at char offsets 0-1, 3-4, 6-7; ":" at offsets 2 and 5).'
+  - "If the time string argument is omitted, the current system time is read from the runtime clock state and split into H/M/S."
+  - "OUT must list exactly 3 receivers (H,M,S); any other receiver count raises errnum 4 (Illegal function call)."
+  - "At most one input value (the time string) may precede OUT; supplying more than one input raises errnum 4."
+  - "A receiver position may be left empty to discard that field (e.g. TMREAD OUT ,,S keeps only seconds) — the empty commas still count toward the required 3 receivers. Oracle-confirmed: TMREAD \"12:59:31\" OUT ,,S yields S=31."
+  - "An input value that is not a string raises errnum 8 (Type mismatch)."
+  - "A string that does not match the HH:MM:SS shape raises errnum 4 (Illegal function call)."
+  - "Each field is parsed as exactly two decimal digits, so values are inherently bounded to 0-99; the 3.6.0 handler performs NO range validation on the parsed H/M/S (no out-of-range branch, unlike DTREAD). Oracle-confirmed: TMREAD \"99:99:99\" OUT H,M,S does NOT raise (stores 99,99,99)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "OUT receiver count is not 3, more than one input value is given, or the string is not in HH:MM:SS format" }
+  - { errnum: 8, name: "Type mismatch", when: "the input argument is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/tmread.md (TMREAD [\"Time string\"] OUT H,M,S; HH:MM:SS; omitted=current; H 0-23)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst TMREAD handler @0x1461a0: arg/receiver guard cmp r0,#0x1 / cmple r1,#0x3 / beq (input<=1 AND receivers==3) else mov r0,#0x4 @0x1461c8 -> errnum 4; per-char check sub #0x30/cmp #0x9/bhi + cmp #0x3a (':') @0x146254.., format failure @0x14633c mov r0,#0x4; non-string arg @0x146238 mov r0,#0x8 -> errnum 8; current-time load from clock state @0x315e68+0x2c @0x146214; NO out-of-range branch (contrast DTREAD @0x146174)", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d:830-856 TMREAD: current time when no string; formattedRead \"%d:%d:%d\" (osb additionally rejects >99 / trailing chars with IllegalFunctionCall — 3.6.0 disasm only enforces the 2-digit format, not a >99 ceiling)" }
+  - { type: community, ref: "sbsave corpus: partial-receiver 'TMREAD OUT ,,S' in N3SPK4X3/TXT/HEBEROLLIN; 'TMREAD TIME$ OUT H,M,S' and parenthesized 'TMREAD(TIME$) OUT ...' common" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4e): TMREAD \"12:59:31\" OUT H,M,S -> 12,59,31; \"01:02:03\" -> 1,2,3; partial OUT ,,S -> 31; \"12-59-31\" -> errnum 4; numeric (non-string) input -> errnum 8; \"99:99:99\" -> NO error (no range check)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: literal_time, code: 'TMREAD "12:59:31" OUT H,M,S\nPRINT H;M;S', expect: { stdout: "125931" } }
+  - { name: leading_zero, code: 'TMREAD "01:02:03" OUT H,M,S\nPRINT H;M;S', expect: { stdout: "123" } }
+  - { name: partial_receivers, code: 'TMREAD "12:59:31" OUT ,,S\nPRINT S', expect: { stdout: "31" } }
+  - { name: bad_format_errors, code: 'TMREAD "12-59-31" OUT H,M,S', expect: { error: { errnum: 4 } } }
+  - { name: nonstring_errors, code: 'TMREAD 125931 OUT H,M,S', expect: { error: { errnum: 8 } } }
