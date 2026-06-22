@@ -13,7 +13,7 @@ summary: "Parses the leading numeric portion of a string and returns it as a num
 semantics:
   - "Requires the whole string to be a valid number; if any trailing non-numeric content is present the result is 0 (VAL(\"12ABC\")=0, not 12)."
   - "A string with no numeric content yields 0 (VAL(\"ABC\")=0, VAL(\"\")=0)."
-  - "Recognizes SmileBASIC numeric literal forms, including &H hexadecimal (VAL(\"&HFF\")=255) and exponent notation (VAL(\"1E3\")=1000)."
+  - "Recognizes SmileBASIC numeric literal forms, including &H hexadecimal (VAL(\"&HFF\")=255), &B binary (VAL(\"&B1010\")=10), and exponent notation (VAL(\"1E3\")=1000)."
   - "Returns an Integer for a plain integer literal, a Double when a fractional/exponent part is present."
 
 errors:
@@ -24,6 +24,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/val.md (VAL(string) -> number)" }
   - { type: disassembled, ref: "cia_3.6.0.lst VAL handler @0x148e70; argcount!=1 -> errnum 4; non-string -> errnum 8 (@0x148f34); numeric parse via helpers @0x1eb280/0x1eb0c0/0x1eaf18, integer fallback @0x1ef4bc; returns Integer or Double" }
   - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: VAL(\"123\")=123, VAL(\"3.14\")=3.14, VAL(\"-5\")=-5, VAL(\"12ABC\")=0 (strict whole-string), VAL(\"ABC\")=0, VAL(\"\")=0, VAL(\"1E3\")=1000, VAL(\"&HFF\")=255. Non-string -> errnum 8 not captured this run (oracle flaked; disassembled @0x148f34, queued)." }
+  - { type: community, ref: "sbsave corpus: &B binary literal attested in 11 programs (e.g. 13D4DV3V/TXT/MAIN_PRG_V2: VAL(\"&B\"+MID$(COLOR$,8,8))) — parsing binary strings at runtime. VAL(\"&B1010\")=10 added below; oracle-pending." }
 
 confidence: hw_verified
 
@@ -36,4 +37,5 @@ tests:
   - { name: empty,        code: 'PRINT VAL("")',     expect: { stdout: "0" } }
   - { name: exponent,     code: 'PRINT VAL("1E3")',  expect: { stdout: "1000" } }
   - { name: hex_literal,  code: 'PRINT VAL("&HFF")', expect: { stdout: "255" } }
+  - { name: binary_literal, code: 'PRINT VAL("&B1010")', expect: { stdout: "10" } } # corpus-attested (&B); oracle-pending
   - { name: non_string_type_mismatch, code: 'A=VAL(5)', expect: { error: { errnum: 8 } } }

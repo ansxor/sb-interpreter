@@ -12,6 +12,7 @@ summary: "Branches to one of several labels chosen by a 0-based index (computed 
 
 semantics:
   - "The index is 0-based (unlike conventional BASIC): index 0 selects the first label, 1 the second, and so on."
+  - "The index may be any integer expression — a scalar, an array element (ON SHT[SH] GOSUB ...), or an arithmetic/function result (ON N-3 GOSUB ..., ON RND(3) GOTO ...)."
   - "Works with GOTO (jump) or GOSUB (call) followed by a comma-separated label list."
   - "If the index is out of range (negative, or >= the number of labels), no branch is taken and execution falls through to the next statement."
   - "Label strings are NOT allowed in the ON branch list (only bare @labels)."
@@ -23,6 +24,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/on.md (ON ctrl GOTO @L0,@L1...; branch number begins at 0; label strings not allowed)" }
   - { type: disassembled, ref: "cia_3.6.0.lst ON is a parser keyword (token @0x2ed12c), not in the builtin dispatch table; compiled to an index bounds-check + jump-table; out-of-range index falls through" }
   - { type: hw_verified, ref: "sb-oracle branch probe 2026-06-22: ON 0 GOTO @A,@B branches to @A (index 0 = first label, confirming 0-based) which errors; ON 5 (out of range for a 1-label list) takes no branch and falls through to the next statement (errnum 4)." }
+  - { type: community, ref: "sbsave corpus: array-element index attested in 33 programs (e.g. 13D4DV3V/TXT/MAIN_PRG_V2: ON MOVEPATERN[CALLIDX] GOSUB ...; 227YK34J: ON SHT[SH] GOSUB ...) — confirming the index is a general integer expression, not just a scalar variable." }
 
 confidence: hw_verified
 

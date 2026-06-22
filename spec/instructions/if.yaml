@@ -19,6 +19,7 @@ semantics:
   - "Single-line form: IF cond THEN stmt [ELSE stmt] — multiple statements may follow with ':' separators on the same line."
   - "GOTO may be omitted after THEN or ELSE: a bare @label means GOTO @label (IF cond THEN @label)."
   - "Multi-line form: IF cond THEN <newline> ... [ELSE ...] ENDIF — ENDIF closes the block when it spans lines."
+  - "A single-line IF may also be explicitly closed with ENDIF on the same line: IF cond THEN stmt [ELSE stmt] ENDIF — common in real programs. See [[endif]]."
   - "ELSEIF cond THEN adds further conditions evaluated only when earlier conditions were false."
   - "Logical operators AND/&&, OR/|| combine conditions; comparison operators are == != > < >= <=."
 
@@ -29,6 +30,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/if.md (forms: 2 — THEN/ELSE/ENDIF and GOTO @label; truthiness, comparison/logical operators)" }
   - { type: disassembled, ref: "cia_3.6.0.lst IF/THEN/ELSE/ELSEIF/ENDIF are parser keywords (not in builtin dispatch table); keyword tokens in the compiler keyword table @0x2ed5c8 (ENDIF) / 0x2ed5f8 (ELSEIF) / 0x2ed678 (THEN); branch selection is compiled to conditional jumps, condition truthiness = nonzero" }
   - { type: hw_verified, ref: "sb-oracle branch-selection probe 2026-06-22 (error-as-signal: 'IF cond THEN A=ASC(\"\")' raises errnum 4 iff the THEN branch executes): IF 1 / IF -1 / IF 0.5 / IF 2>1 take THEN (errnum 4); IF 0 / IF 0.0 / IF 1>2 skip it (no error). ELSE runs only when the condition is false; ELSEIF runs only when earlier conditions were false and its own is true. Single-line THEN/ELSE/ELSEIF confirmed. Multi-line/ENDIF and GOTO-omission queued." }
+  - { type: community, ref: "sbsave corpus: single-line 'IF cond THEN stmt [ELSE stmt] ENDIF' attested in 86 programs (e.g. 1DVK34J/TXT/HNZBUS) — the on-one-line ENDIF-terminated form. Queued for oracle." }
 
 confidence: hw_verified
 

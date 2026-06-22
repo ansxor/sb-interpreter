@@ -6,13 +6,16 @@ version: { introduced: "3.0.0", verified_on: "3.6.0" }
 signatures:
   - args: []
     note: "RETURN — returns from a GOSUB subroutine to the statement after the call."
+  - args:
+      - { name: value, type: any, desc: "Value handed back to the caller (only inside a DEF user-defined function)" }
+    note: "RETURN value [,value...] — inside a DEF function, returns the value(s) to the caller. See [[def]]. Invalid for a GOSUB return."
 
 summary: "Returns from a GOSUB subroutine to the statement following the call."
 
 semantics:
   - "Pops the most recent GOSUB return address and continues execution there."
   - "A RETURN reached without a pending GOSUB is an error."
-  - "(For user-defined functions, a RETURN may carry a value — see DEF; the bare form here is the GOSUB return.)"
+  - "Inside a DEF user-defined function, RETURN carries a value back to the caller (RETURN R$, RETURN SQR(X), RETURN TRUE); the bare form here is the GOSUB return."
 
 errors:
   - { errnum: 30, name: "RETURN without GOSUB", when: "a RETURN is reached with no pending GOSUB" }
@@ -21,6 +24,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/return.md (returns from a sub-routine to the caller)" }
   - { type: disassembled, ref: "cia_3.6.0.lst RETURN is a parser keyword (token @0x2ed558), not in the builtin dispatch table; pops the GOSUB return stack; empty stack -> errnum 30" }
   - { type: hw_verified, ref: "sb-oracle branch probe 2026-06-22: RETURN returns from a GOSUB to the statement after the call (verified via a GOSUB roundtrip); a bare RETURN with no pending GOSUB raises errnum 30 (RETURN without GOSUB)." }
+  - { type: community, ref: "sbsave corpus: value-returning RETURN attested in 1143 programs (RETURN TRUE/FALSE ~1250x, RETURN I ~488x, RETURN R$ ~283x, RETURN SQR(...)) — the DEF-function return form. Value-return roundtrip oracle-pending (see [[def]])." }
 
 confidence: hw_verified
 

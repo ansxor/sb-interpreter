@@ -12,7 +12,8 @@ signatures:
 summary: "Formats values into a string using printf-style %-directives."
 
 semantics:
-  - "Directives: %S string, %D integer (decimal), %X integer (uppercase hex), %F real number. Literal text is copied verbatim; %% is not documented (use the directive set above)."
+  - "Directives: %S string, %D integer (decimal), %X integer (uppercase hex), %F real number. Literal text is copied verbatim; %% emits a literal percent sign (e.g. \"%02D%%\")."
+  - "A %B (binary) directive appears in real programs (e.g. FORMAT$(\"%04B\",x)) though it is absent from the official directive list; its exact output is oracle-pending."
   - "Width: a number after % sets the minimum field width (%8D, %4X), right-justified by default."
   - "Precision for %F: integer.fraction digit counts as (width).(fraction), e.g. %8.2F gives 2 fractional digits in a width-8 field."
   - "Flags after %: space pads with spaces (% 4D), 0 pads with zeros (%08D), '-' left-aligns (%-8D), '+' shows the sign on positives (%+8D)."
@@ -26,6 +27,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/format.md (%S/%D/%X/%F; width, .fraction, space/0/-/+ flags; example FORMAT$(\"%06D\",A))" }
   - { type: disassembled, ref: "cia_3.6.0.lst FORMAT$ handler @0x14576c; argcount<1 / non-string format -> errnum 8 (@0x145808); scans format for '%' (0x25) directives, building output into a wide buffer; buffer overflow -> errnum 0x29 (41)" }
   - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: FORMAT$(\"%D\",42)=42, FORMAT$(\"%06D\",42)=000042, FORMAT$(\"%X\",255)=FF, FORMAT$(\"%4X\",255)=\"  FF\", FORMAT$(\"%8.2F\",3.14159)=\"    3.14\", FORMAT$(\"%S\",\"HI\")=HI, FORMAT$(\"%+D\",5)=+5, FORMAT$(\"V=%D\",7)=V=7, FORMAT$(\"%-6D\",42)=\"42    \"; FORMAT$(5,1) -> errnum 8" }
+  - { type: community, ref: "sbsave corpus: %% literal-percent attested in 19 programs (e.g. 2BC4738V/TXT/MOH_JUHSY237D: FORMAT$(\"WAIT:%7D%%\",...), \"%02D%%\"); %B directive in 7 programs (e.g. 4K241XVD/TXT/DOTMAGICS-C: FORMAT$(\"%04B\",CHC%)). %% literal output added below; %% and %B exact output queued for oracle." }
 
 confidence: hw_verified
 
@@ -39,4 +41,5 @@ tests:
   - { name: plus_flag,    code: 'PRINT FORMAT$("%+D",5)',       expect: { stdout: "+5" } }
   - { name: left_align,   code: 'PRINT "["+FORMAT$("%-6D",42)+"]"', expect: { stdout: "[42    ]" } }
   - { name: literal_text, code: 'PRINT FORMAT$("V=%D",7)',      expect: { stdout: "V=7" } }
+  - { name: literal_percent, code: 'PRINT FORMAT$("%D%%",50)',  expect: { stdout: "50%" } } # corpus-attested (%%); oracle-pending
   - { name: non_string_format, code: 'A$=FORMAT$(5,1)',         expect: { error: { errnum: 8 } } }

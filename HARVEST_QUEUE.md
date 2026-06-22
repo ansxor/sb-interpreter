@@ -79,3 +79,31 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   multi-slot harness. · assumption: XON enables MOTION/EXPAD/MIC (RESULT TRUE on EXPAD success),
   XOFF disables; COMMON DEF is callable from another slot after USE. DEF/CALL + same-slot
   COMMON + errnum 16/29/32 already hw_verified 2026-06-22.
+
+## Corpus-discovered (sbsave grep, 2026-06-22)
+
+Edge cases surfaced by grepping real usage in `harness/corpus/sbsave/` and added to the
+specs at `confidence: community` (one `type: community` source line each). They need the
+oracle to confirm exact output and promote to `hw_verified`.
+
+- [ ] FORMAT$ (%% / %B) · Confirm `FORMAT$("%D%%",50)`="50%" (literal percent) and what
+  `FORMAT$("%04B",10)` produces (is %B a real binary directive, and is it zero-padded like
+  %D?). · assumption: %% -> literal '%'; %B -> binary digits. Corpus: %% in 19 programs, %B
+  in 7 (e.g. 4K241XVD/TXT/DOTMAGICS-C). %S/%D/%X/%F + flags already hw_verified 2026-06-22.
+- [ ] ENDIF (single-line) · Confirm `IF 1 THEN PRINT "A" ENDIF` and
+  `IF c THEN a ELSE b ENDIF` run on one line (ENDIF closing a single-line IF). · assumption:
+  accepted (output "A"). Corpus: 86 programs (e.g. 1DVK34J/TXT/HNZBUS) — contradicts the old
+  "single-line form does not use ENDIF" note. Multi-line ENDIF still queued (S-T3a).
+- [ ] GOTO/GOSUB (string-expr target) · Confirm a runtime-built label string branches:
+  `L$="@X":GOTO L$` and `GOTO "@LK_"+K$` reach @X / @LK_<k>. · assumption: label string is
+  evaluated, then resolved like a literal. Corpus: 82+ programs (GOTO L$, GOTO "0:@TAB"+S$).
+- [ ] ON (array/expr index) · Confirm `ON ARR[I] GOSUB ...` and `ON RND(3) GOTO ...` select by
+  the evaluated integer. · assumption: index is any int expression (0-based). Corpus: 33
+  programs (e.g. 13D4DV3V/TXT/MAIN_PRG_V2). Scalar 0-based + fall-through already hw_verified.
+- [ ] RETURN (value form) · Confirm `DEF F():RETURN 7:END` makes `PRINT F()` print 7, and the
+  multi-value `RETURN a,b` -> OUT roundtrip. · assumption: RETURN expr hands the value(s) back
+  to a DEF caller. Corpus: 1143 programs. Pairs with S-T3d/S-T3e (DEF/OUT). GOSUB-return form
+  already hw_verified 2026-06-22.
+- [ ] VAL (&B binary) · Confirm `VAL("&B1010")`=10 (and `VAL("&B"+bits$)` parses binary). ·
+  assumption: &B is a recognized binary literal prefix like &H. Corpus: 11 programs (e.g.
+  13D4DV3V/TXT/MAIN_PRG_V2). &H/exponent/strict-whole-string already hw_verified 2026-06-22.

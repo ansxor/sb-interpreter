@@ -13,6 +13,7 @@ summary: "Unconditionally branches execution to a label."
 semantics:
   - "Transfers control to the named @label; statements between the GOTO and the label are skipped."
   - "The target may be written as a bare @label or as a label string (\"@LABEL\", or \"SLOT:@LABEL\" with the slot enabled via USE)."
+  - "The label string need not be a literal: it may be a string variable (GOTO L$) or a runtime concatenation (GOTO \"@LOCK_\"+K$, GOTO \"0:@TAB\"+S$), resolved when the GOTO executes."
   - "An undefined label is an error."
 
 errors:
@@ -23,6 +24,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/goto.md (GOTO @Label; label string / SLOT:@Label forms)" }
   - { type: disassembled, ref: "cia_3.6.0.lst GOTO is a parser keyword (token @0x2ed694), not in the builtin dispatch table; compiled to an unconditional jump to the resolved label address; undefined label -> errnum 14" }
   - { type: hw_verified, ref: "sb-oracle branch probe 2026-06-22 (error-as-signal): GOTO @SK skips an intervening A=ASC(\"\") (no error raised), confirming the unconditional jump; GOTO @NOPE (undefined) raises errnum 14." }
+  - { type: community, ref: "sbsave corpus: string-expression targets attested in 82+ programs — string variable (GOTO L$ ~33x, GOTO K$ ~31x) and concatenation (e.g. 1BWX7ENV/TXT/AND-OS: GOTO ANS1$, GOTO \"@LOCK_\"+LOCK$). Runtime-resolved label strings; oracle-pending." }
 
 confidence: hw_verified
 

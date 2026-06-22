@@ -14,6 +14,7 @@ semantics:
   - "Pushes the return location, then transfers control to the named @label."
   - "Execution continues at the label until a RETURN, which pops back to the statement after the GOSUB."
   - "The target may be a bare @label or a label string (with SLOT:@LABEL for another slot enabled via USE); GOSUB calls may nest."
+  - "The label string may be a string variable (GOSUB L$) or a runtime concatenation (GOSUB \"0:@N_\"+W$), resolved when the GOSUB executes — not only a literal."
   - "An undefined label is an error."
 
 errors:
@@ -24,6 +25,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/gosub.md (GOSUB @Label; calls a sub-routine)" }
   - { type: disassembled, ref: "cia_3.6.0.lst GOSUB is a parser keyword (token @0x2ed6cc), not in the builtin dispatch table; compiled to push-return-address + jump to the label; paired with RETURN" }
   - { type: hw_verified, ref: "sb-oracle branch probe 2026-06-22: GOSUB @S calls the subroutine (which sets N=1) and RETURN comes back so a later IF N==1 fires (errnum 4) - confirming call + return; GOSUB @NOPE (undefined) raises errnum 14." }
+  - { type: community, ref: "sbsave corpus: string-expression targets attested across many programs — string variable (GOSUB L$ ~72x, GOSUB K$ ~17x) and concatenation (GOSUB \"0:@N_\"+W$). Runtime-resolved; oracle-pending." }
 
 confidence: hw_verified
 

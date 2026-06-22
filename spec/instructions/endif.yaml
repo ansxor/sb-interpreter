@@ -10,7 +10,8 @@ signatures:
 summary: "Ends a multi-line IF block."
 
 semantics:
-  - "Required when an IF construct spans multiple lines; the single-line form (IF cond THEN stmt) does not use ENDIF."
+  - "Required when an IF construct spans multiple lines."
+  - "ENDIF may also close an IF written entirely on one line (IF cond THEN stmt ENDIF, or IF cond THEN stmt ELSE stmt ENDIF); this single-line-with-ENDIF form is common in real programs."
   - "Marks where control rejoins after whichever branch ran."
   - "Each multi-line IF (including those opened by ELSE IF) needs its own matching ENDIF."
   - "See [[if]] for full conditional semantics."
@@ -21,9 +22,11 @@ errors:
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/endif.md (ends multi-line IF processing)" }
   - { type: disassembled, ref: "cia_3.6.0.lst ENDIF is a parser keyword (token @0x2ed5c8), not in the builtin dispatch table; handled by the IF compiler" }
+  - { type: community, ref: "sbsave corpus: single-line IF...THEN...ENDIF attested in 86 programs (e.g. 1DVK34J/TXT/HNZBUS; 'IF BUTTON(0) AND #B THEN SPEED=2 ELSE SPEED=1 ENDIF'), contradicting the prior 'single-line form does not use ENDIF' claim. single_line_endif test below queued for oracle." }
 
 confidence: disassembled
 
 tests:
   - { name: closes_block, code: "IF 1 THEN\nPRINT \"IN\"\nENDIF\nPRINT \"OUT\"", expect: { stdout: "IN\nOUT" } }
   - { name: skipped_block_rejoins, code: "IF 0 THEN\nPRINT \"IN\"\nENDIF\nPRINT \"OUT\"", expect: { stdout: "OUT" } }
+  - { name: single_line_endif, code: 'IF 1 THEN PRINT "A" ENDIF', expect: { stdout: "A" } } # corpus-attested; oracle-pending
