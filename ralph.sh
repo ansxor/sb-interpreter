@@ -57,10 +57,10 @@ Do EXACTLY ONE task this run, fully and correctly, then commit. Then stop.
 
 ## 1. Pick the next task
 - Choose the FIRST `- [ ]` task in PRD.md whose every dependency (`→ ID`) is already `[x]`.
-- SKIP tasks that need the emulator / hardware oracle: the entire `O-` track, and any task
-  whose acceptance requires oracle harvest (e.g. capturing golden PNG/WAV). A human runs
-  those. If a task is only partly blocked on the oracle, do the parts that aren't, and
-  leave it `[ ]` with a progress note.
+- The sb-oracle skill gives TEXT/VALUE/error ground truth (when Azahar is up), so oracle
+  harvest of `expect:`/errnums IS doable in-loop. SKIP only what the skill can't do yet:
+  GRAPHICS framebuffer + AUDIO capture (golden PNG/WAV — O-T6/O-T7). If a task is partly
+  blocked, do the doable parts and leave it `[ ]` with a progress note.
 - If NO task is doable, do not invent work. Write one line to `ralph-logs/BLOCKED.md`
   saying why, then STOP without committing.
 - Begin your output with the chosen task ID (e.g. "Picking M1-T1").
