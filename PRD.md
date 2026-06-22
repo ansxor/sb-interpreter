@@ -86,7 +86,7 @@ and name the instructions they cover inline.
 - [x] S-T8a Lifecycle — SPSET · SPCLR · SPSHOW · SPHIDE · SPPAGE
 - [x] S-T8b Transform — SPOFS · SPROT · SPSCALE · SPHOME · SPCHR
 - [x] S-T8c Animation & link — SPANIM · SPSTART · SPSTOP · SPLINK · SPUNLINK
-- [ ] S-T8d Collision — SPCOL · SPCOLVEC · SPHITSP · SPHITRC · SPHITINFO
+- [x] S-T8d Collision — SPCOL · SPCOLVEC · SPHITSP · SPHITRC · SPHITINFO
 - [ ] S-T8e Vars/funcs/state — SPVAR · SPFUNC · SPDEF · SPCHK · SPUSED · SPCLIP · SPCOLOR
 
 #### S-T9 BG (24) → S-T0

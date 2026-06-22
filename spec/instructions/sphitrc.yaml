@@ -1,0 +1,71 @@
+id: SPHITRC
+kind: function
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — moving quadrangle vs ALL sprites.
+  - args:
+      - { name: start_x, type: number, desc: "Top-left X of the quadrangle." }
+      - { name: start_y, type: number, desc: "Top-left Y of the quadrangle." }
+      - { name: width, type: number, desc: "Quadrangle width." }
+      - { name: height, type: number, desc: "Quadrangle height." }
+      - { name: mask, type: integer, optional: true, default: "&HFFFFFFFF", desc: "32-bit collision mask; collide only when (mask AND sprite_mask) != 0. May be omitted with a leading comma when movement is given (`...,,mvx,mvy`)." }
+      - { name: move_x, type: number, optional: true, default: 0, desc: "Quadrangle movement X (swept collision)." }
+      - { name: move_y, type: number, optional: true, default: 0, desc: "Quadrangle movement Y." }
+    returns: { type: integer }
+    note: "SPHITRC(sx,sy,w,h [,[mask],mvx,mvy]) -> management number of the first colliding sprite, or -1."
+  # Form 2 — moving quadrangle vs one specific sprite.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the opponent sprite to test against." }
+      - { name: start_x, type: number, desc: "Top-left X of the quadrangle." }
+      - { name: start_y, type: number, desc: "Top-left Y of the quadrangle." }
+      - { name: width, type: number, desc: "Quadrangle width." }
+      - { name: height, type: number, desc: "Quadrangle height." }
+      - { name: mask, type: integer, optional: true, default: "&HFFFFFFFF", desc: "32-bit collision mask." }
+      - { name: move_x, type: number, optional: true, default: 0, desc: "Quadrangle movement X." }
+      - { name: move_y, type: number, optional: true, default: 0, desc: "Quadrangle movement Y." }
+    returns: { type: integer }
+    note: "SPHITRC(mgmt, sx,sy,w,h [,[mask],mvx,mvy]) -> TRUE(1) if the quadrangle hits sprite mgmt, FALSE(0) otherwise."
+  # Form 3 — moving quadrangle vs a range of sprites.
+  - args:
+      - { name: first_id, type: integer, range: "0..511", desc: "First management number of the range to test." }
+      - { name: last_id, type: integer, range: "0..511", desc: "Last management number of the range to test." }
+      - { name: start_x, type: number, desc: "Top-left X of the quadrangle." }
+      - { name: start_y, type: number, desc: "Top-left Y of the quadrangle." }
+      - { name: width, type: number, desc: "Quadrangle width." }
+      - { name: height, type: number, desc: "Quadrangle height." }
+      - { name: mask, type: integer, optional: true, default: "&HFFFFFFFF", desc: "32-bit collision mask." }
+      - { name: move_x, type: number, optional: true, default: 0, desc: "Quadrangle movement X." }
+      - { name: move_y, type: number, optional: true, default: 0, desc: "Quadrangle movement Y." }
+    returns: { type: integer }
+    note: "SPHITRC(first,last, sx,sy,w,h [,[mask],mvx,mvy]) -> management number of the first colliding sprite in [first,last], or -1."
+
+summary: "Tests a (optionally moving) rectangle/quadrangle against sprites for collision, using each sprite's SPCOL detection rectangle/mask and SPCOLVEC velocity. Three forms by argument count: (sx,sy,w,h...) tests against ALL sprites and returns the first colliding sprite's management number (or -1); (mgmt,sx,sy,w,h...) tests one sprite and returns TRUE/FALSE; (first,last,sx,sy,w,h...) tests a management-number range and returns the first hit (or -1). An optional mask filters by AND, and optional move_x,move_y make the quadrangle swept. SPCOL and SPCOLVEC should be set on the target sprites beforehand; using SPHITRC before SPSET raises an error."
+
+semantics:
+  - "Return context required: the OUT/return count [r4,#0xc] must be 1; cmp r0,#0x1 / bne 0x14315c (@0x142da8-0x142db0). Otherwise errnum 4 (Illegal function call)."
+  - "Form is chosen by argument count [r4,#0x4]: cmp r0,#0xa then a 10-way switchD (@0x142db4-0x142dc0, table @0x142dc4). Valid counts are 4/5/6 (the base forms vs all / one / range) and 7/8/9 (the same forms with the optional mask + movement amounts); counts 1/2/3 fall through to the error target 0x143828, and >=10 is rejected. Case 4 (sx,sy,w,h vs all) is at caseD_4 @0x142e14."
+  - "Coordinates and movement are FLOAT: the handler vpush {d8} and computes with VFP (vldr.32 / vcmpe.f32 s0,s16 against a constant loaded from [pc] @0x142e74-0x142e84, vmla for swept positions). This matches the swept (moving-quadrangle) collision model; the quadrangle's move_x,move_y plus each sprite's SPCOLVEC velocity drive the time-of-collision that SPHITINFO reports."
+  - "Each rectangle corner / sprite is fed through the collision helper via the sprite vtable ([r0,#0x60] blx @0x142e24-0x142e28); mask AND filtering applies (collide only when the quadrangle mask AND the sprite's SPCOL mask is non-zero). On a hit the shared hit-info record (time/coordinates/velocities) is updated for SPHITINFO (see [[sphitinfo]])."
+  - "Single-quadrangle-vs-all and vs-range forms return the management number of the first colliding sprite (or -1 when none collide); the vs-one form returns a boolean TRUE(1)/FALSE(0). The mask argument may be omitted while still supplying movement by writing an empty field (`SPHITRC(...,,mvx,mvy)`)."
+  - "Despite the doc note 'If used before SPSET, an error will occur', SPHITRC against an in-range sprite that has not been SPSET does NOT raise — the vs-one form returns FALSE(0) (hw_verified: `SPCLR:SPHITRC(1,0,0,16,16)` -> 0, no error, 2026-06-22). errnum 10 is only raised when a referenced management number is outside 0..511."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the result is not assigned, or the argument count is not one of 4/5/6/7/8/9" }
+  - { errnum: 10, name: "Out of range", when: "a management number (mgmt, first, or last) is not in 0..511" }
+  # NOTE: using SPHITRC before SPSET does NOT raise (vs-one returns FALSE); the doc's 'used before SPSET' note is not observed for an in-range mgmt (hw_verified 2026-06-22).
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/sphitrc.md (3 forms: `V=SPHITRC(sx,sy,w,h[,[mask],mvx,mvy])` -> colliding mgmt or -1; `V=SPHITRC(mgmt,sx,sy,w,h[,[mask],mvx,mvy])` -> FALSE/TRUE; `V=SPHITRC(first,last,sx,sy,w,h[,[mask],mvx,mvy])` -> colliding mgmt or -1; mask 0-&HFFFFFFFF default &HFFFFFFFF, AND==0 means no collision; mvx,mvy = quadrangle movement amount; 'SPCOL and SPCOLVEC should be called beforehand'; 'If used before SPSET, an error will occur')" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPHITRC handler @0x142d98: vpush {d8} (float math) @0x142da0; return-count gate ldr r0,[r0,#0xc] cmp r0,#0x1 bne 0x14315c @0x142da8; argcount 10-way switch ldr r0,[r4,#0x4] cmp r0,#0xa ldrcc pc,[pc,r0,lsl#2] @0x142db4-0x142dbc table @0x142dc4 (cases 0,4,5,6,7,8,9 valid; 1/2/3 -> error 0x143828); case0 helper bl 0x17ecd4 @0x142df0; swept compare vldr.32 s0,[sp,#0x24] / vldr.32 s16,[pc,#0x2ec] / vcmpe.f32 s0,s16 @0x142e74-0x142e7c; collision via sprite vtable [r0,#0x60] blx @0x142e28." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d (3.5.0 structural cross-check only): SpriteCollision.detection(int x,int y,int w,int h) does AABB overlap against `data.linkx+sx, data.linky+sy, data.w*scalex, data.h*scaley`. osb has no SPHITRC and no swept/float math, so the moving-quadrangle behavior is taken from docs + disassembly only." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg): real forms include the bare quadrangle `SPHITRC(sx,sy,w,h)` (e.g. 13D4DV3V/TXT/MAIN_PRG_V2 `SPHITRC(CALLIDX,0,0,400,240)`), the vs-one form WITH mask omitted + movement `SPHITRC(m,sx,sy,w,h,,mvx,mvy)` (e.g. 13D4DV3V/TXT/MAIN_PRG_V2 `SPHITRC(TC,BGCX-8,BGCY,16,16,,GRG*XD*2,GRG*-YD*2)`), and the full vs-range form with explicit mask + velocity `SPHITRC(first,last,sx,sy,w,h,mask,mvx,mvy)` (9 args, e.g. 1DVK34J/TXT/HNZHS `SPHITRC(C,C_MB,X,Y,1,1,&HFFFFFFFF,W,H)`). Confirms the optional mask (skippable with `,,`) and movement args." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8d): SPCLR:SPHITRC(1,0,0,16,16) -> 0 (vs-one returns FALSE, NO error before SPSET); a 16x16 rect at 0,0 vs sprite 0 placed at 8,8 with SPCOL set -> 0 (hits sprite mgmt 0)." }
+
+confidence: hw_verified
+
+tests:
+  # Values hw_verified (sb-oracle 2026-06-22 s_t8d).
+  - { name: rect_vs_all_hit, code: "ACLS\nSPSET 0,0\nSPOFS 0,8,8\nSPCOL 0\nSPCOLVEC 0\nPRINT SPHITRC(0,0,16,16)", expect: { stdout: "0" } }
+  - { name: before_spset_vs_one_false, code: "SPCLR\nPRINT SPHITRC(1,0,0,16,16)", expect: { stdout: "0" } }

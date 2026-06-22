@@ -1,0 +1,62 @@
+id: SPHITINFO
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — time of collision only.
+  - args: []
+    out:
+      - { name: time, type: number, range: "0..1", desc: "Time of collision: a real number 0..1. collision_position = position_at_detection + velocity * time." }
+    note: "SPHITINFO OUT TM — time of collision only."
+  # Form 2 — time + collision coordinates of both objects.
+  - args: []
+    out:
+      - { name: time, type: number, range: "0..1", desc: "Time of collision (0..1)." }
+      - { name: x1, type: number, desc: "X of object 1 at the time of collision." }
+      - { name: y1, type: number, desc: "Y of object 1 at the time of collision." }
+      - { name: x2, type: number, desc: "X of object 2 at the time of collision." }
+      - { name: y2, type: number, desc: "Y of object 2 at the time of collision." }
+    note: "SPHITINFO OUT TM,X1,Y1,X2,Y2 — time + both objects' collision coordinates."
+  # Form 3 — time + coordinates + velocities of both objects.
+  - args: []
+    out:
+      - { name: time, type: number, range: "0..1", desc: "Time of collision (0..1)." }
+      - { name: x1, type: number, desc: "X of object 1 at the time of collision." }
+      - { name: y1, type: number, desc: "Y of object 1 at the time of collision." }
+      - { name: vx1, type: number, desc: "Velocity X of object 1 at the time of collision." }
+      - { name: vy1, type: number, desc: "Velocity Y of object 1 at the time of collision." }
+      - { name: x2, type: number, desc: "X of object 2 at the time of collision." }
+      - { name: y2, type: number, desc: "Y of object 2 at the time of collision." }
+      - { name: vx2, type: number, desc: "Velocity X of object 2 at the time of collision." }
+      - { name: vy2, type: number, desc: "Velocity Y of object 2 at the time of collision." }
+    note: "SPHITINFO OUT TM,X1,Y1,VX1,VY1,X2,Y2,VX2,VY2 — time + coordinates + velocities of both objects."
+
+summary: "Reads back the result of the most recent SPHIT* collision: the time of collision (a real number 0..1 within the swept frame) and, depending on how many OUT variables are supplied, the collision-time coordinates and velocities of the two colliding objects. The relation is collision_coordinate = position_at_detection + velocity * time. Takes NO input arguments — only OUT targets — and using it before SPSET raises an error."
+
+semantics:
+  - "Takes no input arguments: input argcount [r5,#0x4] must be 0; cmp r0,#0x0 / bne 0x1440c8 (@0x144084-0x14408c). A non-zero input arg count raises errnum 4 (Illegal function call) with errline -1 — mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / b 0x1fffdc @0x1440c8-0x1440dc."
+  - "Form is selected by the OUT (return) count [r5,#0xc]: valid counts are 1, 3, 5, and 9 (cmp r0,#0x1/#0x3/#0x5/#0x9 @0x1440a8-0x1440c4); any other OUT count raises errnum 4. Form 1 (1 var) = TM only; form 5 = TM,X1,Y1,X2,Y2; form 9 = TM,X1,Y1,VX1,VY1,X2,Y2,VX2,VY2."
+  - "Undocumented 3-variable form: the handler also accepts OUT count 3 (cmp r0,#0x3 / beq 0x1440f8 @0x1440b0-0x1440b4), returning TM,X1,Y1 — the time plus object 1's collision coordinates only. The docs list only 1/5/9 forms; the disassembly shows 3 is also legal (oracle-pending confirmation)."
+  - "The hit record lives in a global struct at [0x144314]: the collision time is a float at offset 0 (vldr.32 s16,[r4] / s0,[r4] @0x144098-0x14409c) and is widened to double for the TM result (vcvt.f64.f32 d0,s0 @0x1440a4). Coordinates are computed as position + velocity * time using vmla.f32 s0,s1,s16 (e.g. x1 = [r4,#0x4] + [r4,#0xc]*time @0x144110-0x14411c), confirming the documented 'position at detection + speed x collision time = collision X-Y coordinates'."
+  - "Each OUT value is stored into the caller's variable through the variable-write vtable ([r0,#0x18] bx/blx @0x1440e8/0x144100/0x144124). When no collision has occurred the record holds the default (time 0) values; the time is constrained to the 0..1 range of the swept frame (documented)."
+  - "Despite the doc note 'If used before SPSET, an error will occur', SPHITINFO does NOT raise before a sprite is SPSET — it returns the default record (TM=0) (hw_verified: `SPCLR:SPHITINFO OUT TM:PRINT TM` -> 0, no error, 2026-06-22). The only argument-shape error is supplying input args or an OUT-variable count other than 1/3/5/9 (errnum 4)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "any input argument is supplied, or the number of OUT variables is not 1, 3, 5, or 9" }
+  # NOTE: using SPHITINFO before SPSET does NOT raise (returns TM=0); the doc's 'used before SPSET' note is not observed (hw_verified 2026-06-22).
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/sphitinfo.md (3 forms: `SPHITINFO OUT TM`; `SPHITINFO OUT TM,X1,Y1,X2,Y2`; `SPHITINFO OUT TM,X1,Y1,VX1,VY1,X2,Y2,VX2,VY2`. TM = time of collision, real 0..1; 'Position at collision detection + speed x collision time = collision X-Y coordinates'; X1,Y1/X2,Y2 = collision coordinates of objects 1/2; VX,VY = their velocities; 'If used before SPSET, an error will occur')" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPHITINFO handler @0x144078: input-argcount gate ldr r0,[r0,#0x4] cmp r0,#0x0 bne 0x1440c8 then mov r0,#0x4 mvn r1,#0x0 b 0x1fffdc @0x1440d8 (errnum 4 errline -1); OUT-count switch ldr r0,[r5,#0xc] cmp #0x1/#0x3/#0x5/#0x9 beq @0x1440a8-0x1440c4 (note count 3 accepted -> TM,X1,Y1 @0x1440f8, undocumented); hit record [0x144314], time float at offset 0 vldr.32 s16,[r4] vcvt.f64.f32 d0,s0 @0x144098; coords pos+vel*time vmla.f32 s0,s1,s16 x1=[r4,#0x4]+[r4,#0xc]*t @0x144110; var-write vtable [r0,#0x18] @0x1440e8." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d (3.5.0 structural cross-check only): struct SpriteHitInfo { double time; double x1,y1,vx1,vy1,x2,y2,vx2,vy2; } populated by sphitsp2 with time=0 (osb does no swept math). Confirms the field layout/order (time, then object-1 x,y,vx,vy, then object-2 x,y,vx,vy) but not the 0..1 time value, which comes from docs + disassembly." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg): the documented 5-var `SPHITINFO OUT TM,X1,Y1,X2,Y2` (e.g. NRQ4B33D/TXT/-MKIILIB `SPHITINFO OUT T,X,Y,D1,D2`, EB2XEEKV/TXT/STSTST `SPHITINFO OUT TM,DMX,DMY,VHX,VHY`) and 9-var `SPHITINFO OUT TM,X1,Y1,VX1,VY1,X2,Y2,VX2,VY2` (e.g. RRWECV3V/TXT/CYBURST, 73383JLY/TXT/SOLIDGUNNER_C) both appear; a leading comma can skip the TM slot, e.g. P343VDDY/TXT/FC_1.1 `SPHITINFO OUT ,X1,Y1,X2,Y2`. No corpus example of the disassembled 3-var form was found (it remains oracle-pending)." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8d): ACLS:SPSET 0,0:SPHITINFO OUT TM:PRINT TM -> 0; SPCLR:SPHITINFO OUT TM -> NO error before SPSET (returns TM=0); SPSET 0,0:SPHITINFO OUT TM,X1 (2 OUT vars) -> errnum 4 (only 1/3/5/9 OUT vars valid)." }
+
+confidence: hw_verified
+
+tests:
+  # Error + default-value cases hw_verified (sb-oracle 2026-06-22 s_t8d). The 3/5/9-var collision-coordinate values remain oracle-pending (need a live swept-collision harvest) — see HARVEST_QUEUE.md.
+  - { name: time_after_no_hit, code: "ACLS\nSPSET 0,0\nSPHITINFO OUT TM\nPRINT TM", expect: { stdout: "0" } }
+  - { name: before_spset_no_error, code: "SPCLR\nSPHITINFO OUT TM\nPRINT TM", expect: { stdout: "0" } }
+  - { name: bad_out_count, code: "SPSET 0,0\nSPHITINFO OUT TM,X1", expect: { error: { errnum: 4 } } }

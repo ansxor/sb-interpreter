@@ -1,0 +1,99 @@
+id: SPCOL
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # --- Setter forms (no OUT) ---
+  # Form 1 — enable collision, optionally sync detection area to SPSCALE.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET." }
+      - { name: scale_adjustment, type: integer, optional: true, default: 0, desc: "FALSE(0) = ignore (default); TRUE(non-0) = synchronize the detection area with SPSCALE. Only affects SPSCALE calls made AFTER this SPCOL." }
+    note: "SPCOL mgmt [,scale_adjust] — enable collision (detection area defaults to the sprite's full U,V,W,H)."
+  # Form 2 — as form 1, plus a collision mask (scale_adjustment may be omitted with a leading comma).
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET." }
+      - { name: scale_adjustment, type: integer, desc: "FALSE(0) = ignore; TRUE(non-0) = sync detection area to SPSCALE. May be omitted (write `SPCOL m,,mask`) to keep the default FALSE." }
+      - { name: mask, type: integer, range: "0..&HFFFFFFFF", default: "&HFFFFFFFF", desc: "32-bit collision mask. Two sprites collide only if (maskA AND maskB) != 0. Default all bits set." }
+    note: "SPCOL mgmt, [scale_adjust], mask — enable collision with a mask."
+  # Form 3 — explicit detection rectangle (relative to SPHOME) + scale + mask.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET." }
+      - { name: start_x, type: integer, range: "-32768..32767", desc: "Detection-area start X, relative to SPHOME (origin 0,0)." }
+      - { name: start_y, type: integer, range: "-32768..32767", desc: "Detection-area start Y, relative to SPHOME." }
+      - { name: width, type: integer, range: "0..65535", desc: "Detection-area width." }
+      - { name: height, type: integer, range: "0..65535", desc: "Detection-area height." }
+      - { name: scale_adjustment, type: integer, optional: true, default: 0, desc: "FALSE(0)/TRUE(non-0); may be omitted with a leading comma (`...,,mask`)." }
+      - { name: mask, type: integer, range: "0..&HFFFFFFFF", optional: true, default: "&HFFFFFFFF", desc: "32-bit collision mask (default all bits set)." }
+    note: "SPCOL mgmt, sx,sy,w,h, [scale_adjust], mask — enable collision with an explicit detection rectangle."
+  # --- Getter forms (OUT) ---
+  # Form 4 — read scale adjustment (+ optional mask).
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET." }
+    out:
+      - { name: scale_adjustment, type: integer, desc: "Receives the scale-adjustment flag (0/1)." }
+      - { name: mask, type: integer, optional: true, desc: "Receives the 32-bit collision mask." }
+    note: "SPCOL mgmt OUT scale_adjust [,mask] — read scale flag (+ mask)."
+  # Form 5 — read detection range.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET." }
+    out:
+      - { name: start_x, type: integer, desc: "Receives detection-area start X." }
+      - { name: start_y, type: integer, desc: "Receives detection-area start Y." }
+      - { name: width, type: integer, desc: "Receives detection-area width." }
+      - { name: height, type: integer, desc: "Receives detection-area height." }
+    note: "SPCOL mgmt OUT sx,sy,w,h — read detection range."
+  # Form 6 — read range + scale adjustment.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET." }
+    out:
+      - { name: start_x, type: integer, desc: "Receives detection-area start X." }
+      - { name: start_y, type: integer, desc: "Receives detection-area start Y." }
+      - { name: width, type: integer, desc: "Receives detection-area width." }
+      - { name: height, type: integer, desc: "Receives detection-area height." }
+      - { name: scale_adjustment, type: integer, desc: "Receives the scale-adjustment flag." }
+    note: "SPCOL mgmt OUT sx,sy,w,h,scale_adjust — read range + scale flag."
+  # Form 7 — read all collision info.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET." }
+    out:
+      - { name: start_x, type: integer, desc: "Receives detection-area start X." }
+      - { name: start_y, type: integer, desc: "Receives detection-area start Y." }
+      - { name: width, type: integer, desc: "Receives detection-area width." }
+      - { name: height, type: integer, desc: "Receives detection-area height." }
+      - { name: scale_adjustment, type: integer, desc: "Receives the scale-adjustment flag." }
+      - { name: mask, type: integer, desc: "Receives the 32-bit collision mask." }
+    note: "SPCOL mgmt OUT sx,sy,w,h,scale_adjust,mask — read everything."
+
+summary: "Configures (or, with OUT, reads back) a sprite's collision-detection parameters: the detection rectangle (start X,Y relative to SPHOME plus width,height — default the sprite's full size), an optional SPSCALE-synchronization flag, and a 32-bit collision mask used for AND-based filtering (two sprites collide only when maskA AND maskB is non-zero). SPCOL must be called before any SPHIT* instruction, and SPCOLVEC should be set alongside it. Using SPCOL on a sprite that has not been SPSET raises an error. There are 7 forms: three setters (basic, +mask, +explicit range) and four OUT getters (scale, range, range+scale, all)."
+
+semantics:
+  - "Argument-count gate: argcount = [r0,#0x4] (r7) must be >= 1; cmp r7,#0x1 / blt 0x13fe28 — a bare SPCOL with no management number raises errnum 4 (Illegal function call) via the shared error path (mov r0,#0x4 / bl 0x1fffdc @0x13f9b0-0x13f9bc)."
+  - "Management number is resolved by the shared sprite-index getter FUN_001eece0 (bl 0x1eece0 @0x13f938); a value outside 0..511 raises errnum 10 (Out of range) from inside the getter (cmp r0,#0x0 / bne -> clean return @0x13f93c-0x13f940). The slot address is base[0x13fe44] + (mgmt + page_base[0x44]) * 0x48 (rsb r1,r0,r0,lsl#5 / add r0,r1,r0,lsl#8 / add r6,r1,r0,lsl#3 @0x13f958-0x13f964)."
+  - "Sprite must exist: tst r0,#0x80000000 on slot flags [r6,#0x4] @0x13f96c; if the active bit is clear the handler raises errnum 4 (used before SPSET) — mov r0,#0x4 / bl 0x1fffdc @0x13f9b0-0x13f9bc."
+  - "Setter-vs-getter and form selection is driven by the return (OUT) count [r4,#0xc] (ldr r12,[r4,#0xc] @0x13f974): with 0 OUT variables the call is a setter (forms 1-3, distinguished by argcount), with OUT variables it is a getter (forms 4-7). cmp r12,#0x7 / switchD @0x13f980-0x13f98c dispatches the (up to 7) getter shapes via jump table @0x13f994 (caseD_0..caseD_6 @0x13f9c8/0x13fbc4/0x13fbec/0x13fc24/0x13fcb4/0x13fd60)."
+  - "Detection area defaults to the sprite's full definition size: with no explicit range the area is (sx=0, sy=0, w=sprite W, h=sprite H), measured relative to SPHOME (the SPHOME point is the area origin 0,0). The explicit-range setter (form 3) overrides this with start_x,start_y (-32768..32767) and width,height (0..65535)."
+  - "Collision mask is a 32-bit value (0..&HFFFFFFFF, default &HFFFFFFFF = all bits). Collision is filtered by bitwise AND: two sprites are considered to collide only when (maskA AND maskB) != 0 (per the docs; cross-checked against osb SpriteCollision.detection: `if(sp.define && sp.col.mask & mask)`)."
+  - "Scale adjustment is a boolean: TRUE synchronizes the detection rectangle with the sprite's SPSCALE, but ONLY for SPSCALE instructions issued AFTER this SPCOL (documented). FALSE (the default when omitted) leaves the detection area at its set size regardless of SPSCALE."
+  - "The OUT getters read back the stored collision state into the supplied variables; the form (4-7) is chosen by how many OUT variables are listed (1-2 -> scale[,mask]; 4 -> range; 5 -> range+scale; 6 -> all). An OUT slot may be skipped with a leading/empty comma to read only later values, e.g. `SPCOL id OUT ,mask` reads just the mask (verified in the corpus)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET, or no management number is supplied" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spcol.md (7 forms: setters `SPCOL m [,scale]`, `SPCOL m,[scale],mask`, `SPCOL m,sx,sy,w,h,[scale],mask`; getters `SPCOL m OUT scale[,mask]`, `OUT sx,sy,w,h`, `OUT ...,scale`, `OUT ...,scale,mask`. mgmt 0-511; scale FALSE/TRUE (default FALSE), effective only for SPSCALE set after SPCOL; mask 0-&HFFFFFFFF default &HFFFFFFFF, AND==0 means no collision; range sx,sy -32768..32767 relative to SPHOME, w,h 0-65535; 'Must be called before any SPHIT instruction'; 'SPCOLVEC should also be called'; 'If used before SPSET, an error will occur')" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPCOL handler @0x13f914: argcount gate cmp r7,#0x1 blt 0x13fe28 (r7=[r0,#0x4]); error path mov r0,#0x4 bl 0x1fffdc @0x13f9b0 (errnum 4); mgmt via FUN_001eece0 bl 0x1eece0 @0x13f938 (errnum 10); slot base[0x13fe44]+(mgmt+[0x44])*0x48 rsb r1,r0,r0,lsl#5 @0x13f958; active-bit guard tst r0,#0x80000000 [r6,#0x4] @0x13f96c beq 0x13f9b0 (used before SPSET, errnum 4); form select on OUT-count ldr r12,[r4,#0xc] cmp r12,#0x7 switchD @0x13f980 table @0x13f994; state ptr [0x13fe40], sprite-base [0x13fe44], extra const [0x13fe48]." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d (3.5.0 structural cross-check only) struct SpriteCollision { SpriteData* data; bool scale=true; int mask=-1; short sx,sy; ushort w,h; double vx,vy; } and overloads spcol(id)/spcol(id,scale)/spcol(id,scale,mask)/spcol(id,sx,sy,w,h,scale,mask) defaulting sx=sy=0,w=sprite.w,h=sprite.h,mask=-1; detection() gates on `sp.col.mask & mask`. Confirms detection rect defaults to full sprite size and mask AND filtering." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8d): SPCLR:SPCOL 5,TRUE -> errnum 4 (used before SPSET); SPSET 0,0:SPCOL 512,TRUE -> errnum 10 (mgmt out of range). The OUT-getter read-back VALUES are not yet harvested (queued)." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg): all 7 forms appear in real programs — setters `SPCOL id` (e.g. 1BWX7ENV/TXT/AND-OS), `SPCOL id,scale` (numeric OR TRUE/FALSE, e.g. 12C3NWQE/TXT/3DSCLOSEGAME `SPCOL 1,TRUE`), `SPCOL id,scale,mask`, `SPCOL id,sx,sy,w,h` (e.g. 13D4DV3V/TXT/MAIN_PRG_V2 `SPCOL SPID,-8,-12,15,15`), `SPCOL id,sx,sy,w,h,scale[,mask]` (e.g. 1DVK34J/TXT/HNZTL `SPCOL N,0,0,16,16,FALSE,&H1`), and the omitted-middle-arg comma form `SPCOL id,sx,sy,w,h,,mask` (e.g. 13D4DV3V/TXT/MAIN_PRG_V2 `SPCOL ID,-4,-4,9,9,,&B0001`); getters `SPCOL id OUT sc,mk` (e.g. REVVY3RJ/TXT/HNZBI), `SPCOL id OUT ,mask` (leading-comma skips the scale slot, e.g. 13D4DV3V/TXT/MAIN_PRG_V2 `SPCOL C OUT ,MASK`), `SPCOL id OUT sx,sy,w,h` (e.g. Q3KPEEN3/TXT/GAME_ENG `SPCOL S% OUT CX,CY,W,H`), and the all-info `SPCOL id OUT sx,sy,w,h,scale,mask` (e.g. 2XVV233J/TXT/GAME.PRG `SPCOL S% OUT SX%,SY%,W%,H%,A%,B%`). Proves the syntax is legal; exact read-back values are oracle-pending." }
+
+confidence: disassembled
+
+tests:
+  # Error cases hw_verified (sb-oracle 2026-06-22 s_t8d); set-then-read round-trips remain oracle-pending (need SPCOL OUT value harvest — see HARVEST_QUEUE.md).
+  - { name: enable_basic, code: "SPSET 0,0\nSPCOL 0,TRUE", expect: { stdout: "" } }
+  - { name: enable_mask_skip_scale, code: "SPSET 0,0\nSPCOL 0,,31", expect: { stdout: "" } }
+  - { name: enable_explicit_range, code: "SPSET 0,0\nSPCOL 0,0,0,32,32,TRUE,255", expect: { stdout: "" } }
+  - { name: before_spset, code: "SPCLR\nSPCOL 5,TRUE", expect: { error: { errnum: 4 } } }
+  - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPCOL 512,TRUE", expect: { error: { errnum: 10 } } }

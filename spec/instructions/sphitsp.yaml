@@ -1,0 +1,55 @@
+id: SPHITSP
+kind: function
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1a — collide one sprite against all sprites.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the sprite to test. Must already be SPSET and have SPCOL set." }
+    returns: { type: integer }
+    note: "SPHITSP(mgmt) -> management number of the first colliding sprite, or -1 if none."
+  # Form 1b — collide one sprite against a range of sprites.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the sprite to test." }
+      - { name: first_id, type: integer, range: "0..511", desc: "First management number of the range to test against." }
+      - { name: last_id, type: integer, range: "0..511", desc: "Last management number of the range to test against." }
+    returns: { type: integer }
+    note: "SPHITSP(mgmt, first, last) -> management number of the first colliding sprite in [first,last], or -1 if none."
+  # Form 2 — collide two specific sprites.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the sprite to test." }
+      - { name: opponent_number, type: integer, range: "0..511", desc: "Management number of the opponent sprite." }
+    returns: { type: integer }
+    note: "SPHITSP(mgmt, opponent) -> TRUE(1) if the two collide, FALSE(0) otherwise."
+
+summary: "Tests a sprite for collision against other sprites, using the detection rectangle/mask from SPCOL and the velocity from SPCOLVEC (swept collision). Three forms by argument count: 1 arg tests against ALL sprites and returns the management number of the first sprite hit (or -1); 3 args (mgmt,first,last) tests against a management-number range and returns the first hit in that range (or -1); 2 args (mgmt,opponent) tests two specific sprites and returns TRUE/FALSE. SPCOL and SPCOLVEC should be called beforehand; using SPHITSP before SPSET raises an error. On a hit, the collision details are stashed for SPHITINFO to read."
+
+semantics:
+  - "Return context required: the OUT/return count [r4,#0xc] must be 1 (SPHITSP is a function whose result must be assigned); cmp r0,#0x1 / bne 0x14388c (@0x143850-0x143864). Otherwise errnum 4 (Illegal function call) with errline -1 — mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / b 0x1fffdc @0x14388c-0x1438a0."
+  - "Form is chosen by argument count [r4,#0x4]: 1 -> single-vs-all/range helper bl 0x17e370, 2 -> two-sprite helper bl 0x17e598, 3 -> range helper bl 0x17ed68/0x17e598 family (cmp r0,#0x0/#0x1/#0x2/#0x3 dispatch @0x14386c-0x143888). The page-base [r1,#0x44] (r5) is added to each resolved management number (add r0,r0,r5 @0x1438f4, @0x143948, @0x14396c) so collisions are scoped to the current sprite display page."
+  - "Each management number is resolved by the shared sprite-index getter FUN_001eece0 (bl 0x1eece0 @0x1438d8, @0x14392c, @0x143958); a value outside 0..511 raises errnum 10 (Out of range), and on a non-zero (error) return the handler bails to the cleanup epilogue (bne 0x143914 @0x1438e4)."
+  - "Single-sprite forms (1 or 3 args) return the management number of the first colliding sprite, or -1 when none collide (osb cross-check: sphitsp2 returns the opponent id on the first detection() hit, else -1). The two-sprite form (2 args) returns a boolean TRUE(1)/FALSE(0)."
+  - "Collision uses the SPCOL detection rectangle AND the SPCOL/SPHITSP masks (collision only when maskA AND maskB != 0) and is swept by the SPCOLVEC velocities; on a hit the collision time/coordinates/velocities are written to the shared hit-info record that SPHITINFO reads (see [[sphitinfo]]). Collision is skipped for sprites that have not had SPCOL enabled (an inactive/unSPSET sprite simply does not collide)."
+  - "Despite the doc note 'If used before SPSET, an error will occur', SPHITSP on an in-range management number whose sprite has not been SPSET does NOT raise — it simply returns -1 (no collision) (hw_verified: `SPCLR:SPHITSP(5)` -> -1, no error, 2026-06-22). An error (errnum 10) is only raised when the management number itself is out of 0..511."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the result is not assigned to a variable, or the argument count is not 1, 2, or 3" }
+  - { errnum: 10, name: "Out of range", when: "a management number (target, opponent, first, or last) is not in 0..511" }
+  # NOTE: using SPHITSP before SPSET does NOT raise (returns -1); the doc's 'used before SPSET' note is not observed for an in-range mgmt (hw_verified 2026-06-22).
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/sphitsp.md (`V=SPHITSP(mgmt [,first,last])` returns colliding mgmt or -1; `V=SPHITSP(mgmt,opponent)` returns FALSE=no collision / TRUE=collision; mgmt/first/last/opponent 0-511; 'SPCOL and SPCOLVEC should be called beforehand'; 'If used before SPSET, an error will occur')" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPHITSP handler @0x143844: return-count gate ldr r0,[r4,#0xc] cmp r0,#0x1 bne 0x14388c then mov r0,#0x4 mvn r1,#0x0 b 0x1fffdc @0x14389c (errnum 4 errline -1); argcount dispatch ldr r0,[r4,#0x4] cmp #0/#1/#2/#3 @0x143868-0x143888; mgmt via FUN_001eece0 bl 0x1eece0 @0x1438d8/@0x14392c/@0x143958 (errnum 10), bail bne 0x143914; page-base add r0,r0,r5 with r5=[r1,#0x44] @0x1438f4; collision helpers bl 0x17e370 (single) @0x1438fc, bl 0x17e598 (two-sprite) @0x143978, bl 0x17ed68 @0x1438a8; state ptr [0x143a54]." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d (3.5.0 structural cross-check only): sphitsp(id) loops `for(start..end) if(id!=start && enableCol && col.detection(...)) return start;` else -1, and fills SpriteHitInfo (time=0, x1/y1/vx1/vy1/x2/y2/vx2/vy2) for SPHITINFO. Confirms the return semantics (mgmt or -1) and that a hit populates hit-info; osb's detection is plain AABB with time=0 (no swept math), so the swept/time behavior comes from docs + disassembly." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg): all three forms appear — `SPHITSP(m)` vs-all (e.g. 1233728E/TXT/MG_DOG `A=SPHITSP(0)`), `SPHITSP(m,opp)` two-sprite boolean (e.g. 1BWX7ENV/TXT/AND-OS `IF SPHITSP(0,1)==1`), and `SPHITSP(m,first,last)` range (e.g. used as `SPHITSP(I,3,30)`). Confirms the 1/2/3-arg syntax." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8d): SPSET 0,0:A=SPHITSP(512) -> errnum 10; SPCLR:SPHITSP(5) -> -1 (NO error before SPSET, just no collision); two overlapping SPCOL'd sprites SPHITSP(0,1) -> 1; non-overlapping SPHITSP(0) -> -1." }
+
+confidence: hw_verified
+
+tests:
+  # Error + value cases hw_verified (sb-oracle 2026-06-22 s_t8d).
+  - { name: no_collision_all, code: "ACLS\nSPSET 0,0\nSPOFS 0,0,0\nSPCOL 0\nSPCOLVEC 0\nSPSET 1,0\nSPOFS 1,200,200\nSPCOL 1\nSPCOLVEC 1\nPRINT SPHITSP(0)", expect: { stdout: "-1" } }
+  - { name: two_sprite_boolean, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0\nSPCOLVEC 0\nSPSET 1,0\nSPOFS 1,100,100\nSPCOL 1\nSPCOLVEC 1\nPRINT SPHITSP(0,1)", expect: { stdout: "1" } }
+  - { name: before_spset_no_error, code: "SPCLR\nPRINT SPHITSP(5)", expect: { stdout: "-1" } }
+  - { name: mgmt_out_of_range, code: "SPSET 0,0\nA=SPHITSP(512)", expect: { error: { errnum: 10 } } }

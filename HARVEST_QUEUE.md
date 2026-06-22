@@ -281,3 +281,14 @@ oracle to confirm exact output and promote to `hw_verified`.
   per-frame timing ("starts on the frame following SPANIM"), relative ("+"/+8) base accumulation, and Loop 0
   endless behavior. Error conditions + SPLINK function returns are now hw_verified (s_t8c batch 2026-06-22);
   the visible render and interpolation math are not.
+
+- [ ] S-T8d collision read-back / coordinate VALUES (deterministic VALUE harvest, not framebuffer):
+  - SPCOL OUT getters: after `SPCOL m,sx,sy,w,h,scale,mask`, read back `SPCOL m OUT ...` and confirm the
+    stored scale flag (does TRUE store 1? does numeric coerce?), the mask, and the range (esp. the default
+    range = sprite W,H when not explicitly set). Forms 4-7 and the leading-comma skip `SPCOL m OUT ,mask`.
+  - SPHITINFO 3/5/9-var collision coordinates + velocities after a REAL swept collision (TM in 0..1, and
+    X1/Y1 = pos + vel*TM). Need a deterministic moving-sprite setup harvested via the oracle.
+  - SPHITINFO undocumented 3-var form `OUT TM,X1,Y1` (seen only in disassembly @0x1440f8) — confirm it is
+    accepted and returns TM + object-1 coords (no corpus example found).
+  - SPHITRC mask AND-filtering + swept-movement outcomes; SPHITSP swept-with-SPCOLVEC outcomes (do the
+    movement vectors change a same-frame hit/miss vs the static AABB?).
