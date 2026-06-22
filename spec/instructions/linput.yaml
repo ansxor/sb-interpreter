@@ -1,0 +1,31 @@
+id: LINPUT
+kind: statement
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: prompt, type: string, optional: true, desc: "Guiding text, followed by ; before the variable" }
+      - { name: strvar, type: string, desc: "String variable to receive the whole input line" }
+    note: "LINPUT [prompt;] str$ — read a full line of text (commas included) from the keyboard."
+
+summary: "Reads a whole line of text from the keyboard into a single string variable, waiting for ENTER. Unlike INPUT, it accepts commas and other characters literally. Interactive — not value-harvestable."
+
+semantics:
+  - "LINPUT reads one entire line (up to ENTER) into a single string variable, including commas and other characters that INPUT would treat as delimiters."
+  - "An optional guiding prompt may precede the variable, separated by ';'."
+  - "Only one string variable is filled (no multi-variable list, unlike [[input]])."
+  - "The prompt is optional: a bare LINPUT str$ is common; the target may also be a string array element (LINPUT names$[i])."
+  - "LINPUT is interactive (waits for the keyboard); its result cannot be captured by the deterministic value oracle (queued)."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/linput.md (LINPUT [\"text\";]str$; reads a whole line incl. commas; waits for ENTER; single string variable)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst: LINPUT keyword name @0x2ed668 (token-name table region shared with INPUT/PRINT); a parser special form (not in the builtin dispatch table) compiled to a whole-line console-read into one string variable" }
+  - { type: community, ref: "sbsave corpus: ~412 LINPUT; bare LINPUT str$ with no prompt common (~120, e.g. 2KE3384V/TXT/BRAINF); empty-string prompt LINPUT \"\";v$ used; target may be a string ARRAY ELEMENT (LINPUT NAMES$[0] in E3S34XGX/TXT/BATTLESHIP — undocumented); no multi-variable form" }
+
+confidence: disassembled
+
+tests:
+  - { name: linput_reads_line, code: "LINPUT \"ADDR:\";A$", expect: { stdout: "" } }

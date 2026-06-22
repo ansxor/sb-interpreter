@@ -10,6 +10,12 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T5b (INPUT/LINPUT) · Interactive — block on keyboard, NOT value-harvestable by the
+  batch oracle. Verify via screenshot+typed input: INPUT parses the typed line into the var
+  list (numeric vs string), ';' shows '?' and ',' suppresses it, string-var prompt with ';',
+  "?Redo from start" on too-few values; LINPUT reads a whole line incl. commas into one
+  string var (and into a string array element). · assumption: per docs/disasm. INKEY$ empty
+  behavior already hw_verified 2026-06-22.
 - [ ] S-T4f (DIALOG/KEY/VSYNC/WAIT) · Interactive/timing — NOT value-harvestable by the batch
   oracle. DIALOG is modal (needs a touch/button press; verify RESULT 1/-1/0, the -1/0/1 return,
   the hardware-button 128..140 codes, and negative-timeout=frames via screenshot+input). KEY

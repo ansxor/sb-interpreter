@@ -1,0 +1,2 @@
+inkey_empty|PRINT "[";INKEY$();"]"|CHR$(CHKCHR(0,0))+CHR$(CHKCHR(1,0))|progstr
+inkey_len|LEN(INKEY$())
