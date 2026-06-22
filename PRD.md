@@ -83,7 +83,7 @@ and name the instructions they cover inline.
 - [x] S-T7e Color read — GSPOIT · RGB · RGBREAD
 
 #### S-T8 Sprites (27) → S-T0
-- [ ] S-T8a Lifecycle — SPSET · SPCLR · SPSHOW · SPHIDE · SPPAGE
+- [x] S-T8a Lifecycle — SPSET · SPCLR · SPSHOW · SPHIDE · SPPAGE
 - [ ] S-T8b Transform — SPOFS · SPROT · SPSCALE · SPHOME · SPCHR
 - [ ] S-T8c Animation & link — SPANIM · SPSTART · SPSTOP · SPLINK · SPUNLINK
 - [ ] S-T8d Collision — SPCOL · SPCOLVEC · SPHITSP · SPHITRC · SPHITINFO

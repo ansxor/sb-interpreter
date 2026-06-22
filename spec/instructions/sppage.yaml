@@ -1,0 +1,41 @@
+id: SPPAGE
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: graphic_page, type: integer, range: "0..5 (GRP0-GRP5)", desc: "Graphic page the sprite system draws its sprites onto. Default is 4 (GRP4)." }
+    note: "SPPAGE page — SET form: assigns the graphic page used for sprite rendering (1 arg, no return value)."
+  - args: []
+    out:
+      - { name: result, type: integer, desc: "Receives the current sprite graphic page (0..5)." }
+    note: "P=SPPAGE() — GET form: reads back the current sprite graphic page (0 args, 1 return value)."
+
+summary: "Selects which graphic page (GRP0-GRP5) the sprite system renders onto (default GRP4); the function form reads the current page back."
+
+semantics:
+  - "Two forms selected by the return-value count, not by syntax: 1 return + 0 args = GET (P=SPPAGE()), 0 returns + 1 arg = SET (SPPAGE page). Any other (return-count, arg-count) combination raises errnum 4 (Illegal function call) — return-count r1=[r0,#0xc] cmp #0 (SET branch) / cmp #1 (GET branch) @0x142adc-0x142aec, SET arg-count [r0,#0x4] cmp #1 @0x142afc else mov r0,#0x4 @0x142b0c; GET requires arg-count==0 (cmpeq [r0,#0x4],#0) @0x142ae8 else errnum 4."
+  - "SET: the page must be in 0..5 (GRP0..GRP5). The value is fetched through the bounded-integer getter FUN_001eec7c with lower=0, upper=5 (mov r1,#0x5 / mov r3,#0x0 @0x142b1c); a value < 0 or > 5 raises errnum 10 (Out of range) — the getter's range guard cmp/cmpge then mov r0,#0xa (errnum 10) @0x1eecd0. The accepted page is committed via the sprite-page setter bl 0x14ee48 @0x142b44."
+  - "GET (P=SPPAGE()): reads the current sprite graphic page from the sprite-system state ([[0x315d60]+0x4c]) and returns it as an integer @0x142b54-0x142b70."
+  - "The default sprite page is 4 (GRP4); BG uses GRP5 by default. Changing the sprite page redirects where SPSET-created sprites are composited."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the form is neither SET (1 arg, 0 returns) nor GET (0 args, 1 return) — wrong argument or return count" }
+  - { errnum: 10, name: "Out of range", when: "the page number is not in 0..5 (SET form)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/sppage.md (SPPAGE Graphic page — 0-5: GRP0-GRP5, default sprite page is 4/GRP4; Variable=SPPAGE() returns the assigned graphic page 0-5)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPPAGE handler @0x142ad0: return-count r1=[r0,#0xc] cmp #0 beq SET-arg-check @0x142af8, cmp #1 (with arg-count [r0,#0x4]==0) beq GET @0x142b54, else mov r0,#0x4 (errnum 4) @0x142b0c; SET requires arg-count [r0,#0x4]==1 (cmp #1 @0x142afc) else errnum 4; page fetched via bounded getter bl 0x1eec7c with upper bound mov r1,#0x5 / lower mov r3,#0x0 @0x142b1c-0x142b30 (out-of-range -> mov r0,#0xa errnum 10 @0x1eecd0); committed via bl 0x14ee48 @0x142b44; GET reads page = [[0x315d60]+0x4c] @0x142b54-0x142b70 (state ptr 0x315d60 @0x142b7c)." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d sprite-page / GRP4-default mapping (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: the function form P=SPPAGE() appears ~59x (e.g. GPAGE 0,SPPAGE() in 7343YJHX/TXT/-TG_PLAYER) and the statement form SPPAGE n ~237x, both with literal and expression operands (e.g. SPPAGE MD+1 in 227EVK4V/TXT/SBSMILE) — confirms both forms are legal." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8a): SPPAGE 6 -> errnum 10, errline 1; SPPAGE -1 -> errnum 10 (page out of range 0..5)." }
+
+confidence: disassembled
+
+tests:
+  # SET/GET round-trip is disassembled (no sprite-framebuffer harvest yet); error expects are hw_verified (sb-oracle 2026-06-22 s_t8a).
+  - { name: roundtrip_set_get, code: 'SPPAGE 5\nP=SPPAGE()\nPRINT P', expect: { stdout: "5" } }
+  - { name: default_page, code: 'P=SPPAGE()\nPRINT P', expect: { stdout: "4" } }
+  - { name: page_out_of_range_high, code: "SPPAGE 6", expect: { error: { errnum: 10 } } }
+  - { name: page_out_of_range_low, code: "SPPAGE -1", expect: { error: { errnum: 10 } } }

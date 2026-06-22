@@ -256,3 +256,14 @@ oracle to confirm exact output and promote to `hw_verified`.
   can't capture it (prog path returns None for stmt+expr); extraction is fully disassembled (shift+mask) but a
   direct hw_verified anchor is queued. (c) GSPOIT errnum 49 (0x31) graphics-state guard @0x1543bc — undocumented
   (beyond the 3-47 table), not reachable from ordinary user code; confirm trigger if ever possible.
+- [x] S-T8a sprite lifecycle (SPSET · SPCLR · SPSHOW · SPHIDE · SPPAGE) · ERROR expects HARVESTED hw_verified
+  (sb-oracle 2026-06-22 s_t8a): SPSET 512,0 / -1,0 -> errnum 10; SPSET 0,4096 -> errnum 10; SPSET 0,0,0,0,0,0,0
+  -> errnum 4; SPSHOW 0 / SPHIDE 0 before SPSET -> errnum 4; SPSHOW 512 / SPHIDE 512 / SPCLR 512 -> errnum 10;
+  SPPAGE 6 / SPPAGE -1 -> errnum 10. All matched the disassembled predictions; folded into the 5 specs.
+- [x] S-T8a CONTRADICTION RESOLVED · the corpus 1-argument no-OUT form `SPSET 510` (534NX3L6/TXT/DANMAKU3 line 380)
+  is oracle-confirmed to raise errnum 4 (2026-06-22 s_t8a) — dead/buggy code behind the rare MPCOUNT!=2 branch.
+  The disassembly's argcount-2..6 guard is correct; spec kept at errnum 4.
+- [ ] S-T8a sprite VISUAL/state side-effects (need framebuffer oracle O-T6): SPSET creation (template vs direct
+  image, attribute bits applied), SPSHOW/SPHIDE display-flag toggle, SPCLR slot-free + bulk clear-all (0-arg),
+  SPPAGE render-page redirect, SPSET OUT -1 pool-exhaustion result, SPSET reinit (SPVAR -> 0). All disassembled
+  + documented; runtime visual confirmation queued.

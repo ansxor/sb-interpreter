@@ -1,0 +1,40 @@
+id: SPCLR
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the sprite to stop using and release." }
+    note: "SPCLR mgmt — releases one sprite (1 arg, no return value)."
+  - args: []
+    note: "SPCLR — with no arguments, releases ALL user sprites at once (0 args, no return value)."
+
+summary: "Stops using a sprite and releases its memory so the slot can be reused by SPSET. With one argument it clears that sprite; with no argument it clears every user sprite."
+
+semantics:
+  - "Accepts 0 or 1 arguments and returns no value. Any other (more than 1 argument, or a requested return value) raises errnum 4 (Illegal function call) — arg-count r1=[r0,#0x4] cmp #1 / ldrle return-count [r0,#0xc] cmple #0 (beq body) else mov r0,#0x4 (errnum 4) @0x13f7b4-0x13f7d4."
+  - "ONE-ARGUMENT form (SPCLR mgmt): the management number is fetched through the sprite-index getter FUN_001eece0 and must be in 0..(sprite count - 1) = 0..511; a value < 0, or >= the live sprite count, raises errnum 10 (Out of range) — getter range guard then mov r0,#0xa @0x1eed3c. The sprite's active flag is cleared and its slot freed (the per-slot clear sets the slot byte at [base+0x44+mgmt] to 0 and clears its used-bitmap bit @0x13f81c-0x13f850 in the clear-all path; the 1-arg path @0x13f874 does the same for one index)."
+  - "ZERO-ARGUMENT form (SPCLR): releases ALL user-managed sprites in one call. The handler loops the management index r4 from the first user slot [base+0x44] up to [base+0x44]+[base+0x48] (count), freeing each: clears the used-bitmap bit (bic [bitmap],0x80000000>>bit) and zeroes the slot byte @0x13f7fc-0x13f85c. This bulk form is not shown in the instruction-list format table but is a real, supported form (see corpus)."
+  - "Releasing a sprite that is not currently in use is harmless (the slot is simply re-zeroed). After SPCLR a slot is available to SPSET again. Failing to SPCLR sprites eventually exhausts the pool so SPSET (OUT form) returns -1 (no available number)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "more than 1 argument is given, or a return value is requested (used as a function)" }
+  - { errnum: 10, name: "Out of range", when: "the management number is negative or >= the sprite count (not in 0..511), in the 1-argument form" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spclr.md (SPCLR Management number 0-511 — Stops using the specified sprite and releases the memory; 'If memory is not released after use with sprites, there will be no available memory for SPSET'; e.g. SPCLR 56)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPCLR handler @0x13f7a8: arg-count r1=[r0,#0x4] cmp #1 / ldrle return-count r2=[r0,#0xc] cmple #0 beq body @0x13f7dc else mov r2,#0/mvn r1/mov r0,#0x4 b 0x1fffdc (errnum 4) @0x13f7c4; cmp argcount==1 beq 1-arg path @0x13f874 (mgmt via bl 0x1eece0, out-of-range -> errnum 10 @0x1eed3c); 0-arg path loops r4 from [base+0x44] to +[base+0x48] @0x13f804-0x13f85c clearing used-bitmap bit (bic r1,r2,r10 lsr) and zeroing slot byte strb r7,[r8,r4]; sprite-base ptrs @0x13f900-0x13f910 (state ptr 0x315d60-derived)." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteData free/clear-all handling (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: SPCLR appears thousands of times; the no-argument 'clear all sprites' form (a bare 'SPCLR' line) is widely used at program start/reset — confirmed ~1197x (e.g. a bare 'SPCLR' line in 1BWX7ENV/TXT/AND-OS), confirming the 0-arg form is legal. (oracle-pending: bulk-clear runtime effect, queued)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8a): SPCLR 512 -> errnum 10, errline 1 (mgmt out of range, 1-arg form)." }
+
+confidence: disassembled
+
+tests:
+  # clear side-effect needs the sprite-framebuffer oracle (O-T6, queued); error expects are hw_verified (sb-oracle 2026-06-22 s_t8a).
+  - { name: clear_one_ok, code: 'SPSET 0,0\nSPCLR 0', expect: { stdout: "" } }
+  - { name: clear_all_ok, code: 'SPSET 0,0\nSPSET 1,0\nSPCLR', expect: { stdout: "" } }
+  - { name: clear_unused_ok, code: "SPCLR 5", expect: { stdout: "" } }
+  - { name: mgmt_out_of_range, code: "SPCLR 512", expect: { error: { errnum: 10 } } }
+  - { name: mgmt_negative, code: "SPCLR -1", expect: { error: { errnum: 10 } } }

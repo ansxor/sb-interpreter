@@ -1,0 +1,36 @@
+id: SPSHOW
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management (control) number of the sprite to start displaying. The sprite must already exist (SPSET)." }
+    note: "SPSHOW mgmt — sets the display flag of an existing sprite ON (1 arg, no return value)."
+
+summary: "Starts displaying a sprite that was created with SPSET (turns its display attribute ON); the sprite must already exist or an error is raised."
+
+semantics:
+  - "Takes exactly 1 argument and returns no value. Any other argument count, or requesting a return value (used as a function), raises errnum 4 (Illegal function call) — arg-count r1=[r0,#0x4] cmp #1 / return-count [r0,#0xc] cmp #0 (beq body) else mov r0,#0x4 (errnum 4) @0x142b9c-0x142ba8."
+  - "The management number is fetched through the sprite-index getter FUN_001eece0 and must be in 0..(sprite count - 1) = 0..511; a value < 0, or >= the live sprite count, raises errnum 10 (Out of range) — getter range guard cmp r1,#0 blt / cmp count,r1 bgt then mov r0,#0xa (errnum 10) @0x1eed3c (sprite count = [[0x315d60]+0x48])."
+  - "The sprite slot is located at sprite-base + mgmt*2296 bytes (stride = mgmt*287*8: rsb r1,r0,r0,lsl#5 = *31, add r0,r1,r0,lsl#8 = *287, add r4,base,r0,lsl#3 = *2296 @0x142bd4-0x142bf0). The sprite must be active: the handler tests the active flag tst [slot+0x4],#0x80000000 and, if the sprite was NOT created with SPSET (bit clear), raises errnum 4 (Illegal function call) @0x142bf8 / mov r0,#0x4 @0x142c40 — this is the documented 'If used before SPSET, an error will occur'."
+  - "For an active sprite, the display attribute (b00 / #SPSHOW) is set ON and the sprite is registered for rendering (bl 0x17e818, bl 0x17ecb8 @0x142c10-0x142c1c). SPSHOW only changes visibility; it does not re-init position, rotation, or SPVAR. Calling SPSHOW on an already-shown sprite is a harmless no-op (idempotent)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is not 1 / a return value is requested, OR the target sprite has not been created with SPSET (inactive slot)" }
+  - { errnum: 10, name: "Out of range", when: "the management number is negative or >= the sprite count (not in 0..511)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spshow.md (SPSHOW Management number 0-511 — Starts displaying a sprite; 'If used before SPSET, an error will occur'; e.g. SPSHOW 43)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPSHOW handler @0x142b80: arg-count r1=[r0,#0x4] cmp #1 + return-count [r0,#0xc] cmp #0 beq body @0x142bb4 else mov r2,#0/mvn r1/mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x142b9c; mgmt fetched via sprite-index getter bl 0x1eece0 (out-of-range -> mov r0,#0xa errnum 10 @0x1eed3c, count=[[0x315d60]+0x48]); slot = base[0x142c54] + mgmt*2296 (rsb *31 / add lsl#8 *287 / add lsl#3) @0x142bd4; active-flag tst [slot+0x4],#0x80000000 beq @0x142c38 -> mov r0,#0x4 (errnum 4, sprite not SPSET); show via bl 0x17e818 / bl 0x17ecb8 @0x142c10 (state ptr 0x315d60 @0x142c50)." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteData display/active flag handling (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8a): SPSHOW 0 with no prior SPSET -> errnum 4, errline 1 (confirms the active-bit guard); SPSHOW 512 -> errnum 10 (mgmt out of range)." }
+
+confidence: disassembled
+
+tests:
+  # show side-effect needs the sprite-framebuffer oracle (O-T6, queued); error expects are hw_verified (sb-oracle 2026-06-22 s_t8a).
+  - { name: show_after_spset_ok, code: 'SPSET 0,0\nSPHIDE 0\nSPSHOW 0', expect: { stdout: "" } }
+  - { name: show_before_spset_errors, code: "SPSHOW 0", expect: { error: { errnum: 4 } } }
+  - { name: mgmt_out_of_range, code: "SPSHOW 512", expect: { error: { errnum: 10 } } }
+  - { name: mgmt_negative, code: "SPSHOW -1", expect: { error: { errnum: 10 } } }

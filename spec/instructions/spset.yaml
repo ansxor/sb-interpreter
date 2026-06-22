@@ -1,0 +1,93 @@
+id: SPSET
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — create from an SPDEF template, explicit management number.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Number of the sprite slot to create." }
+      - { name: definition_number, type: integer, range: "0..4095", desc: "SPDEF template number to use for image/size/origin." }
+    note: "SPSET mgmt, defn — create sprite from an SPDEF template (2 args, no return value)."
+  # Form 2 — create with image specified directly, explicit management number.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Number of the sprite slot to create." }
+      - { name: u, type: integer, range: "0..511", desc: "X of the source image rectangle on the sprite sheet." }
+      - { name: v, type: integer, range: "0..511", desc: "Y of the source image rectangle on the sprite sheet." }
+      - { name: w, type: integer, optional: true, default: 16, range: "1..512 (U+W <= 512)", desc: "Width of the source rectangle. Default 16." }
+      - { name: h, type: integer, optional: true, default: 16, range: "1..512 (V+H <= 512)", desc: "Height of the source rectangle. Default 16." }
+      - { name: attribute, type: integer, optional: true, default: 1, range: "attribute bitfield (see below)", desc: "Display/rotation/flip/additive bits. Default &H01 (display ON only)." }
+    note: "SPSET mgmt, U,V [,W,H], attr — create sprite from a directly-specified image (4 or 6 args; 3/5-arg forms accepted with W,H defaulting to 16,16; no return value)."
+  # Form 3 — auto-allocate a free number (whole range), from a template.
+  - args:
+      - { name: definition_number, type: integer, range: "0..4095", desc: "SPDEF template number." }
+    out:
+      - { name: IX, type: integer, desc: "Receives the allocated sprite number 0..511, or -1 if none free." }
+    note: "SPSET defn OUT IX — find a free sprite number in 0..511 and create from a template (1 arg, 1 return)."
+  # Form 4 — auto-allocate a free number (whole range), direct image.
+  - args:
+      - { name: u, type: integer, range: "0..511", desc: "X of source rectangle." }
+      - { name: v, type: integer, range: "0..511", desc: "Y of source rectangle." }
+      - { name: w, type: integer, range: "1..512 (U+W <= 512)", desc: "Width of source rectangle." }
+      - { name: h, type: integer, range: "1..512 (V+H <= 512)", desc: "Height of source rectangle." }
+      - { name: attribute, type: integer, range: "attribute bitfield", desc: "Display/rotation/flip/additive bits." }
+    out:
+      - { name: IX, type: integer, desc: "Receives the allocated sprite number 0..511, or -1 if none free." }
+    note: "SPSET U,V,W,H,attr OUT IX — find a free sprite number and create from a direct image (5 args, 1 return)."
+  # Form 5 — auto-allocate within a range, from a template.
+  - args:
+      - { name: upper_limit, type: integer, range: "0..511", desc: "Inclusive upper bound of the search range." }
+      - { name: lower_limit, type: integer, range: "0..511", desc: "Inclusive lower bound of the search range." }
+      - { name: definition_number, type: integer, range: "0..4095", desc: "SPDEF template number." }
+    out:
+      - { name: IX, type: integer, desc: "Receives the allocated sprite number within the range, or -1 if none free." }
+    note: "SPSET upper, lower, defn OUT IX — find a free number in a range, create from a template (3 args, 1 return)."
+  # Form 6 — auto-allocate within a range, direct image.
+  - args:
+      - { name: upper_limit, type: integer, range: "0..511", desc: "Inclusive upper bound of the search range." }
+      - { name: lower_limit, type: integer, range: "0..511", desc: "Inclusive lower bound of the search range." }
+      - { name: u, type: integer, range: "0..511", desc: "X of source rectangle." }
+      - { name: v, type: integer, range: "0..511", desc: "Y of source rectangle." }
+      - { name: w, type: integer, range: "1..512 (U+W <= 512)", desc: "Width of source rectangle." }
+      - { name: h, type: integer, range: "1..512 (V+H <= 512)", desc: "Height of source rectangle." }
+      - { name: attribute, type: integer, range: "attribute bitfield", desc: "Display/rotation/flip/additive bits." }
+    out:
+      - { name: IX, type: integer, desc: "Receives the allocated sprite number within the range, or -1 if none free." }
+    note: "SPSET upper, lower, U,V,W,H,attr OUT IX — find a free number in a range, direct image (7 args, 1 return)."
+
+summary: "Creates (registers) a sprite. Six forms select between using an SPDEF template vs. a directly-specified image, and between an explicit management number vs. auto-allocating a free one (over the whole range or a given range, returned via OUT). SPSET (re)initializes the slot: rotation/scale/offset reset and all SPVAR set to 0."
+
+semantics:
+  - "The form is chosen first by the return-value count: 0 returns = explicit-management-number forms (1 and 2), 1 return = auto-allocate OUT forms (3,4,5,6). Any other return count raises errnum 4 (Illegal function call) — return-count r0=[r0,#0xc]: cmp #0 beq no-OUT @0x1415f4, cmp #1 beq OUT @0x141990, else b error @0x1419b4."
+  - "Explicit-number path (0 returns) accepts 2..6 arguments (sub r0,argcount,#2 / cmp #5 / bcc @0x1415f4); any other count raises errnum 4 (mov r0,#0x4 @0x14160c). argcount==2 is form 1 (mgmt, defn); argcount 3..6 is form 2 (mgmt,U,V[,W,H][,attr]) dispatched at @0x14169c-0x1416c4, with W,H defaulting to 16,16 and attribute defaulting to &H01 (display ON)."
+  - "The management number is fetched through the sprite-index getter FUN_001eece0 and must be in 0..(sprite count - 1) = 0..511; out of range raises errnum 10 (Out of range) — getter guard then mov r0,#0xa @0x1eed3c (count = [[0x315d60]+0x48]) @0x14161c-0x141628. The definition number (form 1) is fetched via the bounded getter FUN_001eec7c with upper bound &H0FFF = 4095 (ldr from [0x1418c4]=0xFFF @0x1416c8), so defn must be 0..4095 else errnum 10."
+  - "Form 2 image params: U,V are fetched via the coordinate getter FUN_001eec18 @0x141668/0x14168c, W,H/attr via FUN_001eeb9c. When W,H are omitted the default 16,16 (vldr.32 s16 = 16.0) is used; when attribute is omitted the default &H01 (#SPSHOW only — display ON, no rotation/flip/additive) is used. Per the docs, U+W and/or V+H greater than 512 raises an error (queued for the oracle to pin the errnum — assumed errnum 10 Out of range)."
+  - "Attribute bitfield (also used by SPCHR): b00 = display 0/1 (#SPSHOW &H01); b01-b02 = 90-degree rotation, #SPROT0/#SPROT90/#SPROT180/#SPROT270 = &H00/&H02/&H04/&H06; b03 = horizontal flip (#SPREVH &H08); b04 = vertical flip (#SPREVV &H10); b05 = additive blending (#SPADD &H20). See spec/reference/constants.yaml."
+  - "OUT (auto-allocate) path (1 return): forms 3 (defn) / 4 (U,V,W,H,attr) / 5 (upper,lower,defn) / 6 (upper,lower,U,V,W,H,attr). The runtime scans for an unused slot — the whole range 0..511 (forms 3,4) or the inclusive [upper,lower] range (forms 5,6) — and writes the chosen number into IX, or -1 if no slot is free (handler @0x141990). The search-range and result-store logic lives in the OUT branch; the -1 'no available number' result is documented."
+  - "Each auto-allocate form has an equivalent FUNCTION-CALL syntax: `IX = SPSET(...)` is identical to `SPSET ... OUT IX` (same return-count==1 dispatch @0x141990). E.g. `SP=SPSET(0)` is form 3, `SP=SPSET(U,V,W,H,attr)` form 4, `SP=SPSET(upper,lower,defn)` form 5, `SP=SPSET(upper,lower,U,V,W,H,attr)` form 6. The function-call form is the more common spelling in real programs; the OUT target may be an array element (e.g. SPSET 0 OUT SPID[0])."
+  - "SPSET always (re)initializes the slot it creates: rotation and all other sprite state are reset and all SPVAR values become 0 (per docs). To use collision detection (SPHIT*) on the sprite, SPCOL must be called AFTER SPSET. A freshly SPSET sprite has its display attribute per the attribute argument (default ON)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the return-value count is not 0 or 1, or the explicit-number form is given other than 2..6 arguments" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511, the definition number is not in 0..4095, or (per docs) U+W / V+H exceeds 512 (errnum pending oracle)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spset.md (6 forms: SPSET mgmt,defn (defn 0-4095); SPSET mgmt,U,V[,W,H],attr (U,V 0-511, W,H default 16,16, U+W/V+H>512 errors, attr default &H01); SPSET defn OUT IX; SPSET U,V,W,H,attr OUT IX; SPSET upper,lower,defn OUT IX; SPSET upper,lower,U,V,W,H,attr OUT IX — IX is 0-511 or -1 if none free; mgmt 0-511; SPSET reinitializes rotation and all info, SPVAR all 0; call SPCOL after SPSET for collisions. Attribute bits b00 display/#SPSHOW, b01-02 rotation/#SPROT0-270, b03 #SPREVH, b04 #SPREVV, b05 #SPADD)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPSET handler @0x1415a0: return-count r0=[r0,#0xc] cmp #0 beq no-OUT @0x1415f4 / cmp #1 beq OUT @0x141990 / else b @0x1419b4; no-OUT arg-count check sub r0,r8,#2 / cmp #5 / bcc @0x1415fc else mov r2,#0/mvn r1/mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x14160c; mgmt via sprite-index getter bl 0x1eece0 @0x141628 (out-of-range -> mov r0,#0xa errnum 10 @0x1eed3c, count=[[0x315d60]+0x48]); form dispatch cmp r8,#2 beq form1 @0x1416c8 / cmp #3/#4/#5/#6 @0x14169c-0x1416c0; form1 defn via bounded getter bl 0x1eec7c upper=[0x1418c4]=0xFFF (4095) @0x1416c8 (out-of-range -> errnum 10 @0x1eecd0); defn-template stride 14 bytes (rsb r2,r0,r0,lsl#3 / add lsl#1) reading U/V/W/H ldrh/ldrsh @0x141730-0x141758; W,H default 16.0 (vldr.32 s16) attr default mov r6,#1 @0x1416a4; image getters bl 0x1eec18 (U,V @0x141668) / bl 0x1eeb9c (W,H/attr @0x1417f4); OUT auto-allocate branch @0x141990 stores result or -1; state ptr 0x315d60, sprite-base ptrs @0x1418a8-0x1418cc." }
+  - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteData/SpriteAttr create + SPDEF template + free-slot allocation (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: SPSET is one of the most common sprite calls; both the explicit-number forms (SPSET I,defn / SPSET I,U,V,W,H,attr) and the OUT auto-allocate forms (SPSET defn OUT IX) appear widely — confirms all forms are legal. The FUNCTION-CALL spelling IX=SPSET(...) appears ~122x (e.g. VAR SP=SPSET(536) in 5KSKXX8X/TXT/RNDLIBTEST; VAR IDX%=SPSET(1,511,1) range-form in B2B43VHE/TXT/SHINIES; SPSET 0 OUT SPID[0] array target in 13D4DV3V/TXT/MAIN_PRG_V2), confirming the function syntax is legal and common. A 1-argument no-OUT form 'SPSET 510' appears in 534NX3L6/TXT/DANMAKU3 behind a rare MPCOUNT!=2 branch — oracle-confirmed to raise errnum 4 (dead/buggy code), so the disassembly's argcount-2..6 guard is correct." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8a): SPSET 512,0 -> errnum 10, errline 1; SPSET -1,0 -> errnum 10; SPSET 0,4096 -> errnum 10; SPSET 0,0,0,0,0,0,0 (7 args, no OUT) -> errnum 4; SPSET 510 (1 arg, no OUT) -> errnum 4 (resolves the corpus contradiction — strict 2..6 argcount)." }
+
+confidence: disassembled
+
+tests:
+  # creation side-effects (visible sprite) need the sprite-framebuffer oracle (O-T6, queued); error expects are hw_verified (sb-oracle 2026-06-22 s_t8a).
+  - { name: create_from_template_ok, code: "SPSET 0,0", expect: { stdout: "" } }
+  - { name: create_direct_ok, code: "SPSET 54,0,0,32,32,1", expect: { stdout: "" } }
+  - { name: create_direct_no_wh_ok, code: "SPSET 10,0,0,1", expect: { stdout: "" } }
+  - { name: out_alloc_from_template_ok, code: 'SPSET 0 OUT IX\nPRINT IX>=0', expect: { stdout: "1" } }
+  - { name: func_alloc_form_ok, code: 'SP=SPSET(0)\nPRINT SP>=0', expect: { stdout: "1" } }
+  - { name: mgmt_out_of_range, code: "SPSET 512,0", expect: { error: { errnum: 10 } } }
+  - { name: mgmt_negative, code: "SPSET -1,0", expect: { error: { errnum: 10 } } }
+  - { name: defn_out_of_range, code: "SPSET 0,4096", expect: { error: { errnum: 10 } } }
+  - { name: too_many_args, code: "SPSET 0,0,0,0,0,0,0", expect: { error: { errnum: 4 } } }
