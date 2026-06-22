@@ -1,0 +1,38 @@
+id: OPTION
+kind: statement
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: feature, type: keyword, desc: "Compiler feature name: STRICT or DEFINT (bare keyword, not a string)." }
+    note: "OPTION feature — compile-time directive that changes how the rest of the program is compiled."
+
+summary: "Sets a compile-time language option (STRICT requires variables to be declared; DEFINT makes unsuffixed variables Integer by default). Parsed by the compiler, not executed at runtime."
+
+semantics:
+  - "OPTION is a COMPILER directive consumed while the program is being compiled; it does nothing at run time and emits no value."
+  - "OPTION STRICT: every variable must be declared with VAR or DIM before use; an undeclared reference becomes an Undefined-variable error (errnum 15) instead of being auto-declared. [errnum from the official error table + SB4 docs wording; SB3-specific errnum oracle-pending]"
+  - "OPTION DEFINT: unsuffixed variables and arrays default to Integer type instead of Double (Real)."
+  - "The feature name is a bare keyword (OPTION STRICT), not a string literal."
+  - "Exactly one feature per OPTION statement; a program may contain multiple OPTION statements (the common pairing is OPTION STRICT then OPTION DEFINT)."
+  - "Position-dependent: an OPTION takes effect for source AFTER its position, not retroactively — so OPTION statements are conventionally the first lines of a program."
+  - "An unrecognized feature name raises errnum 3 (Syntax error) at compile time."
+  - "Corpus shows an additional undocumented feature OPTION TOOL (marks the program as a tool/utility); its precise compile effect is not pinned here. [community, oracle-pending]"
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "the feature name is not a recognized compiler option" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/option.md (OPTION Feature name; STRICT: 'Variable declaration is required (A reference without declaration will give an error)'; DEFINT: 'Causes the default variable type to be Integer'); sb-docs/smilebasic-4/option.md (one option per statement, multiple OPTION statements allowed; position-dependent — takes effect after its position)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst OPTION compiler handler FUN_00185da8 [0x185da8..0x18630c]: references the ASCII keyword 'OPTION' @0x1861a4 followed by a feature pointer table @0x1861ac -> 'STRICT' @0x18766c, @0x1861b0 -> 'DEFINT' @0x187674; keyword match via bl 0x1ec0a4 (string compare) @0x1861d0; on no match mov r1,#0x3 @0x186258 + bl 0x1da2a4 raises errnum 3 (Syntax error)", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC compiler: OPTION sets compile flags STRICT/DEFINT before codegen (3.5.0 cross-check, structural only)" }
+  - { type: community, ref: "sbsave corpus: OPTION STRICT (~712), OPTION DEFINT (~206), STRICT+DEFINT pair at program top (2BC4738V/TXT/MOH_JUHSY237D lines 30-31); undocumented OPTION TOOL in 12 programs (e.g. 2383C3HE/TXT/LPM, 7Z7NE3RJ/TXT/PTC_EDITOR) [oracle-pending]" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4f): OPTION NOPE (unrecognized feature) -> errnum 3, errline 1" }
+
+confidence: disassembled
+
+tests:
+  - { name: strict_declared_ok, code: "OPTION STRICT\nVAR A=1\nPRINT A", expect: { stdout: "1" } }
+  - { name: strict_undeclared_errors, code: "OPTION STRICT\nB=2\nPRINT B", expect: { error: { errnum: 15 } } }
+  - { name: unknown_option_errors, code: "OPTION NOPE", expect: { error: { errnum: 3 } } }

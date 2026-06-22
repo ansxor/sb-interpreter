@@ -1,0 +1,39 @@
+id: VSYNC
+kind: statement
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: frames, type: integer, optional: true, default: 1, range: ">=0 (negative treated as 0)", desc: "Frames to wait for, counted from the LAST VSYNC. 0 = ignore; omitted = 1." }
+    note: "VSYNC [frames] — block until `frames` vertical-sync frames have elapsed since the previous VSYNC."
+
+summary: "Stops the program until the given number of frames have elapsed since the last VSYNC (frame-locked pacing; the count's origin is the previous VSYNC, not the current instant)."
+
+semantics:
+  - "Maintains a per-program 'last VSYNC' frame value. VSYNC waits until the global frame counter reaches `lastVsync + frames`, then sets `lastVsync` to the current frame counter."
+  - "Because the target is measured from the PREVIOUS VSYNC (not the moment VSYNC is called), a loop of `VSYNC 1` yields a steady 60 fps even when the body takes a varying fraction of a frame — this is the documented difference from [[wait]], which counts from the present instant."
+  - "Omitted argument defaults to 1 frame."
+  - "frames = 0 does not wait, but still resynchronizes `lastVsync` to the current frame (the '0: Ignore' documented behavior)."
+  - "A negative argument is treated like 0: the handler compares the resolved count `<= 0` and skips the wait, resynchronizing `lastVsync` to the current frame, rather than raising an error."
+  - "While waiting, the program yields a frame at a time (the BREAK/STOP check still runs each frame, so the program remains interruptible)."
+  - "MAINCNT (frames since launch) keeps advancing across the wait; see the frame-and-timing-model concept."
+  - "VSYNC is a statement and produces no value; requesting a return value (using it as a function, e.g. `A=VSYNC(1)`) raises errnum 4 (Illegal function call)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "a return value is requested (VSYNC used as a function)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/vsync.md (VSYNC [frames]; 'Stops the program until the specified number of vertically synchronized frames has been reached'; 'Unlike WAIT, the VSYNC count starts from the last VSYNC'; 0: Ignore; omitted = 1)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst VSYNC handler @0x1455c8: return-count guard ldr r1,[r0,#0xc]/cmp #0, non-zero -> mov r0,#0x4 @0x1455e0 + bl 0x1fffdc (errnum 4); default mov r1,#0x1 @0x1455ec stored to [sp] then argcount ldr r1,[r0,#0x4]/cmp #1/blt skips arg read; target add r5,lastVsync,count @0x14563c using lastVsync ptr [0x315ee8] and frame-counter ptr [0x315ec0]; wait loop cmp r0,r5/bge done + swi 0xa @0x14567c yields per frame; on exit str current -> [0x315ee8] (lastVsync = current) @0x145690; count<=0 path ble 0x14568c skips wait", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/system.d VSYNC: waits relative to a stored last-vsync timestamp (3.5.0 cross-check, structural only)" }
+  - { type: community, ref: "sbsave corpus: bare `VSYNC` with no argument is widespread (~1834 occurrences, e.g. 1DE453HV/TXT/SPACE_MOLE); variable/expression argument forms `VSYNC SPEED` (1K8XDW8E/TXT/@BACKUP.PRG) and `VSYNC (I MOD 40)==39` (4RSXS3W3/TXT/PRG); no `X=VSYNC(...)` return-value form found" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4f): A=VSYNC(1) (statement used as a function) -> errnum 4, errline 1" }
+
+confidence: disassembled
+
+tests:
+  - { name: default_one_frame, code: "VSYNC", expect: { stdout: "" } }
+  - { name: explicit_one_frame, code: "VSYNC 1", expect: { stdout: "" } }
+  - { name: zero_is_ignore, code: "VSYNC 0", expect: { stdout: "" } }
+  - { name: as_function_errors, code: "A=VSYNC(1)", expect: { error: { errnum: 4 } } }

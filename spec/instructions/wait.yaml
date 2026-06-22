@@ -1,0 +1,39 @@
+id: WAIT
+kind: statement
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: frames, type: integer, optional: true, default: 1, range: ">=0 (negative treated as 0)", desc: "Frames to wait for, counted from the present instant. 0 = ignore; omitted = 1." }
+    note: "WAIT [frames] — block until `frames` vertical-sync frames have elapsed from the moment WAIT is reached."
+
+summary: "Stops the program until the given number of frames have elapsed, counted from the present point (a plain frame delay; unlike VSYNC the origin is 'now', not the last VSYNC)."
+
+semantics:
+  - "Waits until the global frame counter reaches `current + frames` (the target is anchored at the instant WAIT runs)."
+  - "This is the documented contrast with [[vsync]]: WAIT counts from the present point, so per-iteration jitter in the loop body accumulates into the effective frame rate; VSYNC counts from the previous VSYNC and absorbs that jitter."
+  - "Omitted argument defaults to 1 frame."
+  - "frames = 0 does not wait (documented '0: Ignore')."
+  - "A negative argument is treated like 0: the handler compares the resolved count `<= 0` and skips the wait rather than raising an error."
+  - "Like VSYNC, WAIT updates the program's 'last VSYNC' frame value to the current frame when it finishes, so a following `VSYNC n` measures from the end of the WAIT."
+  - "While waiting, the program yields a frame at a time and stays interruptible (BREAK/STOP checked each frame). MAINCNT keeps advancing."
+  - "WAIT is a statement and produces no value; requesting a return value (e.g. `A=WAIT(1)`) raises errnum 4 (Illegal function call)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "a return value is requested (WAIT used as a function)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/wait.md (WAIT [frames]; 'Stops the program until the specified number of vertically synchronized frames has been reached'; count starts from the present point; 0: Ignore; omitted = 1)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst WAIT handler @0x14afb0: return-count guard ldr r1,[r0,#0xc]/cmp #0, non-zero -> mov r0,#0x4 @0x14afc8 + bl 0x1fffdc (errnum 4); default mov r1,#0x1 @0x14afd4; argcount ldr r1,[r0,#0x4]/cmp #1/blt skips arg read; target add r5,current,count @0x14b020 using frame-counter ptr [0x315ec0] (NOT lastVsync — the VSYNC/WAIT difference); wait loop cmp r0,r5/bge done + swi 0xa @0x14b060; on exit str current -> lastVsync ptr [0x315ee8] @0x14b078; count<=0 path ble 0x14b070 skips wait", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/system.d WAIT: waits N frames from now (3.5.0 cross-check, structural only)" }
+  - { type: community, ref: "sbsave corpus: bare `WAIT` no-arg (~558, e.g. 12C3NWQE/TXT/3DSCLOSEGAME); variable arg `WAIT PRGSTOP%` (13D4DV3V/TXT/MAIN_PRG_V2); arithmetic/expression args `WAIT D*60` (1R8EDWHE/TXT/DEFY_180.LIB), `WAIT (RND(3)+1)*60` (YK48E3CX/TXT/JT-OS), `WAIT RND(20)` (43LEDEAE/TXT/XCMD.LIB); `WAIT 0` (YK48E3CX/TXT/JT-OS); no return-value form found" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4f): A=WAIT(1) (statement used as a function) -> errnum 4, errline 1" }
+
+confidence: disassembled
+
+tests:
+  - { name: default_one_frame, code: "WAIT", expect: { stdout: "" } }
+  - { name: explicit_frames, code: "WAIT 60", expect: { stdout: "" } }
+  - { name: zero_is_ignore, code: "WAIT 0", expect: { stdout: "" } }
+  - { name: as_function_errors, code: "A=WAIT(1)", expect: { error: { errnum: 4 } } }

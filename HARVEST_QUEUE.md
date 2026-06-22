@@ -139,3 +139,23 @@ oracle to confirm exact output and promote to `hw_verified`.
   (from disasm @0x28e5c0 + osb VM.d): slot prefix routes the lookup to slot N, invalid slot
   yields FALSE; flag is boolean. Needs a multi-slot/USE + DEF oracle setup. Base CHK* true/false
   + non-string-errnum-8 cases already hw_verified 2026-06-22.
+- [ ] S-T4f VSYNC/WAIT timing semantics · Confirm VSYNC counts from the last VSYNC and WAIT
+  from the present (e.g. via MAINCNT deltas across a known-cost loop) and that count<=0 is a
+  no-op that resyncs lastVsync. · assumption (disasm @0x1455c8/@0x14afb0): VSYNC target =
+  lastVsync+n, WAIT target = current+n, both set lastVsync=current on exit. Needs the M4 frame
+  clock + a deterministic MAINCNT probe. errnum-4 (used as function) already hw_verified 2026-06-22.
+- [ ] S-T4f KEY() function form · Confirm `KEY 3,"HI":PRINT KEY(3)` returns the bound string
+  "HI", and that KEY(n) honors the 1..5 range (errnum 10 out of range). · assumption (disasm
+  @0x14c018 retcount==1 path + corpus VAL(KEY(5))): KEY(n) reads back the assigned function-key
+  string. Statement errnum 8/10 cases already hw_verified 2026-06-22.
+- [ ] S-T4f OPTION STRICT/DEFINT behavior + OPTION TOOL · Confirm OPTION STRICT makes an
+  undeclared reference raise (errnum 15 Undefined variable assumed) and is position-dependent;
+  OPTION DEFINT makes unsuffixed vars Integer; what OPTION TOOL (12 corpus programs) does at
+  compile time. · assumption: STRICT undeclared -> errnum 15; DEFINT default int. Unknown-feature
+  errnum 3 already hw_verified 2026-06-22.
+- [ ] S-T4f DIALOG interactive forms + RESULT · Confirm R=DIALOG(text,seltype,...) returns
+  -1/0/1, button-detect (negative mask) returns 128..140, the file-name form returns the entered
+  string with RESULT=-1 on cancel, and the colon-prefixed menu string with seltype -1 behavior.
+  · BLOCKS on Touch-Screen input — not harvestable with the current headless oracle (no input
+  injection). assumption (docs + disasm @0x181050): per the documented return tables. Argcount>4
+  -> errnum 3 already hw_verified 2026-06-22.

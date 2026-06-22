@@ -1,0 +1,56 @@
+id: DIALOG
+kind: statement
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: text, type: string, desc: "Message string shown in the dialog body (Touch Screen)." }
+      - { name: seltype, type: integer, optional: true, default: 0, range: "0..5 (or negative = button-detect mask)", desc: "Selection/button type. 0:OK 1:No/Yes 2:Back/Next 3:Cancel/Confirm 4:Cancel/Execute 5:Next." }
+      - { name: caption, type: string, optional: true, desc: "Caption shown in the title field at the top of the dialog." }
+      - { name: timeout, type: integer, optional: true, default: 0, desc: "Auto-close after this many seconds (0 = never). Negative value = timeout measured in frames." }
+    note: 'DIALOG "text"[,seltype,"caption",timeout] — statement form; result lands in the system variable RESULT.'
+  - args:
+      - { name: text, type: string, desc: "Message string." }
+      - { name: seltype, type: integer, optional: true, default: 0, range: "0..5, or a negative button-detect mask", desc: "Selection type (0-5) OR, when negative, a hardware-button detect mask." }
+      - { name: caption, type: string, optional: true, desc: "Caption string." }
+      - { name: timeout, type: integer, optional: true, default: 0, desc: "Seconds before auto-close (negative = frames)." }
+    returns: { type: integer }
+    note: "R = DIALOG(text[,seltype,caption,timeout]) — returns -1 (left/negation), 0 (timeout), 1 (right/affirmation); for a negative button-detect mask returns 128..140 (the pressed button code). Same value also stored in RESULT."
+  - args:
+      - { name: initial, type: string, desc: "Initial string pre-filled in the input field." }
+      - { name: caption, type: string, desc: "Caption string (REQUIRED here — its presence as a string selects the file-name form)." }
+      - { name: maxchars, type: integer, optional: true, range: "<=14", desc: "Maximum number of characters (up to 14)." }
+    returns: { type: string }
+    note: 'S$ = DIALOG("initial","caption"[,maxchars]) — file-name input form; returns the entered string. On cancel RESULT = -1 and the returned string is invalid.'
+
+summary: "Displays a modal dialog on the Touch Screen and waits for a button (or input); the outcome is returned (function forms) and also placed in the system variable RESULT."
+
+semantics:
+  - "Dialogs are always shown on the Touch Screen (lower screen) and block the program until dismissed, timed out, or (with the input form) confirmed."
+  - "Statement form `DIALOG text,...` shows the dialog and stores the outcome in RESULT (1=Confirmed, -1=Canceled, 0=Time out)."
+  - "Function form `R=DIALOG(...)` returns the outcome AND mirrors it into RESULT. Selection types: 0:OK, 1:No/Yes, 2:Back/Next, 3:Cancel/Confirm, 4:Cancel/Execute, 5:Next. Returns -1 (left/negation), 0 (timeout), 1 (right/affirmation)."
+  - "Hardware-button detect: a NEGATIVE seltype is a sign-reversed bitmask over |b00|ABXY(1) |b01|+Control Pad(2) |b02|L,R(4) |b03|Touch Screen(8). E.g. -1 = ABXY only, -3 = ABXY + Control Pad, -15 = all. Returns the pressed-button code 128(A) 129(B) 130(X) 131(Y) 132-135(+Pad up/down/left/right) 136(L) 137(R) 140(Touch). ZL/ZR cannot be detected."
+  - "File-name input form `S$=DIALOG(initial,caption[,maxchars])`: distinguished by a STRING second argument; returns the entered string, with maxchars up to 14. If RESULT=-1 the input was canceled and the string is invalid."
+  - "Timeout is in seconds; a NEGATIVE timeout is interpreted in frame units. 0 (default) means the dialog never auto-closes."
+  - "Total length of text + caption should be 256 characters or less. CHR$(10) or CHR$(13) in the text forces a line break at that point."
+  - "Argument-count guard (from the handler): 1..4 arguments are accepted; 0 arguments or more than 4 raise errnum 3 (Syntax error)."
+  - "When the form requires a return value but none is requested (or the count is otherwise inconsistent for the file-name form) the handler raises errnum 4 (Illegal function call)."
+  - "Passing the wrong operand TYPE where a string is required raises errnum 8 (Type mismatch)."
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "called with 0 arguments or more than 4 arguments" }
+  - { errnum: 4, name: "Illegal function call", when: "the return-value count is inconsistent with the chosen form" }
+  - { errnum: 8, name: "Type mismatch", when: "a string argument is given a non-string value" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/dialog.md (6 forms: statement DIALOG \"text\"; DIALOG text,seltype,caption,timeout; R=DIALOG(...) -> -1/0/1; button-detect R=DIALOG(text,negmask,...) -> 128..140; file-name S$=DIALOG(init,cap[,max<=14]); RESULT holds 1/-1/0; text+caption <=256 chars; CHR$(10)/CHR$(13) = line break; negative timeout = frames)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst DIALOG handler @0x181050: argcount ldr r8,[r0,#0x4]; cmp #0 beq + cmp #4 ble -> valid 1..4, else mov r0,#0x3 @0x18107c + bl 0x1fffdc (errnum 3 Syntax error); branch on argcount 2|3 @0x18108c routing to the string-caption (file-name) form; return-count guard ldr r1,[r4,#0xc]/cmp #1 else mov r0,#0x4 @0x1810d4 (errnum 4); string-type check failure mov r0,#0x8 @0x181134 (errnum 8); caption length clamp cmp #0x7f / movhi r0,#0x7f @0x181118 (127-char cap on the copied caption)", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/system.d DIALOG: dispatches to OS message-box, sets RESULT (3.5.0 cross-check, structural only)" }
+  - { type: community, ref: "sbsave corpus: ~492 programs use DIALOG. Forms seen: statement 1-arg (DIALOG \"text\"); int-return confirm form (P=DIALOG(\"...\",1,\"Confirm\",0) in 1K8XDW8E/TXT/HARDQUIZ); file-name string-return form with empty initial (INPU$=DIALOG(\"\",INP$,14) in 4KE45EKV/TXT/SPOOPYLAB; YEARX$=DIALOG(STR$(YEAR),\"年は?(YYYY)\",4) in 1BWX7ENV/TXT/AND-OS); negative-frame timeout (DLG%=DIALOG(\"SKIP VIDEO?\",1,\"TRAILER:\",-600) in CE3YF3H4/TXT/0-RPG.3DS); UNDOCUMENTED colon-prefixed menu string with seltype -1 (SAVE5=DIALOG(\":Load game.:New game.:Exit.\",-1,\"Main Menu\") in 4KE45EKV/TXT/SPOOPYLAB) [oracle-pending]" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4f): A=DIALOG(\"a\",0,\"b\",0,9) (5 arguments) -> errnum 3 (Syntax error), errline 1 — the argcount>4 guard raises before any UI is shown. (Interactive forms / RESULT values block on Touch-Screen input; not oracle-harvestable, queued.)" }
+
+confidence: disassembled
+
+tests:
+  - { name: too_many_args, code: 'A=DIALOG("a",0,"b",0,9)', expect: { error: { errnum: 3 } } }

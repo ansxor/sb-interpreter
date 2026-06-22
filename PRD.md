@@ -65,7 +65,7 @@ and name the instructions they cover inline.
 - [x] S-T4c Array ops — COPY · FILL · SORT · RSORT
 - [x] S-T4d DATA/READ — DATA · READ · RESTORE · REM
 - [x] S-T4e Read helpers & checks — DTREAD · TMREAD · CHKCALL · CHKLABEL · CHKVAR
-- [ ] S-T4f Misc data-ops — DIALOG · KEY · OPTION · VSYNC · WAIT
+- [x] S-T4f Misc data-ops — DIALOG · KEY · OPTION · VSYNC · WAIT
 
 #### S-T5 Console I/O (12) → S-T0
 - [ ] S-T5a Output — PRINT · LOCATE · COLOR · CLS

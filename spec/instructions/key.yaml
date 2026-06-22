@@ -1,0 +1,46 @@
+id: KEY
+kind: statement
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: number, type: integer, range: "1..5", desc: "Function-key slot to assign (1-5)." }
+      - { name: text, type: string, desc: "String assigned to the function key. If too long to display, a trailing '…' is shown." }
+    note: 'KEY number,"text" — bind a string to function key 1-5 (the DIRECT-mode F-keys).'
+  - args:
+      - { name: number, type: integer, range: "1..5", desc: "Function-key slot to read (1-5)." }
+    returns: { type: string }
+    note: 'S$ = KEY(number) — undocumented function form: returns the string currently bound to function key `number`. [community/disassembled]'
+
+summary: "Assigns a character string to a function key (1-5); an undocumented one-argument function form reads back the string currently bound to a function key."
+
+semantics:
+  - "Statement form binds `text` to the given function-key slot (1-5). The keys are the on-screen F1-F5 shortcuts used in DIRECT/edit mode."
+  - "If the bound string is wider than the key can display, SmileBASIC appends '…' to the shown label (the stored value is unaffected)."
+  - "Embedding CHR$(13) at the end of the string makes the key auto-execute that command line when pressed (e.g. `KEY 1,\"CONT\"+CHR$(13)`) — the dominant corpus idiom."
+  - "Function-key number must be in 1..5. The handler computes `number-1` and compares it UNSIGNED against 5, so both `number > 5` and `number < 1` (which wraps to a large unsigned value) raise errnum 10 (Out of range)."
+  - "The second argument must be a string; a non-string value raises errnum 8 (Type mismatch)."
+  - "Undocumented function form: `KEY(number)` with exactly one argument and one requested return value returns the string currently bound to that key. The same 1..5 range check applies (out of range -> errnum 10)."
+  - "Wrong argument/return-value counts (e.g. statement form without exactly 2 args, or a function call without exactly 1 arg) raise errnum 4 (Illegal function call)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the number of arguments / return values does not match a valid form" }
+  - { errnum: 10, name: "Out of range", when: "the function-key number is not in 1..5" }
+  - { errnum: 8, name: "Type mismatch", when: "the assigned value (statement form) is not a string" }
+
+sources:
+  - { type: documented, ref: 'sb-docs/smilebasic-3/key.md (KEY Number,"Character string"; Number = 1-5; over-long string shows trailing "…"; example KEY 1,"CLS"+CHR$(13))' }
+  - { type: disassembled, ref: "cia_3.6.0.lst KEY handler @0x14bf0c: return-count branch ldr r0,[r4,#0xc] -> 0 = statement path @0x14bf50, 1 (with argcount==1) = function path @0x14c018, else mov r0,#0x4 @0x14bf40 (errnum 4); statement path requires argcount==2 (cmp #2 @0x14bf54 else errnum 4); range guard sub r0,r0,#0x1 / cmp #0x5 / bcs 0x14c04c -> mov r0,#0xa (errnum 10) @0x14c054; string-type check ldrb [r12,#0x2]==0 -> mov r0,#0x8 @0x14c000 (errnum 8); function path mirrors the sub#1/cmp#5/bcc range guard @0x14c044 and reads the bound string", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/system.d KEY: assigns string to function key slot (3.5.0 cross-check, structural only)" }
+  - { type: community, ref: "sbsave corpus: ~114 programs use the KEY statement, numbers exclusively 1-5; CHR$(13) auto-run idiom dominant (KEY 1,\"CONT\"+CHR$(13) in 13D4DV3V/TXT/MAIN_PRG_V2); variable index form KEY I+1,... in a FOR loop (433J5XA3/TXT/ATMOS, QDSJX3ZD/TXT/ZEX_BIN12.BAS); undocumented FUNCTION form KEY(n) reading the bound string back (VAL(KEY(5)), LEN(KEY(5)) in 51VVV3NJ/TXT/SETUP; ?KEY(3) in D3E8YE9F/TXT/TEST-NOISE) [oracle-pending]" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4f): KEY 6,\"X\" -> errnum 10; KEY 0,\"X\" -> errnum 10; KEY 3,5 (non-string value) -> errnum 8; KEY 3,\"HI\" -> no error (valid form). errline 1 each. (KEY() function-form value not harvested — needs prior KEY assignment + value read; queued.)" }
+
+confidence: disassembled
+
+tests:
+  - { name: assign_ok, code: 'KEY 1,"CLS"', expect: { stdout: "" } }
+  - { name: assign_with_cr, code: 'KEY 1,"CONT"+CHR$(13)', expect: { stdout: "" } }
+  - { name: number_too_high, code: 'KEY 6,"X"', expect: { error: { errnum: 10 } } }
+  - { name: number_zero, code: 'KEY 0,"X"', expect: { error: { errnum: 10 } } }
+  - { name: nonstring_value, code: "KEY 3,5", expect: { error: { errnum: 8 } } }
