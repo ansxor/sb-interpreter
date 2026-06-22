@@ -292,3 +292,16 @@ oracle to confirm exact output and promote to `hw_verified`.
     accepted and returns TM + object-1 coords (no corpus example found).
   - SPHITRC mask AND-filtering + swept-movement outcomes; SPHITSP swept-with-SPCOLVEC outcomes (do the
     movement vectors change a same-frame hit/miss vs the static AABB?).
+
+- [ ] S-T8e vars/funcs/state — remaining VALUE/render harvests (core forms + error cases already
+  hw_verified s_t8e batch 2026-06-22: SPVAR read/write round-trip, SPCHK stopped=0, SPUSED TRUE/FALSE,
+  SPDEF defaults W=H=16/A=1 + range errnum 10, SPCOLOR &H11223344 round-trip, SPFUNC bind NOERR before
+  SPSET, all mgmt-oob errnum 10 / before-SPSET errnum 4):
+  - SPCHK mid-animation #CHK* bit values — need a running SPANIM to set channel bits, then read SPCHK.
+  - SPDEF non-default template field read-back (U,V,W,H,OX,OY,A round-trip for explicit values; copy form 6
+    field inheritance; bulk array/DATA forms; array element-count-not-multiple-of-7 -> errnum 31).
+  - SPFUNC CALL SPRITE dispatch: confirm the documented "error before SPSET" actually surfaces at CALL time
+    (binding itself does NOT raise); CALLIDX value inside the callback; errnum 4/8 for unresolvable / non-string label.
+  - SPCLIP visual clipping rectangle effect (needs framebuffer oracle O-T6); confirm coordinate clamp vs error
+    for out-of-range (X 0-399 / Y 0-239) and the start/end normalization (sx>ex swap).
+  - SPVAR variable-number out-of-range (n>7) behavior — no explicit guard seen in the handler.

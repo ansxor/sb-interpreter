@@ -87,7 +87,7 @@ and name the instructions they cover inline.
 - [x] S-T8b Transform — SPOFS · SPROT · SPSCALE · SPHOME · SPCHR
 - [x] S-T8c Animation & link — SPANIM · SPSTART · SPSTOP · SPLINK · SPUNLINK
 - [x] S-T8d Collision — SPCOL · SPCOLVEC · SPHITSP · SPHITRC · SPHITINFO
-- [ ] S-T8e Vars/funcs/state — SPVAR · SPFUNC · SPDEF · SPCHK · SPUSED · SPCLIP · SPCOLOR
+- [x] S-T8e Vars/funcs/state — SPVAR · SPFUNC · SPDEF · SPCHK · SPUSED · SPCLIP · SPCOLOR
 
 #### S-T9 BG (24) → S-T0
 - [ ] S-T9a Setup — BGSCREEN · BGPAGE · BGCLR · BGSHOW · BGHIDE

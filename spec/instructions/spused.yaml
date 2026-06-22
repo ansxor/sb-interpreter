@@ -1,0 +1,44 @@
+id: SPUSED
+kind: function
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — function form.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the sprite slot to query." }
+    returns: { type: integer, desc: "TRUE (1) if the slot is in use (SPSET and not yet SPCLR'd); FALSE (0) if it is free." }
+    note: "in_use = SPUSED(mgmt) — test whether a sprite slot is currently allocated."
+  # Form 2 — OUT form (handler accepts result-count 1 either way; confirmed in corpus).
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the sprite slot to query." }
+    out:
+      - { name: in_use, type: integer, desc: "Receives TRUE(1)/FALSE(0) for whether the slot is in use." }
+    note: "SPUSED mgmt OUT in_use — same query into an OUT variable (e.g. `SPUSED I OUT A[I]`)."
+
+summary: "Returns whether a sprite management slot is currently in use (TRUE after SPSET, until SPCLR frees it) or available (FALSE). Unlike most sprite instructions it does NOT require the slot to be SPSET — that is the whole point — but an out-of-range management number still errors. Per the disassembly the handler only requires result-count 1, so the documented function form and an `SPUSED mgmt OUT v` form both work (the OUT form appears in real programs)."
+
+semantics:
+  - "Call-shape gate: argcount [r4,#0x4] must be 1 AND result-count [r4,#0xc] must be 1 (cmp r0,#0x1 / ldreq r0,[r4,#0xc] / cmpeq r0,#0x1 / beq 0x141efc @0x141ed4-0x141ee0). Any other shape raises errnum 4 (mov r0,#0x4 / bl 0x1fffdc @0x141eec). The function form `v=SPUSED(m)` and the OUT form `SPUSED m OUT v` both satisfy (argcount 1, result-count 1) and are handled identically."
+  - "Management number is resolved by FUN_001eece0 (bl 0x1eece0 @0x141f0c); out of 0..511 raises errnum 10 (Out of range). There is NO active-bit guard — querying a free slot is valid and returns FALSE."
+  - "In-use test is a bitmap lookup, not a flag read: the slot index n = mgmt + page_base ([[0x141f78]+0x44]) is split into word index (n>>5) and bit (n&31) and tested against the allocation bitmap at [0x141f7c]=0x019A5F6C — ldr r3,[r12,wordindex,lsl#2] / tst r3, (0x80000000 lsr (n&31)) @0x141f3c-0x141f54. The result is 1 if the bit is set else 0 (movne r1,#0x1 / moveq r1,#0x0 @0x141f5c-0x141f60), returned via the result vtable [r4+0x10]->[+0x14] (blx @0x141f6c)."
+  - "TRUE/FALSE follow SmileBASIC's convention: TRUE = 1, FALSE = 0. A slot becomes in-use on SPSET and free again on SPCLR (the bitmap bit is set/cleared by those instructions)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the call shape is not (1 arg, 1 result)" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spused.md (`Variable=SPUSED(Management number)` — checks if the specified sprite is in use; mgmt 0-511; 'TRUE = In use, FALSE = Available'; example S=SPUSED(4))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPUSED handler @0x141ec4: shape gate cmp r0,#0x1 (argcount) / ldreq r0,[r4,#0xc] / cmpeq r0,#0x1 (result-count) / beq 0x141efc @0x141ed4, else errnum 4 mov r0,#0x4 bl 0x1fffdc @0x141eec; mgmt via FUN_001eece0 bl 0x1eece0 @0x141f0c (errnum 10); NO active-bit guard; allocation-bitmap test n=mgmt+[[0x141f78]+0x44], word [0x141f7c=0x019A5F6C][n>>5], tst r3,(0x80000000 lsr n&31) @0x141f3c-0x141f54 -> movne r1,#0x1 moveq r1,#0x0 @0x141f5c; result via [r4+0x10]->[+0x14] blx @0x141f6c. Literals [0x141f78]=0x00315D60 (state), [0x141f7c]=0x019A5F6C (in-use bitmap)." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg): 1529 uses, ~99% the documented function form (`IF SPUSED(I)==0`, `V=SPUSED(I)`). The OUT form `SPUSED mgmt OUT var` is also real — `SPUSED I OUT SPUSED[I]` appears in Q3HE34KD/TXT/OTW and RRNVA384/TXT/OTW (5 occurrences) — consistent with the handler accepting result-count 1 from either an OUT slot or a function return. Read-back TRUE/FALSE values are oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8e): `SPSET 0,0:?SPUSED(0)` -> 1 (TRUE, in use); `SPCLR:?SPUSED(0)` -> 0 (FALSE, free); `V=SPUSED(512)` -> errnum 10 (mgmt out of range). Confirms TRUE=1/FALSE=0 and that querying a free slot is valid (no SPSET required). The OUT-form read-back value is harvested indirectly (same code path as the function return)." }
+
+confidence: hw_verified
+
+tests:
+  # TRUE=1 / FALSE=0 hw_verified (sb-oracle 2026-06-22 s_t8e).
+  - { name: free_slot_false, code: "SPCLR\nPRINT SPUSED(0)", expect: { stdout: "0\n" } }
+  - { name: in_use_true, code: "SPSET 0,0\nPRINT SPUSED(0)", expect: { stdout: "1\n" } }
+  - { name: out_form, code: "SPSET 0,0\nSPUSED 0 OUT A\nPRINT A", expect: { stdout: "1\n" } }
+  - { name: mgmt_out_of_range, code: "PRINT SPUSED(512)", expect: { error: { errnum: 10 } } }

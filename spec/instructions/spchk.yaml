@@ -1,0 +1,38 @@
+id: SPCHK
+kind: function
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — function form.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET (error otherwise)." }
+    returns: { type: integer, desc: "8-bit animation-status bitmask: which automatic-animation targets are currently running. 0 = animation stopped (none running)." }
+    note: "status = SPCHK(mgmt) — get the sprite's animation-target bitmask."
+
+summary: "Returns a bitmask of which automatic-animation channels (set up by SPANIM) are currently running for a sprite. Each bit corresponds to one animation target: b00 XY-coordinates (#CHKXY,1), b01 Z (#CHKZ,2), b02 UV (#CHKUV,4), b03 definition number (#CHKI,8), b04 rotation (#CHKR,16), b05 magnification XY (#CHKS,32), b06 display color (#CHKC,64), b07 variable (#CHKV,128). A return of 0 means animation is stopped. Used before SPSET, it raises an error. Per the disassembly the handler accepts return-count 1, so both the function form and an `SPCHK mgmt OUT v` form work."
+
+semantics:
+  - "Call-shape gate: argcount [r4,#0x4] must be 1 AND result-count [r4,#0xc] must be 1 (cmp r0,#0x1 / ldreq r0,[r4,#0xc] / cmpeq r0,#0x1 / beq 0x13edb4 @0x13ed8c-0x13ed98). Any other shape raises errnum 4 (Illegal function call) mov r0,#0x4 / bl 0x1fffdc @0x13eda4. Because a function call `v=SPCHK(m)` and an OUT call `SPCHK m OUT v` both present (argcount 1, result-count 1), the handler treats them identically."
+  - "Management number is resolved by FUN_001eece0 (bl 0x1eece0 @0x13edc4); out of 0..511 raises errnum 10 (Out of range). Slot address = base[0x13ee48=0x019A5FB0] + (mgmt + page_base[[0x13ee44]+0x44]) * 0x48 (rsb r1,r0,r0,lsl#5 / add r0,r1,r0,lsl#8 / add r0,r1,r0,lsl#3 @0x13ede8-0x13edf4)."
+  - "Sprite must exist: slot flags [slot+0x4] are tested tst r1,#0x80000000 @0x13edfc; if the active bit is clear (sprite never SPSET) the handler raises errnum 4 (mov r0,#0x4 / bl 0x1fffdc @0x13ee34), matching the docs ('If used before SPSET, an error will occur')."
+  - "Status computation: the running-channel bits live in the high part of the slot flags. If the animation-stopped bit 0x2000000 is set the result is forced to 0 (tst r1,#0x2000000 / movne r1,#0x0 @0x13ee04-0x13ee08). Otherwise the result byte is extracted by mov r0,r1,lsl#0x7 / mov r1,r0,lsr#0x18 @0x13ee0c-0x13ee10 — i.e. status = (flags >> 17) & 0xFF — giving the 8 documented #CHK* bits. The value is returned via the result vtable [r4+0x10]->[+0x14] (blx @0x13ee20)."
+  - "The eight bits map exactly to the SPANIM targets: 1 #CHKXY, 2 #CHKZ, 4 #CHKUV, 8 #CHKI, 16 #CHKR, 32 #CHKS, 64 #CHKC, 128 #CHKV. A non-zero result means at least one channel is mid-animation; zero means all are stopped."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET, or the call shape is not (1 arg, 1 result)" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spchk.md (`Variable=SPCHK(Management number)` — gets the animation status of a sprite; mgmt 0-511; return-value bits b00 #CHKXY(1) / b01 #CHKZ(2) / b02 #CHKUV(4) / b03 #CHKI(8) / b04 #CHKR(16) / b05 #CHKS(32) / b06 #CHKC(64) / b07 #CHKV(128); 'If 0 is assigned for all bits, animation is being stopped'; 'If used before SPSET, an error will occur'; example ST=SPCHK(5))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPCHK handler @0x13ed7c: shape gate cmp r0,#0x1 (argcount [r4,#0x4]) / ldreq r0,[r4,#0xc] / cmpeq r0,#0x1 (result-count) / beq 0x13edb4 @0x13ed8c, else errnum 4 mov r0,#0x4 bl 0x1fffdc @0x13eda4; mgmt via FUN_001eece0 bl 0x1eece0 @0x13edc4 (errnum 10); slot base[0x13ee48]+(mgmt+[[0x13ee44]+0x44])*0x48 @0x13ede8; active-bit guard tst [slot+0x4],#0x80000000 @0x13edfc beq -> errnum 4 @0x13ee34 (used before SPSET); stopped-bit clear tst r1,#0x2000000 movne r1,#0 @0x13ee04; status byte mov r0,r1,lsl#0x7 / mov r1,r0,lsr#0x18 @0x13ee0c (= (flags>>17)&0xFF); result via [r4+0x10]->[+0x14] blx @0x13ee20. Literals [0x13ee44]=0x00315D60 (state), [0x13ee48]=0x019A5FB0 (sprite slot base)." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bSPCHK\\b'): 780 uses, all the documented function form, overwhelmingly read into a variable or tested bitwise, e.g. `IF (SPCHK(I) AND #CHKXY)==0`. No statement/OUT form and no extra-arg form observed in real programs (the OUT form is permitted by the handler but unused in the corpus)." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8e): `SPSET 0,0:?SPCHK(0)` -> 0 (no animation running -> animation-stopped reads 0); `SPCLR:V=SPCHK(5)` -> errnum 4 (used before SPSET); `SPSET 0,0:V=SPCHK(512)` -> errnum 10 (mgmt out of range). Mid-animation #CHK* bit values (needs a running SPANIM) remain oracle-pending." }
+
+confidence: hw_verified
+
+tests:
+  # Stopped=0 + error cases hw_verified (sb-oracle 2026-06-22 s_t8e). Mid-animation bit values oracle-pending (need SPANIM running, see HARVEST_QUEUE.md).
+  - { name: stopped_returns_zero, code: "SPSET 0,0\nPRINT SPCHK(0)", expect: { stdout: "0\n" } }
+  - { name: before_spset, code: "SPCLR\nPRINT SPCHK(5)", expect: { error: { errnum: 4 } } }
+  - { name: mgmt_out_of_range, code: "SPSET 0,0\nPRINT SPCHK(512)", expect: { error: { errnum: 10 } } }

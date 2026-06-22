@@ -1,0 +1,42 @@
+id: SPCLIP
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — reset clipping to the whole screen.
+  - args: []
+    note: "SPCLIP — reset the sprite clipping area to the whole screen."
+  # Form 2 — set an explicit clipping rectangle.
+  - args:
+      - { name: start_x, type: integer, range: "0..399", desc: "Clipping-area start X (left)." }
+      - { name: start_y, type: integer, range: "0..239", desc: "Clipping-area start Y (top)." }
+      - { name: end_x, type: integer, range: "0..399", desc: "Clipping-area end X (right)." }
+      - { name: end_y, type: integer, range: "0..239", desc: "Clipping-area end Y (bottom)." }
+    note: "SPCLIP sx,sy,ex,ey — restrict sprite drawing to the given rectangle."
+
+summary: "Sets the rectangular clipping area for sprite rendering: sprites are only drawn (and the visible part shown) within this rectangle. Called with no arguments it resets clipping to the whole screen. The rectangle is given as start point (sx,sy) and end point (ex,ey); the handler normalizes them so start <= end. Coordinates are screen pixels (X 0-399, Y 0-239). SPCLIP applies to the current display page (upper/lower) selected for sprites."
+
+semantics:
+  - "Call-shape gate: SPCLIP takes NO return/OUT — result-count [r4,#0xc] must be 0 (cmp r0,#0x0 / bne 0x1423f4 -> error). Then argcount [r4,#0x4] selects the form: 0 -> reset (form 1) @0x14240c, 4 -> set rectangle (form 2) @0x142420, anything else -> errnum 4 (Illegal function call) mov r0,#0x4 / b 0x1fffdc @0x142400."
+  - "Reset (no args): calls bl 0x1ee0bc with r0=1 @0x142410 to restore full-screen clipping (the documented 'If the range is omitted, the whole screen will be assumed')."
+  - "Set form: the four coordinates are fetched as integers via the gfx-context arg vtable [gfx+0x40] (blx, four times @0x142434/@0x142458/@0x142478/@0x142498). On any fetch failure an error index is recorded (str r6,[state] @0x1424a4)."
+  - "Normalization: the handler swaps so the rectangle is well-formed — it ensures the start coordinates are the smaller and computes the extent against the screen size: width/height are derived as (screenDim - coord - 1) with a min/max comparison (cmp r0,r1 / strgt swaps @0x1424f0 and @0x142504) before applying via bl 0x1edeac @0x142524. So passing sx>ex or sy>ey is tolerated (the points are sorted)."
+  - "Coordinates are documented as screen pixels X 0-399, Y 0-239. The handler clamps/normalizes against the screen dimensions rather than raising a range error for out-of-bounds points; exact clamping behavior for out-of-range inputs is oracle-pending (queued)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is neither 0 nor 4, or an OUT/return is requested" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spclip.md (`SPCLIP [Start point X,Start point Y,End point X,End point Y]` — specifies a clipping area in the sprite; 'If the range is omitted, the whole screen will be assumed'; X:0-399, Y:0-239; example SPCLIP 100,100,200,200)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPCLIP handler @0x1423c8: result-count gate ldr r0,[r4,#0xc] cmp #0 bne 0x1423f4 (OUT not allowed); argcount [r4,#0x4] dispatch 0->reset @0x14240c (bl 0x1ee0bc r0=1 @0x142410), 4->set @0x142420, else errnum 4 mov r0,#0x4 b 0x1fffdc @0x142400; four coords via gfx-context vtable [r2,#0x40] blx (@0x142434/@0x142458/@0x142478/@0x142498); min/max normalization cmp r0,r1 strgt @0x1424f0/@0x142504; apply bl 0x1edeac @0x142524. State ptr literal [0x142534]; screen-state [0x142538]." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bSPCLIP\\b'): 84 files, ~151 uses — only the two documented forms: the 4-arg rectangle `SPCLIP sx,sy,ex,ey` (numeric/expression operands) and the no-arg reset `SPCLIP` (~47 uses). No 1/2/3-arg or OUT form observed, matching the handler's argcount==0||4 gate." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8e): `SPCLIP 1,2` (2 args) -> errnum 4 (Illegal function call), confirming the argcount must be exactly 0 or 4. The visual clipping effect needs the framebuffer oracle (O-T6, queued)." }
+
+confidence: disassembled
+
+tests:
+  # Visual clipping effect needs the framebuffer oracle (O-T6); here we pin the static argument contract.
+  - { name: set_rect, code: "SPCLIP 100,100,200,200", expect: { stdout: "" } }
+  - { name: reset, code: "SPCLIP", expect: { stdout: "" } }
+  - { name: bad_arg_count, code: "SPCLIP 1,2", expect: { error: { errnum: 4 } } }

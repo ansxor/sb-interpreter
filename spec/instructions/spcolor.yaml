@@ -1,0 +1,47 @@
+id: SPCOLOR
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — set the sprite's display color.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET (error otherwise)." }
+      - { name: color_code, type: integer, range: "0..&HFFFFFFFF", desc: "32-bit ARGB8888 color. Lower A = more transparent. The displayed color is this code MULTIPLIED by the original pixel color (a per-channel tint), so &HFFFFFFFF (default) shows the sprite unmodified." }
+    note: "SPCOLOR mgmt, color_code — set the sprite's display (modulation) color."
+  # Form 2 — read the sprite's display color.
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite. Must already be SPSET." }
+    out:
+      - { name: color_code, type: integer, desc: "Receives the current 32-bit ARGB8888 color code." }
+    note: "SPCOLOR mgmt OUT color_code — read the sprite's current display color."
+
+summary: "Sets (or, with OUT, reads back) a sprite's display color: a 32-bit ARGB8888 value that is multiplied per-channel against the sprite's original pixels (a tint/fade). A lower alpha increases transparency; the default after SPSET is opaque white (&HFFFFFFFF), which shows the sprite unchanged. Using SPCOLOR on a sprite that has not been SPSET raises an error."
+
+semantics:
+  - "Argument-count gate: argcount [r0,#0x4] (r6) must be >= 1; cmp r6,#0x1 / blt 0x143af4 — a bare SPCOLOR raises errnum 4 (Illegal function call) via mov r0,#0x4 / bl 0x1fffdc @0x143af4."
+  - "Management number is resolved by FUN_001eece0 (bl 0x1eece0 @0x143a7c); out of 0..511 raises errnum 10 (Out of range). Slot address = base[0x143b88=0x019A5FB0] + (mgmt + page_base[[0x143b84]+0x44]) * 0x48 (rsb r1,r0,r0,lsl#5 / add r0,r1,r0,lsl#8 / add r4,r1,r0,lsl#3 @0x143a9c-0x143aa8)."
+  - "Sprite must exist: slot flags [slot+0x4] are tested tst r0,#0x80000000 @0x143ab0; if the active bit is clear the handler raises errnum 4 (mov r0,#0x4 / bl 0x1fffdc @0x143ae0), matching the docs ('If used before SPSET, an error will occur')."
+  - "Form selection by result/OUT count [r5,#0xc]: 0 -> setter (form 1), which additionally requires argcount==2 (cmp r6,#0x2 / beq 0x143b0c @0x143aec); 1 with argcount==1 -> getter (form 2) @0x143b68 (cmp r0,#0x1 / cmpeq r6,#0x1 @0x143ac4). Any other shape -> errnum 4."
+  - "Setter: the 32-bit color is fetched (gfx vtable [gfx+0x40] blx @0x143b20) and applied to the sprite via bl 0x17ebd8 @0x143b44 (under a lock bl 0x20adfc / bl 0x20add4). Applying an explicit color also clears slot flag bit 0x800000 (bic r0,r0,#0x800000 / str [slot+0x4] @0x143b4c-0x143b50) — the 'default/inherited color' marker set by SPSET — so the sprite now uses the program-set color."
+  - "Getter: reads the stored color from slot offset 0x3c (ldr r1,[slot+0x3c] @0x143b6c) and returns it via the result vtable [sprite+0x10]->[+0x14] (blx @0x143b78). The color is a full 32-bit ARGB8888 value; there is no range restriction on the color code (any 32-bit value is accepted)."
+  - "The color is a MULTIPLY (modulation), not a replace: each channel of the sprite's pixels is multiplied by the corresponding channel of the color code (documented 'the actual display color will be the color code multiplied by the original pixel color'). Build it with RGB()/ARGB constants, e.g. SPCOLOR 1,RGB(16,255,0,0)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET, no arguments are given, or the call shape matches neither setter (2 args, no result) nor getter (1 arg, 1 result)" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spcolor.md (2 forms: `SPCOLOR Management number, Color code` set; `SPCOLOR Management number OUT C32` read. mgmt 0-511; color is a 32-bit ARGB=8888 code, 'The lower the value of A, the higher the transparency level', 'The actual display color will be the color code multiplied by the original pixel color'; 'If used before SPSET, an error will occur'; example SPCOLOR 1,RGB(16,255,0,0))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPCOLOR handler @0x143a58: argcount gate cmp r6,#0x1 blt 0x143af4 (r6=[r0,#0x4]) errnum 4 mov r0,#0x4 bl 0x1fffdc @0x143af4; mgmt via FUN_001eece0 bl 0x1eece0 @0x143a7c (errnum 10); slot base[0x143b88]+(mgmt+[[0x143b84]+0x44])*0x48 rsb r1,r0,r0,lsl#5 @0x143a9c; active-bit guard tst [slot+0x4],#0x80000000 @0x143ab0 beq -> errnum 4 @0x143ad4 (used before SPSET); form select on result-count [r5,#0xc]: 0+argcount2 -> setter @0x143b0c, 1+argcount1 -> getter @0x143b68; setter fetch color [gfx+0x40] blx @0x143b20, apply bl 0x17ebd8 @0x143b44, clear flag bic r0,r0,#0x800000 [slot+0x4] @0x143b4c; getter read [slot+0x3c] @0x143b6c return via [sprite+0x10]->[+0x14] blx @0x143b78. Literals [0x143b84]=0x00315D60 (state), [0x143b88]=0x019A5FB0 (slot base)." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg): SPCOLOR is heavily used (524 files) — both documented forms appear: the 2-arg setter `SPCOLOR mgmt,code` with the code built from RGB()/ARGB (`SPCOLOR P,RGB(A,R,G,B)`, ~1028) or RGB() 3-arg / color #constants (#WHITE etc, ~369) or &H literals, and the OUT getter `SPCOLOR mgmt OUT C` (~145, e.g. 2XVV233J/TXT/GAME.PRG `SPCOLOR P% OUT C%`). RGB() args are just expressions building the 32-bit code. Read-back values are oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8e): set-then-read round-trip `SPSET 0,0:SPCOLOR 0,&H11223344:SPCOLOR 0 OUT C` -> C = 287454020 = &H11223344 (the full 32-bit ARGB8888 code is stored and read back unchanged); `SPCLR:SPCOLOR 5,&HFFFFFFFF` -> errnum 4 (used before SPSET); `SPSET 0,0:SPCOLOR 512,&HFFFFFFFF` -> errnum 10 (mgmt out of range). Confirms the setter/getter store the exact 32-bit code." }
+
+confidence: hw_verified
+
+tests:
+  # Round-trip VALUE + error cases hw_verified (sb-oracle 2026-06-22 s_t8e).
+  - { name: set_color, code: "SPSET 0,0\nSPCOLOR 0,RGB(255,0,0)", expect: { stdout: "" } }
+  - { name: color_roundtrip, code: "SPSET 0,0\nSPCOLOR 0,&H11223344\nSPCOLOR 0 OUT C\nPRINT C", expect: { stdout: "287454020\n" } }
+  - { name: before_spset, code: "SPCLR\nSPCOLOR 5,RGB(255,0,0)", expect: { error: { errnum: 4 } } }
+  - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPCOLOR 512,RGB(255,0,0)", expect: { error: { errnum: 10 } } }

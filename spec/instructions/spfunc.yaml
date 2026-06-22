@@ -1,0 +1,42 @@
+id: SPFUNC
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — assign a callback to a sprite (label literal or string).
+  - args:
+      - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite (any 0..511 slot; binding to a not-yet-SPSET slot does NOT raise at SPFUNC time — see semantics)." }
+      - { name: label, type: string, desc: "Name of the process to call: an @Label, or a process defined with DEF. Written as `@Label`, a `\"string literal\"`, or a string variable/expression — all resolve to the same label-name lookup." }
+    note: "SPFUNC mgmt, @Label — bind a callback process to the sprite (invoked by CALL SPRITE; inside it, CALLIDX = the management number)."
+
+summary: "Binds a user callback process (an @Label or a DEF-defined process, by name) to a managed sprite. The bound processes are invoked together by `CALL SPRITE`; inside the callback the system variable CALLIDX holds the sprite's management number, letting one process drive many sprites. The label operand is resolved by name, so it accepts an @Label token, a string literal, or a string variable. The docs say 'If used before SPSET, an error will occur', but the SPFUNC statement itself does NOT raise when binding to an unset slot (hw_verified) — the documented error surfaces only when the bound process is later dispatched via CALL SPRITE (oracle-pending)."
+
+semantics:
+  - "Argument gate: the handler requires argcount == 2 with a non-empty management argument — cmp [r5,#0x4],#0x2 / ldreq r0,[r5,#0xc] / cmpeq r0,#0x0 / bne 0x14266c (error). A wrong argument count (or an empty/zero arg-descriptor) raises errnum 4 (Illegal function call) via the shared error path @0x14266c."
+  - "Management number is resolved by the shared sprite-index getter FUN_001eece0 (bl 0x1eece0 @0x14256c); a value outside 0..511 raises errnum 10 (Out of range). The slot index is mgmt + page_base ([[0x142684]+0x44], add @0x14258c)."
+  - "The label argument is fetched and inspected by type (ldr r12,[r2,#0x10] / ldrb r0,[r12,#0x2] @0x1425a0-0x1425a4). When it is a string-type operand (the non-zero branch) the name is looked up: bl 0x1ede08 @0x1425d0 finds an @Label, falling back to bl 0x28e4fc @0x142640 for a DEF-defined process. A non-string operand takes the @0x142600 branch and raises errnum 8 (Type mismatch) (mov r0,#0x8 / bl 0x1fffdc @0x142608) — i.e. the label must be a string/label, not a number."
+  - "On a successful lookup the resolved target is recorded for the sprite: the callback-kind byte is written strb r2,[r5,r1] (=2) and the target pointer str r0,[r6,r1,lsl#2] @0x142628-0x14262c, indexed by the slot number — so each managed sprite has its own bound process. There is no error if the named label/DEF does not exist along the cmn r0,#0x1 path (@0x142644) it raises errnum 4."
+  - "The bound process is NOT called by SPFUNC itself; it runs only when the program later executes CALL SPRITE. Inside the process the management number is read from CALLIDX (documented). The same process name may be bound to many sprites."
+  - "No SPSET requirement at bind time: unlike SPCHK/SPCOLOR, the SPFUNC handler has NO active-bit (0x80000000) guard on the slot — binding a callback to a slot that has not been SPSET does NOT raise (hw_verified: `SPCLR:SPFUNC 5,@P` runs without error). The docs' 'If used before SPSET, an error will occur' therefore refers to the later CALL SPRITE dispatch of the bound process, not to SPFUNC itself (the CALL-time behavior is oracle-pending)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is not 2, or the named label/process cannot be resolved (NOT raised merely for binding to an un-SPSET slot — that is allowed)" }
+  - { errnum: 8, name: "Type mismatch", when: "the label operand is not a string/label (e.g. a number is given)" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spfunc.md (`SPFUNC Management number, @Label` — assigns a process to a sprite; 'All sprite processes are executed with CALL SPRITE'; 'Instead of @Label, a user process defined using DEF can also be specified'; 'the management number can be obtained using the CALLIDX system variable'; 'If used before SPSET, an error will occur'; example `SPFUNC 0,@PROG`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPFUNC handler @0x14253c: arg gate cmp r0,#0x2 / ldreq r0,[r5,#0xc] / cmpeq r0,#0x0 / bne 0x14266c @0x1425a8 region (errnum 4 path); mgmt via FUN_001eece0 bl 0x1eece0 @0x14256c (errnum 10); slot index mgmt+[[0x142684]+0x44] add r0,r0,r1 @0x14258c; label type probe ldrb r0,[r12,#0x2] @0x1425a4 -> non-string branch errnum 8 mov r0,#0x8 bl 0x1fffdc @0x142608; @Label lookup bl 0x1ede08 @0x1425d0, DEF lookup bl 0x28e4fc @0x142640, unresolved cmn r0,#0x1 beq 0x14266c @0x142644 (errnum 4); record callback kind strb r2,[r5,r1]=2 @0x142628 and target ptr str r0,[r6,r1,lsl#2] @0x14262c. Literals: state ptr [0x142684], callback tables [0x14268c],[0x142690]." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bSPFUNC [^,]+,\"'): the string-label form `SPFUNC mgmt,\"NAME\"` is the dominant real form (103 files, e.g. 13D4DV3V/TXT/MAIN_PRG_V2 `SPFUNC ID,\"@BOSS_\"`, 2XVV233J/TXT/GAME.PRG `SPFUNC S%,\"STAR_FUNC\"`), alongside the documented `SPFUNC mgmt,@Label` form. Also seen: string-variable labels `SPFUNC ID,TRAP_FUNC$[TYPE]` and array/expression management operands `SPFUNC TMP[2],@EYEBALL` (REVVY3RJ/TXT/HNZBI), `SPFUNC SPVAR(ID,0),\"PRIZE\"` (2EKX7ENE/TXT/PRG). Confirms the label is resolved by name from any string and the mgmt arg is any integer expression. No bare `SPFUNC mgmt` (clear) form found." }
+
+  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8e): `SPSET 0,0:SPFUNC 0,@P` -> NOERR (valid bind); `SPCLR:SPFUNC 5,@P` -> NOERR (binding before SPSET does NOT raise, correcting the docs); `SPSET 0,0:SPFUNC 512,@P` -> errnum 10 (mgmt out of range). The callback dispatch (CALL SPRITE + CALLIDX) and any errnum 4/8 for unresolvable/non-string labels remain oracle-pending." }
+
+confidence: disassembled
+
+tests:
+  # Callback dispatch (CALL SPRITE + CALLIDX) belongs to M3 sprite-core execution; binding-time contract pinned below (hw_verified).
+  - { name: bind_label, code: "SPSET 0,0\nSPFUNC 0,@P\nEND\n@P", expect: { stdout: "" } }
+  - { name: bind_string, code: "SPSET 0,0\nSPFUNC 0,\"@P\"\nEND\n@P", expect: { stdout: "" } }
+  - { name: bind_before_spset_ok, code: "SPCLR\nSPFUNC 5,@P\nEND\n@P", expect: { stdout: "" } }
+  - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPFUNC 512,@P\nEND\n@P", expect: { error: { errnum: 10 } } }
