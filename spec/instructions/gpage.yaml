@@ -1,0 +1,37 @@
+id: GPAGE
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: display_page, type: integer, range: "0..5", desc: "GRP page shown on screen (GRP0-GRP5)" }
+      - { name: work_page, type: integer, range: "0..5", desc: "GRP page that drawing operations target (GRP0-GRP5)" }
+    note: "GPAGE display_page, work_page — set the displayed and manipulated graphics pages."
+  - args:
+      - { name: vp, type: integer, desc: "OUT: current display page (0-5)" }
+      - { name: wp, type: integer, desc: "OUT: current manipulation page (0-5)" }
+    note: "GPAGE OUT vp, wp — read the current display and manipulation pages."
+
+summary: "Selects which GRP page is shown (display) and which receives drawing (manipulation). The OUT form reads the current pages. There are 6 GRP pages (0-5); by default GRP4 holds sprites and GRP5 holds BG."
+
+semantics:
+  - "GPAGE d,w sets the display page to d and the manipulation (drawing-target) page to w; subsequent graphics ops draw to page w, and page d is composited to the screen."
+  - "There are 6 graphics pages, GRP0-GRP5 (0-5); GRP4 is used by sprites and GRP5 by BG by default."
+  - "GPAGE OUT vp,wp returns the current display page in vp and the manipulation page in wp (multi-return OUT form)."
+  - "A page number outside 0..5 raises errnum 10 (Out of range) — oracle-pending."
+
+errors:
+  - { errnum: 10, name: "Out of range", when: "a page number is outside 0..5 (oracle-pending)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gpage.md (GPAGE Display,Manip; 0-5 GRP0-5; GPAGE OUT VP,WP reads current; GRP4 sprites/GRP5 BG by default)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GPAGE handler FUN_00153b68 @0x153b68: sets/returns the display+manipulation page indices" }
+  - { type: community, ref: "sbsave corpus: GPAGE pervasive (~6,724 lines); GPAGE OUT read-form real (~326, e.g. reading the current pages before switching)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7a): GPAGE 0,1 then GPAGE OUT V,W -> V=0,W=1; GPAGE 2,2 -> 2,2 (OUT reads the set display/manipulation pages)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: gpage_out_reads, code: "GPAGE 0,1\nGPAGE OUT V,W\nPRINT V;\",\";W", expect: { stdout: "0,1" } }
+  - { name: gpage_out_same, code: "GPAGE 2,2\nGPAGE OUT V,W\nPRINT V;\",\";W", expect: { stdout: "2,2" } }

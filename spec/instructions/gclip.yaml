@@ -1,0 +1,36 @@
+id: GCLIP
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: mode, type: integer, range: "0..1", desc: "0: clipping for display, 1: clipping for writing (drawing)" }
+      - { name: sx, type: integer, optional: true, desc: "Start X of the clip rectangle" }
+      - { name: sy, type: integer, optional: true, desc: "Start Y of the clip rectangle" }
+      - { name: ex, type: integer, optional: true, desc: "End X of the clip rectangle" }
+      - { name: ey, type: integer, optional: true, desc: "End Y of the clip rectangle" }
+    note: "GCLIP mode [,sx,sy,ex,ey] — set the display/write clipping rectangle."
+
+summary: "Restricts graphics to a rectangular region — either the displayed area (mode 0) or the writable drawing area (mode 1). Drawing outside a write-clip is discarded. Omitting the rectangle resets to the whole screen/page."
+
+semantics:
+  - "GCLIP mode 0 sets the DISPLAY clip (what region of the page is shown); mode 1 sets the WRITE clip (draw operations outside the rectangle are discarded)."
+  - "With the rectangle omitted: in display mode the whole screen is clipped (shown); in write mode the whole graphic page is assumed (no restriction)."
+  - "The rectangle is inclusive of its start/end points (sx,sy)-(ex,ey) in graphics pixels."
+  - "Under a write clip, a draw outside the rectangle leaves the target pixel unchanged (oracle-verified): with GCLIP 1,0,0,10,10, GPSET 20,20 does not modify pixel (20,20); a GPSET inside the rectangle does draw."
+
+errors:
+  - { errnum: 10, name: "Out of range", when: "mode is not 0 or 1 (oracle-pending)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gclip.md (GCLIP ClipMode[,SX,SY,EX,EY]; 0=display,1=write; omitted range = whole screen/page)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GCLIP handler FUN_00152c48 @0x152c48: sets the display/write clip rectangle used by the graphics renderer/draw ops" }
+  - { type: community, ref: "sbsave corpus: GCLIP used (~635 lines) for both display (mode 0) and write (mode 1) clipping" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7a): with GPAGE 0,0:GCLS:GCLIP 1,0,0,10,10, a GPSET 20,20 (outside the write clip) leaves GSPOIT(20,20)=0 (clipped out); with GCLIP 1,0,0,30,30 a GPSET 5,5 (inside) draws (GSPOIT(5,5)=-460552, the 5551-rounded white)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: gclip_write_clips_outside, code: "GPAGE 0,0\nGCLS\nGCLIP 1,0,0,10,10\nGCOLOR RGB(255,255,255)\nGPSET 20,20\nPRINT GSPOIT(20,20)", expect: { stdout: "0" } }
+  - { name: gclip_write_allows_inside, code: "GPAGE 0,0\nGCLS\nGCLIP 1,0,0,30,30\nGCOLOR RGB(255,255,255)\nGPSET 5,5\nPRINT GSPOIT(5,5)", expect: { stdout: "-460552" } }

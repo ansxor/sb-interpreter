@@ -1,0 +1,3 @@
+gprio_runs|GPRIO -100:A=5|A|prog
+gcls_red|GPAGE 0,0:GCLS RGB(255,0,0):X=GSPOIT(0,0)|X|prog
+gcls_arg_alpha|GPAGE 0,0:GCLS RGB(255,0,0):X=GSPOIT(0,0)<0|X|prog

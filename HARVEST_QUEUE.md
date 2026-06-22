@@ -10,6 +10,11 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T7a (GPRIO/GCLIP/GCLS colors) · Visual / O-T6 golden — verify via the grp/screenshot
+  oracle: GPRIO actually reorders the graphics layer vs console/sprite/BG; GCLIP display-mode
+  (mode 0) restricts the shown region; the EXACT RGBA5551 round-trip of GCLS/GCOLOR colors
+  (e.g. is white 0xFFF8F8F8 or 0xFFFFFFFF?). State read-backs (GPAGE OUT, GCOLOR OUT) + GCLS
+  default=0 + GCLIP write-clip behavior already hw_verified 2026-06-22 via GSPOIT.
 - [ ] S-T5c (ATTR/FONTDEF) · Visual — verify via screenshot/graphics oracle: ATTR rotation
   (#TROT0-270) and inversion (#TREVH/#TREVV) actually rotate/flip the rendered glyph; FONTDEF
   redefines the on-screen glyph (and the GRP page -1 font image). Also resolve the corpus

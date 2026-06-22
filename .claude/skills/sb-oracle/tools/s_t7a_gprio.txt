@@ -1,0 +1,3 @@
+gprio_zero|GPRIO 0:A=7|A|prog
+gprio_pos|GPRIO 100:A=7|A|prog
+gprio_neg_err|GPRIO -100|err

@@ -1,0 +1,35 @@
+id: GCOLOR
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: color, type: integer, desc: "32-bit ARGB color code (8 bits each; A=255 opaque). Usually built with RGB(...)" }
+    note: "GCOLOR color — set the graphics draw color."
+  - args:
+      - { name: c32, type: integer, desc: "OUT: the current 32-bit ARGB draw color" }
+    note: "GCOLOR OUT c32 — read the current graphics draw color."
+
+summary: "Sets the graphics drawing color used by subsequent draw operations, as a 32-bit ARGB value (typically from RGB()). The OUT form reads the current draw color back exactly."
+
+semantics:
+  - "GCOLOR sets the color used by graphics primitives (GPSET/GLINE/... ) on the manipulation page."
+  - "The color is a 32-bit ARGB integer: 8 bits each for A,R,G,B (A=255 opaque, A=0 transparent); usually produced by RGB(r,g,b) (which sets A=255) or RGB(a,r,g,b)."
+  - "RGB(255,0,0)=-65536 (0xFFFF0000), RGB(0,255,0)=-16711936, RGB(255,255,255)=-1 — high alpha makes the i32 negative."
+  - "GCOLOR OUT c returns the current draw color EXACTLY as last set (it is a 32-bit register, not a framebuffer pixel, so it is not RGBA5551-lossy): after GCOLOR RGB(255,0,0), GCOLOR OUT c gives -65536."
+  - "Note: when this color is actually drawn into a GRP page it is stored as RGBA5551, so a pixel read back with GSPOIT is rounded (e.g. white -> 0xFFF8F8F8); the GCOLOR register itself is not rounded."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gcolor.md (GCOLOR ColorCode; 32-bit ARGB, usually RGB(); GCOLOR OUT C32 reads current)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GCOLOR handler FUN_0015436c/@0x154450: sets/returns the 32-bit ARGB draw-color register" }
+  - { type: community, ref: "sbsave corpus: GCOLOR common (~2,065 lines), usually GCOLOR RGB(...); GCOLOR OUT read-form real (~13)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7a): GCOLOR RGB(255,0,0):GCOLOR OUT C -> C=-65536 (exact, matches RGB(255,0,0)=0xFFFF0000); RGB(0,255,0)=-16711936; RGB(255,255,255)=-1" }
+
+confidence: hw_verified
+
+tests:
+  - { name: gcolor_out_reads_exact, code: "GCOLOR RGB(255,0,0)\nGCOLOR OUT C\nPRINT C", expect: { stdout: "-65536" } }
+  - { name: gcolor_out_white, code: "GCOLOR RGB(255,255,255)\nGCOLOR OUT C\nPRINT C", expect: { stdout: "-1" } }

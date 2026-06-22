@@ -1,0 +1,32 @@
+id: GCLS
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: color, type: integer, optional: true, default: 0, desc: "32-bit ARGB color to fill with; if omitted, clears to 0 (transparent black)" }
+    note: "GCLS [color] — clear the manipulation graphics page."
+
+summary: "Clears the current manipulation GRP page. With no argument it fills with 0 (transparent black); with a color it fills the whole page with that ARGB color."
+
+semantics:
+  - "GCLS clears the manipulation page selected by GPAGE; the default fill is color 0 (transparent black), i.e. a pixel read back with GSPOIT is 0, NOT opaque black."
+  - "GCLS color fills the whole page with the given 32-bit ARGB color (same color model as GCOLOR / RGB())."
+  - "Pixels are stored as RGBA5551, so a color filled in and read back with GSPOIT is rounded to 5-bit-per-channel (e.g. RGB(255,0,0) reads back as -524288 = 0xFFF80000); a filled opaque color reads back negative (alpha bit set)."
+  - "GCLS affects only the graphics (GRP) layer, not the console, sprites, or BG."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gcls.md (GCLS [ColorCode]; fills the graphic screen, default black; ARGB color per GCOLOR)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GCLS handler FUN_00154ed0/@0x1552d4: fills the manipulation page with the given color (or 0 by default)" }
+  - { type: community, ref: "sbsave corpus: GCLS pervasive (~6,475 lines); GCLS with a color arg common (~684, GCLS RGB(...))" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7a): GPAGE 0,0:GCLS then GSPOIT(0,0)=0 (default clears to 0/transparent, not opaque black); GCLS RGB(255,0,0) then GSPOIT(0,0)=-524288 (0xFFF80000, opaque red rounded to RGBA5551) and GSPOIT(0,0)<0 is TRUE (filled opaque)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: gcls_default_zero, code: "GPAGE 0,0\nGCLS\nPRINT GSPOIT(0,0)", expect: { stdout: "0" } }
+  - { name: gcls_color_fills, code: "GPAGE 0,0\nGCLS RGB(255,0,0)\nPRINT GSPOIT(0,0)", expect: { stdout: "-524288" } }
+  - { name: gcls_color_opaque, code: "GPAGE 0,0\nGCLS RGB(255,0,0)\nPRINT GSPOIT(0,0)<0", expect: { stdout: "1" } }
