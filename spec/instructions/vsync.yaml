@@ -1,0 +1,34 @@
+id: VSYNC
+kind: statement
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: frames, type: integer, range: ">=0", optional: true, default: 1, desc: "Frames to wait, counted from the LAST VSYNC (0: ignore; default 1)" }
+    note: "VSYNC [frames] — block until the given number of vertical-sync frames has elapsed since the previous VSYNC."
+
+summary: "Stops the program until the specified number of vertical-sync frames has been reached, counted from the last VSYNC. The standard frame-pacing instruction (60 fps)."
+
+semantics:
+  - "VSYNC n blocks until n frames have elapsed measured from the PREVIOUS VSYNC call (not from the current point) — this keeps a steady cadence even if the work between frames varies. Contrast [[wait]], which counts from the present moment."
+  - "The argument defaults to 1 if omitted; VSYNC 0 is ignored (no wait)."
+  - "Frames are vertical-sync units at 60 fps (one frame ~= 1/60 s); see the frame-and-timing concept spec (S-C4)."
+  - "VSYNC does not return a value; it advances the frame clock that MAINCNT and animation timers track."
+  - "The wait DURATION is real-time/timing behavior and is not value-harvestable from the deterministic oracle; the conformance check verifies the program continues correctly after VSYNC (queued for the timing model)."
+
+errors:
+  - { errnum: 10, name: "Out of range", when: "a negative frame count is given (oracle-pending)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/vsync.md (VSYNC [frames]; counts from last VSYNC; 0: ignore; default 1; unlike WAIT which counts from present)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst VSYNC handler FUN_001455c8 @0x1455c8: blocks the VM until the frame counter reaches (last-VSYNC-frame + n), then records the new reference frame" }
+  - { type: community, ref: "sbsave corpus: ~1,193 VSYNC; bare VSYNC (~540) and VSYNC 1 (~561) dominant; frame count as variable/expression real (VSYNC SPEED; VSYNC CEIL(60/FPS) in 43LEDEAE/TXT/SET.EXE); VSYNC 0 rare (~8); VSYNC 0:VSYNC 5 resync idiom" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4f): the program CONTINUES correctly after VSYNC (bare VSYNC then A=5 -> 5; VSYNC 0 -> 7; VSYNC 2 -> 3). NOTE: only execution-continuation is verified; the wait DURATION (timing) is not oracle-verifiable and keeps the top-level confidence at disassembled." }
+
+confidence: disassembled
+
+tests:
+  - { name: vsync_default_continues, code: "VSYNC\nPRINT 5", expect: { stdout: "5" } }
+  - { name: vsync_zero_ignored, code: "VSYNC 0\nPRINT 7", expect: { stdout: "7" } }
+  - { name: vsync_n_continues, code: "VSYNC 2\nA=3\nPRINT A", expect: { stdout: "3" } }

@@ -1,0 +1,10 @@
+option_defint_truncates|OPTION DEFINT\nA=3.5|A|prog
+option_defint_intdiv|OPTION DEFINT\nA=10/4|A|prog
+option_defint_suffix_keeps|OPTION DEFINT\nA#=3.5|A#|prog
+vsync_default|VSYNC:A=5|A|prog
+vsync_zero|VSYNC 0:A=7|A|prog
+vsync_n|VSYNC 2:A=3|A|prog
+wait_default|WAIT:A=5|A|prog
+wait_zero|WAIT 0:A=7|A|prog
+wait_n|WAIT 2:A=3|A|prog
+option_strict_undeclared|OPTION STRICT:PRINT A|err

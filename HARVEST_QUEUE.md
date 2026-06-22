@@ -10,6 +10,14 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T4f (DIALOG/KEY/VSYNC/WAIT) · Interactive/timing — NOT value-harvestable by the batch
+  oracle. DIALOG is modal (needs a touch/button press; verify RESULT 1/-1/0, the -1/0/1 return,
+  the hardware-button 128..140 codes, and negative-timeout=frames via screenshot+input). KEY
+  alters the function-key table (and an undocumented KEY(n) FUNCTION read form — confirm it
+  returns the assigned string). OPTION TOOL: confirm its runtime effect (undocumented keyword,
+  ~12 corpus uses). VSYNC/WAIT: only execution-continuation is hw_verified; the wait DURATION
+  (frame timing) needs the frame-and-timing harness (S-C4), not the value oracle. · assumption:
+  per docs/disasm. OPTION DEFINT/STRICT behavior already hw_verified 2026-06-22.
 - [ ] S-T4d (RESTORE) · Confirm RESTORE to an undefined @Label -> errnum 14 (Undefined label),
   and the cross-slot form RESTORE "1:@Label" after USE 1 (needs a 2nd slot loaded — single-slot
   oracle can't easily test). · assumption: errnum 14 per docs/error-table; cross-slot per docs.

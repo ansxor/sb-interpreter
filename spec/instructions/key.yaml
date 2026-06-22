@@ -1,0 +1,35 @@
+id: KEY
+kind: statement
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: number, type: integer, range: "1..5", desc: "Function key number (1-5)" }
+      - { name: string, type: string, desc: "Character string to assign to that function key" }
+    note: "KEY number, string — assign a macro string to a function key."
+
+summary: "Assigns an arbitrary character string to one of the editor function keys (1-5). Pressing that function key inserts the assigned string."
+
+semantics:
+  - "KEY n,s$ sets function key n (1..5) to emit the string s$ when pressed in the editor."
+  - "The string commonly ends with CHR$(13) (carriage return) so the macro auto-executes, e.g. KEY 1,\"CLS\"+CHR$(13)."
+  - "If the assigned string is too long to display on the key label, an ellipsis is shown at the end (the full string is still assigned)."
+  - "This changes editor/runtime state (the function-key table); it produces no return value and is not value-harvestable from the deterministic oracle (queued)."
+  - "A key number outside 1..5 raises errnum 10 (Out of range) — oracle-pending."
+  - "A FUNCTION form KEY(n) appears in the corpus to READ back the string currently assigned to function key n (e.g. S$=KEY(FK%)); this read form is undocumented in the manual and oracle-pending."
+
+errors:
+  - { errnum: 10, name: "Out of range", when: "the function key number is not 1..5 (oracle-pending)" }
+  - { errnum: 8, name: TypeMismatch, when: "arguments have the wrong types" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/key.md (KEY Number,\"string\"; Number 1-5; assigns a string to a function key; ellipsis if too long)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst KEY handler FUN_0014bec4/@0x14bf0c: validates the 1..5 key index and stores the assigned string into the function-key macro table" }
+  - { type: community, ref: "sbsave corpus: KEY is rare (~56 statements / 12 files), all KEY n,\"...\" with n in 1..5, often ending CHR$(13) to auto-run (e.g. QRY34XVD/TXT/COOLER: KEY 2,\"RUN 2\"+CHR$(13)); an undocumented FUNCTION read form KEY(n) appears once (S$=KEY(FK%) in 7Z7NE3RJ/TXT/PTC_EDITOR)" }
+
+confidence: disassembled
+
+tests:
+  - { name: key_assign, code: "KEY 1,\"CLS\"+CHR$(13)", expect: { stdout: "" } }
+  - { name: key_plain, code: "KEY 3,\"HELLO\"", expect: { stdout: "" } }
