@@ -107,13 +107,3 @@ oracle to confirm exact output and promote to `hw_verified`.
 - [ ] VAL (&B binary) · Confirm `VAL("&B1010")`=10 (and `VAL("&B"+bits$)` parses binary). ·
   assumption: &B is a recognized binary literal prefix like &H. Corpus: 11 programs (e.g.
   13D4DV3V/TXT/MAIN_PRG_V2). &H/exponent/strict-whole-string already hw_verified 2026-06-22.
-- [ ] S-T4a (INC/DEC) · Confirm INC/DEC on a string variable raises errnum 8 (TypeMismatch). ·
-  assumption: errnum 8 (disasm caseD_3f @0x19d864 raises `mov r0,#0x8` for non-numeric type
-  byte; osb IncRef throws TypeMismatch for string↔numeric). Batch case: `INC_STR|S$="hi":INC S$|err`.
-- [ ] S-T4a (INC) · Confirm INC with fractional step on a double var: `INC X#,0.5` → X#=1.5
-  when X# starts at 1.0. · assumption: standard f64 add (double var += double step). Batch: `INC_FRAC|X#=1.0:INC X#,0.5:PRINT X#`.
-- [ ] S-T4a (SWAP) · Confirm integer↔double SWAP is allowed (both numeric): `A=1:B#=2.5:SWAP A,B#` —
-  does A become 2 (truncated) and B# become 1.0? · assumption: allowed (both numeric, osb allows
-  int↔double swap with cast). Corpus shows no examples. Batch: `SWAP_INTDBL|A=1:B#=2.5:SWAP A,B#:PRINT A;B#`.
-- [ ] S-T4a (VAR/DIM init) · Confirm initial-value form is accepted and evaluates at runtime:
-  `VAR X=7:PRINT X` → 7, `DIM MAX=24*9:PRINT MAX` → 216. Batch standard value case.
