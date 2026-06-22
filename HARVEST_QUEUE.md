@@ -10,6 +10,11 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T4d (RESTORE) · Confirm RESTORE to an undefined @Label -> errnum 14 (Undefined label),
+  and the cross-slot form RESTORE "1:@Label" after USE 1 (needs a 2nd slot loaded — single-slot
+  oracle can't easily test). · assumption: errnum 14 per docs/error-table; cross-slot per docs.
+  Core DATA/READ/RESTORE/REM (incl. #const, &H, computed labels, 2D-array READ, out-of-DATA 13,
+  type-mismatch 8) all hw_verified 2026-06-22.
 - [ ] S-T4c (COPY/FILL/SORT/RSORT) · Confirm the secondary error edges: COPY DATA-form with
   fewer DATA items than required (errnum? docs say "an error occurs" — guess 13 Out of DATA);
   FILL with offset/count beyond array bounds (errnum 31?); SORT/RSORT with bad/missing array

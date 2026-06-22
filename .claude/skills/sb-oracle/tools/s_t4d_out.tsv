@@ -1,0 +1,21 @@
+read_numbers	102030
+read_string	HI
+read_mixed	5X
+data_const_expr	3,12
+data_negative	-7
+read_sequential	12
+read_across_lines	123
+read_float	1.5
+read_hex	255
+read_named_const_up	1
+read_named_const_l	256
+read_2d_array	7
+restore_selects_block	22
+restore_rewinds	99
+restore_string_var	42
+restore_computed_label	2
+rem_line_ignored	5
+rem_after_statement	5
+rem_multi	1
+read_out_of_data	errnum=3 errline=1
+read_type_mismatch	errnum=3 errline=1

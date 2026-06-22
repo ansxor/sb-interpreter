@@ -1,0 +1,24 @@
+# DATA + READ
+read_numbers|READ A,B,C\nDATA 10,20,30|STR$(A)+STR$(B)+STR$(C)|progstr
+read_string|READ S$\nDATA "HI"|S$|progstr
+read_mixed|READ A,S$\nDATA 5,"X"|STR$(A)+S$|progstr
+data_const_expr|READ A,B\nDATA 1+2,3*4|STR$(A)+","+STR$(B)|progstr
+data_negative|READ A\nDATA -7|A|prog
+read_sequential|READ A\nREAD B\nDATA 1,2|STR$(A)+STR$(B)|progstr
+read_across_lines|READ A,B,C\nDATA 1,2\nDATA 3|STR$(A)+STR$(B)+STR$(C)|progstr
+read_float|READ A\nDATA 1.5|A|prog
+read_hex|READ A\nDATA &HFF|A|prog
+read_named_const_up|READ A\nDATA #UP|A|prog
+read_named_const_l|READ A\nDATA #L|A|prog
+read_2d_array|DIM A[2,2]:READ A[1,1]\nDATA 7|A[1,1]|prog
+read_out_of_data|READ A,B\nDATA 1|err
+read_type_mismatch|READ A\nDATA "X"|err
+# RESTORE
+restore_selects_block|RESTORE @D2\nREAD A\n@D1\nDATA 11\n@D2\nDATA 22|A|prog
+restore_rewinds|READ A\nRESTORE @D1\nREAD B\n@D1\nDATA 9|STR$(A)+STR$(B)|progstr
+restore_string_var|L$="@D1":RESTORE L$\nREAD A\n@D1\nDATA 42|A|prog
+restore_computed_label|RESTORE "@D"+STR$(2)\nREAD A\n@D1\nDATA 1\n@D2\nDATA 2|A|prog
+# REM
+rem_line_ignored|REM comment line\nA=5|A|prog
+rem_after_statement|A=5:REM note|A|prog
+rem_multi|REM one\nREM two\nA=1|A|prog

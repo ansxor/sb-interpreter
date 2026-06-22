@@ -1,0 +1,32 @@
+id: REM
+kind: statement
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: comment, type: string, optional: true, desc: "Free comment text (not evaluated)" }
+    note: "REM [text] — the rest of the line is a comment."
+
+summary: "Marks the rest of the line as a comment. Has no effect on execution."
+
+semantics:
+  - "REM begins a comment: everything after REM to the end of the line is ignored by the interpreter."
+  - "REM may stand alone on a line or follow other statements after a separator (e.g. A=5:REM note)."
+  - "The apostrophe (') is the common shorthand comment marker in SmileBASIC; REM is the classic keyword form (functionally the comment-to-end-of-line behavior is the same)."
+  - "A comment never raises an error and produces no output."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/rem.md (REM [Character string]; comment; does not affect execution)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst: REM keyword name @0x2ed64c (token-name table region shared with DATA/READ/RESTORE); a lexer/parser special form (not in the builtin dispatch table) — the tokenizer discards the remainder of the line, so REM compiles to no VM operation" }
+  - { type: community, ref: "sbsave corpus: ~468 genuine REM (excl. REMOVE/REMAIN); line-start comments + colon-inlined A=5:REM... + block-banner REM ==== forms; the apostrophe (') comment dominates (~297k uses, ~634x more common than REM)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4d): REM as a leading line is ignored (REM comment / A=5 -> A=5); REM after a colon ends the statement (A=5:REM note -> A=5); multiple REM lines produce no output (-> following code runs)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: rem_line_ignored, code: "REM this is a comment\nPRINT 5", expect: { stdout: "5" } }
+  - { name: rem_after_statement, code: "A=5:REM set A\nPRINT A", expect: { stdout: "5" } }
+  - { name: rem_no_output, code: "REM nothing\nREM here\nPRINT 1", expect: { stdout: "1" } }

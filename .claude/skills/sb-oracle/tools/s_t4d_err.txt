@@ -1,0 +1,2 @@
+read_out_of_data|READ A,B:DATA 1|err
+read_type_mismatch|READ A:DATA "X"|err

@@ -1,0 +1,35 @@
+id: RESTORE
+kind: statement
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: label, type: any, desc: "@Label literal naming the target DATA line, or a string variable holding such a label (optionally slot-qualified \"n:@Label\")" }
+    note: "RESTORE @Label — set the DATA read pointer to the DATA at/after the label."
+
+summary: "Repositions the DATA read pointer so the next READ begins at the DATA following the specified @Label. Enables re-reading and selecting among multiple DATA blocks."
+
+semantics:
+  - "RESTORE @Label moves the global DATA pointer to the DATA item(s) at/after @Label; the next [[read]] starts there."
+  - "RESTORE may rewind the pointer to re-read DATA already consumed."
+  - "The label may be a literal (RESTORE @TOP) or a string variable holding the label name (e.g. L$=\"@TOP\":RESTORE L$)."
+  - "A label in another slot may be referenced as RESTORE \"n:@Label\" (the target slot must be enabled first with USE n; see [[use]])."
+  - "If the label does not exist, errnum 14 (Undefined label) is raised."
+
+errors:
+  - { errnum: 14, name: "Undefined label", when: "the specified @Label does not exist" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/restore.md (RESTORE @Label; specifies first DATA to read; string-variable label allowed; cross-slot \"1:@Label\" with USE)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst: RESTORE keyword name @0x2ed5b8 (token-name table region shared with DATA/READ); a parser/compiler special form (not in the builtin dispatch table) compiled to a VM op that sets the DATA pointer to the labelled DATA entry; unknown label -> errnum 14 (spec/reference/errors.yaml)" }
+  - { type: community, ref: "sbsave corpus: ~3.3k RESTORE; literal @Label dominant (~2.6k); string-variable labels (~238, RESTORE M$ in 227EVK4V/TXT/SBSMILE); computed/concatenated labels (~146, RESTORE \"@BGM\"+STR$(NUM+1) in 2D7X32KV/TXT/BGM); cross-slot \"n:@Label\" (~288, RESTORE \"1:@SAVE\" in 1BWX7ENV/TXT/AND-OS); array-element labels rare (RESTORE TOOL$[TOOL_MODE])" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4d): RESTORE @D2 selects the @D2 block (READ -> 22, not 11); RESTORE @D1 rewinds so a value is re-read (READ A;RESTORE;READ B -> 9,9); string-variable label L$=\"@D1\":RESTORE L$ -> 42; computed label RESTORE \"@D\"+STR$(2) targets @D2 -> 2" }
+
+confidence: hw_verified
+
+tests:
+  - { name: restore_selects_block, code: "RESTORE @D2\nREAD A\n@D1\nDATA 11\n@D2\nDATA 22\nPRINT A", expect: { stdout: "22" } }
+  - { name: restore_rewinds, code: "READ A\nRESTORE @D1\nREAD B\n@D1\nDATA 9\nPRINT A;B", expect: { stdout: "99" } }
+  - { name: restore_string_var, code: "L$=\"@D1\"\nRESTORE L$\nREAD A\n@D1\nDATA 42\nPRINT A", expect: { stdout: "42" } }
+  - { name: restore_computed_label, code: "RESTORE \"@D\"+STR$(2)\nREAD A\n@D1\nDATA 1\n@D2\nDATA 2\nPRINT A", expect: { stdout: "2" } }

@@ -1,0 +1,40 @@
+id: DATA
+kind: statement
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: item, type: any, desc: "A numeric constant (or constant expression) or a double-quoted string literal" }
+      - { name: more, type: any, optional: true, desc: "Additional comma-separated items" }
+    note: "DATA item [, item, ...] — defines a sequence of constants to be consumed by READ/[[copy]]."
+
+summary: "Defines a sequence of constant data (numbers and quoted strings, freely mixed) to be read in order by READ."
+
+semantics:
+  - "DATA lines hold constants read sequentially by [[read]] (and bulk-copied by COPY arr,\"@Label\"). DATA itself is not executed at runtime; it is collected at compile time."
+  - "Numbers and string literals may be mixed within and across DATA lines; READ must request each item with a matching-type variable."
+  - "String items must be enclosed in double quotes (\"\"); the quotes cannot be omitted."
+  - "An item may be a constant expression built only from numeric constants (e.g. DATA 1+2 yields 3, DATA 3*4 yields 12); these are folded to a constant at compile time."
+  - "Constants beginning with # are allowed (e.g. named constants); &H hex and negative literals are valid numeric items."
+  - "NOT allowed in a DATA item: string expressions, variables, functions, or expressions mixing && / || — only literal/constant-folded numeric values and quoted string literals."
+  - "A DATA line is usually preceded by an @Label so RESTORE/COPY can target it."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/data.md (DATA Data[,Data...]; numbers+strings mixed; numeric-constant expressions folded; # constants allowed; no string expressions/variables/functions/&&/||; strings must be quoted)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst: DATA keyword name @0x2ed5ac (token-name table region shared with VAR/DIM/READ/RESTORE); a parser/compiler special form (not in the builtin dispatch table) — DATA items are gathered into the program's constant pool at compile time, indexed by a runtime DATA pointer that READ advances" }
+  - { type: community, ref: "sbsave corpus: numeric constant-expressions ubiquitous (~50k lines, DATA 1*16+8 in 1DVK34J/TXT/HNZHS); &H hex literals (~8.5k, DATA &H0021 in 4RSXS3W3/TXT/PRG); # named constants (~100, DATA #LEFT in 4KX3PX7D/TXT/BLOCKDUDE, DATA #L); negatives (~100k); mixed number+string and empty \"\" items routine (5RNEDE4V/TXT/MG_ZERO)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4d): DATA 10,20,30 read -> 10,20,30; DATA \"HI\" -> HI; DATA 5,\"X\" mixed -> 5,X; DATA 1+2,3*4 const-expr folded -> 3,12; DATA -7 -> -7; DATA 1.5 -> 1.5; DATA &HFF -> 255; DATA #UP -> 1; DATA #L -> 256 (named button constants are valid DATA items)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: read_numbers, code: "READ A,B,C\nDATA 10,20,30\nPRINT A;B;C", expect: { stdout: "102030" } }
+  - { name: read_string, code: "READ S$\nDATA \"HI\"\nPRINT S$", expect: { stdout: "HI" } }
+  - { name: read_mixed, code: "READ A,S$\nDATA 5,\"X\"\nPRINT A;S$", expect: { stdout: "5X" } }
+  - { name: data_const_expr, code: "READ A,B\nDATA 1+2,3*4\nPRINT A;\",\";B", expect: { stdout: "3,12" } }
+  - { name: data_negative, code: "READ A\nDATA -7\nPRINT A", expect: { stdout: "-7" } }
+  - { name: data_hex, code: "READ A\nDATA &HFF\nPRINT A", expect: { stdout: "255" } }
+  - { name: data_named_const, code: "READ A\nDATA #L\nPRINT A", expect: { stdout: "256" } }

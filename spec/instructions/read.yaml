@@ -1,0 +1,41 @@
+id: READ
+kind: statement
+category: Data operations and others
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: var, type: any, desc: "Variable (scalar or array element) to receive the next DATA item" }
+      - { name: more, type: any, optional: true, desc: "Additional comma-separated variables, read in order" }
+    note: "READ var1 [, var2, ...] — reads the next DATA item(s) into the variable(s)."
+
+summary: "Reads constants defined by DATA into variables, in sequence, advancing a shared DATA read pointer."
+
+semantics:
+  - "READ consumes items from the DATA sequence in order, advancing a global DATA pointer; each variable in the list takes the next item."
+  - "Reading continues across DATA-line boundaries: successive READs (and multi-variable READs) keep consuming the next available item."
+  - "Each variable should match the type of its DATA item (number into a numeric variable, string into a string variable); see [[data]]."
+  - "By default reading starts at the first DATA in the program; [[restore]] repositions the pointer (and allows re-reading)."
+  - "Reading a string DATA item into a numeric variable raises errnum 8 (Type mismatch) — exact behavior oracle-confirmed."
+  - "Reading past the end of all DATA raises errnum 13 (Out of DATA)."
+  - "Array elements are valid targets (e.g. READ A[I])."
+
+errors:
+  - { errnum: 13, name: "Out of DATA", when: "no more DATA items remain to satisfy the READ" }
+  - { errnum: 8, name: TypeMismatch, when: "a string DATA item is read into a numeric variable" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/read.md (READ var1[,var2...]; reads DATA in order; same type as enumerated; starts at first DATA unless RESTORE used)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst: READ keyword name @0x2ed568 (token-name table region shared with DATA/RESTORE); a parser/compiler special form (not in the builtin dispatch table) compiled to a VM read op that pulls the next constant-pool item and advances the DATA pointer; exhaustion -> errnum 13, type mismatch -> errnum 8 (spec/reference/errors.yaml)" }
+  - { type: community, ref: "sbsave corpus: ~4k READ; into multi-dim array elements common (READ DOORT[W,0] in 43AE1XG3/TXT/AXE; READ PEN_STAMP[X,Y,I,E] in 1DVENVAE/TXT/PICS_R1_1V); many vars/line (READ SHT[I],RPF0[I],... in 227YK34J/TXT/JINTRI102); sentinel-loop idiom (WHILE 1:READ D$:IF D$==\"END\" THEN BREAK in 1233728E/TXT/MG_DOG)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4d): two READs share the pointer (READ A:READ B over DATA 1,2 -> 1,2); reading continues across DATA lines (READ A,B,C over DATA 1,2 / DATA 3 -> 1,2,3); READ into 2D element DIM A[2,2]:READ A[1,1] over DATA 7 -> 7; READ float -> 1.5; READ A,B over DATA 1 -> errnum 13 (Out of DATA); READ numeric A over DATA \"X\" -> errnum 8 (Type mismatch)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: read_sequential, code: "READ A\nREAD B\nDATA 1,2\nPRINT A;B", expect: { stdout: "12" } }
+  - { name: read_across_lines, code: "READ A,B,C\nDATA 1,2\nDATA 3\nPRINT A;B;C", expect: { stdout: "123" } }
+  - { name: read_float, code: "READ A\nDATA 1.5\nPRINT A", expect: { stdout: "1.5" } }
+  - { name: read_2d_array_element, code: "DIM A[2,2]\nREAD A[1,1]\nDATA 7\nPRINT A[1,1]", expect: { stdout: "7" } }
+  - { name: read_out_of_data, code: "READ A,B\nDATA 1", expect: { error: { errnum: 13 } } }
+  - { name: read_type_mismatch, code: "READ A\nDATA \"X\"", expect: { error: { errnum: 8 } } }
