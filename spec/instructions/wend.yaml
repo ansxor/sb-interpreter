@@ -1,0 +1,29 @@
+id: WEND
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    note: "Marks the end of a WHILE loop; jumps back to the WHILE condition test."
+
+summary: "Marks the end of a WHILE loop, returning control to the WHILE condition test."
+
+semantics:
+  - "Closes the nearest open WHILE; each pass jumps back to re-test the condition."
+  - "Takes no operand."
+  - "See [[while]] for full loop semantics."
+
+errors:
+  - { errnum: 25, name: "WEND without WHILE", when: "a WEND is reached with no matching WHILE" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/wend.md (end of a WHILE loop); errnum 25 from spec/reference/errors.yaml (WEND without WHILE)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst WEND is a parser keyword (token @0x2ed608), not in the builtin dispatch table; compiled as the back-jump of the WHILE loop" }
+  - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: WEND closes the WHILE (WHILE C<3 ... WEND runs exactly 3x). The bare-WEND errnum 25 capture flaked this run (queued); the sibling UNTIL-without-REPEAT=23 was confirmed live, corroborating the errors table." }
+
+confidence: hw_verified
+
+tests:
+  - { name: closes_loop, code: "C=0\nWHILE C<4\nC=C+1\nWEND\nPRINT C", expect: { stdout: "4" } }
+  - { name: wend_without_while, code: "WEND", expect: { error: { errnum: 25 } } }

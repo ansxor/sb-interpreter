@@ -1,0 +1,30 @@
+id: UNTIL
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: condition, type: number, range: "any", desc: "Exit condition; the loop ends when this is true" }
+    note: "Closes a REPEAT loop: UNTIL condition — repeats back to REPEAT while the condition is false."
+
+summary: "Marks the end of a REPEAT loop and tests the exit condition; the loop ends when the condition is true."
+
+semantics:
+  - "Evaluated at the BOTTOM of the loop, after the body has run, so the body always executes at least once."
+  - "The loop repeats while the condition is false and exits when it becomes true (nonzero); truthiness matches IF."
+  - "See [[repeat]] for full loop semantics."
+
+errors:
+  - { errnum: 23, name: "UNTIL without REPEAT", when: "an UNTIL is reached with no matching REPEAT" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/until.md (repeats from REPEAT until the condition is satisfied)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst UNTIL is a parser keyword (token @0x2ed574), not in the builtin dispatch table; compiled as the bottom-of-loop test + back-jump of REPEAT" }
+  - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: REPEAT ... UNTIL C>=3 (incrementing C) runs exactly 3x and exits when true; a bare UNTIL with no REPEAT raises errnum 23 (UNTIL without REPEAT)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: exit_when_true, code: "C=0\nREPEAT\nC=C+1\nUNTIL C>=4\nPRINT C", expect: { stdout: "4" } }
+  - { name: until_without_repeat, code: "UNTIL 1", expect: { error: { errnum: 23 } } }

@@ -1,0 +1,28 @@
+id: BREAK
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    note: "Immediately exits the innermost FOR/WHILE/REPEAT loop."
+
+summary: "Forces the innermost loop (FOR, WHILE, or REPEAT) to end immediately."
+
+semantics:
+  - "Transfers control to the statement after the loop's NEXT/WEND/UNTIL."
+  - "Affects the innermost enclosing loop only; outer loops continue."
+  - "Works in FOR ... NEXT, WHILE ... WEND, and REPEAT ... UNTIL."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/break.md (forces a loop to end; used in FOR/WHILE/REPEAT)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BREAK is a parser keyword (token @0x2ed544), not in the builtin dispatch table; compiled to a jump past the loop end" }
+  - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: BREAK on the first pass exits the loop (FOR I=1 TO 100 ... BREAK leaves I=1; WHILE with BREAK runs the body once)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: break_for,    code: "FOR I=1 TO 100\nBREAK\nNEXT\nPRINT I", expect: { stdout: "1" } }
+  - { name: break_while,  code: "C=0\nWHILE C<100\nC=C+1\nBREAK\nWEND\nPRINT C", expect: { stdout: "1" } }

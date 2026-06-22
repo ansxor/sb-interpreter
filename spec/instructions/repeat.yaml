@@ -1,0 +1,29 @@
+id: REPEAT
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    note: "REPEAT ... UNTIL condition — repeats the body until the condition becomes true."
+
+summary: "Begins a REPEAT loop whose body runs at least once, repeating until the UNTIL condition is true."
+
+semantics:
+  - "The body executes BEFORE the condition is tested (bottom-tested loop), so it always runs at least once — even when the UNTIL condition is true from the start."
+  - "The loop repeats while the UNTIL condition is false and exits when it becomes true, or immediately on BREAK."
+  - "CONTINUE jumps forward to the UNTIL condition test."
+
+errors:
+  - { errnum: 22, name: "REPEAT without UNTIL", when: "a REPEAT has no matching UNTIL" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/repeat.md, until.md (executes the process before determining the condition; exits when the condition is satisfied)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst REPEAT/UNTIL are parser keywords (tokens REPEAT @0x2ed588, UNTIL @0x2ed574), not in the builtin dispatch table; compiled to body + bottom-of-loop test + back-jump" }
+  - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: REPEAT ... UNTIL 1 runs the body once (bottom-tested); REPEAT ... UNTIL C>=3 (incrementing C) runs exactly 3x. See [[until]]." }
+
+confidence: hw_verified
+
+tests:
+  - { name: runs_once_even_if_true, code: "REPEAT\nPRINT \"X\"\nUNTIL 1", expect: { stdout: "X" } }
+  - { name: counts, code: "C=0\nREPEAT\nC=C+1\nUNTIL C>=3\nPRINT C", expect: { stdout: "3" } }

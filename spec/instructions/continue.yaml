@@ -1,0 +1,28 @@
+id: CONTINUE
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    note: "Skips the rest of the loop body and proceeds to the next iteration."
+
+summary: "Forces the innermost loop to proceed to its next iteration, skipping the rest of the body."
+
+semantics:
+  - "Jumps to the loop's continuation point: the NEXT increment+test in FOR, the WEND/WHILE re-test, or the UNTIL test in REPEAT."
+  - "Statements after CONTINUE in the body are skipped for that pass."
+  - "Affects the innermost enclosing loop only; works in FOR ... NEXT, WHILE ... WEND, REPEAT ... UNTIL."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/continue.md (forces a loop to proceed; used in FOR/WHILE/REPEAT)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst CONTINUE is a parser keyword (token @0x2ed620), not in the builtin dispatch table; compiled to a jump to the loop's continuation point" }
+  - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: CONTINUE skips the rest of the body (FOR I=1 TO 3 ... CONTINUE: N=N+1 leaves N=0; same for WHILE), confirming the post-CONTINUE statements do not run." }
+
+confidence: hw_verified
+
+tests:
+  - { name: continue_for,   code: "N=0\nFOR I=1 TO 3\nCONTINUE\nN=N+1\nNEXT\nPRINT N", expect: { stdout: "0" } }
+  - { name: continue_while, code: "C=0\nN=0\nWHILE C<3\nC=C+1\nCONTINUE\nN=N+1\nWEND\nPRINT N", expect: { stdout: "0" } }

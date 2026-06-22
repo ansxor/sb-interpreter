@@ -61,3 +61,8 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   Double in that case. · assumption: standard accumulate-by-step with float drift (documented
   caveat). Integer-step counts/finals/direction + NEXT-without-FOR (errnum 21) already
   hw_verified 2026-06-22.
+- [ ] S-T3c (WEND/BREAK) · Live-capture WEND-without-WHILE errnum (expected 25 per
+  spec/reference/errors.yaml) and determine BREAK/CONTINUE outside any loop behavior (errnum?
+  syntax error? ignored?). Both oracle captures flaked twice on 2026-06-22. · assumption: WEND
+  alone -> errnum 25 (table; sibling UNTIL-without-REPEAT=23 confirmed live). BREAK/CONTINUE
+  outside a loop: unknown, not in the errors table. Loop behavior + UNTIL/23 already hw_verified.

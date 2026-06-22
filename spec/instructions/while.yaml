@@ -1,0 +1,32 @@
+id: WHILE
+kind: statement
+category: Control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: condition, type: number, range: "any", desc: "Loop condition; nonzero is true" }
+    note: "WHILE condition ... WEND — repeats the body while the condition is true."
+
+summary: "Repeats the block up to WEND while the condition is true (top-tested loop)."
+
+semantics:
+  - "The condition is tested at the TOP of each pass, so if it is false initially the body runs zero times."
+  - "Truthiness matches IF: nonzero is true, zero is false; the same comparison/logical operators apply."
+  - "The loop exits when the condition becomes false, or immediately on BREAK."
+  - "CONTINUE jumps back to the condition test."
+
+errors:
+  - { errnum: 24, name: "WHILE without WEND", when: "a WHILE has no matching WEND" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/while.md (repeats up to WEND while satisfied; same conditions as IF)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst WHILE/WEND are parser keywords (tokens WHILE @0x2ed708, WEND @0x2ed608), not in the builtin dispatch table; compiled to a top-of-loop test + body + back-jump" }
+  - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22 (error-as-signal): WHILE 0 runs 0x (top-tested); WHILE C<3 (incrementing C) runs exactly 3x. See [[wend]]." }
+
+confidence: hw_verified
+
+tests:
+  - { name: counts,     code: "C=0\nWHILE C<3\nC=C+1\nWEND\nPRINT C", expect: { stdout: "3" } }
+  - { name: zero_iters, code: "WHILE 0\nPRINT \"X\"\nWEND\nPRINT \"DONE\"", expect: { stdout: "DONE" } }
+  - { name: sum,        code: "S=0\nI=1\nWHILE I<=5\nS=S+I\nI=I+1\nWEND\nPRINT S", expect: { stdout: "15" } }
