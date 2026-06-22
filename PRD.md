@@ -48,7 +48,7 @@ and name the instructions they cover inline.
 - [x] S-T1f Min/max & RNG — MIN · MAX · RND · RNDF · RANDOMIZE
 
 #### S-T2 Strings (12) → S-T0
-- [ ] S-T2a Extract — LEFT$ · RIGHT$ · MID$ · SUBST$
+- [x] S-T2a Extract — LEFT$ · RIGHT$ · MID$ · SUBST$
 - [ ] S-T2b Convert — STR$ · VAL · HEX$ · FORMAT$
 - [ ] S-T2c Char/search/len — ASC · CHR$ · INSTR · LEN
 

@@ -1,0 +1,38 @@
+id: RIGHT$
+kind: function
+category: Strings
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: string, type: string, desc: "Source string" }
+      - { name: length, type: integer, range: "0..", desc: "Number of characters to extract from the right" }
+    returns: { type: string, desc: "Rightmost length characters of string" }
+
+summary: "Extracts the rightmost length characters from a string."
+
+semantics:
+  - "Returns the last length characters of the source string."
+  - "If length exceeds the string length it is clamped, so RIGHT$(\"ABC\",5)=\"ABC\"."
+  - "RIGHT$(\"ABC\",0) returns the empty string."
+  - "Counts are in characters (UTF-16 code units in SmileBASIC)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 2" }
+  - { errnum: 8, name: TypeMismatch, when: "the first argument is not a string" }
+  - { errnum: 10, name: OutOfRange, when: "length is negative" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/right.md" }
+  - { type: disassembled, ref: "cia_3.6.0.lst RIGHT$ handler @0x144aec; argcount!=2 -> errnum 4 (@0x144b14); non-string first arg -> errnum 8 (@0x144b64); length<0 -> errnum 10 (@0x144b8c); length clamped to source length (cmp+strgt @0x144bb0); copies from (len-length) via @0x20c420; alloc fail -> errnum 11" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: RIGHT$(\"ABC\",2)=BC, RIGHT$(\"ABC\",0)=\"\", RIGHT$(\"ABC\",5)=ABC (clamp), RIGHT$(\"\",3)=\"\"; RIGHT$(\"ABC\",-1) -> errnum 10; RIGHT$(5,2) -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: basic,      code: 'PRINT RIGHT$("ABC",2)', expect: { stdout: "BC" } }
+  - { name: zero,       code: 'PRINT RIGHT$("ABC",0)', expect: { stdout: "" } }
+  - { name: clamp,      code: 'PRINT RIGHT$("ABC",5)', expect: { stdout: "ABC" } }
+  - { name: empty_src,  code: 'PRINT RIGHT$("",3)',    expect: { stdout: "" } }
+  - { name: negative_out_of_range, code: 'A$=RIGHT$("ABC",-1)', expect: { error: { errnum: 10 } } }
+  - { name: non_string_type_mismatch, code: 'A$=RIGHT$(5,2)', expect: { error: { errnum: 8 } } }

@@ -1,0 +1,38 @@
+id: LEFT$
+kind: function
+category: Strings
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: string, type: string, desc: "Source string" }
+      - { name: length, type: integer, range: "0..", desc: "Number of characters to extract from the left" }
+    returns: { type: string, desc: "Leftmost length characters of string" }
+
+summary: "Extracts the leftmost length characters from a string."
+
+semantics:
+  - "Returns the first length characters of the source string."
+  - "If length exceeds the string length it is clamped, so LEFT$(\"ABC\",5)=\"ABC\"."
+  - "LEFT$(\"ABC\",0) returns the empty string."
+  - "Counts are in characters (UTF-16 code units in SmileBASIC)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 2" }
+  - { errnum: 8, name: TypeMismatch, when: "the first argument is not a string" }
+  - { errnum: 10, name: OutOfRange, when: "length is negative" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/left.md" }
+  - { type: disassembled, ref: "cia_3.6.0.lst LEFT$ handler @0x149668; argcount!=2 -> errnum 4 (@0x149690); non-string first arg -> errnum 8 (@0x1496e0); length<0 -> errnum 10 (@0x149708); length clamped to source length (cmp+strgt @0x149728); substring copy via @0x20c420; alloc fail -> errnum 11" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: LEFT$(\"ABC\",2)=AB, LEFT$(\"ABC\",0)=\"\", LEFT$(\"ABC\",5)=ABC (clamp), LEFT$(\"\",3)=\"\"; LEFT$(\"ABC\",-1) -> errnum 10; LEFT$(5,2) -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: basic,      code: 'PRINT LEFT$("ABC",2)', expect: { stdout: "AB" } }
+  - { name: zero,       code: 'PRINT LEFT$("ABC",0)', expect: { stdout: "" } }
+  - { name: clamp,      code: 'PRINT LEFT$("ABC",5)', expect: { stdout: "ABC" } }
+  - { name: empty_src,  code: 'PRINT LEFT$("",3)',    expect: { stdout: "" } }
+  - { name: negative_out_of_range, code: 'A$=LEFT$("ABC",-1)', expect: { error: { errnum: 10 } } }
+  - { name: non_string_type_mismatch, code: 'A$=LEFT$(5,2)', expect: { error: { errnum: 8 } } }

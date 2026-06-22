@@ -1,0 +1,38 @@
+id: MID$
+kind: function
+category: Strings
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: string, type: string, desc: "Source string" }
+      - { name: start, type: integer, range: "0..", desc: "0-based start position" }
+      - { name: length, type: integer, range: "0..", desc: "Number of characters to extract" }
+    returns: { type: string, desc: "Substring of length characters starting at start" }
+
+summary: "Extracts length characters from a string starting at the 0-based position start."
+
+semantics:
+  - "start is 0-based: MID$(\"ABC\",0,2)=\"AB\", MID$(\"ABC\",1,2)=\"BC\"."
+  - "start is clamped to the string length; if start >= length the result is empty (MID$(\"ABC\",5,1)=\"\")."
+  - "length is clamped so the slice never runs past the end: MID$(\"ABC\",1,5)=\"BC\"."
+  - "Counts and positions are in characters (UTF-16 code units)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 3" }
+  - { errnum: 8, name: TypeMismatch, when: "the first argument is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/mid.md (MID$(string, start, length); example MID$(\"ABC\",0,2))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst MID$ handler @0x1483f0; argcount!=3 -> errnum 4 (@0x148418); non-string first arg -> errnum 8 (@0x148528); start/length coerced via @0x1ed910; start clamped to len then length clamped so start+length<=len (@0x1484a8); copy via @0x20c420; alloc fail -> errnum 11" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: MID$(\"ABC\",0,2)=AB, MID$(\"ABC\",1,2)=BC, MID$(\"ABC\",1,5)=BC (clamp), MID$(\"ABC\",5,1)=\"\" (past end), MID$(\"ABCDE\",2,2)=CD; MID$(5,0,1) -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: basic,        code: 'PRINT MID$("ABC",0,2)',   expect: { stdout: "AB" } }
+  - { name: offset,       code: 'PRINT MID$("ABC",1,2)',   expect: { stdout: "BC" } }
+  - { name: length_clamp, code: 'PRINT MID$("ABC",1,5)',   expect: { stdout: "BC" } }
+  - { name: start_past_end, code: 'PRINT MID$("ABC",5,1)', expect: { stdout: "" } }
+  - { name: middle,       code: 'PRINT MID$("ABCDE",2,2)', expect: { stdout: "CD" } }
+  - { name: non_string_type_mismatch, code: 'A$=MID$(5,0,1)', expect: { error: { errnum: 8 } } }

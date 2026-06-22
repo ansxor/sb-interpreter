@@ -1,0 +1,46 @@
+id: SUBST$
+kind: function
+category: Strings
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: string, type: string, desc: "Source string" }
+      - { name: start, type: integer, range: "0..", desc: "0-based position where substitution begins" }
+      - { name: replacement, type: string, desc: "Replacement string" }
+    returns: { type: string, desc: "string with everything from start onward replaced by replacement" }
+    note: "3-arg form: count is implied as (length - start), i.e. replace from start to the end."
+  - args:
+      - { name: string, type: string, desc: "Source string" }
+      - { name: start, type: integer, range: "0..", desc: "0-based position where substitution begins" }
+      - { name: count, type: integer, range: "0..", desc: "Number of characters to replace" }
+      - { name: replacement, type: string, desc: "Replacement string" }
+    returns: { type: string, desc: "string with count characters from start replaced by replacement" }
+
+summary: "Returns a copy of string with a run of characters starting at start replaced by replacement."
+
+semantics:
+  - "Builds result = string[0:start] + replacement + string[start+count:]."
+  - "4-arg form replaces count characters; 3-arg form omits count and replaces from start to the end (count defaults to length-start)."
+  - "start is 0-based: SUBST$(\"ABC\",0,2,\"XY\")=\"XYC\"; the replacement length need not equal count, so the result can grow or shrink."
+  - "count 0 inserts replacement without deleting: SUBST$(\"ABC\",0,0,\"X\")=\"XABC\"."
+  - "start+count is clamped to the string length; positions/counts are in characters (UTF-16 code units)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 3 or 4" }
+  - { errnum: 8, name: TypeMismatch, when: "the source string or the replacement is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/subst.md (SUBST$(string, start, [count,] replacement); example SUBST$(\"ABC\",0,2,\"XY\"))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SUBST$ handler @0x144e5c; argcount!=3,4 -> errnum 4 (@0x144ea8); 3-arg sets count=-1 sentinel then count=len-start (@0x144f44); non-string source -> errnum 8 (@0x145070); non-string replacement -> errnum 8 (@0x145090); start/count coerced via vtable +0x40; result assembled with @0x20c420 copies of head/replacement/tail" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: SUBST$(\"ABC\",0,2,\"XY\")=XYC, SUBST$(\"ABC\",1,\"XY\")=AXY (3-arg to end), SUBST$(\"ABCDE\",1,2,\"XY\")=AXYDE, SUBST$(\"ABC\",0,0,\"X\")=XABC (insert), SUBST$(\"ABC\",0,1,\"XYZ\")=XYZBC (grow); SUBST$(5,0,\"X\") -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: four_arg,    code: 'PRINT SUBST$("ABC",0,2,"XY")',   expect: { stdout: "XYC" } }
+  - { name: three_arg,   code: 'PRINT SUBST$("ABC",1,"XY")',     expect: { stdout: "AXY" } }
+  - { name: middle,      code: 'PRINT SUBST$("ABCDE",1,2,"XY")', expect: { stdout: "AXYDE" } }
+  - { name: insert_zero_count, code: 'PRINT SUBST$("ABC",0,0,"X")', expect: { stdout: "XABC" } }
+  - { name: grow,        code: 'PRINT SUBST$("ABC",0,1,"XYZ")',  expect: { stdout: "XYZBC" } }
+  - { name: non_string_type_mismatch, code: 'A$=SUBST$(5,0,"X")', expect: { error: { errnum: 8 } } }
