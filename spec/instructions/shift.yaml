@@ -1,0 +1,44 @@
+id: SHIFT
+kind: function
+category: Variables and Arrays
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: array, type: array, desc: "1D array to remove the first element from (numeric or string), OR a string variable (treated as a character array)" }
+    returns: { type: any, desc: "Value of the removed first element (type matches the array; for a string operand, a 1-character string)" }
+    note: "value = SHIFT(array) — removes and returns the first element; the array (or string) shrinks by one."
+
+summary: "Removes the first element of a 1D array and returns it. The number of elements decreases by 1. Also works on a string variable, removing and returning its first character."
+
+semantics:
+  - "SHIFT(array) removes element 0, returns its value, shifts the remaining elements down by one index, and decreases LEN(array) by 1."
+  - "Queue semantics: with PUSH (append) and SHIFT (remove front), elements come out in FIFO order (PUSH 1, PUSH 2 -> SHIFT=1 then SHIFT=2)."
+  - "The return value's type matches the array element type (Integer, Double, or String)."
+  - "String operand (character-array form): SHIFT(S$) removes and returns the FIRST character (e.g. S$=\"ABC\":SHIFT(S$) returns \"A\" and leaves S$=\"BC\")."
+  - "A numeric scalar operand raises errnum 8 (Type mismatch) — only arrays and strings are valid operands."
+  - "SHIFT must be used as a single-valued function; the handler checks the return-value count."
+  - "Wrong argument count (not exactly one operand) raises errnum 4 (Illegal function call)."
+  - "SHIFT on an empty (length-0) array raises errnum 31 (Subscript out of range)."
+
+errors:
+  - { errnum: 31, name: "Subscript out of range", when: "SHIFT on an empty (length-0) array" }
+  - { errnum: 8, name: TypeMismatch, when: "the operand is a numeric scalar (not an array or string)" }
+  - { errnum: 4, name: IllegalFunctionCall, when: "wrong number of arguments" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/shift.md (Variable=SHIFT(Array); removes an element from the start; element count -1)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SHIFT handler FUN_00144d20 @0x144d20: argc==1 + return-count==1 check else errnum 4 (mov r0,#4 @0x144d48 -> 0x1fffdc); element-type dispatch on array/string tag 4/5/6 @0x144d64-0x144d7c, any other tag -> errnum 8 (mov r0,#8 @0x144d88); removes the head via the array helpers @0x1ed6f4/0x17f694" }
+  - { type: community, ref: "sbsave corpus: genuine SHIFT(array) dequeue in 1,136+ calls across 209 files; SHIFT on string scalars (SHIFT(DAT$), SHIFT(D$)) common, e.g. EK2K45N6/TXT/_COM (38 uses) and 5KXKNDLS/TXT/UNDERTALE; RETURN SHIFT(P1) inline, e.g. LACYY3LJ/TXT/HANOI_TOWER" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4b): DIM A[3]:A[0]=11:SHIFT(A) -> 11; DIM A[3]:X=SHIFT(A) -> LEN 2; PUSH A,1:PUSH A,2:SHIFT:SHIFT (sequential) -> 1,2 (FIFO); shift then A[0] compacts (-> 2); string SHIFT S$=\"ABC\":SHIFT(S$) -> \"A\", S$ left \"BC\"; DIM S$[0]:PUSH S$,\"hi\":SHIFT(S$) -> hi; DIM A[0]:X=SHIFT(A) -> errnum 31" }
+
+confidence: hw_verified
+
+tests:
+  - { name: shift_returns_first, code: "DIM A[3]\nA[0]=11\nPRINT SHIFT(A)", expect: { stdout: "11" } }
+  - { name: shift_shrinks_len, code: "DIM A[3]\nX=SHIFT(A)\nPRINT LEN(A)", expect: { stdout: "2" } }
+  - { name: shift_compacts, code: "DIM A[0]\nPUSH A,1\nPUSH A,2\nX=SHIFT(A)\nPRINT A[0]", expect: { stdout: "2" } }
+  - { name: unshift_shift_fifo, code: "DIM A[0]\nPUSH A,1\nPUSH A,2\nX=SHIFT(A)\nY=SHIFT(A)\nPRINT X;Y", expect: { stdout: "12" } }
+  - { name: shift_string_array, code: "DIM S$[0]\nPUSH S$,\"hi\"\nPRINT SHIFT(S$)", expect: { stdout: "hi" } }
+  - { name: shift_string_char, code: "S$=\"ABC\"\nX$=SHIFT(S$)\nPRINT X$;\",\";S$", expect: { stdout: "A,BC" } }
+  - { name: shift_empty_error, code: "DIM A[0]\nX=SHIFT(A)", expect: { error: { errnum: 31 } } }

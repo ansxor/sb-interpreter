@@ -1,0 +1,43 @@
+id: PUSH
+kind: statement
+category: Variables and Arrays
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: array, type: array, desc: "1D array to append to (numeric or string), OR a string variable (treated as a character array)" }
+      - { name: value, type: any, desc: "Value to add (must match the array element type; for a string operand, a string to append)" }
+    note: "PUSH array, value — appends value to the end; the array (or string) grows by one element."
+
+summary: "Adds an element to the end of a 1D array. The number of elements increases by 1. Also works on a string variable, appending the value string to it."
+
+semantics:
+  - "PUSH array,value appends value as the new last element; LEN(array) increases by 1."
+  - "Arrays are dynamically resizable via PUSH: DIM A[10] starts with 10 (zero) elements, and PUSH A,x makes a[10] the 11th element (LEN becomes 11)."
+  - "PUSH onto an empty (length-0) array creates the first element; pairs with POP for stack (LIFO) use."
+  - "String operand (character-array form): PUSH S$,V$ appends V$ to the string S$ (e.g. S$=\"AB\":PUSH S$,\"CD\" gives \"ABCD\"); the appended value may be multiple characters. A string variable is the array operand here, not the element."
+  - "For a numeric array, the value's type must be numeric; pushing a string onto a numeric array raises errnum 8 (Type mismatch). Integer↔double values coerce to the numeric array's element type."
+  - "A numeric scalar operand raises errnum 8 (Type mismatch) — only arrays and strings are valid first operands."
+  - "Wrong argument count (not exactly array + value) raises errnum 4 (Illegal function call)."
+  - "Documented and used for 1D arrays; behavior on multi-dimensional arrays is oracle-pending."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "the first operand is a numeric scalar, or value type does not match a numeric array's element type" }
+  - { errnum: 4, name: IllegalFunctionCall, when: "wrong number of arguments (not array + value)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/push.md (PUSH Array,Expression; adds an element to the end; element count +1)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst PUSH handler FUN_0014aa1c @0x14aa1c: argc==2 check else errnum 4 (mov r0,#4 @0x14aa3c -> 0x1fffdc); element-type dispatch on array/string tag 4/5/6 @0x14aa50-0x14aa64, any other tag -> errnum 8 (mov r0,#8 @0x14aa70); appends via the array-resize helpers @0x1ed6f4/0x1eab0c" }
+  - { type: community, ref: "sbsave corpus: PUSH on string variables/arrays (PUSH S$,...) in 6,889+ lines, e.g. 1DVENVAE/TXT/PICS_R1_1V; PUSH with arbitrary expression values (PUSH OUT%,(W%<<16) OR H%) ubiquitous (~21,455 PUSH across 847 files)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4b): DIM A[3]:PUSH A,9 -> LEN 4; DIM A[2]:PUSH A,7 -> A[2]=7; DIM A[0]:PUSH A,5 -> A[0]=5,LEN 1; DIM S$[1]:PUSH S$,\"hi\" -> S$[1]=hi; string-as-array S$=\"AB\":PUSH S$,\"C\" -> ABC and PUSH S$,\"CD\" -> ABCD; DIM A[1]:PUSH A,\"x\" -> errnum 8; X=5(scalar):PUSH X,1 -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: push_grows_len, code: "DIM A[3]\nPUSH A,9\nPRINT LEN(A)", expect: { stdout: "4" } }
+  - { name: push_value_at_end, code: "DIM A[2]\nPUSH A,7\nPRINT A[2]", expect: { stdout: "7" } }
+  - { name: push_onto_empty, code: "DIM A[0]\nPUSH A,5\nPRINT A[0];LEN(A)", expect: { stdout: "51" } }
+  - { name: push_string_array, code: "DIM S$[1]\nPUSH S$,\"hi\"\nPRINT S$[1]", expect: { stdout: "hi" } }
+  - { name: push_string_chars, code: "S$=\"AB\"\nPUSH S$,\"CD\"\nPRINT S$", expect: { stdout: "ABCD" } }
+  - { name: push_type_mismatch, code: "DIM A[1]\nPUSH A,\"x\"", expect: { error: { errnum: 8 } } }
+  - { name: push_scalar_mismatch, code: "X=5\nPUSH X,1", expect: { error: { errnum: 8 } } }

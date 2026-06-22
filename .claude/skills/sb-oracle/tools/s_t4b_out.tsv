@@ -1,0 +1,30 @@
+push_grows_len	4
+push_value_end	7
+push_onto_empty	51
+push_string_array	hi
+pop_returns_last	42
+pop_shrinks_len	2
+push_pop_lifo	12
+pop_string	hi
+shift_returns_first	11
+shift_shrinks_len	2
+shift_compacts	2
+unshift_shift_fifo	21
+shift_string	hi
+unshift_grows_len	3
+unshift_value_front	7
+unshift_pushes_up	21
+unshift_string_array	hi
+str_push_char	ABC
+str_push_multichar	ABCD
+str_pop_char	C,AB
+str_pop_len	2
+str_shift_char	A,BC
+str_unshift_char	ABC
+str_unshift_multichar	TXT:C
+push_type_mismatch	errnum=8 errline=1
+pop_empty_err	errnum=31 errline=1
+shift_empty_err	errnum=31 errline=1
+unshift_type_mismatch	errnum=8 errline=1
+pop_num_scalar_err	errnum=8 errline=1
+push_num_scalar_err	errnum=8 errline=1

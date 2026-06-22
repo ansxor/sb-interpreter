@@ -10,6 +10,11 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T4b (PUSH/UNSHIFT/POP/SHIFT) · Confirm behavior on a MULTI-DIMENSIONAL array (e.g.
+  `DIM A[2,2]:PUSH A,9`) — does it error (and which errnum) or operate on a flattened/last
+  dimension? · assumption: documented for 1D only; multi-dim likely errors. Corpus shows no
+  genuine multi-dim PUSH (only commented-out). 1D + string-as-char-array + empty->errnum 31
+  + numeric-scalar->errnum 8 all hw_verified 2026-06-22.
 - [ ] S-T4a (VAR/DIM) · Confirm the secondary error edges not harvested in the 2026-06-22
   s_t4a batch: OPTION STRICT + undeclared use -> errnum 15; array size with `()` instead of
   `[]` -> errnum 3; over-large array -> errnum 11 (Out of memory). · assumption: errnums per

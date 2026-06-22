@@ -1,0 +1,36 @@
+# PUSH
+push_grows_len|DIM A[3]:PUSH A,9|LEN(A)|prog
+push_value_end|DIM A[2]:PUSH A,7|A[2]|prog
+push_onto_empty|DIM A[0]:PUSH A,5|STR$(A[0])+STR$(LEN(A))|progstr
+push_string_array|DIM S$[1]:PUSH S$,"hi"|S$[1]|progstr
+push_type_mismatch|DIM A[1]:PUSH A,"x"|err
+# POP
+pop_returns_last|DIM A[3]:A[2]=42|POP(A)|prog
+pop_shrinks_len|DIM A[3]:X=POP(A)|LEN(A)|prog
+push_pop_lifo|DIM A[0]:PUSH A,1:PUSH A,2|STR$(POP(A))+STR$(POP(A))|progstr
+pop_string|DIM S$[0]:PUSH S$,"hi"|POP(S$)|progstr
+pop_empty_err|DIM A[0]:X=POP(A)|err
+# SHIFT
+shift_returns_first|DIM A[3]:A[0]=11|SHIFT(A)|prog
+shift_shrinks_len|DIM A[3]:X=SHIFT(A)|LEN(A)|prog
+shift_compacts|DIM A[0]:PUSH A,1:PUSH A,2:X=SHIFT(A)|A[0]|prog
+unshift_shift_fifo|DIM A[0]:PUSH A,1:PUSH A,2|STR$(SHIFT(A))+STR$(SHIFT(A))|progstr
+shift_string|DIM S$[0]:PUSH S$,"hi"|SHIFT(S$)|progstr
+shift_empty_err|DIM A[0]:X=SHIFT(A)|err
+# UNSHIFT
+unshift_grows_len|DIM A[2]:UNSHIFT A,9|LEN(A)|prog
+unshift_value_front|DIM A[0]:UNSHIFT A,7|A[0]|prog
+unshift_pushes_up|DIM A[0]:PUSH A,1:UNSHIFT A,2|STR$(A[0])+STR$(A[1])|progstr
+unshift_string_array|DIM S$[0]:UNSHIFT S$,"hi"|S$[0]|progstr
+unshift_type_mismatch|DIM A[1]:UNSHIFT A,"x"|err
+# string-as-array (community-discovered)
+str_push_char|S$="AB":PUSH S$,"C"|S$|progstr
+str_push_multichar|S$="AB":PUSH S$,"CD"|S$|progstr
+str_pop_char|S$="ABC":X$=POP(S$)|X$+","+S$|progstr
+str_pop_len|S$="ABC":X$=POP(S$)|STR$(LEN(S$))|progstr
+str_shift_char|S$="ABC":X$=SHIFT(S$)|X$+","+S$|progstr
+str_unshift_char|S$="BC":UNSHIFT S$,"A"|S$|progstr
+str_unshift_multichar|S$="C":UNSHIFT S$,"TXT:"|S$|progstr
+# scalar-not-array type checks
+pop_num_scalar_err|X=5:Y=POP(X)|err
+push_num_scalar_err|X=5:PUSH X,1|err

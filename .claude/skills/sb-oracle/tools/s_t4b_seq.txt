@@ -1,0 +1,2 @@
+pop_lifo_seq|DIM A[0]:PUSH A,1:PUSH A,2:X=POP(A):Y=POP(A)|STR$(X)+STR$(Y)|progstr
+shift_fifo_seq|DIM A[0]:PUSH A,1:PUSH A,2:X=SHIFT(A):Y=SHIFT(A)|STR$(X)+STR$(Y)|progstr
