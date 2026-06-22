@@ -1,0 +1,55 @@
+id: DIM
+kind: statement
+category: Variables and Arrays
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: name, type: identifier, desc: "Array variable name" }
+      - { name: dim1, type: integer, range: ">=0", desc: "Number of elements in dimension 1" }
+      - { name: dim2, type: integer, range: ">=0", optional: true, desc: "Elements in dimension 2" }
+      - { name: dim3, type: integer, range: ">=0", optional: true, desc: "Elements in dimension 3" }
+      - { name: dim4, type: integer, range: ">=0", optional: true, desc: "Elements in dimension 4" }
+    note: "DIM name[dim1[,dim2[,dim3[,dim4]]]] [, ...] — declares a 1–4D array."
+  - args:
+      - { name: name, type: identifier, desc: "Scalar variable name to declare" }
+      - { name: init, type: any, optional: true, desc: "Optional initial value" }
+    note: "DIM name [= init] [, ...] — declares one or more scalar variables (same as VAR form 1)."
+
+summary: "Declares arrays or scalar variables. DIM and VAR are fully interchangeable; the array form is the more common usage."
+
+semantics:
+  - "DIM and VAR are interchangeable: both forms can declare scalars and arrays in any combination on the same line."
+  - "Arrays must always be declared before use (even without OPTION STRICT)."
+  - "Array subscripts start at 0; DIM A[N] gives elements A[0]..A[N-1]."
+  - "Up to 4 dimensions: DIM MAP[8,8,4,2] declares a 4D array."
+  - "All numeric elements default to 0; all string elements default to \"\"."
+  - "A scalar may receive an initial value: DIM X=56, MAX=24*9. The init expression is evaluated at runtime."
+  - "Type suffix (% for integer, # for double, $ for string) is valid on any name: DIM GH%[321,241], DIM M#[10], DIM FILE$[0]."
+  - "Mixed declarations are allowed on one line: DIM A=1, B[10], C$[5], M#[3,3]."
+  - "Declaring the same variable name twice raises errnum 18 (Duplicate variable)."
+
+errors:
+  - { errnum: 18, name: DuplicateVariable, when: "the same variable name is declared more than once" }
+  - { errnum: 3,  name: SyntaxError, when: "() used instead of [] for array size, or brackets malformed" }
+  - { errnum: 11, name: OutOfMemory, when: "the declared array is too large to allocate" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/dim.md (array form and scalar form; bracket-only; up to 4D; interchangeable with VAR)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst: DIM keyword in DATA table @0x3068dc (name ptr 0x2ed6ec, token id 313 = 0x139; sequential to VAR=312, confirming they share a code path); not in builtin dispatch table — parsed as a special compiler form" }
+  - { type: community, ref: "sbsave corpus: DIM with initial value (DIM X=56, DIM MAX=24*9) in 2,092+ programs, e.g. 13D4DV3V/TXT/MAIN_PRG_V2; type-suffixed arrays (DIM GH%[321,241], DIM M#[10]) in 2,400+ programs, e.g. 1DVK34J/TXT/HNZMJG and 1DE453HV/TXT/SPACE_MOLE; 4D arrays (DIM PEN_STAMP[8,8,4,2]) in ~6 programs, e.g. 1DVENVAE/TXT/PICS_R1_1V" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4a): DIM B[3] gives B[0]=0; DIM A[5]:A[2]=7->7; DIM POS[3,2]:POS[2,1]=9->9; DIM X=56->56; DIM N->0; DIM A=1,B[3]:B[0]=2->1,2; DIM G%[4]:G%[1]=99->99; DIM M#[2]:M#[0]=3.5->3.5; DIM S$[3]:S$[1]=\"hi\"->hi; DIM MAX=24*9->216 (init expr evaluated)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: array_1d_declare,  code: "DIM A[5]\nA[2]=7\nPRINT A[2]",  expect: { stdout: "7" } }
+  - { name: array_default_zero, code: "DIM B[3]\nPRINT B[0]",           expect: { stdout: "0" } }
+  - { name: array_2d,          code: "DIM POS[3,2]\nPOS[2,1]=9\nPRINT POS[2,1]", expect: { stdout: "9" } }
+  - { name: scalar_init,       code: "DIM X=56\nPRINT X",              expect: { stdout: "56" } }
+  - { name: scalar_default,    code: "DIM N\nPRINT N",                 expect: { stdout: "0" } }
+  - { name: multi_mixed,       code: "DIM A=1,B[3]\nB[0]=2\nPRINT A;B[0]", expect: { stdout: "12" } }
+  - { name: type_int_array,    code: "DIM G%[4]\nG%[1]=99\nPRINT G%[1]",    expect: { stdout: "99" } }
+  - { name: type_dbl_array,    code: "DIM M#[2]\nM#[0]=3.5\nPRINT M#[0]",   expect: { stdout: "3.5" } }
+  - { name: string_array,      code: "DIM S$[3]\nS$[1]=\"hi\"\nPRINT S$[1]", expect: { stdout: "hi" } }
+  - { name: scalar_init_expr,  code: "DIM MAX=24*9\nPRINT MAX",          expect: { stdout: "216" } }

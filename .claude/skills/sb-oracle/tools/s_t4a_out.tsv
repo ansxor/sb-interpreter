@@ -1,0 +1,40 @@
+var_scalar_init	7
+var_scalar_default	0
+var_str_init	hi
+var_str_default	
+var_multi	12
+var_type_pct	42
+var_arr_default	0
+var_arr_elem	99
+var_arr_2d	5
+var_typed_arr	1.5
+dim_arr_default	0
+dim_arr_elem	7
+dim_arr_2d	9
+dim_scalar_init	56
+dim_scalar_default	0
+dim_multi	12
+dim_int_arr	99
+dim_dbl_arr	3.5
+dim_str_arr	hi
+dim_expr_init	216
+inc_default	4
+inc_explicit	5
+inc_double	2
+inc_frac	1.5
+inc_arr	15
+inc_neg_step	2
+dec_default	4
+dec_explicit	3
+dec_double	2
+dec_frac	2
+dec_arr	7
+swap_int	21
+swap_str	YX
+swap_arr	9910
+swap_scalar_arr	95
+swap_cross_numeric	2.5,1
+inc_str_err	errnum=8 errline=1
+dec_str_err	errnum=8 errline=1
+swap_type_err	errnum=8 errline=1
+var_dup_err	errnum=18 errline=1

@@ -1,0 +1,58 @@
+id: VAR
+kind: statement
+category: Variables and Arrays
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: name, type: identifier, desc: "Variable name to declare (scalar)" }
+      - { name: init, type: any, optional: true, desc: "Optional initial value (same type as the variable)" }
+    note: "VAR name [= init] [, name [= init], ...] — declares one or more scalar variables."
+  - args:
+      - { name: name, type: identifier, desc: "Array variable name" }
+      - { name: dim1, type: integer, range: ">=0", desc: "Number of elements in dimension 1" }
+      - { name: dim2, type: integer, range: ">=0", optional: true, desc: "Elements in dimension 2" }
+      - { name: dim3, type: integer, range: ">=0", optional: true, desc: "Elements in dimension 3" }
+      - { name: dim4, type: integer, range: ">=0", optional: true, desc: "Elements in dimension 4" }
+    note: "VAR name[dim1[,dim2[,dim3[,dim4]]]] [, ...] — declares a 1–4D array (brackets required; () not allowed)."
+
+summary: "Declares scalar variables or arrays for use in a program. Either VAR or DIM may be used for any declaration form."
+
+semantics:
+  - "VAR and DIM are interchangeable: both can declare scalars and arrays."
+  - "Arrays in SmileBASIC must always be declared before use. Scalars need declaration only under OPTION STRICT."
+  - "Array subscripts start at 0; a declaration VAR A[N] gives elements A[0]..A[N-1]."
+  - "Up to 4 dimensions allowed, separated by commas: VAR POS[10,5] declares a 2D 10×5 array."
+  - "Numeric scalars and array elements default-initialize to 0 (integer) or 0.0 (double); string scalars and elements default to \"\"."
+  - "A scalar may be given an initial value at declaration: VAR X=5, Y#=1.5, S$=\"hello\"."
+  - "Type suffix (% for integer, # for double, $ for string) may appear on any name: VAR X%, VAR M#[10], VAR S$."
+  - "Multiple items (scalars and/or arrays of any type) may appear on one VAR line, comma-separated."
+  - "Declaring the same variable name twice raises errnum 18 (Duplicate variable) at compile/parse time."
+  - "Under OPTION STRICT, using a variable that has not been declared raises errnum 15 (Undefined variable)."
+
+errors:
+  - { errnum: 18, name: DuplicateVariable, when: "the same variable name is declared more than once" }
+  - { errnum: 15, name: UndefinedVariable, when: "OPTION STRICT is active and the variable was never declared" }
+  - { errnum: 3,  name: SyntaxError, when: "array size brackets are omitted or () used instead of []" }
+  - { errnum: 11, name: OutOfMemory, when: "the declared array is too large to allocate" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/var.md (both scalar and array forms; bracket-only; up to 4D; subscript starts at 0; either DIM or VAR may be used)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst: VAR keyword in DATA table @0x30677c (name ptr 0x2ed5dc, token id 312 = 0x138); VAR is parsed as a special form (not in builtin dispatch table); token handler in the parser/compiler, not VM dispatch" }
+  - { type: community, ref: "sbsave corpus: VAR with initial value (VAR X=5, VAR S$=\"\") in 756+ programs, e.g. 1DE453HV/TXT/SPACE_MOLE; type-suffixed scalars (VAR X%, VAR M#) in 884+ programs, e.g. 12C3NWQE/TXT/3DSCLOSEGAME; all forms are legal syntax" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4a): VAR X=7->7; VAR N->0; VAR S$=\"hi\"->hi; VAR T$->\"\"; VAR A=1,B=2->1,2; VAR X%=42->42; VAR A[4] gives A[0]=0; VAR A[3]:A[1]=99->99; VAR POS[3,2]:POS[1,0]=5->5; VAR M#[3]:M#[0]=1.5->1.5; VAR Q=1:VAR Q=2 -> errnum 18 (Duplicate variable), errline 1" }
+
+confidence: hw_verified
+
+tests:
+  - { name: scalar_init_int,  code: "VAR X=7\nPRINT X",   expect: { stdout: "7" } }
+  - { name: scalar_init_str,  code: "VAR S$=\"hi\"\nPRINT S$", expect: { stdout: "hi" } }
+  - { name: scalar_default_int, code: "VAR N\nPRINT N",   expect: { stdout: "0" } }
+  - { name: scalar_default_str, code: "VAR T$\nPRINT T$", expect: { stdout: "" } }
+  - { name: array_1d,         code: "VAR A[3]\nA[1]=99\nPRINT A[1]", expect: { stdout: "99" } }
+  - { name: array_default_zero, code: "VAR B[4]\nPRINT B[0]",         expect: { stdout: "0" } }
+  - { name: array_2d,         code: "VAR POS[3,2]\nPOS[1,0]=5\nPRINT POS[1,0]", expect: { stdout: "5" } }
+  - { name: multi_decl,       code: "VAR A=1,B=2\nPRINT A;B",        expect: { stdout: "12" } }
+  - { name: type_suffix_int,  code: "VAR X%=42\nPRINT X%",           expect: { stdout: "42" } }
+  - { name: type_suffix_arr,  code: "VAR M#[3]\nM#[0]=1.5\nPRINT M#[0]", expect: { stdout: "1.5" } }
+  - { name: duplicate_error,  code: "VAR Q=1\nVAR Q=2", expect: { error: { errnum: 18 } } }

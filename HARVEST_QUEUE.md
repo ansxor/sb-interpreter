@@ -10,6 +10,11 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T4a (VAR/DIM) · Confirm the secondary error edges not harvested in the 2026-06-22
+  s_t4a batch: OPTION STRICT + undeclared use -> errnum 15; array size with `()` instead of
+  `[]` -> errnum 3; over-large array -> errnum 11 (Out of memory). · assumption: errnums per
+  the official error table + docs (var.yaml/dim.yaml `errors:`). Core VAR/DIM/INC/DEC/SWAP
+  behavior + duplicate-var (18) + type-mismatch (8) already hw_verified 2026-06-22.
 - [ ] M1-T1 (lexer) · Does SmileBASIC 3.6.0 allow full-width / kana characters in
   identifiers and labels? · assumption: ASCII-only (inherited from osb — **likely wrong**,
   SB is a Japanese product; verify and fix the lexer's `is_alpha`/identifier scan).

@@ -60,7 +60,7 @@ and name the instructions they cover inline.
 - [x] S-T3e Advanced control — CALL · COMMON · DEF · XON · XOFF
 
 #### S-T4 Variables/arrays + Data-ops (27) → S-T0
-- [ ] S-T4a Declaration & inc — VAR · DIM · DEC · INC · SWAP
+- [x] S-T4a Declaration & inc — VAR · DIM · DEC · INC · SWAP
 - [ ] S-T4b Array stack/queue — PUSH · POP · SHIFT · UNSHIFT
 - [ ] S-T4c Array ops — COPY · FILL · SORT · RSORT
 - [ ] S-T4d DATA/READ — DATA · READ · RESTORE · REM
