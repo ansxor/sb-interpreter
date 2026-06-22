@@ -1,0 +1,42 @@
+id: FORMAT$
+kind: function
+category: Strings
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: format, type: string, desc: "Format string with %-directives" }
+      - { name: values, type: any, optional: true, desc: "One value per directive, in order (variadic)" }
+    returns: { type: string, desc: "Formatted string" }
+
+summary: "Formats values into a string using printf-style %-directives."
+
+semantics:
+  - "Directives: %S string, %D integer (decimal), %X integer (uppercase hex), %F real number. Literal text is copied verbatim; %% is not documented (use the directive set above)."
+  - "Width: a number after % sets the minimum field width (%8D, %4X), right-justified by default."
+  - "Precision for %F: integer.fraction digit counts as (width).(fraction), e.g. %8.2F gives 2 fractional digits in a width-8 field."
+  - "Flags after %: space pads with spaces (% 4D), 0 pads with zeros (%08D), '-' left-aligns (%-8D), '+' shows the sign on positives (%+8D)."
+  - "Each directive consumes the next value argument in order; values must match the directive type."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "no arguments are supplied" }
+  - { errnum: 8, name: TypeMismatch, when: "the format argument is not a string (or a value's type does not match its directive)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/format.md (%S/%D/%X/%F; width, .fraction, space/0/-/+ flags; example FORMAT$(\"%06D\",A))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst FORMAT$ handler @0x14576c; argcount<1 / non-string format -> errnum 8 (@0x145808); scans format for '%' (0x25) directives, building output into a wide buffer; buffer overflow -> errnum 0x29 (41)" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: FORMAT$(\"%D\",42)=42, FORMAT$(\"%06D\",42)=000042, FORMAT$(\"%X\",255)=FF, FORMAT$(\"%4X\",255)=\"  FF\", FORMAT$(\"%8.2F\",3.14159)=\"    3.14\", FORMAT$(\"%S\",\"HI\")=HI, FORMAT$(\"%+D\",5)=+5, FORMAT$(\"V=%D\",7)=V=7, FORMAT$(\"%-6D\",42)=\"42    \"; FORMAT$(5,1) -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: decimal,      code: 'PRINT FORMAT$("%D",42)',       expect: { stdout: "42" } }
+  - { name: zero_pad,     code: 'PRINT FORMAT$("%06D",42)',     expect: { stdout: "000042" } }
+  - { name: hex,          code: 'PRINT FORMAT$("%X",255)',      expect: { stdout: "FF" } }
+  - { name: hex_width,    code: 'PRINT "["+FORMAT$("%4X",255)+"]"', expect: { stdout: "[  FF]" } }
+  - { name: float_prec,   code: 'PRINT "["+FORMAT$("%8.2F",3.14159)+"]"', expect: { stdout: "[    3.14]" } }
+  - { name: string_dir,   code: 'PRINT FORMAT$("%S","HI")',     expect: { stdout: "HI" } }
+  - { name: plus_flag,    code: 'PRINT FORMAT$("%+D",5)',       expect: { stdout: "+5" } }
+  - { name: left_align,   code: 'PRINT "["+FORMAT$("%-6D",42)+"]"', expect: { stdout: "[42    ]" } }
+  - { name: literal_text, code: 'PRINT FORMAT$("V=%D",7)',      expect: { stdout: "V=7" } }
+  - { name: non_string_format, code: 'A$=FORMAT$(5,1)',         expect: { error: { errnum: 8 } } }

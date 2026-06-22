@@ -1,0 +1,43 @@
+id: STR$
+kind: function
+category: Strings
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: value, type: number, range: "any", desc: "Number to convert (Integer or Double)" }
+    returns: { type: string, desc: "Decimal string form of value" }
+  - args:
+      - { name: value, type: number, range: "any", desc: "Number to convert" }
+      - { name: digits, type: integer, range: "1-63", desc: "Minimum field width; right-justified, space-padded" }
+    returns: { type: string, desc: "value as a string, right-justified to digits with leading spaces" }
+
+summary: "Converts a number to its decimal string representation, optionally right-justified to a given width."
+
+semantics:
+  - "Integer values are formatted with C printf %d (e.g. STR$(123)=\"123\", STR$(-5)=\"-5\")."
+  - "Double values are formatted with C printf %g: 6 significant figures, trailing zeros removed, switching to exponential notation (lowercase 'e', 2+ digit signed exponent) for very large or very small magnitudes — STR$(0.00001)=\"1e-05\", STR$(12345678.0)=\"1.23457e+07\"."
+  - "The optional digits argument is a minimum field width (%*d / %*g) — the result is right-justified and space-padded if shorter; if the number is already wider, digits is ignored."
+  - "digits must be in 1-63; outside that range raises Out of range."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 1 or 2" }
+  - { errnum: 8, name: TypeMismatch, when: "value is a string" }
+  - { errnum: 10, name: OutOfRange, when: "digits is outside 1-63" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/str.md (STR$(value [,digits]); digits right-justifies)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst STR$ handler @0x148d1c -> formatter @0x1eb2a8; argcount!=1,2 -> errnum 4; non-number -> errnum 8 (@0x1eb300); digit count-1 must be <=0x3e else errnum 10 (@0x1eb420); printf formats: int %d / %*d (@0x1eb49c/0x1eb4a0), double %g / %*g (@0x1eb4a4/0x1eb4a8) via @0x1ec1f0" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: STR$(123)=123, STR$(-5)=-5, STR$(123,6)=\"   123\" (width pad), STR$(3.14159265)=3.14159, STR$(0.5)=0.5, STR$(0.00001)=1e-05, STR$(12345678.0)=1.23457e+07 (%g); STR$(\"x\") -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: integer,        code: "PRINT STR$(123)",      expect: { stdout: "123" } }
+  - { name: negative,       code: "PRINT STR$(-5)",       expect: { stdout: "-5" } }
+  - { name: width,          code: 'PRINT "["+STR$(123,6)+"]"', expect: { stdout: "[   123]" } }
+  - { name: double_sigfigs, code: "PRINT STR$(3.14159265)", expect: { stdout: "3.14159" } }
+  - { name: double_half,    code: "PRINT STR$(0.5)",      expect: { stdout: "0.5" } }
+  - { name: double_tiny_exp, code: "PRINT STR$(0.00001)", expect: { stdout: "1e-05" } }
+  - { name: double_big_exp,  code: "PRINT STR$(12345678.0)", expect: { stdout: "1.23457e+07" } }
+  - { name: string_type_mismatch, code: 'A$=STR$("x")',   expect: { error: { errnum: 8 } } }

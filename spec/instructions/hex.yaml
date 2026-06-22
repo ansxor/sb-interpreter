@@ -1,0 +1,42 @@
+id: HEX$
+kind: function
+category: Strings
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: value, type: number, range: "any", desc: "Value to convert; fractional part is truncated" }
+    returns: { type: string, desc: "Uppercase hexadecimal string with no leading zeros" }
+  - args:
+      - { name: value, type: number, range: "any", desc: "Value to convert; fractional part is truncated" }
+      - { name: digits, type: integer, range: "1-63", desc: "Output width; zero-padded on the left" }
+    returns: { type: string, desc: "Uppercase hexadecimal string padded with leading zeros to digits" }
+
+summary: "Converts a number to an uppercase hexadecimal string, optionally zero-padded to a given width."
+
+semantics:
+  - "The value is truncated to a 32-bit integer; HEX$(255)=\"FF\", HEX$(16)=\"10\"."
+  - "Negative values use 32-bit two's-complement: HEX$(-1)=\"FFFFFFFF\"."
+  - "The optional digits argument left-pads with '0' to that width; if the value already has more hex digits, digits is ignored: HEX$(255,4)=\"00FF\", HEX$(65535,4)=\"FFFF\"."
+  - "Hex letters are uppercase; no \"&H\"/\"0x\" prefix is emitted."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "argument count is not 1 or 2" }
+  - { errnum: 8, name: TypeMismatch, when: "value is a string" }
+  - { errnum: 10, name: OutOfRange, when: "digits is outside the supported width range" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/hex.md (HEX$(value [,digits]); 255 -> \"FF\"; example HEX$(65535,4))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst HEX$ handler @0x147ef4 -> formatter @0x1eb9c8; argcount!=1,2 -> errnum 4; non-number -> errnum 8; 2-arg passes digit count for zero-padding (uppercase %X-style)" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: HEX$(255)=FF, HEX$(0)=0, HEX$(16)=10, HEX$(255,4)=00FF, HEX$(65535,4)=FFFF, HEX$(-1)=FFFFFFFF (32-bit two's complement), HEX$(255.9)=FF (truncate); HEX$(\"x\") -> errnum 8" }
+
+confidence: hw_verified
+
+tests:
+  - { name: basic,      code: "PRINT HEX$(255)",     expect: { stdout: "FF" } }
+  - { name: zero,       code: "PRINT HEX$(0)",       expect: { stdout: "0" } }
+  - { name: sixteen,    code: "PRINT HEX$(16)",      expect: { stdout: "10" } }
+  - { name: padded,     code: "PRINT HEX$(255,4)",   expect: { stdout: "00FF" } }
+  - { name: pad_ignored, code: "PRINT HEX$(65535,4)", expect: { stdout: "FFFF" } }
+  - { name: negative_twos_complement, code: "PRINT HEX$(-1)", expect: { stdout: "FFFFFFFF" } }
+  - { name: string_type_mismatch, code: 'A$=HEX$("x")', expect: { error: { errnum: 8 } } }

@@ -49,7 +49,7 @@ and name the instructions they cover inline.
 
 #### S-T2 Strings (12) → S-T0
 - [x] S-T2a Extract — LEFT$ · RIGHT$ · MID$ · SUBST$
-- [ ] S-T2b Convert — STR$ · VAL · HEX$ · FORMAT$
+- [x] S-T2b Convert — STR$ · VAL · HEX$ · FORMAT$
 - [ ] S-T2c Char/search/len — ASC · CHR$ · INSTR · LEN
 
 #### S-T3 Control + Advanced control (27) → S-T0

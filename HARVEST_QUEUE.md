@@ -43,3 +43,6 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   assumption: array form returns smallest/largest element (disasm @0x148558/0x148230);
   MAX string -> errnum 8 (mirror of the verified MIN case). Varargs values + type preservation
   already hw_verified.
+- [ ] S-T2b (VAL) · Re-capture `A=VAL(5)` (non-string -> errnum 8). Oracle ERRNUM capture
+  flaked twice on 2026-06-22 ("halted but no read"). · assumption: errnum 8 (disasm @0x148f34,
+  and sibling STR$/HEX$/FORMAT$ non-string cases all hw_verified errnum 8 same run).
