@@ -15,8 +15,8 @@ under `prd/` (start at `prd/README.md`). Task IDs here match those docs.
 |---|---|---|---|
 | M0 | Scaffolding & spec pipeline | `prd/M0.md` | ✅ done |
 | **S** | **Spec build-out (all sources)** | `prd/specs.md` | 🔥 active |
-| **O** | **Oracle harvest engine** | `prd/oracle.md` | 🔥 active (connected) |
-| M1 | Core VM + a real window | `prd/M1.md` | ◐ lexer/AST done; gated on S |
+| **O** | **Oracle engine — `sb-oracle` skill** | `prd/oracle.md` | 🔥 value harvest works; errnum/gfx/audio TODO |
+| M1 | Core VM + a real window | `prd/M1.md` | ⬜ gated on S (pre-pivot lexer/AST exist — redo) |
 | M2 | Graphics (GRP + compositor) | `prd/M2.md` | ⬜ gated on S |
 | M3 | Sprites & BG | `prd/M3.md` | ⬜ gated on S |
 | M4 | Input & timing | `prd/M4.md` | ⬜ gated on S |
@@ -49,23 +49,23 @@ cases are harvested (`hw_verified`) or queued in `HARVEST_QUEUE.md`.
 - [ ] S-T14 Verify reference tables (errors/sysvars/constants) vs disassembly + oracle → O-T4, O-T5
 
 ### S-C — Concept specs (architecture/models; Markdown in `spec/concepts/`, see prd/specs.md)
-- [ ] S-C1 execution-model — lexer/parser/compiler/VM, 4 slots + COMMON, frame layout → gov. M1
-- [~] S-C2 screen-and-color-model — layers/Z/RGBA5551 (exemplar drafted; confirm vs oracle) → gov. M2, O-T6
-- [ ] S-C3 sprite-bg-model — attributes/animation/collision/tilemaps → gov. M3
-- [ ] S-C4 frame-and-timing-model — VSYNC/WAIT/MAINCNT, 60 fps → gov. M4
-- [ ] S-C5 mml-grammar — the full MML language → gov. M5
-- [ ] S-C6 file-and-extdata-format — projects/resources/extdata layout → gov. M6, O-T3
-- [ ] S-C7 error-model — errnum/ERRLINE, halt/CONT semantics → gov. M1, O-T5
+- [ ] S-C1 execution-model — lexer/parser/compiler/VM, 4 slots + COMMON, frame layout · governs M1
+- [~] S-C2 screen-and-color-model — layers/Z/RGBA5551 (exemplar drafted; confirm vs oracle) · governs M2, O-T6
+- [ ] S-C3 sprite-bg-model — attributes/animation/collision/tilemaps · governs M3
+- [ ] S-C4 frame-and-timing-model — VSYNC/WAIT/MAINCNT, 60 fps · governs M4
+- [ ] S-C5 mml-grammar — the full MML language · governs M5
+- [ ] S-C6 file-and-extdata-format — projects/resources/extdata layout · governs M6, O-T3
+- [ ] S-C7 error-model — errnum/ERRLINE, halt/CONT semantics · governs M1, O-T5
 
-## O — Oracle harvest engine (real SmileBASIC 3.6.0 in Azahar)
-- [x] O-T1 RPC connection — Azahar `--install` + boot; read guest memory (banner @0x2E9AE0 confirms 3.6.0; runtime = file offset + 0x100000)
-- [ ] O-T2 Autorun — drive SB to RUN a program deterministically (TAS movie record/play `-r`/`-p`, and/or RPC trigger) → O-T1
-- [ ] O-T3 Program injection — get a test program into SB (extdata file format, or RPC `write_memory` into a slot) → O-T1
-- [ ] O-T4 stdout capture — read the console grid from guest memory (RE its address) or CHKCHR scrape → O-T1
-- [ ] O-T5 ERRNUM/ERRLINE capture — RE the sysvar addresses; read after a halt → O-T1
-- [ ] O-T6 Framebuffer capture — `--dump-video` and/or RE the framebuffer address; decode to RGBA → O-T1
-- [ ] O-T7 Audio capture — emulator audio dump → O-T1
-- [ ] O-T8 harvest.py end-to-end — run case → capture → write `spec/tests/<id>.yaml` (`hw_verified`) + golden media → O-T2, O-T3, O-T4, O-T5
+## O — Oracle engine — implemented as the `.claude/skills/sb-oracle/` skill (Azahar + cliclick + extdata)
+- [x] O-T1 RPC connection — confirmed 3.6.0; runtime = file offset + 0x100000 (RPC now only for small reads; SKILL drives I/O)
+- [x] O-T2 Autorun — cliclick types `LOAD"PRG0:P",0` + `RUN` (sb-oracle skill)
+- [x] O-T3 Program injection — write a VALID extdata file (header + HMAC-SHA1 footer; format cracked)
+- [x] O-T4 Value/stdout capture — program SAVEs result to TXT; read `body[80:-20]` off disk
+- [ ] O-T5 ERRNUM/ERRLINE capture — error cases halt with no result file; make `run_case` detect a halt + read errnum (RE the sysvar addr or screenshot the error dialog) → O-T1
+- [ ] O-T6 Framebuffer capture — `--dump-video` and/or RE the framebuffer addr; decode to RGBA (graphics goldens) → O-T1
+- [ ] O-T7 Audio capture — emulator audio dump (audio goldens) → O-T1
+- [ ] O-T8 harvest.py end-to-end — wire `run_case` into `harness/harvest`: batch spec/corpus cases → write `spec/tests` (`hw_verified`) + golden media; open PR → O-T5
 
 ## M0 — Scaffolding & spec pipeline ✅
 - [x] M0-T1 Rust workspace + 6 crates (native + wasm32)
@@ -75,9 +75,9 @@ cases are harvested (`hw_verified`) or queued in `HARVEST_QUEUE.md`.
 - [x] M0-T5 Harness skeleton + ported goldens + sbsave corpus
 - [x] M0-T6 CI (deterministic replay only) + git
 
-## M1 — Core VM + a real window  (gated on S-T1..S-T6 for the parts it touches)
-- [x] M1-T1 Lexer (token.rs + lexer.rs) — ⚠ revisit full-width identifiers (HARVEST_QUEUE)
-- [x] M1-T2 AST (ast.rs)
+## M1 — Core VM + a real window  (gated on S; the existing lexer/AST predate the spec-first pivot — rewrite/validate, don't trust)
+- [ ] M1-T1 Lexer (token.rs + lexer.rs) — ⚠ existing code is an osb-port (ASCII-only idents); redo spec-first, verify identifier rules vs disassembly/oracle
+- [ ] M1-T2 AST (ast.rs) — exists from the pre-pivot attempt; revalidate against the parser + specs → M1-T1
 - [ ] M1-T3 Parser — recursive descent + precedence + const folding → M1-T2, S-T6
 - [ ] M1-T4 Value/Array completion (1–4D, refs, coercion)
 - [ ] M1-T5 Bytecode + Compiler → M1-T3, M1-T4

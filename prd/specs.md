@@ -75,10 +75,13 @@ via the oracle. These programs are also end-to-end inputs for the final interpre
 sb-core + the oracle and diff). See `harness/corpus/sbsave/README.md`.
 
 ### Loop vs. oracle division
-- The autonomous loop (`ralph.sh`) authors specs from docs + disassembly + osb and queues
-  oracle-needed cases. It **never** sets `hw_verified`.
-- A supervised harvest pass (oracle reachable from this machine) runs the queued cases and
-  upgrades them. See `prd/oracle.md` (O-T8).
+- The loop authors specs from docs + disassembly + osb. **If Azahar is running**, it harvests
+  `expect:` values directly via the **`sb-oracle` skill** (`run_case.py prog '<expr>'`) and
+  sets `hw_verified`, committing them as frozen fixtures.
+- If the oracle isn't up (or a case needs framebuffer/audio — not yet in the skill), it sets
+  `documented`/`disassembled` and queues the case in `HARVEST_QUEUE.md` for a later pass.
+- Either way the deterministic gate (`cargo test`) replays committed fixtures — never the
+  emulator. See `prd/oracle.md`.
 
 ## Concept specs (architecture/models — the other kind)
 
