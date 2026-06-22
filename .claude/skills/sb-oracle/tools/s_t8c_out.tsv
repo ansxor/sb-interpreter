@@ -1,0 +1,8 @@
+spanim_xy_chk	1
+spanim_uv_chk	4
+spstop_chk	0
+spstart_chk	1
+splink_ok	1
+spunlink_ok	1
+splink_err	errnum=4 errline=1
+spanim_err	errnum=4 errline=1

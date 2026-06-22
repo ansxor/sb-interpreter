@@ -1,0 +1,31 @@
+id: SPSTOP
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: id, type: integer, range: "0..511", optional: true, desc: "Sprite to stop; if omitted, stop ALL sprites' animations" }
+    note: "SPSTOP [id] — stop sprite animation."
+
+summary: "Stops (pauses) the animation of a sprite. With no argument, all sprites' animations stop. The sprite must be SPSET first."
+
+semantics:
+  - "SPSTOP id halts the sprite's animation channels; SPCHK(id) becomes 0 (no targets animating)."
+  - "With the management number omitted, SPSTOP stops every sprite's animation."
+  - "The animation can be resumed with [[spstart]]; the sprite's current attribute values are kept."
+  - "Using SPSTOP id on a sprite that was not SPSET raises errnum 4 (Illegal function call)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "the sprite was not SPSET" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spstop.md (SPSTOP [id]; stops animation; omitted = all sprites; error before SPSET)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPSTOP handler FUN_00142c5c @0x142c5c: halts the sprite animation channels (all if no id)" }
+  - { type: community, ref: "sbsave corpus: SPSTOP common to pause sprite animation (bare = stop all)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8c): after SPANIM 0,\"XY\",... (SPCHK 1), SPSTOP 0 -> SPCHK(0)=0 (animation halted)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: spstop_halts, code: "ACLS\nSPSET 0,0,0,16,16,1\nSPANIM 0,\"XY\",-60,200,100,-30,50,20\nSPSTOP 0\nPRINT SPCHK(0)", expect: { stdout: "0" } }

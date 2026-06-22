@@ -1,0 +1,30 @@
+id: SPUNLINK
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: id, type: integer, range: "0..511", desc: "Sprite to detach from its parent" }
+    note: "SPUNLINK id — remove a sprite's parent link."
+
+summary: "Removes the parent link of a sprite (set with SPLINK), so its coordinates are screen-absolute again. The sprite must be SPSET first."
+
+semantics:
+  - "SPUNLINK id detaches the child sprite from its parent; its display coordinates return to the normal screen coordinate system."
+  - "It is the inverse of [[splink]]."
+  - "Using SPUNLINK on a sprite that was not SPSET raises errnum 4 (Illegal function call)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "the sprite was not SPSET" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spunlink.md (SPUNLINK id; unlinks the sprite; error before SPSET)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPUNLINK handler FUN_00143fa8 @0x143fa8: clears the sprite's parent link" }
+  - { type: community, ref: "sbsave corpus: SPUNLINK used to detach previously SPLINK'd sprites" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8c): with SPSET 4 and SPSET 15, SPLINK 15,4 then SPUNLINK 15 runs without error (the link is removed)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: spunlink_ok, code: "ACLS\nSPSET 4,0,0,16,16,1\nSPSET 15,0,0,16,16,1\nSPLINK 15,4\nSPUNLINK 15\nPRINT 1", expect: { stdout: "1" } }

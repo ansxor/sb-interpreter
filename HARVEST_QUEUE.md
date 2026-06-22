@@ -10,6 +10,12 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T8c (sprite animation progression / link visuals) · Timing+Visual / O-T6 — the actual
+  per-frame animation PROGRESSION (keyframe interpolation, loop counts, negative-time smoothing)
+  and SPLINK's relative-coordinate rendering need the frame-timing + screenshot harness, not the
+  value oracle. SPANIM target->SPCHK bit mapping (XY=1,UV=4,...), SPSTART/SPSTOP toggle, SPLINK
+  parent<child rule (errnum 4), before-SPSET errnum 4 already hw_verified 2026-06-22.
+
 - [ ] S-T8b (sprite transform visuals) · Visual / O-T6 — confirm via screenshot that SPOFS/SPROT/
   SPSCALE/SPHOME actually move/rotate/scale the rendered sprite about the home point, and SPCHR
   swaps the on-screen image. Set/read state round-trips (position, angle, scale double, home,

@@ -1,0 +1,50 @@
+id: SPANIM
+kind: statement
+category: Sprites
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: id, type: integer, range: "0..511", desc: "Sprite management number" }
+      - { name: target, type: any, desc: "Animated element: 0/\"XY\", 1/\"Z\", 2/\"UV\", 3/\"I\", 4/\"R\", 5/\"S\", 6/\"C\", 7/\"V\" (+8 or \"+\" suffix = relative)" }
+      - { name: data, type: array, desc: "1D array of keyframes: Time1,Item1[,Item2], Time2,... (up to 32 frames)" }
+      - { name: loop, type: integer, optional: true, desc: "Loop count (1- ; 0 = endless)" }
+    note: "SPANIM id, target, data_array [, loop] — animate from an array (form 1)."
+  - args:
+      - { name: id, type: integer, range: "0..511", desc: "Sprite management number" }
+      - { name: target, type: any, desc: "Animated element (see form 1)" }
+      - { name: label, type: string, desc: "\"@Label\" of DATA holding: count, then Time,Item[,Item] rows" }
+      - { name: loop, type: integer, optional: true, desc: "Loop count (0 = endless)" }
+    note: "SPANIM id, target, \"@Label\" [, loop] — animate from DATA (form 2)."
+  - args:
+      - { name: id, type: integer, range: "0..511", desc: "Sprite management number" }
+      - { name: target, type: any, desc: "Animated element" }
+      - { name: inline, type: any, desc: "Inline Time1,Item1[,Item2], Time2,... keyframes" }
+      - { name: loop, type: integer, optional: true, desc: "Loop count" }
+    note: "SPANIM id, target, Time1,Item1[,Item2], ... [, loop] — animate from inline args (form 3)."
+
+summary: "Defines and starts an animation on one sprite attribute (position/UV/rotation/scale/color/etc.) from keyframe data. Animation begins on the next frame; SPCHK reports which targets are animating. The sprite must be SPSET first."
+
+semantics:
+  - "SPANIM animates the chosen target attribute through the given keyframes (Time,Item[,Item2] pairs; up to 32 frames). XY/UV/S take two items; others take one."
+  - "Target may be a number 0-7 or its string name (0/\"XY\", 1/\"Z\", 2/\"UV\", 3/\"I\", 4/\"R\", 5/\"S\", 6/\"C\", 7/\"V\"). Adding 8 (or suffixing the string with \"+\") makes the values RELATIVE to the runtime value."
+  - "A negative Time means smooth linear interpolation from the previous keyframe value; a positive Time waits that many frames at the value."
+  - "Loop: a positive count repeats that many times; 0 loops endlessly. Animation starts from the frame following SPANIM."
+  - "Once SPANIM is set, the sprite's animation is active: SPCHK(id) has the target's bit set (XY=1 #CHKXY, Z=2, UV=4 #CHKUV, I=8, R=16, S=32, C=64, V=128); see [[spchk]]. Use [[spstop]]/[[spstart]] to pause/resume."
+  - "Using SPANIM on a sprite that was not SPSET raises errnum 4 (Illegal function call)."
+
+errors:
+  - { errnum: 4, name: IllegalFunctionCall, when: "the sprite was not SPSET, or malformed animation data" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/spanim.md (3 forms: array / \"@Label\" DATA / inline; target 0-7 or XY/Z/UV/I/R/S/C/V, +8 or \"+\"=relative; Time,Item keyframes <=32; negative time=interpolate; loop 0=endless; error before SPSET)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPANIM handler FUN_00141f80 @0x141f80: parses the keyframe data and arms the sprite's per-target animation channels" }
+  - { type: community, ref: "sbsave corpus: SPANIM common for sprite motion/frame animation; inline and array/DATA forms both used" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8c): ACLS:SPSET 0,0,0,16,16,1:SPANIM 0,\"XY\",-60,200,100,-30,50,20 -> SPCHK(0)=1 (#CHKXY bit); SPANIM 0,\"UV\",... -> SPCHK(0)=4 (#CHKUV bit), confirming target->SPCHK bit mapping; SPANIM before SPSET -> errnum 4" }
+
+confidence: hw_verified
+
+tests:
+  - { name: spanim_xy_activates, code: "ACLS\nSPSET 0,0,0,16,16,1\nSPANIM 0,\"XY\",-60,200,100,-30,50,20\nPRINT SPCHK(0)", expect: { stdout: "1" } }
+  - { name: spanim_uv_activates, code: "ACLS\nSPSET 0,0,0,16,16,1\nSPANIM 0,\"UV\",-60,0,0,-30,16,0\nPRINT SPCHK(0)", expect: { stdout: "4" } }
+  - { name: spanim_before_spset_errors, code: "ACLS\nSPANIM 5,\"XY\",-60,0,0", expect: { error: { errnum: 4 } } }
