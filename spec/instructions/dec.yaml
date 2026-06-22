@@ -1,0 +1,38 @@
+id: DEC
+kind: statement
+category: Variables and Arrays
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: variable, type: number, desc: "Numeric variable (scalar or array element) whose value to decrease" }
+      - { name: expression, type: number, range: "any", optional: true, default: 1, desc: "Amount to subtract (default 1 if omitted)" }
+
+summary: "Decrements a numeric variable (or array element) by an expression, defaulting to 1."
+
+semantics:
+  - "DEC V is shorthand for V = V - 1; DEC V,E is shorthand for V = V - E."
+  - "The variable type determines arithmetic: an integer variable uses integer subtraction; a double variable (X#) uses double subtraction."
+  - "Expression may be a fractional value when the target variable is double: DEC X#,0.5 subtracts 0.5."
+  - "Array elements are valid targets: DEC PX[P],CAMPX and DEC OBJ#[OB,4],0.1 are legal."
+  - "The default step value 1 is an integer literal; subtracting 1 from a double variable coerces the step to 1.0."
+  - "Integer underflow wraps (i32 wrapping subtraction) consistent with the VM's integer arithmetic."
+  - "DEC on a string variable raises errnum 8 (TypeMismatch)."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "variable is a string (numeric decrement on string is not allowed)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/dec.md (DEC var [,expr]; default step 1; decrements)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst: DEC keyword in DATA table @0x30679c (name ptr 0x2ed5f0, token id 334 = 0x14e; sequential to INC=333, confirming they share a code path); not in builtin dispatch table — compiled to a VM opcode handled in FUN_0019D508 (@0x19d508)" }
+  - { type: community, ref: "sbsave corpus: DEC on array elements (DEC PX[P],CAMPX, DEC OBJ#[OB,4],0.1) in 1,379+ uses, e.g. 1DE453HV/TXT/SPACE_MOLE; DEC on double vars (DEC NF#, DEC Y#,SY#) in 137+ uses; fractional step (DEC COMBOTIME,0.7) in hundreds" }
+
+confidence: documented
+
+tests:
+  - { name: default_step,     code: "X=5\nDEC X\nPRINT X",          expect: { stdout: "4" } }
+  - { name: explicit_step,    code: "X=5\nDEC X,2\nPRINT X",        expect: { stdout: "3" } }
+  - { name: double_var,       code: "X#=3.0\nDEC X#\nPRINT X#",    expect: { stdout: "2" } }
+  - { name: double_frac_step, code: "X#=2.5\nDEC X#,0.5\nPRINT X#", expect: { stdout: "2" } }
+  - { name: array_element,    code: "DIM A[3]\nA[1]=10\nDEC A[1],3\nPRINT A[1]", expect: { stdout: "7" } }
+  - { name: string_mismatch,  code: "S$=\"hi\"\nDEC S$",             expect: { error: { errnum: 8 } } }

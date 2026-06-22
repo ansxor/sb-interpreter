@@ -1,0 +1,38 @@
+id: INC
+kind: statement
+category: Variables and Arrays
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: variable, type: number, desc: "Numeric variable (scalar or array element) whose value to increase" }
+      - { name: expression, type: number, range: "any", optional: true, default: 1, desc: "Amount to add (default 1 if omitted)" }
+
+summary: "Increments a numeric variable (or array element) by an expression, defaulting to 1."
+
+semantics:
+  - "INC V is shorthand for V = V + 1; INC V,E is shorthand for V = V + E."
+  - "The variable type determines arithmetic: an integer variable accumulates integer arithmetic; a double variable (X#) uses double arithmetic."
+  - "Expression may be a fractional value when the target variable is double: INC X#,0.5 adds 0.5."
+  - "Array elements are valid targets: INC A[I] and INC M#[I,J],V are legal."
+  - "The default step value 1 is an integer literal; adding 1 to a double variable coerces it to 1.0."
+  - "Integer overflow wraps (i32 wrapping addition) consistent with the VM's integer arithmetic."
+  - "INC on a string variable raises errnum 8 (TypeMismatch)."
+
+errors:
+  - { errnum: 8, name: TypeMismatch, when: "variable is a string (numeric increment on string is not allowed)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/inc.md (INC var [,expr]; default step 1; increments)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst: INC keyword in DATA table @0x306818 (name ptr 0x2ed660, token id 333 = 0x14d; sequential to DEC=334); not in builtin dispatch table — compiled to a VM opcode handled in the second dispatch table FUN_0019D508 (@0x19d508, opcodes 0x37–0x5e); a nearby handler (caseD_3f @0x19d864) raises errnum 8 on type byte == 0 (non-numeric), consistent with INC TypeMismatch" }
+  - { type: community, ref: "sbsave corpus: INC on array elements (INC GA[I%], INC GZ[I%],Z1) in 2,388+ uses, e.g. 1DE453HV/TXT/SPACE_MOLE; INC on double vars (INC M#,RNDF()+RNDF()-1, INC PY#,1) in 392+ uses, e.g. 23DX324V/TXT/PMODEM130.PRG; fractional step (INC B[I%],3.75) in hundreds of programs" }
+
+confidence: documented
+
+tests:
+  - { name: default_step,     code: "X=3\nINC X\nPRINT X",          expect: { stdout: "4" } }
+  - { name: explicit_step,    code: "X=3\nINC X,2\nPRINT X",        expect: { stdout: "5" } }
+  - { name: double_var,       code: "X#=1.0\nINC X#\nPRINT X#",    expect: { stdout: "2" } }
+  - { name: double_frac_step, code: "X#=1.0\nINC X#,0.5\nPRINT X#", expect: { stdout: "1.5" } }
+  - { name: array_element,    code: "DIM A[3]\nA[1]=10\nINC A[1],5\nPRINT A[1]", expect: { stdout: "15" } }
+  - { name: string_mismatch,  code: "S$=\"hi\"\nINC S$",             expect: { error: { errnum: 8 } } }
