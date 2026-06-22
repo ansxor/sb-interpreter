@@ -10,6 +10,12 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T7b (GCIRCLE arc/sector geometry; exact pixel goldens) · Visual / O-T6 — verify the
+  exact angular geometry of GCIRCLE arc (flag 0) and sector (flag 1: arc + bounding radii,
+  outline only) including the angle convention (where 0deg points, CW/CCW), and exact RGBA5551
+  pixel colors for all primitives, via the grp golden. Set/unset coverage (GPSET/GLINE/GBOX
+  outline/GTRI fill/GCIRCLE outline) already hw_verified 2026-06-22 via GSPOIT.
+
 - [ ] S-T7a (GPRIO/GCLIP/GCLS colors) · Visual / O-T6 golden — verify via the grp/screenshot
   oracle: GPRIO actually reorders the graphics layer vs console/sprite/BG; GCLIP display-mode
   (mode 0) restricts the shown region; the EXACT RGBA5551 round-trip of GCLS/GCOLOR colors

@@ -1,0 +1,35 @@
+id: GPSET
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x, type: integer, desc: "Pixel X coordinate on the graphics page" }
+      - { name: y, type: integer, desc: "Pixel Y coordinate on the graphics page" }
+      - { name: color, type: integer, optional: true, desc: "32-bit ARGB color; if omitted, the current GCOLOR draw color is used" }
+    note: "GPSET x, y [, color] — set a single pixel on the manipulation page."
+
+summary: "Draws a single pixel at (x,y) on the current manipulation GRP page, in the given color or the current GCOLOR."
+
+semantics:
+  - "GPSET x,y sets the pixel at (x,y) on the manipulation page (selected by GPAGE) to the draw color."
+  - "An optional color argument overrides the current GCOLOR for this call only."
+  - "The pixel is stored as RGBA5551 (so a value read back with GSPOIT is the rounded color; an opaque color reads back negative)."
+  - "Drawing is subject to the active write clip ([[gclip]] mode 1)."
+  - "Coordinates outside the page are silently ignored (no error); the standard screen area is X:0-399, Y:0-239 though the GRP page is 512x512."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gpset.md (GPSET X,Y[,ColorCode]; puts a pixel; color per GCOLOR)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GPSET handler FUN_00153cd0/@0x153d8c: writes one pixel to the manipulation page in the draw/given color" }
+  - { type: community, ref: "sbsave corpus: GPSET common (~2,323 lines); X,Y with and without an inline color arg" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7b): GPAGE 0,0:GCLS:GCOLOR RGB(255,255,255):GPSET 10,10 -> GSPOIT(10,10)!=0 is TRUE (pixel set), GSPOIT(11,10)=0 (neighbour unset); the inline-color form GPSET 5,5,RGB(255,0,0) also sets the pixel" }
+
+confidence: hw_verified
+
+tests:
+  - { name: gpset_sets_pixel, code: "GPAGE 0,0\nGCLS\nGCOLOR RGB(255,255,255)\nGPSET 10,10\nPRINT GSPOIT(10,10)!=0", expect: { stdout: "1" } }
+  - { name: gpset_neighbour_unset, code: "GPAGE 0,0\nGCLS\nGCOLOR RGB(255,255,255)\nGPSET 10,10\nPRINT GSPOIT(11,10)", expect: { stdout: "0" } }
+  - { name: gpset_inline_color, code: "GPAGE 0,0\nGCLS\nGPSET 5,5,RGB(255,0,0)\nPRINT GSPOIT(5,5)!=0", expect: { stdout: "1" } }

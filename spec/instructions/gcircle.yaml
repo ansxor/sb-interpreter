@@ -1,0 +1,46 @@
+id: GCIRCLE
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: cx, type: integer, desc: "Center X" }
+      - { name: cy, type: integer, desc: "Center Y" }
+      - { name: radius, type: integer, range: ">=1", desc: "Radius in pixels" }
+      - { name: color, type: integer, optional: true, desc: "32-bit ARGB color; if omitted, the current GCOLOR is used" }
+    note: "GCIRCLE cx, cy, radius [, color] — draw a circle outline (form 1)."
+  - args:
+      - { name: cx, type: integer, desc: "Center X" }
+      - { name: cy, type: integer, desc: "Center Y" }
+      - { name: radius, type: integer, range: ">=1", desc: "Radius in pixels" }
+      - { name: start_angle, type: number, range: "0..360", desc: "Arc start angle (degrees)" }
+      - { name: end_angle, type: number, range: "0..360", desc: "Arc end angle (degrees)" }
+      - { name: flag, type: integer, range: "0..1", optional: true, default: 0, desc: "0: arc, 1: sector (filled pie wedge)" }
+      - { name: color, type: integer, optional: true, desc: "32-bit ARGB color" }
+    note: "GCIRCLE cx, cy, radius, start_angle, end_angle [, flag [, color]] — draw an arc or sector (form 2)."
+
+summary: "Draws a circle outline (form 1), or an arc / filled sector between two angles (form 2). Color defaults to the current GCOLOR."
+
+semantics:
+  - "Form 1 (3 coords) draws the OUTLINE of a circle centered at (cx,cy) with the given radius; the interior (center) is not filled."
+  - "Form 2 adds start/end angles (degrees, 0-360) to draw only that arc; the flag selects 0=arc (just the curved arc) or 1=sector (the arc plus the two bounding radius lines — a wedge OUTLINE). Neither form fills: even a full 0-360 sector leaves the center unset (oracle-verified). For a filled disc use GFILL/GPAINT."
+  - "An optional trailing color argument overrides the current GCOLOR for this call."
+  - "Pixels are stored as RGBA5551 (GSPOIT read-back is rounded); drawing respects the write clip ([[gclip]])."
+  - "A point on the circle's edge (e.g. (cx+radius, cy)) is set; the center is not set for the plain-circle form."
+
+errors:
+  - { errnum: 10, name: "Out of range", when: "radius < 1 (oracle-pending)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gcircle.md (GCIRCLE CX,CY,R[,Color]; and GCIRCLE CX,CY,R,StartAng,EndAng[,Flag[,Color]] arc/sector; flag 0=arc,1=sector; angles 0-360)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GCIRCLE handler FUN_0015436c/@0x1546d4: rasterizes the circle/arc/sector into the manipulation page" }
+  - { type: community, ref: "sbsave corpus: GCIRCLE used (~1,228 lines); circle and arc/sector forms" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7b): GPAGE 0,0:GCLS:GCOLOR RGB(255,255,255):GCIRCLE 50,50,20 -> the edge point (cx+r,cy)=(70,50) is set (GSPOIT!=0) while the center (50,50) is NOT set (GSPOIT=0, outline). The sector form does NOT fill: GCIRCLE 50,50,20,0,360,1 still leaves the center (50,50)=0, and the plain arc GCIRCLE 50,50,20,0,90,0 also leaves the center 0 (both are outlines, not filled wedges/discs). Exact arc/sector angular geometry queued for the visual oracle." }
+
+confidence: hw_verified
+
+tests:
+  - { name: gcircle_edge_set, code: "GPAGE 0,0\nGCLS\nGCOLOR RGB(255,255,255)\nGCIRCLE 50,50,20\nPRINT GSPOIT(70,50)!=0", expect: { stdout: "1" } }
+  - { name: gcircle_center_empty, code: "GPAGE 0,0\nGCLS\nGCOLOR RGB(255,255,255)\nGCIRCLE 50,50,20\nPRINT GSPOIT(50,50)", expect: { stdout: "0" } }
+  - { name: gcircle_sector_not_filled, code: "GPAGE 0,0\nGCLS\nGCOLOR RGB(255,255,255)\nGCIRCLE 50,50,20,0,360,1\nPRINT GSPOIT(50,50)", expect: { stdout: "0" } }

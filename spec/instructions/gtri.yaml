@@ -1,0 +1,38 @@
+id: GTRI
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x1, type: integer, desc: "Vertex 1 X" }
+      - { name: y1, type: integer, desc: "Vertex 1 Y" }
+      - { name: x2, type: integer, desc: "Vertex 2 X" }
+      - { name: y2, type: integer, desc: "Vertex 2 Y" }
+      - { name: x3, type: integer, desc: "Vertex 3 X" }
+      - { name: y3, type: integer, desc: "Vertex 3 Y" }
+      - { name: color, type: integer, optional: true, desc: "32-bit ARGB color; if omitted, the current GCOLOR is used" }
+    note: "GTRI x1,y1, x2,y2, x3,y3 [, color] — draw a FILLED triangle."
+
+summary: "Draws a triangle with the three given vertices and FILLS it with the color (filled, not just outline)."
+
+semantics:
+  - "GTRI draws the triangle formed by the three vertices and fills its interior with the draw color."
+  - "An optional color argument overrides the current GCOLOR for this call."
+  - "Pixels are stored as RGBA5551 (GSPOIT read-back is rounded); drawing respects the write clip ([[gclip]])."
+  - "Unlike [[gbox]] (outline), GTRI is a solid fill — interior points are set."
+
+errors: []
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gtri.md (GTRI X1,Y1,X2,Y2,X3,Y3[,ColorCode]; draws a triangle and fills it; color per GCOLOR)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GTRI handler FUN_00154ed0/@0x15549c: rasterizes and fills the triangle into the manipulation page" }
+  - { type: community, ref: "sbsave corpus: GTRI used (~532 lines) for filled triangles (polys/3D fills)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7b): GPAGE 0,0:GCLS:GCOLOR RGB(255,255,255):GTRI 0,0,20,0,0,20 -> the vertices and an interior point are set (GSPOIT(0,0)!=0, GSPOIT(5,5)!=0 interior filled) while a point outside the triangle is empty (GSPOIT(19,19)=0)" }
+
+confidence: hw_verified
+
+tests:
+  - { name: gtri_vertex_set, code: "GPAGE 0,0\nGCLS\nGCOLOR RGB(255,255,255)\nGTRI 0,0,20,0,0,20\nPRINT GSPOIT(0,0)!=0", expect: { stdout: "1" } }
+  - { name: gtri_interior_filled, code: "GPAGE 0,0\nGCLS\nGCOLOR RGB(255,255,255)\nGTRI 0,0,20,0,0,20\nPRINT GSPOIT(5,5)!=0", expect: { stdout: "1" } }
+  - { name: gtri_outside_empty, code: "GPAGE 0,0\nGCLS\nGCOLOR RGB(255,255,255)\nGTRI 0,0,20,0,0,20\nPRINT GSPOIT(19,19)", expect: { stdout: "0" } }
