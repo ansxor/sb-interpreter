@@ -1,0 +1,38 @@
+id: GSAVE
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: src_page, type: integer, range: "-1..5", optional: true, desc: "Source GRP page (0-5, or -1 GRPF); if omitted, the current drawing page" }
+      - { name: x, type: integer, optional: true, desc: "Source rectangle start X (omit X/Y/W/H for the whole drawing area)" }
+      - { name: y, type: integer, optional: true, desc: "Source rectangle start Y" }
+      - { name: width, type: integer, optional: true, desc: "Source rectangle width (pixels)" }
+      - { name: height, type: integer, optional: true, desc: "Source rectangle height (pixels)" }
+      - { name: dest_array, type: array, desc: "Numeric array to receive the image data (1D auto-extends if too small)" }
+      - { name: convert_flag, type: integer, range: "0..1", desc: "0: convert to 32-bit logical colors; 1: keep the raw 16-bit physical codes" }
+    note: "GSAVE [src_page,] [x,y,w,h,] dest_array, convert_flag — save a GRP region into an array."
+
+summary: "Copies an image region (a rectangle, or the whole page) from a GRP page into a numeric array, either as 32-bit logical colors or raw 16-bit physical codes. Pairs with GLOAD to restore."
+
+semantics:
+  - "GSAVE writes the source region's pixels into the destination array; with X/Y/W/H omitted it saves the whole current drawing area, and with src_page omitted it uses the current drawing page."
+  - "convert_flag 0 stores each pixel as a 32-bit logical (ARGB) color; flag 1 stores the raw 16-bit RGBA5551 physical code."
+  - "A one-dimensional destination array is auto-extended to hold the data if it is too small."
+  - "With convert_flag 0 (32-bit logical), the array holds one element per pixel: a 16x16 region produces LEN 256 (oracle-verified). The element packing for flag 1 (16-bit physical) and very large regions is oracle-pending."
+  - "The saved array round-trips through [[gload]] to restore the image (oracle-verified)."
+
+errors:
+  - { errnum: 10, name: "Out of range", when: "the source page is outside -1..5 (oracle-pending)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gsave.md (GSAVE [SrcPage,][X,Y,W,H,]Array,ConvFlag; whole screen if region omitted; 1D array auto-extends; flag 0=32-bit logical, 1=16-bit physical)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GSAVE handler FUN_00153eb8 @0x153eb8: copies the source region pixels into the destination array (converting or keeping physical codes)" }
+  - { type: community, ref: "sbsave corpus: GSAVE used to snapshot GRP regions into arrays (undo buffers, sprite extraction); 1D auto-extend idiom DIM W[0]:GSAVE ...,W,flag" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7d): DIM W[0]:GPAGE 0,0:GCLS:GSAVE 0,0,16,16,W,0 auto-extends the 1D array to LEN 256 (=16x16 pixels, one 32-bit element per pixel); the saved data round-trips via GLOAD (see [[gload]]). flag-1 (16-bit physical) packing + large-region counts are oracle-pending (queued)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: gsave_array_length, code: "DIM W[0]\nGPAGE 0,0\nGCLS\nGSAVE 0,0,16,16,W,0\nPRINT LEN(W)", expect: { stdout: "256" } }

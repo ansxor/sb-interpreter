@@ -1,0 +1,5 @@
+gcopy_dest	1
+gcopy_src	1
+gsave_len	1
+gload_restore	1
+gload_empty	0

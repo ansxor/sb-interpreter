@@ -1,0 +1,5 @@
+len_16_f1	ERROR prog case halted (no result — runtime error?)
+len_16_f0	256
+len_8_f1	64
+len_32_f0	64
+len_dim2	ERROR prog case halted (no result — runtime error?)

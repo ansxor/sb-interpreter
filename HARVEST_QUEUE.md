@@ -10,6 +10,13 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T7d (GSAVE/GLOAD format) · Resolve the GSAVE element packing for convert_flag 1 (16-bit
+  physical) and large regions — 16x16 flag0 = LEN 256 (one 32-bit element/pixel, hw_verified),
+  but flag1/16x16 and 32x32 gave inconsistent/halting LEN in the batch oracle; determine the
+  exact element count formula + any header. GCOPY blit + GSAVE->GLOAD pixel round-trip (flag 1)
+  already hw_verified 2026-06-22 via GSPOIT. Exact pixel colors queued with the other S-T7 O-T6
+  golden items.
+
 - [ ] S-T7c (GFILL/GPAINT/GPUTCHR exact pixels & color) · Visual / O-T6 — verify the exact
   filled-region geometry of GPAINT (no-border form fills the contiguous seed-color area), the
   GPUTCHR glyph rendering (string vs char-code form, scale interpolation, exact glyph pixels),
