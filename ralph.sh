@@ -97,15 +97,36 @@ Do EXACTLY ONE task this run, fully and correctly, then commit. Then stop.
   `spec/instructions/<id>.yaml` (one per instruction in the slice), authored to the v2
   contract in `prd/specs.md` from docs + disassembly + osb cross-check — typed signatures
   (ranges/defaults), semantics, error conditions (errnum), and test cases (code → expect).
-  **PERSIST FIRST, HARVEST SECOND** (the oracle is slow and a run can be cut off mid-harvest):
+  **PERSIST FIRST, MINE THE CORPUS, HARVEST LAST** (the oracle is slow and a run can be cut
+  off mid-harvest):
     1. Write the COMPLETE spec from docs + disassembly + osb, with `expect:` filled from the
        docs/disassembly and `confidence: disassembled`. This is already valuable + commit-able
        on its own — never gate it behind a slow oracle pass.
-    2. THEN, if Azahar is up, harvest the `expect:` values via the sb-oracle skill to an
-       OUTFILE (`batch cases.txt out.tsv` — incremental + resumable), fold confirmed values
-       in, and raise those sources to `hw_verified`. If the run is cut off, what you wrote in
-       step 1 still stands and the OUTFILE holds the partial harvest for next time.
-    3. Anything not harvested this run: leave `disassembled` and queue in `HARVEST_QUEUE.md`.
+    2. CORPUS EDGE-CASE SWEEP — catch real forms the docs never mention. For EACH instruction
+       in the slice, spawn a Haiku subagent (`Agent` tool, `model: haiku`) to grep its real
+       usage in `harness/corpus/sbsave/files/*/TXT/*` (3,329 decoded programs) and report
+       undocumented / edge forms: extra optional args, alternate syntaxes, string-var vs
+       literal operands, implicit forms, array vs scalar, contradicted claims. Tell each agent
+       to return CANDIDATES ONLY (pattern + one example `KEY/TXT/NAME` + rough count) — NOT
+       edits. THEN verify every candidate YOURSELF before believing it: re-grep with WORD
+       BOUNDARIES (`rg '\bNEXT [A-Z]'`, never a bare substring — `NEXT` matches inside
+       `SET_NODE_NEXT`/`EQUNEXT`) and discard substring/false-positive hits. The corpus are
+       real shipped programs, so a VERIFIED form PROVES the SYNTAX is legal — but it does NOT
+       prove runtime output. For each real, currently-missing form: add/extend a `semantics`
+       bullet (and a signature/test if apt), cite a `type: community` source
+       (`sbsave corpus: <form> in N programs, e.g. <KEY>/TXT/<NAME>`), and — output unproven —
+       mark it oracle-pending and add a line to `HARVEST_QUEUE.md`. NEVER raise `confidence`
+       to `hw_verified` from the corpus alone; NEVER overwrite an existing correct claim on
+       corpus evidence (a corpus form that seems to contradict the spec is a QUESTION for the
+       oracle, not a fact). Keep the top-level `confidence` honest (these additions are
+       `community`/oracle-pending, like the existing queued sub-claims).
+    3. THEN, if Azahar is up, harvest the `expect:` values — INCLUDING the corpus-surfaced
+       cases — via the sb-oracle skill to an OUTFILE (`batch cases.txt out.tsv` — incremental
+       + resumable), fold confirmed values in, and raise those sources to `hw_verified`. If
+       the run is cut off, what you wrote in steps 1-2 still stands and the OUTFILE holds the
+       partial harvest for next time.
+    4. Anything not harvested this run: leave `disassembled`/`community` and queue in
+       `HARVEST_QUEUE.md`.
   Write NO interpreter code. Verify with `cargo test -p sb-spec`, then commit. (The rest of
   section 3 is for code tasks.)
 - SPEC-FIRST: the contract is the spec (`spec/instructions/<id>.yaml` + `spec/reference/*`)
@@ -136,9 +157,12 @@ Do EXACTLY ONE task this run, fully and correctly, then commit. Then stop.
   (fixed seeds, no emulator, no network).
 - REAL-PROGRAM CORPUS: `harness/corpus/sbsave/` has 3,329 scraped programs + resources
   (`INDEX.json` manifest; unpack with `python3 tools/extract_sbsave.py`, or fetch one with
-  `--get KEY`). Use as test INPUTS — parser/e2e "doesn't panic" sweeps over small
-  `type:"TXT"` entries — NEVER as expected output (no oracle = no verified golden). See
-  `harness/corpus/sbsave/README.md`.
+  `--get KEY`; decoded source at `files/<KEY>/TXT/*`). TWO uses: (a) test INPUTS — parser/e2e
+  "doesn't panic" sweeps over small `type:"TXT"` entries; (b) EDGE-CASE DISCOVERY for spec
+  work — grep an instruction's real usage to surface undocumented forms (see the SPEC-BUILD
+  corpus sweep above). It is a DISCOVERY source, NEVER a verified golden: a corpus form proves
+  the syntax is legal but not its output (no oracle = no `hw_verified`, no `expect:` golden).
+  See `harness/corpus/sbsave/README.md`.
 - Set `confidence` HONESTLY: `documented` (docs), `disassembled` (you read the listing), or
   `hw_verified` (confirmed via the sb-oracle skill AND committed the result).
 - If a 3.6.0 edge case is NOT determinable from docs/disassembly: prefer harvesting it via
@@ -204,6 +228,10 @@ If you changed Python, also: `python3 -m py_compile` the changed files; if you c
   osb is a structural hint only. Don't even write "port of osb" in comments; describe the
   3.6.0 behavior you implemented and cite the spec/disassembly.
 - Set `confidence: hw_verified` ONLY from a committed sb-oracle result — never guess it.
+- The sbsave corpus is a DISCOVERY source only: verify every grepped candidate with a
+  word-boundary re-grep before amending, record it as `community` confidence + an
+  `HARVEST_QUEUE.md` line (never `hw_verified`), and never overwrite a correct claim on
+  corpus evidence alone.
 - A task that implements behavior is NOT done without a new spec/corpus conformance test.
 - The task's Acceptance criteria in `prd/<Mx>.md` is the definition of done.
 PROMPT_EOF
