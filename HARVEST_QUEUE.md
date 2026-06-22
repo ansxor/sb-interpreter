@@ -159,3 +159,14 @@ oracle to confirm exact output and promote to `hw_verified`.
   · BLOCKS on Touch-Screen input — not harvestable with the current headless oracle (no input
   injection). assumption (docs + disasm @0x181050): per the documented return tables. Argcount>4
   -> errnum 3 already hw_verified 2026-06-22.
+- [ ] S-T5a PRINT console-output cases · The value-oracle (run_case.py batch) captures VALUE
+  results, not console text, so PRINT stdout (e.g. `PRINT "HI"` -> "HI", `PRINT "A";"B"` -> "AB",
+  `,` tab-advance via TABSTEP, trailing-separator newline suppression) is not harvestable through
+  it. Needs the screenshot/console-grid path. · assumption (docs + disasm @0x14b70c): items
+  printed left-to-right; `;` no gap; `,` to next TABSTEP stop; trailing `;`/`,` suppresses the
+  line break. errnum 8 (Type mismatch on a non-printable operand) also unharvested — hard to
+  construct a non-printable PRINT operand from the value path.
+- [ ] S-T5a LOCATE Z exact bounds · Confirm the Z (depth) lower bound -256.0 and upper bound
+  1024.0 precisely (only Z=2000 -> errnum 10 is hw_verified so far). · assumption (disasm
+  @0x14bce0 float constants 0xC3800000 = -256.0, 0x44800000 = 1024.0, inclusive): out raises
+  errnum 10.

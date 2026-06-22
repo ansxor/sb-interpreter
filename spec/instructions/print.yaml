@@ -1,0 +1,40 @@
+id: PRINT
+kind: statement
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: items, type: any, variadic: true, optional: true, desc: "Zero or more expressions (numeric/string) to display, separated by ; or , — each ; concatenates with no gap, each , advances to the next TABSTEP tab stop." }
+    note: "PRINT [expr [; or , expr ...]] — also written `?`. With no arguments, prints just a line break."
+
+summary: "Displays the given expressions on the text console at the cursor, then advances the cursor; emits a trailing line break unless the statement ends in a ; or , separator."
+
+semantics:
+  - "`?` is an exact alias for PRINT."
+  - "Items are evaluated and printed left to right at the current console cursor; the cursor advances past the printed characters (handler iterates the argument list @0x14b734, dispatching per value)."
+  - "A numeric item is formatted and printed (Double values go through the number formatter @0x180a50; the exact STR$-style float formatting is deferred to M7-T4)."
+  - "A string item is printed verbatim (string print path @0x1e996c)."
+  - "Separator `;` concatenates the next item immediately, with NO space inserted (separator subtype 0: clears the trailing-newline flag, no cursor advance)."
+  - "Separator `,` advances the cursor to the next tab stop before the next item — the stop width is the TABSTEP system variable (separator subtype 1: tab-advance helper @0x180dbc)."
+  - "After all items, PRINT emits a line break (CRLF/scroll) UNLESS the statement text ended with a `;` or `,` separator, in which case the trailing newline is suppressed (trailing-newline flag r7 at @0x14b848 → newline @0x1eedc4 only when set)."
+  - "PRINT with no expressions just emits a line break."
+  - "Printing past the bottom row scrolls the console up by one line (console-model behavior; see the console concept)."
+  - "A non-printable operand type (neither numeric, string, nor a valid separator) raises errnum 8 (Type mismatch)."
+
+errors:
+  - { errnum: 8, name: "Type mismatch", when: "an item is a value type that cannot be printed (not numeric or string)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/print.md (PRINT [Expression [; or , Expression ...]]; ? alias; omitting expressions causes only a line break; , places a set interval per TABSTEP)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst PRINT handler @0x14b70c (entry in the in-code keyword table: u\"PRINT\" @0x14be88 -> handler ptr 0x14b70c @0x14be98). Body: argcount r5=[r0+0x4], arg array r6; loop @0x14b734 reads type tag ldrb r2,[r1,#0x0]; tag 0 -> string print bl 0x1e996c; tag 1 -> Double print vldr.64 d0,[sp]/bl 0x180a50; tag 4|5 -> separator bl 0x2047e0; else mov r0,#0x8 (errnum 8 Type mismatch) @0x14b768. Separator subtype [r0+0x8]: 0 (`;`) moveq r7,#0 no advance; 1 (`,`) bl 0x180dbc tab-advance then r7=0 @0x14b830. Trailing newline: cmp r7,#0 @0x14b848 -> bl 0x1eedc4 (line break) only if set. Internal arg-consistency guard mov r0,#0x1 @0x14b808.", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/console.d PRINT: prints items, `;` no-gap, `,` to next tab column, trailing separator suppresses newline (3.5.0 structural cross-check only)" }
+
+confidence: disassembled
+
+tests:
+  - { name: string_literal, code: 'PRINT "HI"', expect: { stdout: "HI" } }
+  - { name: integer, code: "PRINT 42", expect: { stdout: "42" } }
+  - { name: semicolon_concat, code: 'PRINT "A";"B"', expect: { stdout: "AB" } }
+  - { name: question_alias, code: '?"Q"', expect: { stdout: "Q" } }
+  - { name: expression_result, code: "PRINT 2*3+1", expect: { stdout: "7" } }

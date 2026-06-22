@@ -1,0 +1,32 @@
+id: CLS
+kind: statement
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    note: "CLS — no arguments. Clears the console screen on the display currently selected by DISPLAY."
+
+summary: "Clears the text console screen (the display selected by DISPLAY), resetting cell contents and moving the cursor to the home position."
+
+semantics:
+  - "Takes no arguments and returns no value; passing any argument, or using it as a function (requesting a return value), raises errnum 4 (Illegal function call) — guard cmp argcount #0 + return-count #0 else mov r0,#0x4 @0x14bee8."
+  - "Clears the console currently selected by DISPLAY (the upper or lower screen's text layer)."
+  - "Clearing resets the character grid and returns the cursor to the home position (0,0); it does not change the current COLOR (console clear helper @0x2052f0)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "any argument is given, or a return value is requested (used as a function)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/cls.md (CLS clears the console screen specified with the DISPLAY instruction; no arguments)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst CLS handler @0x14bec4: ldr r1,[r0,#0x4] (argcount); cmp #0; ldreq r0,[r0,#0xc] (return count); cmpeq #0; beq 0x14bef0 (proceed) else mov r0,#0x4 + b 0x1fffdc (errnum 4 Illegal function call) @0x14bee8. Clear path @0x14bef0: loads the active console object [0x315d60] and calls the clear helper bl 0x2052f0." }
+  - { type: community, ref: "osb/SMILEBASIC/console.d CLS: clears grid and homes the cursor (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5a): A=CLS() (used as a function) -> errnum 4, errline 1; CLS 0 (one argument) -> errnum 4, errline 1 — confirms CLS rejects any argument and any return-value request." }
+
+confidence: hw_verified
+
+tests:
+  # error expects are hw_verified (sb-oracle 2026-06-22).
+  - { name: clears_console, code: 'PRINT "X":CLS', expect: { stdout: "" } }
+  - { name: as_function_errors, code: "A=CLS()", expect: { error: { errnum: 4 } } }
+  - { name: with_arg_errors, code: "CLS 0", expect: { error: { errnum: 4 } } }

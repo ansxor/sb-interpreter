@@ -1,0 +1,44 @@
+id: LOCATE
+kind: statement
+category: Console input/output
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x, type: integer, optional: true, range: "0..50 (console column, inclusive; omit to keep previous)", desc: "Character column. The handler permits 0..50; 0..49 is the displayable range, 50 is the off-screen right edge. Omitting (comma placeholder) keeps the previous X." }
+      - { name: y, type: integer, optional: true, range: "0..29 (console row; omit to keep previous)", desc: "Character row. Omitting keeps the previous Y." }
+      - { name: z, type: number, optional: true, range: "-256.0..1024.0 (depth; omit to keep previous)", desc: "Depth coordinate: Rear 1024 < Screen surface 0 < Front -256." }
+    note: "LOCATE [x],[y][,z] — moves the text cursor; x and/or y may be omitted with a comma placeholder to keep the previous value. 2 or 3 argument slots required."
+
+summary: "Sets the console text cursor position (column X, row Y, optional depth Z); omitted X/Y keep their previous values."
+
+semantics:
+  - "Takes 2 or 3 argument slots (X,Y[,Z]); a different slot count, or use as a function (requesting a return value), raises errnum 4 (Illegal function call) — argcount guard cmp #2/cmpne #3 with return-count check @0x14bb20."
+  - "X (column) range 0..50 inclusive (hw-verified: 50 is accepted, 51 raises); Y (row) range 0..29 (hw-verified: 29 accepted, 30 raises); an out-of-range X or Y raises errnum 10 (Out of range). The handler bounds X by the console width value (50) inclusively but Y by height-1 (29), so the right edge column 50 is permitted even though only 0..49 is displayable."
+  - "Either X or Y may be omitted using a comma placeholder (e.g. `LOCATE ,15`); the omitted coordinate keeps its previous value (the handler stores the previous value when the operand is absent, e.g. ldrne r0,[r4,#0x40] @0x14bb58)."
+  - "Z is an optional depth coordinate, a Double in range -256.0..1024.0 (Front -256 < Screen surface 0 < Rear 1024); out of range raises errnum 10. When omitted the previous Z is kept."
+  - "X/Y are integer character cells; Z is a float depth checked against the float constants -256.0 (0xC3800000) and 1024.0 (0x44800000)."
+  - "Both X and Y may be omitted together to set only the depth: `LOCATE ,,z` is the 3-slot form with X and Y kept and Z updated (real-world idiom; see corpus source)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument slot count is not 2 or 3, or a return value is requested (used as a function)" }
+  - { errnum: 10, name: "Out of range", when: "X not in 0..49, Y not in 0..29, or Z not in -256.0..1024.0" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/locate.md (LOCATE [X],[Y][,Z]; X:0-49, Y:0-29; omitted X/Y keep previous; Z depth Rear 1024 < surface 0 < Front -256; omitted Z keeps previous)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst LOCATE handler @0x14baf0: argcount r6=[r0+0x4], cmp r6,#0x2/cmpne r6,#0x3 + return-count [r5+0xc]==0 else mov r0,#0x4 (errnum 4) @0x14bb20. Omitted-arg path stores previous: strne r0,[sp] from [r4,#0x40] @0x14bb58. X range: cmp r0,#0/cmpge r8,r0 (r8=max X) bge ok else mov r0,#0xa (errnum 10) @0x14bbc0. Y range: r10=height-1 (sub r10,r0,#1 @0x14bc00), cmpge r10,r0 else mov r0,#0xa @0x14bc70. Z range: vldr.32 s0,[sp,#0x8]; vcmpe.f32 s0,s17 (s17=-256.0 0xC3800000)/bcc err; vcmpe.f32 s0,s16 (s16=1024.0 0x44800000)/ble ok else mov r0,#0xa @0x14bce0. New X/Y/Z written to [r4,#0x40..0x48] @0x14bc44.", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC/console.d LOCATE: sets cursor X/Y(/Z), keeps previous on omission (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: `LOCATE ,,z` (both X and Y omitted, only depth set) in ~41 programs, e.g. 13D4DV3V/TXT/MAIN_PRG_V2 line 778 (`LOCATE ,,-20`); Z heavily used with negative depth (-256..-1) for layering. Single-slot form `LOCATE 0` appears once (XRLEC2HE/TXT/LODING_SIM line 6, a 7-line abandoned program) — it parses but raises errnum 4 at runtime (confirmed below), so it is a latent bug in that program." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5a): X bound -> LOCATE 49,0 NOERR, LOCATE 50,0 NOERR, LOCATE 51,0/80,0/100,0 errnum 10 errline 1 (X max = 50 inclusive, NOT 49); Y bound -> LOCATE 0,29 NOERR, LOCATE 0,30 errnum 10 (Y max = 29); Z bound -> LOCATE 0,0,2000 errnum 10; LOCATE 0 (single slot) -> errnum 4 errline 1; A=LOCATE(0,0) (used as a function) -> errnum 4 errline 1." }
+
+confidence: hw_verified
+
+tests:
+  # bounds + error expects are hw_verified (sb-oracle 2026-06-22). NOTE: X max is 50, not 49.
+  - { name: basic_xy, code: 'LOCATE 20,15:PRINT "X"', expect: { stdout: "X" } }
+  - { name: x_edge_50_ok, code: 'LOCATE 50,0:PRINT "X"', expect: { stdout: "X" } }
+  - { name: x_out_of_range, code: "LOCATE 51,0", expect: { error: { errnum: 10 } } }
+  - { name: y_out_of_range, code: "LOCATE 0,30", expect: { error: { errnum: 10 } } }
+  - { name: z_out_of_range, code: "LOCATE 0,0,2000", expect: { error: { errnum: 10 } } }
+  - { name: single_arg_errors, code: "LOCATE 0", expect: { error: { errnum: 4 } } }
+  - { name: as_function_errors, code: "A=LOCATE(0,0)", expect: { error: { errnum: 4 } } }
