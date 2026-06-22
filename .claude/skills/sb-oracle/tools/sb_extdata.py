@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Read (and tentatively write) SmileBASIC files in Azahar's extdata on disk.
+"""Read and write SmileBASIC files in Azahar's extdata on disk.
 
-Format (cracked): 80-byte header + UTF-8 source + 20-byte footer.
-  header[0x08:0x0C] = source length (LE u32); header[0x0C:] = save timestamp.
-  body[80:80+len]   = source.
-  footer            = 20-byte HMAC-SHA1 (keyed). READING ignores it. WRITING a loadable
-                      file needs SB's HMAC key (not yet recovered) — write_program() emits
-                      a structurally-correct file with a placeholder footer that SB will
-                      likely REJECT on load until the key is found. See HARVEST_QUEUE.md.
+Format (fully cracked, validated against real SB-saved files):
+  80-byte header + UTF-8 body + 20-byte footer.
+  header = type-marker(8) + body-length(LE u32) + date(DF 07 0A 0F) + zeros -> 80 bytes.
+  footer = HMAC-SHA1(KEY, header + body)   [20 bytes]
+  On-disk name = type-prefix + in-SB name  (TXT->"T", DAT/GRP->"B").
+Source of truth for the header markers, prefixes, and HMAC key: nnn1590/lpp-3ds-sbfm
+(romfs/index.lua, the SmileBASIC File Manager). Programs are TXT files, so a program "P"
+is on-disk "TP" and loads via LOAD"PRG0:P".
 """
 import glob
+import hashlib
+import hmac
 import os
 import struct
 import sys
@@ -20,6 +23,16 @@ EXTDATA_GLOB = (f"{HOME}/Library/Application Support/Azahar/sdmc/Nintendo 3DS/"
 HEADER = 80
 FOOTER = 20
 
+# SmileBASIC's file-integrity HMAC-SHA1 key (from lpp-3ds-sbfm).
+HMAC_KEY = b'nqmby+e9S?{%U*-V]51n%^xZMk8>b{?x]&?(NmmV[,g85:%6Sqd"\'U")/8u77UL2'
+DATE = bytes([0xDF, 0x07, 0x0A, 0x0F])  # fixed save date used by SBFM
+TYPE_MARKER = {
+    "TXT": bytes([0x01, 0, 0, 0, 0, 0, 0x01, 0]),
+    "DAT": bytes([0x01, 0, 0x01, 0, 0, 0, 0, 0]),
+    "GRP": bytes([0x01, 0, 0x01, 0, 0, 0, 0x02, 0]),
+}
+TYPE_PREFIX = {"TXT": "T", "DAT": "B", "GRP": "B"}
+
 
 def _user_dir():
     hits = glob.glob(EXTDATA_GLOB)
@@ -29,17 +42,16 @@ def _user_dir():
 
 
 def _path(name):
-    # Citra/Azahar store files under user/###/<NAME>.
-    return os.path.join(_user_dir(), "###", name)
+    return os.path.join(_user_dir(), "###", name)  # Azahar stores files under user/###/
 
 
 def list_files():
     base = os.path.join(_user_dir(), "###")
-    return sorted(f for f in os.listdir(base)) if os.path.isdir(base) else []
+    return sorted(os.listdir(base)) if os.path.isdir(base) else []
 
 
 def read_program(name):
-    """Return the UTF-8 source of an SB file (footer-agnostic)."""
+    """Return the UTF-8 source of an on-disk SB file (footer-agnostic)."""
     data = open(_path(name), "rb").read()
     n = struct.unpack_from("<I", data, 8)[0]
     body = data[HEADER:HEADER + n] if n else data[HEADER:-FOOTER]
@@ -50,40 +62,40 @@ def read_raw(name):
     return open(_path(name), "rb").read()
 
 
-# In-SB names map to on-disk names by a type-char prefix: TXT -> "T".
-# e.g. SB `SAVE"TXT:O"` writes on-disk file "TO"; `SAVE"T"` (TXT default) -> "TT".
-TYPE_PREFIX = {"TXT": "T", "DAT": "B", "PRG": "P"}
-
-
 def read_result(sb_name, ftype="TXT"):
-    """Read a file by its in-SB name + type (TXT/DAT/PRG). Returns the UTF-8 source."""
-    return read_program(TYPE_PREFIX.get(ftype, "T") + sb_name)
+    """Read a file by its in-SB name + type. Returns the UTF-8 source."""
+    return read_program(TYPE_PREFIX[ftype] + sb_name)
 
 
 def result_mtime(sb_name, ftype="TXT"):
     try:
-        return os.path.getmtime(_path(TYPE_PREFIX.get(ftype, "T") + sb_name))
+        return os.path.getmtime(_path(TYPE_PREFIX[ftype] + sb_name))
     except OSError:
         return None
 
 
-def write_program(name, source: str):
-    """Write an SB file (header+source+placeholder footer). NOTE: SB may reject this on
-    load until the HMAC-SHA1 key is recovered. Provided for experimentation."""
-    src = source.encode("utf-8")
-    hdr = bytearray(HEADER)
-    struct.pack_into("<I", hdr, 0, 1)          # version/magic (matches observed 0x01)
-    struct.pack_into("<I", hdr, 4, 0x00010000) # flags (observed)
-    struct.pack_into("<I", hdr, 8, len(src))   # source length
-    foot = b"\x00" * FOOTER                     # TODO: HMAC-SHA1(key, hdr+src)
-    open(_path(name), "wb").write(bytes(hdr) + src + foot)
-    return _path(name)
+def build_file(source: str, ftype="TXT"):
+    """Build the exact on-disk bytes for an SB file (valid header + HMAC footer)."""
+    body = source.encode("utf-8")
+    header = TYPE_MARKER[ftype] + struct.pack("<I", len(body)) + DATE + b"\x00" * 64
+    assert len(header) == HEADER, len(header)
+    footer = hmac.new(HMAC_KEY, header + body, hashlib.sha1).digest()
+    return header + body + footer
+
+
+def write_file(sb_name, source: str, ftype="TXT"):
+    """Write a valid SB file by in-SB name + type (on-disk = prefix+name). SB accepts it
+    (correct HMAC). For a program loadable via LOAD"PRG0:<sb_name>", use ftype='TXT'."""
+    path = _path(TYPE_PREFIX[ftype] + sb_name)
+    open(path, "wb").write(build_file(source, ftype))
+    return path
 
 
 def main():
     a = sys.argv[1:]
     if not a:
-        print("usage: list | read NAME | raw NAME | write NAME SOURCE"); return
+        print("usage: list | read DISKNAME | raw DISKNAME | write SBNAME SOURCE [TXT|DAT|GRP]")
+        return
     if a[0] == "list":
         print("\n".join(list_files()) or "(no files)")
     elif a[0] == "read":
@@ -91,7 +103,7 @@ def main():
     elif a[0] == "raw":
         print(read_raw(a[1]).hex())
     elif a[0] == "write":
-        print("wrote:", write_program(a[1], a[2]))
+        print("wrote:", write_file(a[1], a[2], a[3] if len(a) > 3 else "TXT"))
 
 
 if __name__ == "__main__":

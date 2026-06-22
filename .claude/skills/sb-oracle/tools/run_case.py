@@ -58,9 +58,9 @@ def run_program(source, result_name="O", prog="P", attempts=6):
     short commands `LOAD"PRG0:<prog>",0` (the ,0 auto-dismisses the load dialog) and `RUN`.
     The program must SAVE its result to TXT:<result_name>. Avoids typing the whole program.
     """
-    # PRG files are stored on disk with a "P" type prefix (like TXT -> "T"), so
-    # LOAD"PRG0:<prog>" reads on-disk "P"+<prog>.
-    X.write_program("P" + prog, source if source.endswith("\n") else source + "\n")
+    # Programs are TXT files; LOAD"PRG0:<prog>" reads on-disk "T"+<prog>. write_file emits
+    # a valid file (correct header + HMAC footer) so SB accepts it.
+    X.write_file(prog, source if source.endswith("\n") else source + "\n", "TXT")
     W.raise_window()
     time.sleep(0.4)
     W.press("YES")  # clear any stale dialog
