@@ -1,0 +1,52 @@
+id: RGBREAD
+kind: statement
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: color_code, type: integer, range: "any 32-bit ARGB value", desc: "ARGB8888 color code to split (8 bits each A,R,G,B); see GCOLOR." }
+    out:
+      - { name: R, type: integer, desc: "Receives the red channel (0-255)" }
+      - { name: G, type: integer, desc: "Receives the green channel (0-255)" }
+      - { name: B, type: integer, desc: "Receives the blue channel (0-255)" }
+    note: "RGBREAD color OUT R,G,B — splits a color code into its red/green/blue channels (3 OUT receivers; alpha discarded)."
+  - args:
+      - { name: color_code, type: integer, range: "any 32-bit ARGB value", desc: "ARGB8888 color code to split." }
+    out:
+      - { name: A, type: integer, desc: "Receives the alpha/transparency channel (0-255; 255 opaque, 0 transparent)" }
+      - { name: R, type: integer, desc: "Receives the red channel (0-255)" }
+      - { name: G, type: integer, desc: "Receives the green channel (0-255)" }
+      - { name: B, type: integer, desc: "Receives the blue channel (0-255)" }
+    note: "RGBREAD color OUT A,R,G,B — splits a color code into alpha plus red/green/blue (4 OUT receivers)."
+
+summary: "Splits an ARGB8888 color code into its individual 8-bit channels, writing them to OUT receivers (R,G,B, optionally preceded by alpha A)."
+
+semantics:
+  - "Takes exactly 1 input value (the color code) before OUT: argcount [r4,#0x4] cmp #1, bne -> errnum 4 @0x154dcc/@0x154e2c. The color is integer-coerced via the arg-fetch vtable [r2,#0x40] @0x154de4; a string color fails the fetch and sets the deferred type-mismatch error state @0x154df0."
+  - "The number of OUT receivers must be exactly 3 (R,G,B) or exactly 4 (A,R,G,B): return-count [r4,#0xc] cmp #3 (beq @0x154e58) / cmp #4 (beq @0x154e40) else mov r0,#0x4 (errnum 4) @0x154e34. Any other OUT count raises errnum 4 (Illegal function call)."
+  - "Channels are extracted by shift+mask of the 32-bit ARGB code: alpha = (color>>24)&255 (mov r1,color lsr #0x18 @0x154e14), red = (color>>16)&255 (color lsl #0x8 then lsr #0x18 -> bits 16-23 @0x154e08/@0x154e18), green = (color>>8)&255 (color lsl #0x10 then lsr #0x18 -> bits 8-15 @0x154e0c/@0x154e1c), blue = color&255 (and r7,color,#0xff @0x154e04). No clamping or rounding is needed — each channel is already a byte. This is the exact inverse of RGB()'s packing."
+  - "3-OUT form (OUT R,G,B) discards the alpha byte and writes only R,G,B; the 4-OUT form (OUT A,R,G,B) writes alpha into the first receiver. Each value is stored through the receiver's vtable [r2,#0x14] (store-integer) @0x154e48..@0x154ea0."
+  - "An OUT receiver position may be left empty to discard that channel; the empty commas still count toward the required 3-or-4 receiver total (same OUT semantics as DTREAD). Real code uses RGBREAD C OUT A,,, to extract only the alpha channel (4 receivers, R/G/B discarded). OUT receivers may be array elements, e.g. RGBREAD GSPOIT(x,y) OUT R[i],G[i],B[i]."
+  - "The input color is any integer expression: a literal, &H hex literal, #COLOR constant, variable, array element, or a function result such as RGBREAD GSPOIT(x,y) OUT R,G,B (read a pixel then split it) — all common in the corpus."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the input value count before OUT is not exactly 1, or the OUT receiver count is not 3 or 4" }
+  - { errnum: 8, name: "Type mismatch", when: "the color-code argument is a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/rgbread.md (RGBREAD Color code OUT [A,] R,G,B — gets each RGB element from a color code; A receives transparency (255 opaque .. 0 transparent), R,G,B receive 8-bit color info each 0-255; color code is 8 bits per ARGB element, see GCOLOR; e.g. RGBREAD C OUT R,G,B)." }
+  - { type: disassembled, ref: "cia_3.6.0.lst RGBREAD handler @0x154dc0: argcount [r4,#0x4] cmp #1 bne -> errnum 4 @0x154e2c; color fetched via arg-vtable [r2,#0x40] @0x154de4, string fetch fails -> deferred error str [0x305628] @0x154df0; channel extract and r7,color,#0xff (B) @0x154e04, color lsl#0x8 / lsl#0x10 then lsr#0x18 (R,G) @0x154e08..@0x154e1c, color lsr#0x18 (A) @0x154e14; return-count [r4,#0xc] cmp #3 beq @0x154e58 (R,G,B), cmp #4 beq @0x154e40 (A,R,G,B), else mov r0,#0x4 (errnum 4) @0x154e34; values stored to OUT receivers via store-vtable [r2,#0x14] @0x154e48..@0x154ea0 (receiver list indexed in reverse/stack order: A,R,G,B map to the correct source-order variables)." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d color unpack (3.5.0 structural cross-check only)." }
+  - { type: community, ref: "sbsave corpus: RGBREAD appears ~1005x. Both forms are common: 3-OUT RGBREAD C OUT R,G,B (~592, e.g. 13D4DV3V/TXT/MAIN_PRG_V2) and 4-OUT RGBREAD C OUT A,R,G,B (~213, e.g. 1R8EDWHE/TXT/DEFY_180.LIB). Verified edge forms: tail-comma alpha-only RGBREAD C OUT P,,, (13D4DV3V/TXT/MAIN_PRG_V2), array-element receivers RGBREAD GSPOIT(x,y) OUT R[0],G[0],B[0] (43SXXEJ3/TXT/-ALPHA_OS-), and function-result input RGBREAD GSPOIT(IX%,IY%) OUT R,G,B (1DVENVAE/TXT/PICS_R1_1V)." }
+
+confidence: disassembled
+
+tests:
+  # channel extraction is pure shift+mask (disassembled, unambiguous); the inverse-of-RGB() round-trip is covered.
+  - { name: split_rgb_3out, code: 'RGBREAD &HFF804020 OUT R,G,B\nPRINT R;",";G;",";B', expect: { stdout: "128,64,32" } }
+  - { name: split_argb_4out, code: 'RGBREAD &H80FF8040 OUT A,R,G,B\nPRINT A;",";R;",";G;",";B', expect: { stdout: "128,255,128,64" } }
+  - { name: split_negative_white, code: 'RGBREAD -1 OUT A,R,G,B\nPRINT A;",";R;",";G;",";B', expect: { stdout: "255,255,255,255" } }
+  - { name: roundtrip_rgb, code: 'RGBREAD RGB(160,128,96) OUT R,G,B\nPRINT R;",";G;",";B', expect: { stdout: "160,128,96" } }
+  - { name: two_out_errors, code: "RGBREAD 0 OUT R,G", expect: { error: { errnum: 4 } } }
+  - { name: five_out_errors, code: "RGBREAD 0 OUT A,R,G,B,X", expect: { error: { errnum: 4 } } }

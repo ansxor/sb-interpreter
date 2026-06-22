@@ -1,0 +1,53 @@
+id: RGB
+kind: function
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: red, type: integer, range: "0-255 (clamped: <0 -> 0, >255 -> 255)", desc: "Red channel" }
+      - { name: green, type: integer, range: "0-255 (clamped)", desc: "Green channel" }
+      - { name: blue, type: integer, range: "0-255 (clamped)", desc: "Blue channel" }
+    returns: { type: integer, desc: "ARGB8888 color code with alpha forced to 255 (opaque); see GCOLOR." }
+    note: "RGB(r,g,b) — builds an opaque color code (alpha = 255). 3 args."
+  - args:
+      - { name: alpha, type: integer, range: "0-255 (clamped); 255 = opaque, otherwise transparent", desc: "Alpha/transparency channel" }
+      - { name: red, type: integer, range: "0-255 (clamped)", desc: "Red channel" }
+      - { name: green, type: integer, range: "0-255 (clamped)", desc: "Green channel" }
+      - { name: blue, type: integer, range: "0-255 (clamped)", desc: "Blue channel" }
+    returns: { type: integer, desc: "ARGB8888 color code with the given alpha; see GCOLOR." }
+    note: "RGB(a,r,g,b) — builds a color code with explicit alpha. 4 args."
+
+summary: "Builds an ARGB8888 color code from 8-bit channel values. With 3 args alpha is forced opaque (255); a 4-arg form supplies an explicit alpha. Each channel is clamped to 0-255."
+
+semantics:
+  - "Must be used as a function returning exactly 1 value (return-count [r4,#0xc] cmp #1 @0x154ee0 -> else errnum 4 @0x154f08), and takes either 3 args (R,G,B) or 4 args (A,R,G,B): argcount [r4,#0x4] cmp #3 (beq @0x154f18) / cmp #4 (beq @0x154fd8) else mov r0,#0x4 (errnum 4) @0x154f08. Any other argument count raises errnum 4 (Illegal function call)."
+  - "Every channel is clamped to the inclusive range 0-255 with a signed compare: cmp #0xff / movge #0xff (>255 -> 255) and cmp #0 / movle #0 (<0 -> 0), applied to each of R,G,B (3-arg path @0x154f78..@0x154fc8) or A,R,G,B (4-arg path @0x155064 onward). So out-of-range channels do NOT error — they saturate. Real programs rely on this: RGB(999,999,999) yields opaque white, RGB(500,5,5,5) yields a near-black with alpha clamped to 255."
+  - "3-arg form forces the alpha byte to 255 (opaque): mov r0,#0xff / str r0,[sp,#0xc] @0x154fcc. 4-arg form takes the first argument as alpha (A=255 opaque, any other A is treated as transparent by drawing instructions; the SPCOLOR docs note any 0-255 alpha is meaningful for sprites)."
+  - "The result is packed big-endian ARGB: color = (A<<24) | (R<<16) | (G<<8) | B — mov r0,A lsl #0x18 / orr R lsl #0x10 / orr G lsl #0x8 / orr B @0x1550dc..@0x1550f0. The packed 32-bit value is returned as the SmileBASIC integer (i32), so codes with alpha bit 31 set read back negative (e.g. RGB(255,255,255) = &HFFFFFFFF = -1)."
+  - "Channels are integer-coerced from the popped arguments via the arg-fetch vtable [r2,#0x40]; a string argument fails the fetch (nonzero return) and sets the deferred type-mismatch error state @0x155058. Variable/array/expression operands are accepted, e.g. RGB(R,G,B), RGB(C[0],C[1],C[2]), RGB(R+RND(8),G,B)."
+  - "Note: SmileBASIC 3.6.0 RGB is function-only (no statement/OUT split-or-replace forms). The OUT-based split and channel-replace forms belong to SmileBASIC 4; to split a code in 3.6.0 use RGBREAD."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not 3 or 4, or RGB is not used as a value-returning function (return-count != 1)" }
+  - { errnum: 8, name: "Type mismatch", when: "a string is passed for any channel argument" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/rgb.md (Variable = RGB([Transparency,] Red,Green,Blue) — gets a color code from 8-bit RGB values; Transparency 255 opaque otherwise transparent (0-255 meaningful for SPCOLOR); each of R,G,B is 0-255; returns an 8-bit-per-ARGB color code, see GCOLOR; named-color table e.g. White=RGB(255,255,255), Red=RGB(255,0,0), Brown=RGB(160,128,96))." }
+  - { type: disassembled, ref: "cia_3.6.0.lst RGB handler @0x154ed0: return-count [r4,#0xc] cmp #1 bne -> errnum 4 @0x154f08; argcount [r4,#0x4] cmp #3 beq @0x154f18 (R,G,B), cmp #4 beq @0x154fd8 (A,R,G,B), else mov r0,#0x4 (errnum 4); per-channel clamp cmp #0xff/movge #0xff + cmp #0/movle #0 (e.g. @0x154f78..@0x154f8c); 3-arg forces alpha mov r0,#0xff str [sp,#0xc] @0x154fcc; pack (A<<24)|(R<<16)|(G<<8)|B via mov r0,r0 lsl#0x18 / orr ...lsl#0x10 / lsl#0x8 @0x1550dc..@0x1550f0; channels fetched via arg-vtable [r2,#0x40], string fetch fails -> deferred error @0x155058." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d color packing (3.5.0 structural cross-check only): ARGB8888 with opaque alpha for the 3-arg form." }
+  - { type: community, ref: "sbsave corpus: RGB() appears ~26k times across 1180 programs. Both forms are common — 3-arg RGB(r,g,b) baseline and 4-arg RGB(a,r,g,b) heavily used (e.g. FADE RGB(0,0,0,0),60 in 1BWX7ENV/TXT/AND-OS). Out-of-range channels appear in real shipped code: RGB(999,999,999) (2J7443A4/TXT/@BACKUP.PRG), RGB(500,5,5,5) (1BWX7ENV/TXT/AND-OS), RGB(2999,30,100) (4KE83PCY/TXT/@BACKUP.PRG) — confirming saturation/clamping is relied upon, not an error. Variable/array/expression operands common: RGB(C[0],C[1],C[2]), RGB(R+RND(8),G+RND(8),B+RND(8))." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7e): RGB(255,0,0) -> -65536 (&HFFFF0000); RGB(0,0,0) -> -16777216 (&HFF000000, 3-arg forces opaque alpha); RGB(255,255,255) -> -1 (&HFFFFFFFF); RGB(128,255,0,0) -> -2130771968 (&H80FF0000, 4-arg explicit alpha); RGB(999,999,999) -> -1 (clamps each channel to 255); RGB(-5,300,0) -> -16711936 (&HFF00FF00, clamps -5->0 and 300->255); X=RGB(1,2) (2 args) -> errnum 4; X=RGB(1,2,3,4,5) (5 args) -> errnum 4." }
+
+confidence: disassembled
+
+tests:
+  # value + error expects are hw_verified (sb-oracle 2026-06-22 s_t7e); colors are returned as i32, so alpha-set codes read negative.
+  - { name: red_opaque, code: "PRINT RGB(255,0,0)", expect: { stdout: "-65536" } }
+  - { name: black_opaque, code: "PRINT RGB(0,0,0)", expect: { stdout: "-16777216" } }
+  - { name: white_opaque, code: "PRINT RGB(255,255,255)", expect: { stdout: "-1" } }
+  - { name: four_arg_alpha, code: "PRINT RGB(128,255,0,0)", expect: { stdout: "-2130771968" } }
+  - { name: clamp_high, code: "PRINT RGB(999,999,999)", expect: { stdout: "-1" } }
+  - { name: clamp_mixed, code: "PRINT RGB(-5,300,0)", expect: { stdout: "-16711936" } }
+  - { name: two_args_errors, code: "X=RGB(1,2)", expect: { error: { errnum: 4 } } }
+  - { name: five_args_errors, code: "X=RGB(1,2,3,4,5)", expect: { error: { errnum: 4 } } }

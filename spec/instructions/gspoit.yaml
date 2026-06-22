@@ -1,0 +1,44 @@
+id: GSPOIT
+kind: function
+category: Graphics
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: x, type: integer, range: "graphic-page coordinate (visible area X 0-399); floored from a real argument", desc: "X coordinate of the pixel to read" }
+      - { name: y, type: integer, range: "graphic-page coordinate (visible area Y 0-239); floored from a real argument", desc: "Y coordinate of the pixel to read" }
+    returns: { type: integer, desc: "ARGB8888 color code of the pixel at (x,y) on the current draw page; see GCOLOR. May differ from the value originally drawn (round-tripped through the device's RGBA5551 color format)." }
+    note: "color = GSPOIT(x,y) — reads one pixel's color from the current graphic draw page. Exactly 2 args, used as a function (return-count 1)."
+
+summary: "Reads the color of a single pixel on the current graphic draw page and returns it as an ARGB8888 color code."
+
+semantics:
+  - "Takes exactly 2 args (x,y) and must be used as a function returning exactly 1 value: the handler requires argcount==2 AND return-count==1 — argcount [r4,#0x4] cmp #2, then [r4,#0xc] cmp #1 @0x15437c..@0x154384; any other (argcount, return-count) combination raises errnum 4 (Illegal function call) mov r0,#0x4 @0x154394. SmileBASIC 3.6.0 has NO 3-argument GSPOIT(x,y,page) page form — that form existed in Petit Computer (DSi) but the 3.6.0 handler hard-checks argcount==2 (and the corpus shows only the 2-arg form). To read another page, select it as the draw page with GPAGE first."
+  - "Both coordinates are integer-coerced from the popped arguments (the standard arg-fetch vtable slot [r2,#0x40] @0x1543dc/@0x154400); the docs state all arguments are rounded down (floor). Real programs pass arithmetic/array operands freely, e.g. C=GSPOIT(I,J+300), GSPOIT(SNAKE[1],SNAKE[2])."
+  - "Reads from the graphic page currently selected for manipulation by GPAGE (the draw page); the handler passes the page surface via gfx-context [+0x20] to the pixel-read helper bl 0x191dfc @0x154428. There is no page argument."
+  - "Out-of-range coordinates do NOT raise an error: the pixel-read helper bounds-checks x,y against the 512x512 page surface (bmi @0x191e0c / ble guards) and returns 0 for any coordinate outside it — mov r0,#0x0 @0x191e90. So GSPOIT(-1,-1) and other off-page reads return 0 (transparent black), confirmed by the oracle. NOTE: the older Petit Computer (DSi) docs say off-screen reads return -1; SmileBASIC 3.6.0 returns 0 instead (hw_verified)."
+  - "The returned color is reconstructed from the device's 16-bit RGBA5551 page format: the helper reads a halfword ldrh r0,[r0] @0x191e60, expands the 5-bit R/G/B channels back to 8 bits, and sets alpha to 255 only if the page pixel's alpha bit is set (tst r0,#1 / orrne r0,r0,#0xff000000 @0x191e68..@0x191e80). Because of the 8->5 bit truncation at draw time, the value read back is generally NOT identical to the value originally written (e.g. an R of 255 round-trips to 248); this is the documented 'passed through the internal color representation' caveat. Exact round-tripped values need the framebuffer oracle (O-T6, queued)."
+  - "An internal graphics-state guard can raise errnum 49 (0x31): if the byte at [[0x315d60]+0x1c]+0x60 is nonzero the handler raises mov r0,#0x31 @0x1543bc before reading. errnum 49 is beyond the documented error table (3-47) and is not reachable from ordinary user code; left oracle-pending."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not exactly 2, or it is not used as a value-returning function (return-count != 1)" }
+  - { errnum: 49, name: "(undocumented graphics-state guard)", when: "an internal graphics-state byte ([[0x315d60]+0x1c]+0x60) is nonzero; not reachable from ordinary user code (oracle-pending)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gspoit.md (Variable = GSPOIT(X,Y) — gets a color from the given coordinates on the graphic screen; X:0-399 Y:0-239; return value is an 8-bit-per-ARGB color code, see GCOLOR; 'may not be the same as the value specified at the time of drawing because it has passed through the internal color representation'; e.g. C=GSPOIT(100,100))" }
+  - { type: documented, ref: "sb-docs/.../gspoit.md (Petit Computer/DSi page, cross-system): 'All arguments are rounded down'; off-screen coordinates return -1 in PTC — NOTE this -1 differs from the 3.6.0 disassembly (returns 0)." }
+  - { type: disassembled, ref: "cia_3.6.0.lst GSPOIT handler @0x15436c: argcount r0=[r4,#0x4] cmp #2, return-count [r4,#0xc] cmp #1 @0x15437c..@0x154384 -> else mov r0,#0x4 (errnum 4) @0x154394; graphics-state guard ldr [0x315d60] / [r0,#0x1c] / ldrb [r0,#0x60] cmp #0 -> nonzero mov r0,#0x31 (errnum 49) @0x1543bc; fetches x,y via arg-vtable [r2,#0x40] @0x1543dc/@0x154400; reads pixel bl 0x191dfc @0x154428 from gfx-context [+0x20] and stores result via result-vtable [r2,#0x14] @0x154438. Pixel-read helper @0x191dfc: 512x512 bounds guard bmi @0x191e0c -> OOB returns mov r0,#0x0 @0x191e90; in-range reads halfword ldrh r0,[r0] @0x191e60 (RGBA5551), expands 5-bit channels and sets alpha tst r0,#1 / orrne r0,r0,#0xff000000 @0x191e68..@0x191e80." }
+  - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GSPOIT: reads a pixel from the active graphic page (3.5.0 structural cross-check only)." }
+  - { type: community, ref: "sbsave corpus: GSPOIT appears ~1094x across 254 programs, EXCLUSIVELY the 2-arg form GSPOIT(x,y) — no GSPOIT(x,y,page) page form found, confirming the disassembly's argcount==2 hard check. Common forms: assignment C=GSPOIT(I,J+300) (227YK34J/TXT/JINTRI102), array coords GSPOIT(SNAKE[1],SNAKE[2]) (SDE458QE/TXT/REALSNAKE), bit-mask of result (GSPOIT(..) AND &HF800)>>15 (1DVENVAE/TXT/PICS_R1_1V), in IF/WHILE conditions, and feeding RGBREAD GSPOIT(IX%,IY%) OUT R,G,B (1DVENVAE/TXT/PICS_R1_1V)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7e): GSPOIT(-1,-1) -> 0 and GSPOIT(400,240) -> 0 (off-page reads return 0, NOT -1 as the PTC/DSi docs claim); X=GSPOIT(1) (1 arg) -> errnum 4, errline 1; X=GSPOIT(1,2,3) (3 args) -> errnum 4, errline 1." }
+
+confidence: disassembled
+
+tests:
+  # OOB-returns-0 value and arg-count/error expects are hw_verified (sb-oracle 2026-06-22 s_t7e);
+  # post-draw round-tripped colors need the framebuffer oracle (O-T6, queued).
+  - { name: oob_negative_returns_0, code: "PRINT GSPOIT(-1,-1)", expect: { stdout: "0" } }
+  - { name: oob_high_returns_0, code: "PRINT GSPOIT(400,240)", expect: { stdout: "0" } }
+  - { name: one_arg_errors, code: "A=GSPOIT(1)", expect: { error: { errnum: 4 } } }
+  - { name: three_args_errors, code: "A=GSPOIT(1,2,3)", expect: { error: { errnum: 4 } } }
+  - { name: as_statement_errors, code: "GSPOIT(1,1)", expect: { error: { errnum: 4 } } }
