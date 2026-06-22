@@ -89,14 +89,16 @@ Do EXACTLY ONE task this run, fully and correctly, then commit. Then stop.
   do NOT copy its comments, and do NOT reproduce its limitations or 3.5.0-isms (example:
   osb lexes ASCII-only identifiers, but SmileBASIC is Japanese and allows full-width/kana
   names). Where osb disagrees with the docs/disassembly, the docs/disassembly win.
-- CONFIRM THE ALGORITHM IN THE DISASSEMBLY (`sb-disassembly/listings/cia_3.6.0.lst`). For an
-  instruction, find its name (stored UTF-16, so grep `unicode u"FLOOR"`, NOT `FLOOR`), then
-  read the handler's actual ARM/VFP math — rounding mode, int overflow/wrap, float→string
-  format, RNG, error conditions. Runtime addr = file offset + 0x100000 (prd/README.md has the
-  anchors/gotchas). The disassembly is AUTHORITATIVE for the algorithm — consult it even when
-  the oracle gives outputs, since it explains WHY and covers edge cases your test inputs miss.
-  Cite the address in the spec `sources:` (`type: disassembled`). Integer = i32, Double = f64
-  — match SmileBASIC, not Rust defaults and not osb.
+- CONFIRM THE ALGORITHM IN THE DISASSEMBLY via the **sb-disasm skill** — MANDATORY: every
+  behavior spec must carry a `disassembled` source. Run (from the skill's tools dir):
+  `python3 disasm.py find <NAME>` → `disasm.py handler <NAME>` → `disasm.py show <addr> 60`
+  to read the handler's ARM/VFP math (rounding mode, int overflow/wrap, float→string format,
+  RNG, errnum). `handler` returns CANDIDATES — verify by reading; the right one consumes the
+  args and does the relevant math. The disassembly is AUTHORITATIVE for the algorithm —
+  consult it even when the oracle gives outputs (it explains WHY + covers edge cases your
+  samples miss). Cite the handler (or name) address as a `type: disassembled` source; if the
+  handler is index-dispatched and you can't pin it, cite the name address and mark that source
+  `confidence: hypothesis`. Integer = i32, Double = f64 — match SmileBASIC, not Rust/osb.
 - MANDATORY TESTS: turn the spec's concrete documented values into conformance tests
   (`spec/tests/<id>.yaml` overlays and/or `harness/corpus/cases/*.yaml`) and make sb-core
   pass them. Docs often give exact results (e.g. FLOOR(12.5)=12, FLOOR(-12.5)=-13) — use
