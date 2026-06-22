@@ -12,9 +12,18 @@
 # gate green, checks it off in PRD.md, and commits. Then the loop runs again.
 #
 # Usage:
-#   ./ralph.sh            # loop until all tasks done (or ./ralph.stop appears)
-#   ./ralph.sh 5          # run at most 5 iterations
+#   ./ralph.sh            # headless: loop until all tasks done (or ./ralph.stop appears)
+#   ./ralph.sh 5          # headless: run at most 5 iterations
+#   ./ralph.sh -i         # interactive: launch the Claude TUI and drive it with /loop
 #   RALPH_MODEL=sonnet ./ralph.sh
+#
+# Two modes:
+#   HEADLESS (default) — each iteration spawns a FRESH `claude -p` (fresh context every run);
+#     the bash loop below picks the task, commits, and repeats. Unattended.
+#   INTERACTIVE (`-i` / `--interactive` / RALPH_INTERACTIVE=1) — opens the real Claude TUI and
+#     hands it `/loop <prompt>`, so the model self-paces one task per iteration in ONE watchable
+#     session. Context PERSISTS across iterations (unlike headless). You can intervene live.
+#     Permissions are interactive unless RALPH_YOLO=1 (adds --dangerously-skip-permissions).
 #
 # Stop cleanly: `touch ralph.stop` (consumed once), or Ctrl-C.
 # Tune the prompt without editing this file: create RALPH_PROMPT.md (overrides the default).
@@ -22,7 +31,14 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 
-MAX_ITERS="${1:-0}"                       # 0 = unlimited
+# ── Args / flags ────────────────────────────────────────────────────────────────────
+INTERACTIVE=0
+if [ "${1:-}" = "-i" ] || [ "${1:-}" = "--interactive" ]; then
+  INTERACTIVE=1; shift
+fi
+[ "${RALPH_INTERACTIVE:-0}" = "1" ] && INTERACTIVE=1
+
+MAX_ITERS="${1:-0}"                       # 0 = unlimited (headless mode only)
 MODEL="${RALPH_MODEL:-opus}"
 LOG_DIR="${RALPH_LOG_DIR:-ralph-logs}"
 SLEEP_BETWEEN="${RALPH_SLEEP:-3}"
@@ -32,7 +48,7 @@ command -v claude >/dev/null 2>&1 || { echo "error: 'claude' CLI not found in PA
 git rev-parse --git-dir >/dev/null 2>&1   || { echo "error: not a git repository (run: git init)"; exit 1; }
 mkdir -p "$LOG_DIR"
 
-cat <<'BANNER'
+[ "$INTERACTIVE" = 0 ] && cat <<'BANNER'
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ Ralph loop — runs `claude -p --dangerously-skip-permissions` unattended.   │
 │ It will edit files and commit on every productive iteration. Ctrl-C or     │
@@ -57,6 +73,8 @@ Do EXACTLY ONE task this run, fully and correctly, then commit. Then stop.
 
 ## 1. Pick the next task
 - Choose the FIRST `- [ ]` task in PRD.md whose every dependency (`→ ID`) is already `[x]`.
+- Tasks are SLICED small on purpose (e.g. `S-T1a`, a 3-6 instruction slice). Do exactly ONE
+  slice — do NOT widen scope to the whole category. One slice end-to-end beats half a category.
 - The sb-oracle skill gives TEXT/VALUE/error ground truth (when Azahar is up), so oracle
   harvest of `expect:`/errnums IS doable in-loop. SKIP only what the skill can't do yet:
   GRAPHICS framebuffer + AUDIO capture (golden PNG/WAV — O-T6/O-T7). If a task is partly
@@ -74,11 +92,18 @@ Do EXACTLY ONE task this run, fully and correctly, then commit. Then stop.
 
 ## 3. Implement — one task only
 - **If this is a SPEC-BUILD task (id `S-*`):** your deliverable is the spec FILE(S)
-  `spec/instructions/<id>.yaml` (one per instruction in the category), authored to the v2
+  `spec/instructions/<id>.yaml` (one per instruction in the slice), authored to the v2
   contract in `prd/specs.md` from docs + disassembly + osb cross-check — typed signatures
   (ranges/defaults), semantics, error conditions (errnum), and test cases (code → expect).
-  Set `confidence` from your source; if Azahar is up, harvest the `expect:` values via the
-  sb-oracle skill and set `hw_verified` (commit them), else queue in `HARVEST_QUEUE.md`.
+  **PERSIST FIRST, HARVEST SECOND** (the oracle is slow and a run can be cut off mid-harvest):
+    1. Write the COMPLETE spec from docs + disassembly + osb, with `expect:` filled from the
+       docs/disassembly and `confidence: disassembled`. This is already valuable + commit-able
+       on its own — never gate it behind a slow oracle pass.
+    2. THEN, if Azahar is up, harvest the `expect:` values via the sb-oracle skill to an
+       OUTFILE (`batch cases.txt out.tsv` — incremental + resumable), fold confirmed values
+       in, and raise those sources to `hw_verified`. If the run is cut off, what you wrote in
+       step 1 still stands and the OUTFILE holds the partial harvest for next time.
+    3. Anything not harvested this run: leave `disassembled` and queue in `HARVEST_QUEUE.md`.
   Write NO interpreter code. Verify with `cargo test -p sb-spec`, then commit. (The rest of
   section 3 is for code tasks.)
 - SPEC-FIRST: the contract is the spec (`spec/instructions/<id>.yaml` + `spec/reference/*`)
@@ -90,15 +115,18 @@ Do EXACTLY ONE task this run, fully and correctly, then commit. Then stop.
   osb lexes ASCII-only identifiers, but SmileBASIC is Japanese and allows full-width/kana
   names). Where osb disagrees with the docs/disassembly, the docs/disassembly win.
 - CONFIRM THE ALGORITHM IN THE DISASSEMBLY via the **sb-disasm skill** — MANDATORY: every
-  behavior spec must carry a `disassembled` source. Run (from the skill's tools dir):
-  `python3 disasm.py find <NAME>` → `disasm.py handler <NAME>` → `disasm.py show <addr> 60`
-  to read the handler's ARM/VFP math (rounding mode, int overflow/wrap, float→string format,
-  RNG, errnum). `handler` returns CANDIDATES — verify by reading; the right one consumes the
-  args and does the relevant math. The disassembly is AUTHORITATIVE for the algorithm —
-  consult it even when the oracle gives outputs (it explains WHY + covers edge cases your
-  samples miss). Cite the handler (or name) address as a `type: disassembled` source; if the
-  handler is index-dispatched and you can't pin it, cite the name address and mark that source
-  `confidence: hypothesis`. Integer = i32, Double = f64 — match SmileBASIC, not Rust/osb.
+  behavior spec must carry a `disassembled` source. From the skill's tools dir:
+  `python3 disasm.py dispatch <NAME>` gives the AUTHORITATIVE handler address in one shot (it
+  reads the builtin dispatch table — no guessing). Then `disasm.py show <addr> 60` to read the
+  handler's ARM/VFP math (rounding mode, int overflow/wrap, float→string format, RNG, errnum).
+  Reading several handlers? Write `ADDR N label` lines to a file and run `disasm.py showmany
+  <file>` — ONE call (don't loop `show` in a bash for-loop; the quoting breaks). The
+  disassembly is AUTHORITATIVE for the algorithm — consult it even when the oracle gives
+  outputs (it explains WHY + covers edge cases your samples miss). Cite the handler address as
+  a `type: disassembled` source. Operators/special forms (AND/OR/MOD/PRINT/PI…) aren't in the
+  dispatch table — `dispatch` says so; use `disasm.py handler <NAME>` (heuristic) / `find` +
+  `xref`, and if you still can't pin it, cite the name address as `confidence: hypothesis`.
+  Integer = i32, Double = f64 — match SmileBASIC, not Rust/osb.
 - MANDATORY TESTS: turn the spec's concrete documented values into conformance tests
   (`spec/tests/<id>.yaml` overlays and/or `harness/corpus/cases/*.yaml`) and make sb-core
   pass them. Docs often give exact results (e.g. FLOOR(12.5)=12, FLOOR(-12.5)=-13) — use
@@ -123,12 +151,15 @@ The `.claude/skills/sb-oracle/` skill drives REAL SB 3.6.0 in Azahar — it IS t
 oracle. Use it to (a) HARVEST `hw_verified` expects for spec/test cases and (b) differentially
 check that `sb-core`'s output matches real SB. From `.claude/skills/sb-oracle/tools/`:
     python3 run_case.py ready                          # FIRST: launch Azahar if needed + probe -> READY
-    python3 run_case.py batch cases.txt                # harvest a category (name|expr lines) in ONE shot
+    python3 run_case.py batch cases.txt out.tsv        # harvest a slice (name|expr lines), incremental
     python3 run_case.py prog 'FLOOR(-2.1)'             # one case -> -3
-- FIRST run `run_case.py ready` (it launches Azahar + confirms SB is usable). Then prefer
-  `batch` for the whole category — ONE process, NO backgrounding/sleep (the harness blocks
-  `sleep N; cmd`). If `ready` says NOT READY or a case errors, fall back to
-  documented/disassembled + queue in `HARVEST_QUEUE.md` — do NOT block the task.
+- FIRST run `run_case.py ready` (it launches Azahar + confirms SB is usable). Then `batch` your
+  slice's cases — ONE process, NO backgrounding/sleep (the harness blocks `sleep N; cmd`).
+  ALWAYS pass an OUTFILE: each result is written + flushed as it lands, so if this run is cut
+  off mid-harvest the partial results survive and re-running `batch` with the same OUTFILE skips
+  done cases and retries only failures. The oracle is SLOW (~tens of seconds/case) — keep the
+  slice small. If `ready` says NOT READY or a case errors, fall back to documented/disassembled
+  + queue in `HARVEST_QUEUE.md` — do NOT block the task.
 - The oracle result is the SOURCE OF TRUTH: if `sb-core` disagrees, `sb-core` is wrong.
 - When you get an oracle result, write it into the spec's `spec/tests/<id>.yaml` `expect:`
   (and/or `harness/corpus/cases`), set that source `confidence: hw_verified`, and COMMIT it.
@@ -174,6 +205,23 @@ PROMPT_EOF
 if [ -f RALPH_PROMPT.md ]; then
   echo "(using RALPH_PROMPT.md override)"
   PROMPT="$(cat RALPH_PROMPT.md)"
+fi
+
+# ── Interactive mode: drive the real Claude TUI with /loop (self-paced) ────────────────
+# Hand the same prompt to `/loop` so the model runs one task per iteration in a single
+# watchable session. No iteration limit / no autocommit backstop here — the loop and its
+# stopping are the model's (and your) call. Use RALPH_YOLO=1 to skip permission prompts.
+if [ "$INTERACTIVE" = 1 ]; then
+  YOLO=""
+  [ "${RALPH_YOLO:-0}" = "1" ] && YOLO="--dangerously-skip-permissions"
+  echo "┌──────────────────────────────────────────────────────────────────────────┐"
+  echo "│ Interactive Ralph — launching the Claude TUI with /loop (model=$MODEL)"
+  echo "│ Self-paced: one task per iteration, context persists across iterations."
+  [ -n "$YOLO" ] && echo "│ Permissions: BYPASSED (RALPH_YOLO=1)." \
+                 || echo "│ Permissions: interactive (shift+tab in the TUI to change mode)."
+  echo "│ Stop: end the /loop in-session, or quit the TUI."
+  echo "└──────────────────────────────────────────────────────────────────────────┘"
+  exec claude --model "$MODEL" $YOLO "/loop $PROMPT"
 fi
 
 # jq filter that renders the stream-json transcript into a readable line-per-event view.

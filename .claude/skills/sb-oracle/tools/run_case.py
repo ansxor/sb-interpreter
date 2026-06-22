@@ -8,7 +8,8 @@ Full flow (all verified):
 
 Usage:
   run_case.py ready                           # launch Azahar if needed + probe (READY/NOT READY)
-  run_case.py batch FILE                      # harvest many `name|expr` lines in ONE process (recommended)
+  run_case.py batch FILE [OUTFILE]            # harvest many `name|expr` lines in ONE process (recommended)
+                                              #   OUTFILE -> incremental + resumable (survives a kill)
   run_case.py expr 'FLOOR(-2.1)'              # one case -> "-3" (numeric wraps in STR$)
   run_case.py expr 'MID$("ABCDE",1,2)' str    # one case, string result (no STR$ wrap)
   run_case.py prog 'FLOOR(8.9)'               # one case via the efficient program-file path
@@ -112,10 +113,32 @@ def ready(tries=3):
     return False
 
 
-def batch(path):
+def _load_done(outpath):
+    """Names already harvested OK in a prior (possibly killed) run — for resume. ERROR rows
+    are NOT counted as done, so a re-run retries them."""
+    done = {}
+    try:
+        for line in open(outpath):
+            if "\t" not in line:
+                continue
+            name, _, val = line.rstrip("\n").partition("\t")
+            if val and not val.startswith("ERROR"):
+                done[name.strip()] = val
+    except FileNotFoundError:
+        pass
+    return done
+
+
+def batch(path, outpath=None):
     """Harvest many cases in ONE process (no backgrounding, no sleep-polling). Input file:
     one case per line, `name|expr` (or just `expr`); `#` comments allowed. Prints
-    `name<TAB>result` (or `name<TAB>ERROR ...`). This is the recommended harvest path."""
+    `name<TAB>result` (or `name<TAB>ERROR ...`) to stdout.
+
+    Give an OUTFILE to make harvest INCREMENTAL + RESUMABLE: each result is appended (and
+    flushed) the instant it lands, so a run killed mid-batch (timeout, out-of-credits) keeps
+    everything harvested so far; re-running skips names already present with an OK value and
+    retries only the failures. This is the recommended harvest path — point OUTFILE at a file
+    the spec pass reads."""
     cases = []
     for line in open(path):
         line = line.strip()
@@ -123,14 +146,28 @@ def batch(path):
             continue
         name, expr = line.split("|", 1) if "|" in line else (line, line)
         cases.append((name.strip(), expr.strip()))
+    done = _load_done(outpath) if outpath else {}
+    if done:
+        print(f"# resume: {len(done)} case(s) already harvested in {outpath}, skipping them",
+              flush=True)
+    out = open(outpath, "a") if outpath else None
     if not ready():
         sys.exit("ORACLE NOT READY — launch Azahar and put SmileBASIC on the DIRECT-mode "
                  "screen (Step 0 in SKILL.md), then retry.")
     for name, expr in cases:
+        if name in done:
+            print(f"{name}\t{done[name]}\t(cached)", flush=True)
+            continue
         try:
-            print(f"{name}\t{run_expr(expr)}", flush=True)
+            row = f"{name}\t{run_expr(expr)}"
         except Exception as e:  # noqa: BLE001
-            print(f"{name}\tERROR {e}", flush=True)
+            row = f"{name}\tERROR {e}"
+        print(row, flush=True)
+        if out:
+            out.write(row + "\n")
+            out.flush()
+    if out:
+        out.close()
 
 
 if __name__ == "__main__":
@@ -142,7 +179,7 @@ if __name__ == "__main__":
     if mode == "ready":                 # probe: is the oracle usable right now?
         print("READY" if ready() else "NOT READY")
     elif mode == "batch":               # recommended: harvest many cases from a file
-        batch(a[1])
+        batch(a[1], a[2] if len(a) > 2 else None)
     elif mode == "expr":                # one case, typed: SAVE"TXT:O",STR$(<expr>)
         print(run_expr(a[1], numeric=not (len(a) > 2 and a[2] == "str")))
     elif mode == "prog":                # one case, efficient: write program to disk, LOAD+RUN

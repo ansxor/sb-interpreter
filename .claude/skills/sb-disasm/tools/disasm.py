@@ -13,12 +13,16 @@ Commands:
   near  ADDR [N]        dump N words around addr, classified (TEXT/RODATA/DATA/int)
   func  ADDR            the function containing addr (name + bounds), from functions.txt
   show  ADDR [N]        N disassembly lines from the .lst starting at addr (read the code)
-  handler NAME          find NAME -> xref -> surface candidate handler functions in .text
+  showmany FILE         read many handlers in ONE call; each line: `ADDR [N] [label]`
+                        (or `-` to read the list from stdin). Avoids fragile bash for-loops.
+  dispatch [NAME]       AUTHORITATIVE name -> handler from the builtin dispatch table.
+                        No NAME = dump the whole table (~217 builtins). USE THIS FIRST.
+  handler NAME          name -> handler (consults `dispatch`, then falls back to a heuristic
+                        for operators/special forms the table doesn't cover, e.g. AND/PRINT).
 
 Typical flow to find an instruction's behavior:
-  disasm.py find FLOOR            # -> name @ 0x2ED8F4
-  disasm.py handler FLOOR         # -> candidate handler function(s)
-  disasm.py show 0x<handler> 60   # read the ARM/VFP math
+  disasm.py dispatch FLOOR        # -> handler=0x1448b4 (authoritative, one shot)
+  disasm.py show 0x1448b4 60      # read the ARM/VFP math
 Cite the address you used as a `disassembled` source in the spec.
 """
 import bisect
@@ -34,6 +38,7 @@ FUNCS = DIS / "listings" / "cia_3.6.0.functions.txt"
 BASE = 0x00100000
 TEXT = (0x100000, 0x2C8000)
 RODATA = (0x2C8000, 0x2FD000)
+DATA = (0x2FD000, 0x325000)
 
 
 def _data():
@@ -152,10 +157,105 @@ def cmd_show(addr, n=40):
     print("\n".join(out) if out else f"(addr {target} not found in listing)")
 
 
+def _wstr_at(data, addr, maxlen=24):
+    """Decode a NUL-terminated UTF-16LE string at a runtime addr; None if it isn't a
+    plausible (printable-ASCII) command name. Used to read dispatch-table name pointers."""
+    o = addr - BASE
+    out = []
+    while 0 <= o < len(data) - 1:
+        ch = struct.unpack_from("<H", data, o)[0]
+        if ch == 0:
+            break
+        if ch < 0x20 or ch > 0x7E:   # command names are printable ASCII in UTF-16
+            return None
+        out.append(chr(ch))
+        o += 2
+        if len(out) > maxlen:
+            return None
+    return "".join(out) if out else None
+
+
+_DISPATCH = None
+
+
+def _dispatch_table(data):
+    """The builtin dispatch table: a flat array of (name_ptr→RODATA, handler_ptr→TEXT)
+    8-byte records in .data. Returns {NAME: [handler_addr, ...]}. Authoritative for the
+    ~217 dispatched builtins (functions + most commands); does NOT cover operators and
+    special-form keywords (AND/OR/MOD/PRINT/PI…), which are parsed/handled specially."""
+    global _DISPATCH
+    if _DISPATCH is not None:
+        return _DISPATCH
+    tbl = {}
+    a = DATA[0]
+    while a < DATA[1] - 8:
+        p1 = struct.unpack_from("<I", data, a - BASE)[0]
+        p2 = struct.unpack_from("<I", data, a - BASE + 4)[0]
+        if RODATA[0] <= p1 < RODATA[1] and TEXT[0] <= p2 < TEXT[1]:
+            s = _wstr_at(data, p1)
+            if s and s[0].isalpha():
+                tbl.setdefault(s, [])
+                if p2 not in tbl[s]:
+                    tbl[s].append(p2)
+        a += 4
+    _DISPATCH = tbl
+    return tbl
+
+
+def cmd_dispatch(name=None):
+    data = _data()
+    tbl = _dispatch_table(data)
+    if name:
+        u = name.upper()
+        hits = tbl.get(u)
+        if hits:
+            funcs = _funcs()
+            for h in hits:
+                f = _func_at(h, funcs)
+                fn = f[2] if f else "?"
+                print(f"{u}\thandler={h:#08x}\t{fn}")
+        else:
+            print(f"# {u!r} not in the dispatch table — it's likely an operator or special-")
+            print(f"# form keyword (AND/OR/MOD/PRINT/PI…) handled in the parser, not dispatched.")
+            print(f"# Fall back to `handler {u}` (heuristic) / `find`+`xref`.")
+        return
+    print(f"# builtin dispatch table: {len(tbl)} names (name -> handler)")
+    funcs = _funcs()
+    for n in sorted(tbl):
+        for h in tbl[n]:
+            f = _func_at(h, funcs)
+            print(f"  {n:<12} {h:#08x}  {f[2] if f else '?'}")
+
+
+def cmd_showmany(path):
+    """Read many handlers in one call. Each input line: `ADDR [N] [label...]`
+    (blank lines and `#` comments skipped). `path == '-'` reads from stdin."""
+    src = sys.stdin if path == "-" else open(path)
+    for line in src:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        addr = parts[0]
+        n = int(parts[1]) if len(parts) > 1 and parts[1].lstrip("-").isdigit() else 40
+        label = " ".join(parts[2:]) if len(parts) > 2 else ""
+        print(f"\n===== {addr} {('· ' + label) if label else ''}=====")
+        cmd_show(addr, n)
+
+
 def cmd_handler(name):
     data = _data()
     funcs = _funcs()
     u = name.upper()
+    # Authoritative first: the dispatch table pins name -> handler exactly.
+    disp = _dispatch_table(data).get(u)
+    if disp:
+        print(f"# {u!r} handler (from dispatch table — authoritative):")
+        for h in disp:
+            f = _func_at(h, funcs)
+            print(f"  {h:#08x}  {f[2] if f else '?'}")
+        return
+    print(f"# {u!r} not in dispatch table — heuristic (operator/special form?):")
     names = [a for a in _find_bytes(data, u.encode("utf-16-le"))
              if data[a - BASE + len(u) * 2: a - BASE + len(u) * 2 + 2] == b"\x00\x00"]
     if not names:
@@ -207,6 +307,10 @@ def main():
         cmd_func(arg)
     elif c == "show":
         cmd_show(arg, n or 40)
+    elif c == "showmany":
+        cmd_showmany(arg)
+    elif c == "dispatch":
+        cmd_dispatch(arg)
     elif c == "handler":
         cmd_handler(arg)
     else:

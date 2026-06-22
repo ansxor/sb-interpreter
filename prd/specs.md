@@ -58,8 +58,9 @@ writes there). Either way the conformance suite runs them against `sb-core`.
 ## Authoring process (per instruction)
 
 1. Read the doc page; draft `id/kind/category/signatures/summary/semantics`.
-2. Find the handler in the disassembly (keyword table → handler; see `prd/README.md`
-   gotchas) and confirm exact behavior, ranges, rounding, error conditions; cite the addr.
+2. Find the handler via the **sb-disasm skill** — `disasm.py dispatch <NAME>` pins the handler
+   address authoritatively (operators/special forms: `handler`/`find`+`xref` fallback). Read it
+   with `show`/`showmany` and confirm exact behavior, ranges, rounding, errors; cite the addr.
 3. Cross-check against osb's implementation; note any 3.5.0-vs-3.6.0 divergence.
 4. Write **test cases**: at least normal + boundary + error per signature, with `expect`.
 5. **Verify expects against the oracle** (harvest) → set those to `hw_verified`. If the
@@ -97,26 +98,30 @@ frontmatter; see `spec/concepts/README.md`), **not** the instruction schema. The
 - `file-and-extdata-format` — projects, resources, extdata layout → M6
 - `error-model` — errnum/ERRLINE, halt/CONT semantics
 
-## Tasks (by category — counts are sb-docs instruction counts)
+## Tasks (sliced — the canonical slice list lives in `PRD.md`)
 
-Each `S-T*` below: author every instruction's spec in that category to the v2 contract,
-with test cases, honest confidence, and harvest-queue entries. Done = all specced + cases
-present + oracle-verifiable cases harvested or queued.
+The 13 instruction categories (counts from `sb-docs/smilebasic-3/README.md`) are split into
+**slices of ≤6 instructions** (`S-T1a`, `S-T1b`, …) in `PRD.md` — that's the single source of
+truth for what's left. Slicing keeps each Ralph run a finishable unit: author every instruction
+in the slice to the v2 contract (typed sigs, semantics, errors, cases), then harvest. A slice
+is done = every instruction specced + cases present + oracle-verifiable cases harvested or queued.
 
-- **S-T0 — Spec schema v2 + authoring guide.** Update `spec/SCHEMA.md` to the contract
-  above; update the `sb-spec` serde structs (typed `signatures`, `errors`, ranges) and the
-  loader/coverage; provide one fully-worked exemplar (`FLOOR`) as the reference.
-- **S-T1 Mathematics (27)** · **S-T2 Strings (12)** · **S-T3 Control + Advanced (27)** ·
-  **S-T4 Variables/arrays + Data (27)** · **S-T5 Console I/O (12)** · **S-T6 Bit-ops +
-  operators (5)** · **S-T7 Graphics (19)** · **S-T8 Sprites (27)** · **S-T9 BG (24)** ·
-  **S-T10 Sound + MML (18)** · **S-T11 Various input + Screen (20)** · **S-T12 Files +
-  Source-manip + DIRECT (22)** · **S-T13 Wireless (8)**.
-- **S-T14 — Verify reference tables.** Cross-check `spec/reference/{errors,sysvars,
-  constants}.yaml` against the disassembly (error strings @≈0x1E965C; constant table) and
-  the oracle; raise confidence. (These were kept from M0 but are doc-derived.)
+**Persist before harvest.** Write the full spec from docs + disassembly + osb first (confidence
+`disassembled`) — that's commit-able on its own. THEN harvest `expect:` via the oracle into an
+OUTFILE (`run_case.py batch cases.txt out.tsv` — incremental + resumable) and raise the
+confirmed sources to `hw_verified`. The oracle is slow and a run can be cut off; never gate the
+written spec behind it. Anything unharvested stays `disassembled` + queued in `HARVEST_QUEUE.md`.
 
-The category list/counts come from `sb-docs/smilebasic-3/README.md`. Work category-by-
-category so implementation (M1–M7) can start on a category as soon as its specs land.
+- **S-T0 — Spec schema v2 + authoring guide.** *(done)* `spec/SCHEMA.md` at the contract above;
+  `sb-spec` serde structs (typed `signatures`, `errors`, ranges) + loader/coverage; the `FLOOR`
+  exemplar as the reference.
+- **S-T1…S-T13** — the instruction categories, sliced in `PRD.md`. Work them in order so
+  implementation (M1–M7) can start on a category as soon as its slices land. Graphics (S-T7),
+  Sound (S-T10), and any visual/audio output stay `disassembled` until O-T6/O-T7 land — spec
+  them from docs + disassembly now, queue the pixel/audio expects.
+- **S-T14 — Verify reference tables** *(sliced a/b/c)* — cross-check `spec/reference/{errors,
+  sysvars,constants}.yaml` against the disassembly (error strings @≈0x1E965C; constant table)
+  and the oracle; raise confidence. (Kept from M0 but doc-derived.)
 
 ## Acceptance (per category task)
 - Every instruction in the category has a `spec/instructions/<id>.yaml` at the v2 contract.

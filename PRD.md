@@ -32,21 +32,98 @@ error conditions (errnum), and test cases (code → expect) with honest per-sour
 A category is done when every instruction in it is specced with cases, and oracle-verifiable
 cases are harvested (`hw_verified`) or queued in `HARVEST_QUEUE.md`.
 
+Tasks are **sliced to ≤6 instructions** so one Ralph run finishes a slice end-to-end (spec
+from docs+disasm+osb, then incremental oracle harvest) inside one context/credit window. A
+`S-Tn` group is done when all its slices are `[x]`. **All S-T* slices depend on S-T0** (done)
+and name the instructions they cover inline.
+
 - [x] S-T0 Spec schema v2 + authoring guide — v2 contract (typed sigs/ranges/errors/cases) + 4-source process in `prd/specs.md`; `sb-spec` structs updated; **concept-spec** kind (Markdown) added; FLOOR exemplar + screen-and-color-model exemplar written
-- [ ] S-T1 Mathematics (27) — author specs + cases → S-T0
-- [ ] S-T2 Strings (12) → S-T0
-- [ ] S-T3 Control + Advanced control (22+5) → S-T0
-- [ ] S-T4 Variables/arrays + Data-ops (13+14) → S-T0
-- [ ] S-T5 Console I/O (12) → S-T0
-- [ ] S-T6 Bit-ops + operators (5) → S-T0
-- [ ] S-T7 Graphics (19) → S-T0
-- [ ] S-T8 Sprites (27) → S-T0
-- [ ] S-T9 BG (24) → S-T0
-- [ ] S-T10 Sound + MML reference (18) → S-T0
-- [ ] S-T11 Various input + Screen control (13+7) → S-T0
-- [ ] S-T12 Files + Source-manip + DIRECT-mode (8+7+7) → S-T0
-- [ ] S-T13 Wireless (8) → S-T0
-- [ ] S-T14 Verify reference tables (errors/sysvars/constants) vs disassembly + oracle → O-T4, O-T5
+
+#### S-T1 Mathematics (27) → S-T0
+- [ ] S-T1a Rounding — FLOOR · ROUND · CEIL
+- [ ] S-T1b Sign & classify — ABS · SGN · CLASSIFY
+- [ ] S-T1c Powers/roots/log — SQR · POW · EXP · LOG
+- [ ] S-T1d Trigonometry — SIN · COS · TAN · ASIN · ACOS · ATAN
+- [ ] S-T1e Hyperbolic & angle — SINH · COSH · TANH · DEG · RAD · PI
+- [ ] S-T1f Min/max & RNG — MIN · MAX · RND · RNDF · RANDOMIZE
+
+#### S-T2 Strings (12) → S-T0
+- [ ] S-T2a Extract — LEFT$ · RIGHT$ · MID$ · SUBST$
+- [ ] S-T2b Convert — STR$ · VAL · HEX$ · FORMAT$
+- [ ] S-T2c Char/search/len — ASC · CHR$ · INSTR · LEN
+
+#### S-T3 Control + Advanced control (27) → S-T0
+- [ ] S-T3a Conditionals — IF · THEN · ELSE · ELSEIF · ENDIF
+- [ ] S-T3b Counted loops — FOR · NEXT · TO · STEP
+- [ ] S-T3c While/repeat & flow — WHILE · WEND · REPEAT · UNTIL · BREAK · CONTINUE
+- [ ] S-T3d Branch & halt — GOTO · GOSUB · RETURN · ON · OUT · END · STOP
+- [ ] S-T3e Advanced control — CALL · COMMON · DEF · XON · XOFF
+
+#### S-T4 Variables/arrays + Data-ops (27) → S-T0
+- [ ] S-T4a Declaration & inc — VAR · DIM · DEC · INC · SWAP
+- [ ] S-T4b Array stack/queue — PUSH · POP · SHIFT · UNSHIFT
+- [ ] S-T4c Array ops — COPY · FILL · SORT · RSORT
+- [ ] S-T4d DATA/READ — DATA · READ · RESTORE · REM
+- [ ] S-T4e Read helpers & checks — DTREAD · TMREAD · CHKCALL · CHKLABEL · CHKVAR
+- [ ] S-T4f Misc data-ops — DIALOG · KEY · OPTION · VSYNC · WAIT
+
+#### S-T5 Console I/O (12) → S-T0
+- [ ] S-T5a Output — PRINT · LOCATE · COLOR · CLS
+- [ ] S-T5b Input — INPUT · LINPUT · INKEY$
+- [ ] S-T5c Attributes & font — ATTR · CHKCHR · FONTDEF · SCROLL · WIDTH
+
+#### S-T6 Bit-ops + operators (5) → S-T0
+- [ ] S-T6a Bit/logic operators — AND · OR · XOR · DIV · MOD
+
+#### S-T7 Graphics (19) → S-T0  (no framebuffer harvest yet → O-T6; spec from docs+disasm)
+- [ ] S-T7a Page/clip/color — GPAGE · GCLS · GCLIP · GPRIO · GCOLOR
+- [ ] S-T7b Primitives — GPSET · GLINE · GBOX · GTRI · GCIRCLE
+- [ ] S-T7c Fill & char — GFILL · GPAINT · GPUTCHR
+- [ ] S-T7d Buffer copy/load/save — GCOPY · GLOAD · GSAVE
+- [ ] S-T7e Color read — GSPOIT · RGB · RGBREAD
+
+#### S-T8 Sprites (27) → S-T0
+- [ ] S-T8a Lifecycle — SPSET · SPCLR · SPSHOW · SPHIDE · SPPAGE
+- [ ] S-T8b Transform — SPOFS · SPROT · SPSCALE · SPHOME · SPCHR
+- [ ] S-T8c Animation & link — SPANIM · SPSTART · SPSTOP · SPLINK · SPUNLINK
+- [ ] S-T8d Collision — SPCOL · SPCOLVEC · SPHITSP · SPHITRC · SPHITINFO
+- [ ] S-T8e Vars/funcs/state — SPVAR · SPFUNC · SPDEF · SPCHK · SPUSED · SPCLIP · SPCOLOR
+
+#### S-T9 BG (24) → S-T0
+- [ ] S-T9a Setup — BGSCREEN · BGPAGE · BGCLR · BGSHOW · BGHIDE
+- [ ] S-T9b Tiles — BGPUT · BGFILL · BGGET · BGCOPY · BGCLIP
+- [ ] S-T9c Transform — BGOFS · BGROT · BGSCALE · BGHOME · BGCOORD
+- [ ] S-T9d Animation & state — BGANIM · BGSTART · BGSTOP · BGVAR · BGFUNC · BGCHK
+- [ ] S-T9e Load/save/color — BGLOAD · BGSAVE · BGCOLOR
+
+#### S-T10 Sound (18) → S-T0  (MML grammar = S-C5; no audio harvest yet → O-T7)
+- [ ] S-T10a BGM playback — BGMPLAY · BGMSTOP · BGMCHK · BGMVOL · BGMVAR
+- [ ] S-T10b BGM setup — BGMSET · BGMSETD · BGMCLEAR · BEEP
+- [ ] S-T10c Effects — EFCON · EFCOFF · EFCSET · EFCWET
+- [ ] S-T10d Voice & wave — TALK · TALKCHK · TALKSTOP · WAVSET · WAVSETA
+
+#### S-T11 Various input + Screen control (20) → S-T0
+- [ ] S-T11a Buttons & sticks — BUTTON · BREPEAT · STICK · STICKEX
+- [ ] S-T11b Touch & motion — TOUCH · ACCEL · GYROA · GYROV · GYROSYNC
+- [ ] S-T11c Microphone — MICSTART · MICSTOP · MICDATA · MICSAVE
+- [ ] S-T11d Screen control — ACLS · BACKCOLOR · DISPLAY · VISIBLE · XSCREEN
+- [ ] S-T11e Fade — FADE · FADECHK
+
+#### S-T12 Files + Source-manip + DIRECT-mode (22) → S-T0
+- [ ] S-T12a File I/O — LOAD · SAVE · FILES · DELETE
+- [ ] S-T12b File management — CHKFILE · RENAME · USE · EXEC
+- [ ] S-T12c Source read — PRGGET$ · PRGNAME$ · PRGSIZE
+- [ ] S-T12d Source edit — PRGSET · PRGINS · PRGDEL · PRGEDIT
+- [ ] S-T12e DIRECT-mode — RUN · CONT · NEW · CLEAR · LIST · BACKTRACE · PROJECT
+
+#### S-T13 Wireless (8) → S-T0
+- [ ] S-T13a Session — MPSTART · MPEND · MPSET · MPSTAT
+- [ ] S-T13b Messaging — MPSEND · MPRECV · MPGET · MPNAME$
+
+#### S-T14 Verify reference tables (vs disassembly + oracle) → O-T4
+- [ ] S-T14a Error table — `spec/reference/errors.yaml` vs disasm error strings (@≈0x1E965C) + oracle → O-T5
+- [ ] S-T14b System variables — `spec/reference/sysvars.yaml` vs disasm sysvar addrs + oracle
+- [ ] S-T14c Built-in constants — `spec/reference/constants.yaml` vs disasm constant table + oracle
 
 ### S-C — Concept specs (architecture/models; Markdown in `spec/concepts/`, see prd/specs.md)
 - [ ] S-C1 execution-model — lexer/parser/compiler/VM, 4 slots + COMMON, frame layout · governs M1
@@ -92,19 +169,46 @@ cases are harvested (`hw_verified`) or queued in `HARVEST_QUEUE.md`.
 - [ ] M1-T14 Conformance wiring (run spec/tests + corpus; ASSERT__; otya_test) → M1-T11
 
 ## M2 — Graphics  (gated on S-T7)
-- [ ] M2-T1 GRP page model · [ ] M2-T2 Drawing primitives · [ ] M2-T3 Bitmap ops · [ ] M2-T4 Compositor · [ ] M2-T5 Golden PNG harvest + pixel-diff → O-T6
+- [ ] M2-T1 GRP page model → S-T7
+- [ ] M2-T2 Drawing primitives → M2-T1
+- [ ] M2-T3 Bitmap ops → M2-T1
+- [ ] M2-T4 Compositor → M2-T2, M2-T3
+- [ ] M2-T5 Golden PNG harvest + pixel-diff → M2-T4, O-T6
 
 ## M3 — Sprites & BG  (gated on S-T8, S-T9)
-- [ ] M3-T1 Sprite core · [ ] M3-T2 Animation/link/vars · [ ] M3-T3 Collision · [ ] M3-T4 BG core · [ ] M3-T5 BG extras · [ ] M3-T6 Composite + golden diffs
+- [ ] M3-T1 Sprite core → S-T8, M2-T4
+- [ ] M3-T2 Animation/link/vars → M3-T1
+- [ ] M3-T3 Collision → M3-T1
+- [ ] M3-T4 BG core → S-T9, M2-T4
+- [ ] M3-T5 BG extras → M3-T4
+- [ ] M3-T6 Composite + golden diffs → M3-T2, M3-T3, M3-T5, O-T6
 
 ## M4 — Input & timing  (gated on S-T11)
-- [ ] M4-T1 Buttons/sticks · [ ] M4-T2 Touch/keyboard · [ ] M4-T3 Frame timing (VSYNC/WAIT/MAINCNT) · [ ] M4-T4 Display config · [ ] M4-T5 Host input mapping
+- [ ] M4-T1 Buttons/sticks → S-T11
+- [ ] M4-T2 Touch/keyboard → S-T11
+- [ ] M4-T3 Frame timing (VSYNC/WAIT/MAINCNT) → S-T4
+- [ ] M4-T4 Display config → S-T11
+- [ ] M4-T5 Host input mapping → M4-T1, M4-T2
 
 ## M5 — Audio (MML)  (gated on S-T10)
-- [ ] M5-T1 MML parser · [ ] M5-T2 Synth engine · [ ] M5-T3 BGM commands · [ ] M5-T4 SFX/voice · [ ] M5-T5 Audio backend · [ ] M5-T6 Golden WAV harvest + diff → O-T7
+- [ ] M5-T1 MML parser → S-C5
+- [ ] M5-T2 Synth engine → M5-T1
+- [ ] M5-T3 BGM commands → M5-T2, S-T10
+- [ ] M5-T4 SFX/voice → M5-T2, S-T10
+- [ ] M5-T5 Audio backend → M5-T2
+- [ ] M5-T6 Golden WAV harvest + diff → M5-T3, M5-T4, O-T7
 
 ## M6 — Files, projects, system, faithful stubs  (gated on S-T12)
-- [ ] M6-T1 Storage abstraction · [ ] M6-T2 File commands · [ ] M6-T3 System variables · [ ] M6-T4 Source-edit (PRG*) · [ ] M6-T5 Misc + limitation stubs · [ ] M6-T6 Multi-slot semantics
+- [ ] M6-T1 Storage abstraction → S-T12
+- [ ] M6-T2 File commands → M6-T1
+- [ ] M6-T3 System variables → S-T14
+- [ ] M6-T4 Source-edit (PRG*) → M6-T1, S-T12
+- [ ] M6-T5 Misc + limitation stubs → S-T12
+- [ ] M6-T6 Multi-slot semantics → M6-T1
 
 ## M7 — Hardening
-- [ ] M7-T1 Fuzzing campaign → O-T8 · [ ] M7-T2 hw_verified push → O-T8 · [ ] M7-T3 Exact error strings → O-T5 · [ ] M7-T4 Float formatting (STR$) · [ ] M7-T5 Overflow/precision + perf
+- [ ] M7-T1 Fuzzing campaign → O-T8
+- [ ] M7-T2 hw_verified push → O-T8
+- [ ] M7-T3 Exact error strings → O-T5
+- [ ] M7-T4 Float formatting (STR$) → S-T1
+- [ ] M7-T5 Overflow/precision + perf → M7-T4

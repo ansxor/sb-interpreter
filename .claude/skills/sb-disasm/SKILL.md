@@ -30,26 +30,33 @@ you read as a `disassembled` source in the spec.
 ## Tool — `tools/disasm.py`
 ```bash
 cd .claude/skills/sb-disasm/tools
+python3 disasm.py dispatch FLOOR      # AUTHORITATIVE name -> handler (use this FIRST)
+python3 disasm.py dispatch            # dump the whole builtin table (~217 name->handler rows)
+python3 disasm.py show 0x1448b4 60    # read N disassembly lines from a function (ARM/VFP)
+python3 disasm.py showmany cases.txt  # read MANY handlers in one call (lines: `ADDR [N] [label]`)
+python3 disasm.py handler AND         # name -> handler; dispatch first, heuristic fallback
 python3 disasm.py find FLOOR          # locate the name (UTF-16 + ASCII) -> addresses (+NUL-term)
-python3 disasm.py handler FLOOR       # name -> xref -> candidate handler FUNCTIONS in .text
-python3 disasm.py show 0x148858 60    # read N disassembly lines from a function (ARM/VFP)
 python3 disasm.py func 0x148858       # which function contains an address (name + bounds)
 python3 disasm.py xref 0x2ed8f4       # every 32-bit pointer TO an addr (tables + code pools)
 python3 disasm.py near 0x<kwtbl> 16   # dump words around a table addr, classified TEXT/RODATA/DATA
 ```
 
 ## Workflow (per instruction)
-1. `find NAME` → the name string address(es). Prefer the `<NUL-term>` `.rodata` hit (the real
-   keyword entry); ignore substring hits (e.g. `SIN` inside `ASIN`).
-2. `handler NAME` → candidate handler functions. Verify each with `show` — the right one
-   reads/uses the args and does the relevant math (look for `vcvt`/`vsqrt`/`vmul` for floats,
-   integer ops, calls to format/RNG helpers).
-3. `show <handler>` → read the ARM/VFP and write down the exact behavior (rounding mode,
-   overflow, format). Cite the handler address in the spec `sources:` as `type: disassembled`.
+1. `dispatch NAME` → the **authoritative** handler address, pinned from the builtin dispatch
+   table (`(name_ptr, handler_ptr)` records in `.data`). One shot, no guessing — covers the
+   ~217 dispatched builtins (functions + most commands).
+2. `show <handler>` → read the ARM/VFP and write down the exact behavior (rounding mode,
+   overflow, format; look for `vcvt`/`vsqrt`/`vmul` for floats, calls to format/RNG helpers).
+   Cite the handler address in the spec `sources:` as `type: disassembled`.
+3. Reading several handlers in a category? Put `ADDR N label` lines in a file and run
+   `showmany` (or pipe via `showmany -`) — ONE call, no fragile bash `for`-loop quoting.
 
-If `handler` finds nothing (the handler is index-dispatched off the sorted keyword table):
-`xref <name-addr>` to find the table entry, then `near <entry>` to inspect the record and the
-parallel function-pointer array; or `xref` a related error/format string the handler raises.
+**Operators & special forms** (AND/OR/XOR/MOD/DIV, PRINT, PI, control keywords) are NOT in the
+dispatch table — they're parsed specially. There `dispatch NAME` says so and `handler NAME`
+falls back to the heuristic: `find NAME` → `xref <name-addr>` for the keyword-table entry →
+`near <entry>` to inspect the record and parallel function-pointer array; or `xref` a related
+error/format string the handler raises. If you still can't pin it, cite the name address and
+mark that source `confidence: hypothesis`.
 
 ## When to use vs. skip
 - USE for anything where the exact algorithm matters: rounding (FLOOR/ROUND/CEIL), integer
