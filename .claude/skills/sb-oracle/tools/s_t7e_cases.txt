@@ -1,8 +1,0 @@
-rgb_red|RGB(255,0,0)
-rgb_white|RGB(255,255,255)
-rgb_black|RGB(0,0,0)
-rgb_alpha|RGB(128,255,0,0)
-rgbread_rgb|RGBREAD RGB(10,20,30) OUT R,G,B:X$=STR$(R)+","+STR$(G)+","+STR$(B)|X$|progstr
-rgbread_argb|RGBREAD RGB(128,10,20,30) OUT A,R,G,B:X$=STR$(A)+","+STR$(R)+","+STR$(G)+","+STR$(B)|X$|progstr
-gspoit_unset|GPAGE 0,0:GCLS:X=GSPOIT(0,0)|X|prog
-gspoit_drawn|GPAGE 0,0:GCLS:GPSET 3,3,RGB(255,255,255):X=GSPOIT(3,3)|X|prog

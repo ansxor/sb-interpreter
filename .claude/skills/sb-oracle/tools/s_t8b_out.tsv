@@ -1,8 +1,0 @@
-spofs	100,50
-spofs_z	10,20,30
-sprot_fn	45
-sprot_out	90
-spscale	2,0.5
-sphome	8,8
-spchr_uv	64,64
-spofs_err	errnum=4 errline=1

@@ -1,3 +1,0 @@
-attr_readable|ATTR 3:X=ATTR|X|prog
-attr_read_default|ATTR 0:X=ATTR|X|prog
-attr_read_revh|ATTR #TREVH:X=ATTR|X|prog

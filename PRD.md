@@ -64,28 +64,28 @@ and name the instructions they cover inline.
 - [x] S-T4b Array stack/queue — PUSH · POP · SHIFT · UNSHIFT
 - [x] S-T4c Array ops — COPY · FILL · SORT · RSORT
 - [x] S-T4d DATA/READ — DATA · READ · RESTORE · REM
-- [x] S-T4e Read helpers & checks — DTREAD · TMREAD · CHKCALL · CHKLABEL · CHKVAR
-- [x] S-T4f Misc data-ops — DIALOG · KEY · OPTION · VSYNC · WAIT
+- [ ] S-T4e Read helpers & checks — DTREAD · TMREAD · CHKCALL · CHKLABEL · CHKVAR
+- [ ] S-T4f Misc data-ops — DIALOG · KEY · OPTION · VSYNC · WAIT
 
 #### S-T5 Console I/O (12) → S-T0
-- [x] S-T5a Output — PRINT · LOCATE · COLOR · CLS
-- [x] S-T5b Input — INPUT · LINPUT · INKEY$
-- [x] S-T5c Attributes & font — ATTR · CHKCHR · FONTDEF · SCROLL · WIDTH
+- [ ] S-T5a Output — PRINT · LOCATE · COLOR · CLS
+- [ ] S-T5b Input — INPUT · LINPUT · INKEY$
+- [ ] S-T5c Attributes & font — ATTR · CHKCHR · FONTDEF · SCROLL · WIDTH
 
 #### S-T6 Bit-ops + operators (5) → S-T0
-- [x] S-T6a Bit/logic operators — AND · OR · XOR · DIV · MOD
+- [ ] S-T6a Bit/logic operators — AND · OR · XOR · DIV · MOD
 
 #### S-T7 Graphics (19) → S-T0  (no framebuffer harvest yet → O-T6; spec from docs+disasm)
-- [x] S-T7a Page/clip/color — GPAGE · GCLS · GCLIP · GPRIO · GCOLOR
-- [x] S-T7b Primitives — GPSET · GLINE · GBOX · GTRI · GCIRCLE
-- [x] S-T7c Fill & char — GFILL · GPAINT · GPUTCHR
-- [x] S-T7d Buffer copy/load/save — GCOPY · GLOAD · GSAVE
-- [x] S-T7e Color read — GSPOIT · RGB · RGBREAD
+- [ ] S-T7a Page/clip/color — GPAGE · GCLS · GCLIP · GPRIO · GCOLOR
+- [ ] S-T7b Primitives — GPSET · GLINE · GBOX · GTRI · GCIRCLE
+- [ ] S-T7c Fill & char — GFILL · GPAINT · GPUTCHR
+- [ ] S-T7d Buffer copy/load/save — GCOPY · GLOAD · GSAVE
+- [ ] S-T7e Color read — GSPOIT · RGB · RGBREAD
 
 #### S-T8 Sprites (27) → S-T0
-- [x] S-T8a Lifecycle — SPSET · SPCLR · SPSHOW · SPHIDE · SPPAGE
-- [x] S-T8b Transform — SPOFS · SPROT · SPSCALE · SPHOME · SPCHR
-- [x] S-T8c Animation & link — SPANIM · SPSTART · SPSTOP · SPLINK · SPUNLINK
+- [ ] S-T8a Lifecycle — SPSET · SPCLR · SPSHOW · SPHIDE · SPPAGE
+- [ ] S-T8b Transform — SPOFS · SPROT · SPSCALE · SPHOME · SPCHR
+- [ ] S-T8c Animation & link — SPANIM · SPSTART · SPSTOP · SPLINK · SPUNLINK
 - [ ] S-T8d Collision — SPCOL · SPCOLVEC · SPHITSP · SPHITRC · SPHITINFO
 - [ ] S-T8e Vars/funcs/state — SPVAR · SPFUNC · SPDEF · SPCHK · SPUSED · SPCLIP · SPCOLOR
 

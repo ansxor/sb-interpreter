@@ -1,9 +1,0 @@
-gpage_out|GPAGE 0,1:GPAGE OUT V,W|STR$(V)+","+STR$(W)|progstr
-rgb_red|RGB(255,0,0)
-rgb_green|RGB(0,255,0)
-rgb_white|RGB(255,255,255)
-gcolor_out|GCOLOR RGB(255,0,0):GCOLOR OUT C|C|prog
-gcls_black|GPAGE 0,0:GCLS:X=GSPOIT(0,0)|X|prog
-gcls_green|GPAGE 0,0:GCLS RGB(0,255,0):X=GSPOIT(10,10)|X|prog
-gclip_write|GPAGE 0,0:GCLS:GCLIP 1,0,0,10,10:GCOLOR RGB(255,255,255):GPSET 20,20:X=GSPOIT(20,20)|X|prog
-gpset_inside_clip|GPAGE 0,0:GCLS:GCLIP 1,0,0,30,30:GCOLOR RGB(255,255,255):GPSET 5,5:X=GSPOIT(5,5)|X|prog

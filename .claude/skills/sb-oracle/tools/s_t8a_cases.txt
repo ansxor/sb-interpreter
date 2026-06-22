@@ -1,9 +1,0 @@
-spset_out_first|ACLS:SPSET 0,0,16,16,1 OUT IX|IX|prog
-spset_out_next|ACLS:SPSET 0,0,16,16,1 OUT A:SPSET 0,0,16,16,1 OUT B|B|prog
-spclr_frees|ACLS:SPSET 0,0,16,16,1 OUT A:SPCLR A:SPSET 0,0,16,16,1 OUT B|B|prog
-sppage_default|ACLS:X=SPPAGE()|X|prog
-sppage_set|SPPAGE 2:X=SPPAGE()|X|prog
-spshow_after|ACLS:SPSET 5,0,0,16,16,1:SPSHOW 5:X=1|X|prog
-sphide_after|ACLS:SPSET 5,0,0,16,16,1:SPHIDE 5:SPSHOW 5:X=1|X|prog
-spshow_err|ACLS:SPSHOW 5|err
-sphide_err|ACLS:SPHIDE 5|err
