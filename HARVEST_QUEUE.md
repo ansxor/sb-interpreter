@@ -1150,3 +1150,28 @@ observable, else compare rendered audio by ear / loose spectral per O-T7).
   parser's assumed defaults; confirm against the synth (M5-T2 disasm) + oracle.
 - **Tick base** — 192 ticks/whole-note assumed (S-C5); confirm + the T→frames conversion when the
   synth scheduler is read (M5-T2).
+
+## M5-T2 — Synth engine (signal path grounded; voice/curve fidelity = deferred layer per O-T7)
+The synth (`crates/sb-audio/src/{synth.rs,instruments.rs}`) renders a parsed `Song` to
+interleaved stereo PCM16. Its **signal path is grounded** on the real 3DS DSP via citra/azahar
+`audio_core` — native rate 32728 Hz, 160-sample frames, per-voice fractional resample with the
+DSP's Q24 linear interpolation + saturated delta (`interpolate.cpp`). The render is fully
+deterministic (tested). Per O-T7 there is NO emulator audio golden, so the items below are the
+**deferred fidelity layer** — confirm by ear / loose spectral against real SB, never a frozen gate:
+- **Instrument sample ROM** — real `@0`–`@127` are sampled GM-equiv voices baked in firmware data
+  we don't have; analytic wavetables (Saw/Pulse/Triangle/Sine/Noise) stand in. Extract the SB
+  soundbank from romfs to feed real voices through the same resampler (pipeline is already correct).
+- **`@E A,D,S,R` envelope curve** — the exact attack/decay/release shape + the param→time mapping
+  ("smaller = slower") are placeholders (linear `ENV_MIN_S..ENV_MAX_S`); read the SB synth handler /
+  measure.
+- **`@V` velocity + `V` + `(`/`)` scaling** — how note velocity scales channel volume (assumed
+  multiplicative %); `(`/`)` step size (VOLUME_STEP=1 placeholder); see also M5-T1 `(N`/`)N` item.
+- **`@D` detune** — −128..127 → ±2 semitones (`/64`) assumed; confirm the real cents-per-unit.
+- **LFO `@MP`/`@MA`/`@ML`** (vibrato/tremolo/autopan) — depth/range/speed/delay → Hz/amount mapping
+  is a placeholder; only one active at a time, engaged by `@MON`. Confirm the real curves + `range`/
+  `delay` use.
+- **Tempo→samples** — `samples/tick = 32728·60/(T·48)`, 48 ticks/quarter (S-C5 192/whole). The
+  sample rate is citra-grounded; the SB tick base + exact T→frame quantization want a read of the
+  SB synth scheduler in the disassembly (shared with the M5-T1 "Tick base" item).
+- **Percussion (`@128`/`@129`) drum map + voices** — pitch→drum mapping (S-C5 table) is not yet
+  applied to distinct samples; all percussion is a short noise burst. Needs the drum sample ROM.
