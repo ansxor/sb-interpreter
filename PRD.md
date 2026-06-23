@@ -126,7 +126,7 @@ and name the instructions they cover inline.
 - [x] S-T14c Built-in constants — `spec/reference/constants.yaml` vs disasm constant names + oracle (all 79 hw_verified; corrected 7 doc errors: #BLUE/#CYAN, #ZL/#ZR swap, #BGROT90/180/270)
 
 ### S-C — Concept specs (architecture/models; Markdown in `spec/concepts/`, see prd/specs.md)
-- [ ] S-C1 execution-model — lexer/parser/compiler/VM, 4 slots + COMMON, frame layout · governs M1
+- [x] S-C1 execution-model — lexer/parser/compiler/VM, 4 slots + COMMON, frame layout · governs M1 (`spec/concepts/execution-model.md`; docs + osb structural; frame layout/identifier-class/`^`-rank queued for disasm+oracle)
 - [~] S-C2 screen-and-color-model — layers/Z/RGBA5551 (exemplar drafted; confirm vs oracle) · governs M2, O-T6
 - [ ] S-C3 sprite-bg-model — attributes/animation/collision/tilemaps · governs M3
 - [ ] S-C4 frame-and-timing-model — VSYNC/WAIT/MAINCNT, 60 fps · governs M4

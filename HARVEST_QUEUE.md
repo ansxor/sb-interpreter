@@ -572,3 +572,14 @@ oracle to confirm exact output and promote to `hw_verified`.
     ERRNUM/ERRLINE/ERRPRG (require a prior error), PRGSLOT/RESULT, TIME$/DATE$ (clock).
   - Confirm the read-only sysvars actually raise on assignment (which errnum) vs silently
     no-op — needs a `|err` probe per name.
+
+- S-C1 · execution-model concept spec — model authored from docs + osb (structural) +
+  documented frame layout. NOT yet read from `cia_3.6.0.lst`/oracle (all hypothesis):
+  - Identifier class: confirm full-width/kana + leading-digit rule (docs say
+    "alphanumeric + underscore"; SB is Japanese, osb's ASCII-only is a limitation we reject).
+  - Suffix-less numeric variable: confirm dynamic Integer/Double promotion rule on mixed
+    reassignment (e.g. `A=1 : A=A/2` → Integer or Double?).
+  - `^` (power) operator: precedence rank + associativity (absent from osb getOPRank).
+  - Exact 3.6.0 call-frame cell order (currentFunction, old bp, return addr), args-vs-locals
+    overlap, and `RETURN` OUT-copy offsets — read handler from disassembly, diff vs oracle.
+  - Operand-stack size / recursion depth that trips Stack overflow (errnum 5).
