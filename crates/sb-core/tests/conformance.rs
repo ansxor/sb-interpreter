@@ -80,6 +80,15 @@ const IN_SCOPE_DATA_ARRAY_CONSOLE: &[&str] = &[
 /// `FONTDEF`/`SCROLL`/`WIDTH` builtins are not implemented yet (S-T5c). Those fold in with
 /// their own increments. Listed by id.
 const IN_SCOPE_CONSOLE: &[&str] = &["PRINT", "COLOR", "CLS", "INKEY$"];
+/// `Data operations and others` instructions whose semantics `sb-core` implements in M1 and
+/// whose inline `tests:` are deterministic + `console_text()`-comparable (M1-T14 increment
+/// 2026-06-23): `READ` (walks the DATA cursor — sequential, across-line, float, array-element
+/// receiver, out-of-data → 13, type-mismatch → 8), `RESTORE` (label/string-var/computed-label
+/// reposition + bare-`RESTORE` type-mismatch → 8), `OPTION` (`STRICT` declared-ok / undeclared
+/// → 15, unknown option → 3), and `REM` (line + trailing comment ignored). The rest of the
+/// category stays excluded: `WAIT`/`VSYNC` are frame-timing (M4), `DTREAD`/`TMREAD`/`KEY`/
+/// `DIALOG` and the `CHK*` builtins aren't implemented yet. Listed by id.
+const IN_SCOPE_DATA_OPS: &[&str] = &["READ", "RESTORE", "OPTION", "REM"];
 
 #[derive(Debug, Deserialize)]
 struct CaseFile {
@@ -225,6 +234,7 @@ fn in_scope_instruction_specs_pass() {
     let in_scope_control: BTreeSet<&str> = IN_SCOPE_CONTROL.iter().copied().collect();
     let in_scope_dac: BTreeSet<&str> = IN_SCOPE_DATA_ARRAY_CONSOLE.iter().copied().collect();
     let in_scope_console: BTreeSet<&str> = IN_SCOPE_CONSOLE.iter().copied().collect();
+    let in_scope_data_ops: BTreeSet<&str> = IN_SCOPE_DATA_OPS.iter().copied().collect();
 
     let mut fails = Vec::new();
     let mut count = 0usize;
@@ -241,7 +251,8 @@ fn in_scope_instruction_specs_pass() {
             || in_scope_ops.contains(spec.id.as_str())
             || in_scope_control.contains(spec.id.as_str())
             || in_scope_dac.contains(spec.id.as_str())
-            || in_scope_console.contains(spec.id.as_str());
+            || in_scope_console.contains(spec.id.as_str())
+            || in_scope_data_ops.contains(spec.id.as_str());
         if !in_scope {
             continue;
         }
