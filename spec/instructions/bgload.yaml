@@ -1,0 +1,50 @@
+id: BGLOAD
+kind: statement
+category: BG
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Layer number of the copy destination." }
+      - { name: array, type: array, desc: "Numerical value array containing BG data (as stored by BGSAVE) to copy into the BG screen." }
+    note: "BGLOAD layer, array — copy the whole BG screen's worth of tile data from a numeric array into the layer (2 args)."
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Layer number of the copy destination." }
+      - { name: start_x, type: integer, desc: "Destination start X (character coordinates)." }
+      - { name: start_y, type: integer, desc: "Destination start Y (character coordinates)." }
+      - { name: width, type: integer, desc: "Width of the destination range in characters." }
+      - { name: height, type: integer, desc: "Height of the destination range in characters." }
+      - { name: array, type: array, desc: "Numerical value array containing BG data to copy." }
+    note: "BGLOAD layer, startX, startY, width, height, array — copy a rectangular region of tile data from the array into the layer (6 args)."
+
+summary: "Copies BG tile data from a numerical value array (in the format written by BGSAVE) into a BG layer's tilemap. With 2 arguments the whole BG screen is the destination; with 6 arguments a rectangular region (startX,startY,width,height in character units) is the destination. BGLOAD is the inverse of BGSAVE."
+
+semantics:
+  - "Statement only: if a return value is requested (used as a function) the handler raises errnum 4 (Illegal function call). Return-count r0=[r4,#0xc]; cmp r0,#0 / bne -> the errnum-4 path (mov r0,#0x4 @0x165960)."
+  - "Argument count [r4,#0x4] selects the form: ==2 -> whole-screen (@0x165968), ==3 -> whole-screen + extra trailing argument (@0x1659e0), ==6 -> ranged (@0x165acc), ==7 -> ranged + extra trailing argument (@0x165c50). Any other count raises errnum 4 (mov r0,#0x4 @0x165960)."
+  - "LAYER must be in 0..3: evaluated and range-checked by the shared BG-layer getter FUN_001e2504 (bl @0x165978 / @0x1659f0 / @0x165adc). A value < 0 or >= the BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560. Per-layer state stride is 0xe3 doublewords (mul r0,r0,#0xe3), state ptr 0x315d60, map base 0x19a2f50."
+  - "The ARRAY argument must be a numeric array variable: the handler reads the variable's array/type byte ([arr,#0x10]+0x1, e.g. ldrb @0x165990) and if it is not an array raises errnum 8 (Type mismatch) — the not-an-array path mov r0,#0x8 @0x165a90. The 3-arg / 7-arg variants additionally evaluate one more trailing numeric argument and range-check it (cmp r0,r6 / cmpge r7,r0 @0x165aa0), raising errnum 10 (mov r0,#0xa @0x165ab8) if out of range; the exact meaning of that trailing argument (an offset/index into the source array) is undocumented — oracle-pending."
+  - "BGLOAD writes only the layer's tilemap (tile numbers, palette and flip bits packed per cell, as BGSAVE stored them); it does not change the layer size (BGSCREEN), graphic page (BGPAGE), scroll (BGOFS) or visibility. The ranged form copies width*height cells starting at (startX,startY)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is not 2, 3, 6 or 7, or a return value is requested (used as a function)" }
+  - { errnum: 8, name: "Type mismatch", when: "the array argument is not a numeric array variable" }
+  - { errnum: 10, name: "Out of range", when: "the layer is negative or > 3 (not in 0..3), or the optional trailing argument of the 3/7-arg form is out of range" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgload.md (BGLOAD Layer, [Start X,Start Y,Width,Height,] Numerical value array — 'Copies BG data from an array to the BG screen'; Layer 0-3; range omitted => whole BG screen; array stored with BGSAVE; e.g. BGLOAD 0, 0,0,30,10, BGARRAY)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGLOAD handler @0x165908: return-count [r4,#0xc] cmp #0 bne -> mov r0,#0x4 errnum 4 @0x165960; argcount [r4,#0x4] switch ==2 @0x165968 / ==3 @0x1659e0 / ==6 @0x165acc / ==7 @0x165c50 else errnum 4; layer eval+range bl 0x1e2504 (errnum 10 @0x1e2560); array byte ldrb [arr,#0x10]+0x1 @0x165990, non-array -> mov r0,#0x8 errnum 8 @0x165a90; 3/7-arg trailing-arg range check cmp r0,r6/cmpge r7,r0 @0x165aa0 -> mov r0,#0xa errnum 10 @0x165ab8; per-layer stride mul r0,r0,#0xe3, state ptr 0x315d60 [0x165e34], map base 0x19a2f50." }
+  - { type: community, ref: "osb/SMILEBASIC/bg.d BG array load handling (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: ~258 whole-screen 'BGLOAD 0,MAP' / 'BGLOAD I,MAP' (variable layer) and ~222 ranged 'BGLOAD 0,0,0,64,64,L0' / 'BGLOAD LY,X,Y,CPW,CPH,TMPC%' (variable layer + expr coords, e.g. arithmetic 'BGLOAD 0,BW*I,BH*J,BW,BH,B', negatives 'BGLOAD 0,0,-15,64,64,LO'). The undocumented 7-arg form WITH a trailing literal exists: 'BGLOAD 0,0,0,7,7,BOARD%,1' in B2B43VHE/TXT/LIGHTS-OUT — confirming the 7-arg branch is a real shipped syntax (meaning of the trailing arg oracle-pending, queued). No multi-arg form outside {2,3,6,7}. (oracle-pending: copy side effect + trailing-arg semantics, queued)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9e): BGLOAD 4,A -> errnum 10, BGLOAD -1,A -> errnum 10 (layer out of range); BGLOAD 0,0,A (3-arg form, literal 0 in the array position) -> errnum 8 (Type mismatch) — confirming the 3-arg form IS accepted and the 2nd operand is the array (a non-array literal there is a type error, not an argcount error). All errline 1." }
+
+confidence: disassembled
+
+tests:
+  # Tilemap copy side effects need the BG framebuffer oracle (O-T6, queued). Error expects are
+  # hw_verified (sb-oracle 2026-06-22 s_t9e).
+  - { name: load_whole_ok, code: "DIM A[32*32]\nBGSCREEN 0,32,32\nBGLOAD 0,A", expect: { stdout: "" } }
+  - { name: load_range_ok, code: "DIM A[30*10]\nBGSCREEN 0,32,32\nBGLOAD 0,0,0,30,10,A", expect: { stdout: "" } }
+  - { name: layer_out_of_range, code: "DIM A[1]\nBGLOAD 4,A", expect: { error: { errnum: 10 } } }
+  - { name: layer_negative, code: "DIM A[1]\nBGLOAD -1,A", expect: { error: { errnum: 10 } } }
+  - { name: array_not_array, code: "DIM A[1]\nBGLOAD 0,0,A", expect: { error: { errnum: 8 } } }

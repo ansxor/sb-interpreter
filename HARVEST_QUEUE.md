@@ -343,3 +343,15 @@ oracle to confirm exact output and promote to `hw_verified`.
     "@label" DATA form and relative "+" semantics against rendered layer transform.
   - BGFUNC callback dispatch via CALL BG (CALLIDX = layer number); errnum 4/8 for unresolvable /
     non-string labels (handler shows errnum 8 for a numeric label, errnum 4 for unresolved @Label).
+
+- [ ] S-T9e BG load/save/color — render/round-trip harvests (error cases already hw_verified,
+  s_t9e batch 2026-06-22: BGLOAD/BGSAVE/BGCOLOR layer-oob & neg -> errnum 10; BGLOAD 0,0,A 3-arg
+  non-array -> errnum 8; BGSAVE 0,0,A 3-arg -> errnum 4; all errline 1). Still oracle-pending
+  (needs BG framebuffer oracle O-T6 and multi-statement setup-before-read):
+  - BGSAVE -> BGLOAD round trip: BGPUT a tile, BGSAVE to an array, read array contents, BGLOAD it
+    back into another region and confirm the tilemap matches (cell packing: tile/palette/flip bits).
+  - BGSAVE auto-grow: pass a too-small 1-D array, confirm it is resized to width*height elements.
+  - BGLOAD 3-arg / 7-arg trailing numeric argument: what does it mean (start offset/index into the
+    source array?) and its valid range (handler range-checks against r6=[0x165e3c], r7=r6>>20).
+  - BGCOLOR set-then-get round trip: BGCOLOR 0,RGB(255,0,0) then C=BGCOLOR(0) -> expect the stored
+    32-bit code (and whether the ignored alpha byte is masked off or returned verbatim).

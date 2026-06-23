@@ -94,7 +94,7 @@ and name the instructions they cover inline.
 - [x] S-T9b Tiles — BGPUT · BGFILL · BGGET · BGCOPY · BGCLIP
 - [x] S-T9c Transform — BGOFS · BGROT · BGSCALE · BGHOME · BGCOORD
 - [x] S-T9d Animation & state — BGANIM · BGSTART · BGSTOP · BGVAR · BGFUNC · BGCHK
-- [ ] S-T9e Load/save/color — BGLOAD · BGSAVE · BGCOLOR
+- [x] S-T9e Load/save/color — BGLOAD · BGSAVE · BGCOLOR
 
 #### S-T10 Sound (18) → S-T0  (MML grammar = S-C5; no audio harvest yet → O-T7)
 - [ ] S-T10a BGM playback — BGMPLAY · BGMSTOP · BGMCHK · BGMVOL · BGMVAR

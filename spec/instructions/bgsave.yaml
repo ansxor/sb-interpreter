@@ -1,0 +1,50 @@
+id: BGSAVE
+kind: statement
+category: BG
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Layer number of the copy source." }
+      - { name: array, type: array, desc: "One-dimensional numeric array to receive the BG data. If too small it is grown automatically." }
+    note: "BGSAVE layer, array — copy the whole BG screen's tile data from the layer into a numeric array (2 args)."
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Layer number of the copy source." }
+      - { name: start_x, type: integer, desc: "Source start X (character coordinates)." }
+      - { name: start_y, type: integer, desc: "Source start Y (character coordinates)." }
+      - { name: width, type: integer, desc: "Width of the source range in characters." }
+      - { name: height, type: integer, desc: "Height of the source range in characters." }
+      - { name: array, type: array, desc: "One-dimensional numeric array to receive the BG data; grown automatically if too small." }
+    note: "BGSAVE layer, startX, startY, width, height, array — copy a rectangular region of tile data from the layer into a numeric array (6 args)."
+
+summary: "Copies a BG layer's tilemap into a numerical value array (the format read back by BGLOAD). With 2 arguments the whole BG screen is the source; with 6 arguments a rectangular region (startX,startY,width,height in character units) is the source. For one-dimensional arrays, if the array is too small the required elements are added automatically."
+
+semantics:
+  - "Statement only: if a return value is requested (used as a function) the handler raises errnum 4 (Illegal function call). Return-count r0=[r4,#0xc]; cmp r0,#0 / bne -> mov r0,#0x4 errnum 4 @0x165f54."
+  - "Argument count [r4,#0x4] selects the form: ==2 -> whole-screen (@0x165f5c), ==6 -> ranged (@0x165fe8). Any other count raises errnum 4 (mov r0,#0x4 @0x165f54). Unlike BGLOAD, BGSAVE has no 3/7-arg variants — it targets one-dimensional arrays only."
+  - "LAYER must be in 0..3: evaluated and range-checked by the shared BG-layer getter FUN_001e2504 (bl @0x165f6c / @0x165ff8). A value < 0 or >= the BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560. Per-layer state stride is 0xe3 doublewords (mul r0,r0,#0xe3), state ptr 0x315d60 [0x166174]."
+  - "The destination ARRAY must be a numeric array variable: the handler reads the variable's array/type byte ([arr,#0x10]+0x1, ldrb @0x165f84) and if it is not an array raises errnum 8 (Type mismatch) — the error-setup at @0x16616c (mov r1,#1). In the 6-arg form each of startX,startY,width,height is evaluated as an integer (blx [obj,#0x40] with a position marker r8=1..4 stored at [error-arg]) and a non-numeric argument raises a type error too."
+  - "BGSAVE reads only the layer's tilemap — the packed tile/palette/flip cell values, which BGLOAD writes back unchanged for a round trip. For a one-dimensional destination array that is too small, the required element(s) are appended automatically (documented auto-grow); it copies width*height cells starting at (startX,startY) in the ranged form, or the whole screen otherwise."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is not 2 or 6, or a return value is requested (used as a function)" }
+  - { errnum: 8, name: "Type mismatch", when: "the array argument is not a numeric array, or a range argument is not numeric" }
+  - { errnum: 10, name: "Out of range", when: "the layer is negative or > 3 (not in 0..3)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgsave.md (BGSAVE Layer, [Start X,Start Y,Width,Height,] Numerical value array — 'Copies the contents of the BG screen to a numerical value array'; Layer 0-3; range omitted => whole BG screen; 'For one-dimensional arrays only, if the array is insufficient, the required element(s) will be added automatically'; e.g. DIM BGARRAY[30*10]: BGSAVE 0, 0,0,30,10, BGARRAY)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGSAVE handler @0x165f18: return-count [r4,#0xc] cmp #0 bne -> mov r0,#0x4 errnum 4 @0x165f54; argcount [r4,#0x4] ==2 beq @0x165f5c / ==6 beq @0x165fe8 else errnum 4; layer eval+range bl 0x1e2504 (errnum 10 @0x1e2560); array byte ldrb [arr,#0x10]+0x1 @0x165f84 non-array -> error-setup @0x16616c (mov r1,#1); 6-arg evaluates 4 ints via blx [obj,#0x40] with arg markers r8=1..4 @0x166014-0x166098 storing to [r5]; per-layer stride mul r0,r0,#0xe3, state ptr 0x315d60 [0x166174]." }
+  - { type: community, ref: "osb/SMILEBASIC/bg.d BG array save handling (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: ~99 calls / 38 files — whole-screen 'BGSAVE 0,MAP' (~60x, incl. variable layer 'BGSAVE I,TMP%' and runtime-resolved array 'BGSAVE I,VAR(\"UNDO\"+STR$(I)+\"%\")' in KX8E48M/TXT/SBMAP2) and ranged 'BGSAVE 0,0,0,79,63,P0%' (full 80x64 backup in EKEN34LM/TXT/@BACKUP.PRG) / 'BGSAVE BGN,X,Y,W,H,BGBUFF' with expression args 'BGSAVE LAYER%,XOFS%+WOFS%,0,8,BGH%,DUMP%'. Only 2-arg and 6-arg forms observed (no 3/7-arg, confirming BGSAVE is 1D-only). (oracle-pending: array contents + auto-grow length, queued)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9e): BGSAVE 4,A -> errnum 10, BGSAVE -1,A -> errnum 10 (layer out of range); BGSAVE 0,0,A (3 args) -> errnum 4 (Illegal function call) — confirming BGSAVE rejects the 3-arg count that BGLOAD accepts. All errline 1." }
+
+confidence: disassembled
+
+tests:
+  # Saved array contents + auto-grow length need the BG framebuffer oracle (O-T6, queued). Error
+  # expects are hw_verified (sb-oracle 2026-06-22 s_t9e).
+  - { name: save_whole_ok, code: "DIM A[32*32]\nBGSCREEN 0,32,32\nBGSAVE 0,A", expect: { stdout: "" } }
+  - { name: save_range_ok, code: "DIM A[30*10]\nBGSCREEN 0,32,32\nBGSAVE 0,0,0,30,10,A", expect: { stdout: "" } }
+  - { name: layer_out_of_range, code: "DIM A[1]\nBGSAVE 4,A", expect: { error: { errnum: 10 } } }
+  - { name: layer_negative, code: "DIM A[1]\nBGSAVE -1,A", expect: { error: { errnum: 10 } } }
+  - { name: bad_argcount, code: "DIM A[1]\nBGSAVE 0,0,A", expect: { error: { errnum: 4 } } }
