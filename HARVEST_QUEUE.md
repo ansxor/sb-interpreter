@@ -843,3 +843,33 @@ oracle to confirm exact output and promote to `hw_verified`.
   Queue: oracle `|err` probes for each (`NEXT`, `WEND`, `UNTIL 1`, `FOR I=0 TO 3`+no NEXT,
   `WHILE 1`+no WEND, `REPEAT`+no UNTIL, `DEF F`+no END). Assumption: errnum = table name.
   ENDIF/ELSE/THEN stray (28/27/26) left as generic 3 — unspecced, also queue if probing.
+
+## M1-T14 / array-element references — RESOLVED 2026-06-23
+- Fixed: `Op::PushArrayRef` is now wired in the VM (was `VmError::Unsupported`). A new
+  `Value::ElemRef(ElemRef)` carries the shared array `Rc` + a bounds-checked flat offset
+  (resolved at ref time; out-of-range → errnum 31). `deref`/`assign_through` go through the
+  element's primitive type (write coerces: `%`→truncate, `#`→widen, `$`→string-or-8). `SWAP`
+  rewritten to read-both-then-coerce-both-then-write-both over the generic ref interface, so
+  array elements + an aliased SWAP (no-op) both work; `INC`/`DEC` on `A[i]` work via the same
+  path. Already hw_verified (swap.yaml s_t4a / inc.yaml s_t4a, sb-oracle 2026-06-22); replayed
+  in conformance + harness/corpus/cases/swap.yaml + 9 VM unit tests. Runtime-name refs
+  (`Op::PushRefExpr`/`PopRef`, `VAR()`) remain unwired (M6).
+
+## M1-T14 / conformance widening — surfaced gaps queued 2026-06-23
+- Widening the conformance allowlist to the full Variables/Data/Console categories surfaced
+  these (currently EXCLUDED from `IN_SCOPE_DATA_ARRAY_CONSOLE`; the array-mutation set is in):
+  - **VAR duplicate declaration** (`VAR Q=1` then `VAR Q=2`): var.yaml hw_verified expects
+    Duplicate variable (errnum 18); sb-core currently allows the re-declaration silently.
+    Fix: the compiler's `declare_decl` must reject a second `VAR`/`DIM` of the same name in
+    the same scope → 18.
+  - **LINPUT used as a function** (`A=LINPUT("X")`): linput.yaml hw_verified expects Syntax
+    error (3); sb-core raises 16 (the compiler treats it as an undefined call). Fix: parser
+    should reject LINPUT in expression position → 3, like INPUT already does.
+  - **DATA named-constant items** (`DATA #L` → 256): data.yaml hw_verified (`#L`=256, `#UP`=1,
+    etc. are valid DATA items); sb-core raises Syntax error 3. Fix: DATA item parsing must
+    accept `#NAME` button/system constants (fold to their constant value).
+  - **LOCATE stdout cases** (`LOCATE 20,15:PRINT "X"`): the inline `basic_xy`/`x_edge_50_ok`
+    cases `expect.stdout: "X"`, but `console_text()` scrapes the full grid, so the cursor
+    position prepends newlines/spaces. These are smoke cases (NOT hw_verified — the hw_verified
+    LOCATE cases are the bounds/errnum ones). Either rewrite the expectation to the positioned
+    scrape or compare a trimmed/cursor-relative view; decide when Console folds into scope.

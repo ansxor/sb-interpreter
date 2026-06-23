@@ -135,6 +135,14 @@ impl<T: Clone + Default + PartialEq> SbArray<T> {
         Ok(flat)
     }
 
+    /// Resolve a subscript tuple to a bounds-checked flat row-major offset. Used
+    /// to take an element reference (`A[i]` as a `SWAP`/`INC`/`OUT` target); the
+    /// offset addresses [`as_slice`](Self::as_slice)/[`as_mut_slice`](Self::as_mut_slice).
+    /// Rank mismatch → errnum 3, out-of-range → errnum 31.
+    pub fn flat_offset(&self, idx: &[i32]) -> Result<usize, RuntimeError> {
+        self.flat_index(idx)
+    }
+
     /// Read element `idx` (a 1–4 entry subscript tuple). Out-of-range → errnum 31.
     pub fn get(&self, idx: &[i32]) -> Result<T, RuntimeError> {
         let flat = self.flat_index(idx)?;

@@ -44,6 +44,17 @@ const IN_SCOPE_CONTROL: &[&str] = &[
     "IF", "THEN", "ELSE", "ELSEIF", "ENDIF", "FOR", "NEXT", "TO", "STEP", "WHILE", "WEND",
     "REPEAT", "UNTIL", "BREAK", "CONTINUE", "GOTO", "GOSUB", "RETURN", "ON", "END", "STOP", "DEF",
 ];
+/// Array / variable **mutation** instructions (`Variables and Arrays` category) that
+/// `sb-core` fully implements — including the array-element reference forms (`SWAP A[i],A[j]`,
+/// `INC A[i]`, `DEC A[i]`) now that [`Op::PushArrayRef`] is wired (M1-T14 increment). Their
+/// inline `tests:` are deterministic + `console_text()`-comparable. NOT taken wholesale: the
+/// not-yet-built `COPY`/`FILL` (M7) are excluded by omission, and `VAR` is held back pending
+/// its duplicate-declaration errnum (18) — both queued in `HARVEST_QUEUE.md`. The `Data
+/// operations` (DATA named-const items) and `Console` (LOCATE cursor-positioned scrape, LINPUT
+/// function-form errnum) categories fold in with their own increments. Listed by id.
+const IN_SCOPE_DATA_ARRAY_CONSOLE: &[&str] = &[
+    "DIM", "SORT", "RSORT", "PUSH", "POP", "SHIFT", "UNSHIFT", "SWAP", "INC", "DEC",
+];
 
 #[derive(Debug, Deserialize)]
 struct CaseFile {
@@ -187,6 +198,7 @@ fn in_scope_instruction_specs_pass() {
     let in_scope_cats: BTreeSet<&str> = IN_SCOPE_CATEGORIES.iter().copied().collect();
     let in_scope_ops: BTreeSet<&str> = IN_SCOPE_OPERATORS.iter().copied().collect();
     let in_scope_control: BTreeSet<&str> = IN_SCOPE_CONTROL.iter().copied().collect();
+    let in_scope_dac: BTreeSet<&str> = IN_SCOPE_DATA_ARRAY_CONSOLE.iter().copied().collect();
 
     let mut fails = Vec::new();
     let mut count = 0usize;
@@ -201,7 +213,8 @@ fn in_scope_instruction_specs_pass() {
             .as_deref()
             .is_some_and(|c| in_scope_cats.contains(c))
             || in_scope_ops.contains(spec.id.as_str())
-            || in_scope_control.contains(spec.id.as_str());
+            || in_scope_control.contains(spec.id.as_str())
+            || in_scope_dac.contains(spec.id.as_str());
         if !in_scope {
             continue;
         }

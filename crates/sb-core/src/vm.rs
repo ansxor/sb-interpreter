@@ -20,8 +20,9 @@
 //! (`Print*`/`Input`/`Linput` plus the `LOCATE`/`COLOR`/`BACKCOLOR`/`CLS`/`ACLS`/`INKEY$`
 //! builtins, M1-T8) are wired: the VM owns an [`sb_render::console::Console`] that `PRINT`
 //! and the console commands drive, and a headless input queue ([`Vm::push_input`]) feeds
-//! `INPUT`/`LINPUT`. `USE`/`EXEC` (M6) and array-element / runtime-name references
-//! ([`Op::PushArrayRef`]/[`Op::PushRefExpr`]) are not yet wired and raise
+//! `INPUT`/`LINPUT`. Array-element references ([`Op::PushArrayRef`]) are wired (`SWAP`/
+//! `INC`/`DEC`/`OUT` on `A[i]`); `USE`/`EXEC` (M6) and runtime-name references
+//! ([`Op::PushRefExpr`]/[`Op::PopRef`], `VAR()`) are not yet wired and raise
 //! [`VmError::Unsupported`] rather than panicking — their handlers land in the milestones
 //! above.
 //!
@@ -41,12 +42,11 @@ use crate::ast::{BinOp, Name, UnOp};
 use crate::bytecode::{Const, Op, Program, VarRef, VarType};
 use crate::sysvars::ErrSysvar;
 use crate::token::Suffix;
-use crate::value::{Cell, RuntimeError, SbStr, Value};
+use crate::value::{Cell, ElemRef, RuntimeError, SbStr, Value};
 use sb_render::console::Console;
 use sb_render::grp::GrpState;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
-use std::rc::Rc;
 
 /// Max combined depth of the `GOSUB` return stack + `DEF` call frames before raising
 /// **Stack overflow** (errnum 5). The exact value real SB 3.6.0 trips at is queued
@@ -439,22 +439,21 @@ impl Vm {
                 a: sa,
                 b: sb_suffix,
             } => {
+                // Both operands are references (scalar [`Value::Ref`] cells or array
+                // elements [`Value::ElemRef`] — the compiler rejects non-lvalues at
+                // parse time). Read BOTH values, then re-coerce each to its target's
+                // declared suffix (a typed var truncates/widens like an assignment; an
+                // untyped var takes it verbatim) BEFORE writing either — so a
+                // Type-mismatch (8) leaves both targets untouched, and an aliased
+                // SWAP (same cell / same element) collapses to a no-op.
                 let b = as_ref(self.pop()?)?;
                 let a = as_ref(self.pop()?)?;
-                if let (Value::Ref(ca), Value::Ref(cb)) = (&a, &b) {
-                    if !Rc::ptr_eq(ca, cb) {
-                        // Each target re-coerces the incoming value to its declared
-                        // suffix (typed var truncates/widens like an assignment; an
-                        // untyped var takes it verbatim). Coerce both before writing
-                        // so a Type-mismatch (8) leaves both cells untouched.
-                        let va = ca.borrow().clone();
-                        let vb = cb.borrow().clone();
-                        let into_a = vb.coerce_to_suffix(sa).map_err(sb)?;
-                        let into_b = va.coerce_to_suffix(sb_suffix).map_err(sb)?;
-                        *ca.borrow_mut() = into_a;
-                        *cb.borrow_mut() = into_b;
-                    }
-                }
+                let va = a.deref();
+                let vb = b.deref();
+                let into_a = vb.coerce_to_suffix(sa).map_err(sb)?;
+                let into_b = va.coerce_to_suffix(sb_suffix).map_err(sb)?;
+                a.assign_through(into_a).map_err(sb)?;
+                b.assign_through(into_b).map_err(sb)?;
             }
 
             Op::End => return Ok(Some(Halt::End)),
@@ -492,7 +491,7 @@ impl Vm {
             Op::PushRefExpr | Op::PopRef => {
                 return Err(VmError::Unsupported("runtime-name reference (VAR())"))
             }
-            Op::PushArrayRef { .. } => return Err(VmError::Unsupported("array-element reference")),
+            Op::PushArrayRef { var, dims } => self.push_array_ref(var, dims)?,
         }
         Ok(None)
     }
@@ -535,6 +534,36 @@ impl Vm {
             }
         };
         self.stack.push(v);
+        Ok(())
+    }
+
+    /// Take a reference to array element `var[idx…]` (`SWAP`/`INC`/`DEC`/`OUT`
+    /// target). The flat offset is resolved + bounds-checked now (out-of-range →
+    /// errnum 31); the resulting [`Value::ElemRef`] shares the array `Rc`, so a
+    /// write through it mutates the caller's array.
+    fn push_array_ref(&mut self, var: VarRef, dims: u8) -> Result<(), VmError> {
+        let idx = self.pop_indices(dims)?;
+        let eref = match &*self.cell(var)?.borrow() {
+            Value::IntArray(a) => {
+                let off = a.borrow().flat_offset(&idx).map_err(sb)?;
+                ElemRef::Int(a.clone(), off)
+            }
+            Value::RealArray(a) => {
+                let off = a.borrow().flat_offset(&idx).map_err(sb)?;
+                ElemRef::Real(a.clone(), off)
+            }
+            Value::StrArray(a) => {
+                let off = a.borrow().flat_offset(&idx).map_err(sb)?;
+                ElemRef::Str(a.clone(), off)
+            }
+            _ => {
+                return Err(VmError::Sb {
+                    errnum: ERR_TYPE_MISMATCH,
+                    line: 0,
+                })
+            }
+        };
+        self.stack.push(Value::ElemRef(eref));
         Ok(())
     }
 
@@ -1141,7 +1170,7 @@ fn rng_seed_id(v: &Value) -> Result<usize, RuntimeError> {
 /// Extract a [`Value::Ref`], erroring (errnum 8) if the operand is not a reference.
 fn as_ref(v: Value) -> Result<Value, VmError> {
     match v {
-        Value::Ref(_) => Ok(v),
+        Value::Ref(_) | Value::ElemRef(_) => Ok(v),
         _ => Err(VmError::Sb {
             errnum: ERR_TYPE_MISMATCH,
             line: 0,
@@ -1799,6 +1828,84 @@ C$=A$+B$"#);
         // Mixing a string and a numeric operand → Type mismatch (8). The coerce
         // happens before either cell is written, so both stay untouched.
         let e = run_err("A=1\nB$=\"x\"\nSWAP A,B$");
+        assert_eq!(e.errnum(), Some(8));
+    }
+
+    // ---- array-element references (Op::PushArrayRef, M1-T14) ----
+
+    #[test]
+    fn swap_array_elements() {
+        // SWAP A[0],A[2] exchanges two elements of the SAME array (the ref shares
+        // the array Rc). swap.yaml hw_verified: (10,99) -> (99,10).
+        let vm = run("DIM A[3]\nA[0]=10\nA[2]=99\nSWAP A[0],A[2]\nPRINT A[0];A[2]");
+        assert_eq!(vm.console_text(), "9910");
+    }
+
+    #[test]
+    fn swap_scalar_and_array_element() {
+        // Mixed scalar/array-element operands are legal. swap.yaml hw_verified:
+        // X=5,B[1]=9 -> X=9,B[1]=5.
+        let vm = run("X=5\nDIM B[3]\nB[1]=9\nSWAP X,B[1]\nPRINT X;B[1]");
+        assert_eq!(vm.console_text(), "95");
+    }
+
+    #[test]
+    fn swap_aliased_array_element_is_noop() {
+        // SWAP A[1],A[1] reads both before writing either, so the element is
+        // unchanged (an aliased SWAP collapses to a no-op).
+        let vm = run("DIM A[3]\nA[1]=7\nSWAP A[1],A[1]\nPRINT A[1]");
+        assert_eq!(vm.console_text(), "7");
+    }
+
+    #[test]
+    fn swap_2d_array_elements() {
+        // Multi-dimensional element refs: each subscript tuple resolves to a flat
+        // offset (swap.yaml: SWAP A[X1,Y1],A[X2,Y2] is legal).
+        let vm = run("DIM A[2,2]\nA[0,0]=1\nA[1,1]=2\nSWAP A[0,0],A[1,1]\nPRINT A[0,0];A[1,1]");
+        assert_eq!(vm.console_text(), "21");
+    }
+
+    #[test]
+    fn swap_string_array_elements() {
+        // String-array element refs go through the Str element type.
+        let vm = run("DIM S$[3]\nS$[0]=\"A\"\nS$[2]=\"B\"\nSWAP S$[0],S$[2]\nPRINT S$[0];S$[2]");
+        assert_eq!(vm.console_text(), "BA");
+    }
+
+    #[test]
+    fn swap_array_element_re_coerces_to_element_type() {
+        // An int-array element is a `%`-typed target: swapping a Double in truncates
+        // toward zero (A[0] takes 2.7 -> 2). The untyped scalar X takes 10 verbatim.
+        let vm = run("DIM A[2]\nA[0]=10\nX=2.7\nSWAP A[0],X\nPRINT A[0];\",\";X");
+        assert_eq!(vm.console_text(), "2,10");
+    }
+
+    #[test]
+    fn inc_array_element() {
+        // INC A[1],5 increments through an element ref. inc.yaml hw_verified: 10 -> 15.
+        let vm = run("DIM A[3]\nA[1]=10\nINC A[1],5\nPRINT A[1]");
+        assert_eq!(vm.console_text(), "15");
+    }
+
+    #[test]
+    fn dec_array_element() {
+        let vm = run("DIM A[3]\nA[1]=10\nDEC A[1],3\nPRINT A[1]");
+        assert_eq!(vm.console_text(), "7");
+    }
+
+    #[test]
+    fn array_element_ref_out_of_range_is_31() {
+        // Taking a ref to an out-of-range element bounds-checks at ref time:
+        // Subscript out of range (errnum 31), like a plain element read.
+        let e = run_err("DIM A[3]\nSWAP A[0],A[5]");
+        assert_eq!(e.errnum(), Some(31));
+    }
+
+    #[test]
+    fn swap_string_array_element_with_numeric_scalar_is_type_mismatch_8() {
+        // Cross-type (string element ↔ numeric scalar) → Type mismatch (8), caught
+        // before either target is written.
+        let e = run_err("DIM S$[2]\nS$[0]=\"x\"\nN=1\nSWAP S$[0],N");
         assert_eq!(e.errnum(), Some(8));
     }
 

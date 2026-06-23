@@ -10,9 +10,18 @@ cases:
   - name: swap_strings
     code: "A$=\"X\"\nB$=\"Y\"\nSWAP A$,B$\nPRINT A$;B$"
     expect: { stdout: "YX" }
-  # NB: array-element SWAP operands (SWAP A[0],A[2]) are hw_verified in swap.yaml
-  # but not replayed here — `Op::PushArrayRef` (array-element references) is not
-  # yet wired in the VM. They fold in when that lands.
+  # Array-element operands (`Op::PushArrayRef`, M1-T14): a ref shares the array Rc
+  # and writes through to the element, re-coercing to its element type. swap.yaml
+  # hw_verified (sb-oracle 2026-06-22): SWAP A[0],A[2] (10,99) -> 99,10; SWAP X,B[1].
+  - name: swap_array_elements
+    code: "DIM A[3]\nA[0]=10\nA[2]=99\nSWAP A[0],A[2]\nPRINT A[0];A[2]"
+    expect: { stdout: "9910" }
+  - name: swap_scalar_and_array_element
+    code: "X=5\nDIM B[3]\nB[1]=9\nSWAP X,B[1]\nPRINT X;B[1]"
+    expect: { stdout: "95" }
+  - name: swap_string_array_elements
+    code: "DIM S$[3]\nS$[0]=\"A\"\nS$[2]=\"B\"\nSWAP S$[0],S$[2]\nPRINT S$[0];S$[2]"
+    expect: { stdout: "BA" }
   # Untyped numeric var takes the value verbatim — A becomes the Double 2.5,
   # B# coerces 1 to its double slot. (oracle 2026-06-22)
   - name: swap_untyped_keeps_double

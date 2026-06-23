@@ -42,6 +42,42 @@ pub type SbStr = Vec<u16>;
 /// by-ref args ([`Value::Ref`]) and `SWAP` can alias and mutate it.
 pub type Cell = Rc<RefCell<Value>>;
 
+/// A reference to one element of a shared array (`A[i]` as a `SWAP`/`INC`/`DEC`/
+/// `OUT` target). Array elements are stored as typed primitives inside an
+/// [`ArrayRef`], **not** as [`Value`] cells, so an element reference can't be a
+/// [`Cell`] — it carries the shared array plus a flat row-major offset (resolved
+/// and bounds-checked when the reference is taken). Reads/writes go through the
+/// element's primitive type, so a write coerces like an array-element store:
+/// `%` truncates, `#` widens, `$` is string-or-Type-mismatch.
+#[derive(Debug, Clone)]
+pub enum ElemRef {
+    Int(ArrayRef<i32>, usize),
+    Real(ArrayRef<f64>, usize),
+    Str(ArrayRef<SbStr>, usize),
+}
+
+impl ElemRef {
+    /// Read the referenced element as a [`Value`].
+    pub fn load(&self) -> Value {
+        match self {
+            ElemRef::Int(a, off) => Value::Int(a.borrow().as_slice()[*off]),
+            ElemRef::Real(a, off) => Value::Real(a.borrow().as_slice()[*off]),
+            ElemRef::Str(a, off) => Value::Str(a.borrow().as_slice()[*off].clone()),
+        }
+    }
+
+    /// Store `v` into the referenced element, coercing to the element's primitive
+    /// type. A String↔numeric mismatch raises Type mismatch (errnum 8).
+    pub fn store(&self, v: Value) -> Result<(), RuntimeError> {
+        match self {
+            ElemRef::Int(a, off) => a.borrow_mut().as_mut_slice()[*off] = v.to_int()?,
+            ElemRef::Real(a, off) => a.borrow_mut().as_mut_slice()[*off] = v.to_real()?,
+            ElemRef::Str(a, off) => a.borrow_mut().as_mut_slice()[*off] = v.as_str()?.clone(),
+        }
+        Ok(())
+    }
+}
+
 /// A runtime error carrying a SmileBASIC error number (`spec/reference/errors.yaml`).
 /// `value.rs`/`array.rs` raise these directly; the fuller error model (ERRLINE/ERRPRG,
 /// halt/CONT) is M1-T13.
@@ -100,6 +136,8 @@ pub enum Value {
     StrArray(ArrayRef<SbStr>),
     /// A reference to a scalar variable cell (`OUT`/by-ref arg, `SWAP`).
     Ref(Cell),
+    /// A reference to one element of a shared array (`A[i]` as a ref target).
+    ElemRef(ElemRef),
 }
 
 impl Value {
@@ -113,7 +151,7 @@ impl Value {
             Value::IntArray(_) => ValueType::IntArray,
             Value::RealArray(_) => ValueType::RealArray,
             Value::StrArray(_) => ValueType::StrArray,
-            Value::Ref(_) => ValueType::Ref,
+            Value::Ref(_) | Value::ElemRef(_) => ValueType::Ref,
         }
     }
 
@@ -187,9 +225,11 @@ impl Value {
             Suffix::None => match self {
                 Value::Int(_) | Value::Real(_) | Value::Void => Ok(self),
                 // arrays/refs flow through a suffix-less array/ref name unchanged.
-                Value::IntArray(_) | Value::RealArray(_) | Value::StrArray(_) | Value::Ref(_) => {
-                    Ok(self)
-                }
+                Value::IntArray(_)
+                | Value::RealArray(_)
+                | Value::StrArray(_)
+                | Value::Ref(_)
+                | Value::ElemRef(_) => Ok(self),
                 Value::Str(_) => Err(RuntimeError::new(ERR_TYPE_MISMATCH)),
             },
         }
@@ -222,6 +262,7 @@ impl Value {
     pub fn deref(&self) -> Value {
         match self {
             Value::Ref(cell) => cell.borrow().clone(),
+            Value::ElemRef(e) => e.load(),
             other => other.clone(),
         }
     }
@@ -233,6 +274,7 @@ impl Value {
                 *cell.borrow_mut() = v;
                 Ok(())
             }
+            Value::ElemRef(e) => e.store(v),
             _ => Err(RuntimeError::new(ERR_TYPE_MISMATCH)),
         }
     }
