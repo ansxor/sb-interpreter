@@ -1,0 +1,37 @@
+id: MICSTOP
+kind: statement
+category: Various kinds of input
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    note: "MICSTOP — stop microphone sampling started by MICSTART. Takes no arguments."
+
+summary: "Stops the microphone sampling that was started with MICSTART. The recorded data stays in the system sampling buffer and can still be read with MICDATA / MICSAVE after stopping. Requires the microphone to have been enabled with XON MIC first; calling it when the mic was never enabled raises errnum 36 (Mic is not available). If sampling is not currently running (mic enabled but idle, or already stopped) MICSTOP is a harmless no-op."
+
+semantics:
+  - "MICSTOP takes exactly zero arguments and returns nothing: the handler checks the argument count [r4,#0x4]==0 (cmp r0,#0x0 @0x182954 / beq @0x182970) and raises errnum 4 (Illegal function call: mvn r1,#0x0 / mov r0,#0x4 @0x182968 -> b 0x1fffdc @0x18296c) for any argument."
+  - "If wireless multiplayer communication is active, MICSTOP raises errnum 52 — an undocumented communication error not in the official 0..47 table: the handler reads the comms-active flag byte [[0x305612]] (ldr r0,[0x1829dc] / ldrb @0x182974) and, when nonzero, raises mov r0,#0x34(52) @0x18298c -> b 0x1fffdc. The mic and wireless subsystems share hardware and cannot be used together. Not deterministically harvestable."
+  - "Microphone-enabled / sampling state lives in the mic state struct at [[0x1829e0]] (=0x315C18). MICSTOP dispatches on the status word [state+0x4]: status 0 = microphone never enabled (no XON MIC) -> raises errnum 36 (Mic is not available: mov r0,#0x24 @0x1829bc -> b 0x1fffdc @0x1829c0); status 2 = sampling in progress -> stops the sampler (bl 0x214c6c @0x1829c8) and writes status back to 1 (mov r0,#0x1 / str r0,[r4,#0x4] @0x1829cc-0x1829d0); any other status (1 = enabled but idle) -> returns immediately with no effect (mov r0,#0x0 @0x1829d4)."
+  - "XON MIC must precede any microphone instruction; it transitions the status word from 0 to a nonzero (enabled) state. Until then MICSTOP, MICSTART and MICDATA all raise errnum 36."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "MICSTOP is given any argument (it takes none)" }
+  - { errnum: 36, name: "Mic is not available", when: "the microphone was not enabled with XON MIC first" }
+  - { errnum: 52, name: "Communication error", when: "wireless multiplayer communication is active (undocumented; not in the official error table)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/micstop.md (`MICSTOP` — 'Stops sampling from the microphone'; format takes no arguments; example `MICSTOP`)" }
+  - { type: documented, ref: "sb-docs/smilebasic-3/micstart.md ('The microphone should be enabled beforehand with XON MIC') — establishes the XON MIC prerequisite shared by all MIC instructions; errors.yaml errnum 36 'Mic is not available' = 'a microphone instruction was used without using XON MIC'." }
+  - { type: disassembled, ref: "cia_3.6.0.lst MICSTOP handler @0x18294c: argcount [r0,#0x4]==0 else mov r0,#0x4 errnum 4 (@0x182954-0x182968 -> b 0x1fffdc); comms flag [[0x305612]] (ldr r0,[0x1829dc] / ldrb @0x182974) nonzero -> mov r0,#0x34(52) errnum 52 (@0x18298c); state struct [[0x1829e0]]=0x315C18, status [state+0x4]: ==0 -> mov r0,#0x24(36) errnum 36 (@0x1829bc), ==2 -> stop bl 0x214c6c (@0x1829c8) then str #0x1 [state+0x4] (@0x1829d0), else mov r0,#0x0 no-op return (@0x1829d4)" }
+  - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d MICSTOP (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bMICSTOP\\b'): MICSTOP appears in ~20 real programs and is ALWAYS called bare with no arguments (e.g. 1DVK34J/TXT/HNZVT), matching the documented zero-arg form. No argument form was found in the corpus." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11c): bare `MICSTOP` without a prior XON MIC raises errnum 36 (Mic is not available, errline 1), confirming the status==0 guard; `MICSTOP 1` (one argument) raises errnum 4 (Illegal function call, errline 1), confirming the zero-argument guard. Live sampling stop (status 2) and the wireless errnum-52 path need real hardware (queued)." }
+
+confidence: disassembled
+
+tests:
+  # Both guards are hw_verified via the oracle (s_t11c): errnum 4 for an argument, errnum 36
+  # without XON MIC. Live sampling (status 2 -> stop) needs real mic hardware (not headless).
+  - { name: extra_arg, code: "MICSTOP 1", expect: { error: { errnum: 4 } } }
+  - { name: no_xon_mic, code: "MICSTOP", expect: { error: { errnum: 36 } } }

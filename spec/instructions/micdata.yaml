@@ -1,0 +1,47 @@
+id: MICDATA
+kind: function
+category: Various kinds of input
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — read a specific sample position.
+  - args:
+      - { name: position, type: integer, range: "0..(maxsamples-1) in fixed mode; unchecked in loop mode", desc: "Sample index to read. In fixed-length mode 0..(samples-1); in loop mode the index is wrapped, no range error." }
+    returns: { type: integer, desc: "Waveform value at that sample: 8-bit is 128-based (silence ≈ 128), 16-bit is 32768-based (silence ≈ 0; signed)." }
+    note: "V = MICDATA(position)"
+  # Form 2 — read the current recording position (no argument).
+  - args: []
+    returns: { type: integer, desc: "Waveform value at the current recording position (the most recently sampled point)." }
+    note: "V = MICDATA() — read at the live recording head; real corpus programs use this for live mic level (e.g. ABS(MICDATA())/32767)."
+
+summary: "Returns one waveform sample from the microphone's internal sampling buffer. With a position argument it reads the sample at that index; with no argument it reads at the current recording position (the live recording head), which real programs use to monitor the live mic level. The microphone must have been enabled with XON MIC. 8-bit samples are returned on a 128 basis (silence ≈ 128), 16-bit samples on a 32768 basis. In fixed-length mode the position is range-checked (errnum 10 if out of range); in loop mode the range is not checked and the index wraps around the buffer."
+
+semantics:
+  - "MICDATA is a function returning exactly one value: the handler checks the result count [r5,#0xc]==1 (cmp r0,#0x1 @0x181cb8 / beq @0x181cd8) and raises errnum 4 (Illegal function call: mov r0,#0x4 @0x181cc8 -> bl 0x1fffdc) otherwise."
+  - "If wireless multiplayer communication is active, MICDATA raises errnum 52 (undocumented; not in the 0..47 table): comms-active flag byte [[0x305612]] (ldr [0x181e30]/ldrb @0x181cdc) nonzero -> mov r0,#0x34(52) errnum 52 (@0x181cf0). Not deterministically harvestable."
+  - "The microphone must be enabled with XON MIC: the mic state struct [[0x181e34]]=0x315C18 status word [state+0x4] (ldr r0,[r4,#0x4] @0x181cfc) when 0 -> errnum 36 (Mic is not available: mov r0,#0x24 @0x181d38 -> bl 0x1fffdc)."
+  - "MICDATA accepts 0 or 1 arguments (argcount [r5,#0x4] @0x181d08): with 1 argument the position is evaluated to an integer; with 0 arguments the CURRENT recording position is used — the handler reads the live sample offset (bl 0x214bec @0x181d4c), subtracts the buffer base (sub r0,r0,r6 @0x181d58 with r6=0x01B20000), and for 16-bit depth halves it to a sample index (tst [state+0x8],#0x1 / asr #0x1 @0x181d5c-0x181d64). Any other argument count raises errnum 4 (mov r0,#0x4 @0x181d28)."
+  - "Range handling depends on the loop-mode flag [state+0x0] (ldrb @0x181d98): in FIXED mode (flag 0) the position must satisfy 0 <= position <= maxsamples (cmp/blt and cmpge [state+0xc] @0x181e10-0x181e1c) else errnum 10 (Out of range: mov r0,#0xa @0x181e28 -> bl 0x1fffdc). In LOOP mode (flag nonzero) the range is NOT checked: a negative position errors (errnum 10 @0x181da8 blt) but an index >= maxsamples is wrapped via modulo (bl 0x20c880 @0x181dbc) so reads never overflow."
+  - "The sample is read from the buffer at 0x01B20000 indexed by the depth field [state+0x8] (@0x181dc8): 8-bit -> unsigned byte (ldrb @0x181dd0, 128-based), 16-bit -> halfword at index*2 (ldrh @0x181de0, 32768-based). The value is returned via the result descriptor [r5,#0x10] (@0x181df8-0x181e04). Live waveform values require real microphone input and are not headless-harvestable."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "MICDATA is not used to receive exactly one value, or the argument count is not 0 or 1" }
+  - { errnum: 10, name: "Out of range", when: "in fixed-length mode a position is negative or beyond the recorded sample count (in loop mode only a negative position errors; large indices wrap)" }
+  - { errnum: 36, name: "Mic is not available", when: "the microphone was not enabled with XON MIC first" }
+  - { errnum: 52, name: "Communication error", when: "wireless multiplayer communication is active (undocumented; not in the official error table)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/micdata.md (`Variable=MICDATA( Acquisition position )` — 'Gets data from the microphone ... returns sampling data from the specified position'; position 0- (range per bits and max seconds), 'In loop mode, the range will not be checked'; return: 'For 8 bits, return values are 128-basis; For 16 bits, return values are 32768-basis'; example `D=MICDATA(100)`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst MICDATA handler @0x181ca8: resultcount [r5,#0xc]==1 else mov r0,#0x4 errnum 4 (@0x181cb8-0x181cc8); comms flag [[0x305612]] (ldr [0x181e30]/ldrb @0x181cdc) -> mov r0,#0x34(52) errnum 52 (@0x181cf0); state [[0x181e34]]=0x315C18 status [state+0x4]==0 -> mov r0,#0x24(36) errnum 36 (@0x181d38); argcount [r5,#0x4]: ==0 -> current pos via bl 0x214bec, sub base r6=0x01B20000, 16-bit asr #0x1 (@0x181d48-0x181d64), ==1 -> evaluate position, else mov r0,#0x4 errnum 4 (@0x181d28); loop flag [state+0x0] (ldrb @0x181d98): fixed -> range 0..[state+0xc] else mov r0,#0xa errnum 10 (@0x181e10-0x181e28), loop -> negative errnum 10 (@0x181da8) else wrap bl 0x20c880 (@0x181dbc); read buffer 0x01B20000 by depth [state+0x8] ldrb 8-bit / ldrh 16-bit (@0x181dc8-0x181de0), return via [r5,#0x10] (@0x181df8)" }
+  - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d MICDATA (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bMICDATA\\s*\\('): the documented 1-arg form `MICDATA(pos)` is common (~26 calls). The ZERO-ARG form `MICDATA()` is real and used for live mic level: `AVG=AVG+ABS(MICDATA()/32767)` (QREXZ3Y3/TXT/AMPEXAMPLE), `VAR DAT=ABS(MICDATA())/32767` (QREXZ3Y3/TXT/BLOWEXAMPLE), `VAR C=MICDATA()` (QREXZ3Y3/TXT/AUDVIS) — confirming the handler's argcount-0 branch reads at the current recording position. No 2+-arg form was found." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11c): `V=MICDATA(0)` without a prior XON MIC raises errnum 36 (Mic is not available, errline 1), confirming the status==0 guard. The zero-arg form `V=MICDATA()` ALSO raises errnum 36 (not a syntax error) — proving the 0-argument form is legal and reaches the XON-MIC check, exactly as the handler's argcount-0 branch does. Live waveform values and the in-range/loop-wrap (errnum 10) + wireless errnum-52 paths need real mic hardware (queued)." }
+
+confidence: disassembled
+
+tests:
+  # Both no-XON-MIC cases are hw_verified via the oracle (s_t11c): the 1-arg and the 0-arg
+  # forms each raise errnum 36 (the 0-arg form is a legal call, not a syntax error). Actual
+  # waveform values need real mic hardware (not headless-harvestable).
+  - { name: no_xon_mic, code: "V=MICDATA(0)", expect: { error: { errnum: 36 } } }
+  - { name: no_xon_mic_zero_arg, code: "V=MICDATA()", expect: { error: { errnum: 36 } } }

@@ -1,0 +1,54 @@
+id: MICSAVE
+kind: statement
+category: Various kinds of input
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — whole buffer to array.
+  - args:
+      - { name: array, type: array, desc: "Numeric array to receive the captured samples. A 1-D array auto-extends if it has fewer elements than samples copied." }
+    note: "MICSAVE array — copy the entire sampling buffer into array (position 0, count = whole buffer)."
+  # Form 2 — count + array.
+  - args:
+      - { name: count, type: integer, desc: "Number of samples to capture from position 0." }
+      - { name: array, type: array, desc: "Numeric array to receive the captured samples." }
+    note: "MICSAVE count, array — copy count samples from position 0."
+  # Form 3 — position + count + array.
+  - args:
+      - { name: position, type: integer, range: "0..", desc: "Sample index to start capturing from." }
+      - { name: count, type: integer, desc: "Number of samples to capture." }
+      - { name: array, type: array, desc: "Numeric array to receive the captured samples." }
+    note: "MICSAVE position, count, array — copy count samples starting at position."
+
+summary: "Copies data from the microphone's internal sampling buffer into a numeric array — the bulk counterpart to the per-sample MICDATA. Three overloads choose how much to copy: the whole buffer (just an array), a count from the start (count, array), or a count from a given position (position, count, array). A one-dimensional destination array is automatically extended when it has fewer elements than the number of samples copied. The number of samples requested may not exceed the recorded sample count (rate × seconds from MICSTART), and the position/count must lie within the recorded range, otherwise errnum 10 (Out of range)."
+
+semantics:
+  - "MICSAVE is a statement returning nothing: the handler requires the result count [r4,#0xc]==0 (cmp r0,#0x0 @0x181e50 / bne @0x181e9c -> errnum 4) — using it where a value is expected raises errnum 4 (Illegal function call: mov r0,#0x4 @0x181ea4)."
+  - "If wireless multiplayer communication is active, MICSAVE raises errnum 52 (undocumented; not in the 0..47 table): comms-active flag byte [[0x305612]] (ldr [0x18293c]/ldrb @0x181e5c) nonzero -> mov r0,#0x34(52) errnum 52 (@0x181e70)."
+  - "MICSAVE accepts 1, 2 or 3 arguments (argcount [r4,#0x4] @0x181e78): 1 -> (array) whole buffer from position 0; 2 -> (count, array) count samples from position 0; 3 -> (position, count, array) count samples from position. Any other count raises errnum 4 (mov r0,#0x4 @0x181ea4)."
+  - "The final argument MUST be an array: the handler inspects the destination descriptor's type byte [desc+0x1] (ldrb @0x181ebc / @0x181f14 / @0x181f9c) and raises errnum 8 (Type mismatch: mov r0,#0x8 @0x181ed8 / @0x181f34 / @0x18201c -> bl 0x1fffdc) when a non-array (scalar) is supplied in the array slot. Each leading numeric argument (position/count) is type-converted to an integer; supplying a string where a number is required raises a conversion/type error."
+  - "Position and count are range-checked against the recorded sample count [state+0xc] (mic struct [[0x182944]]=0x315C18): a negative position is clamped/handled (ldrlt [state+0xc] @0x181ff0) and a count beyond the recorded total raises errnum 10 (Out of range: cmp against [state+0xc] / mov r0,#0xa @0x182014 -> bl 0x1fffdc @0x181f38). Because the cap is the recorded count, requesting samples when nothing has been recorded (no MICSTART, count 0) is out of range. The documented rule: 'Any value greater than the product of the sampling rate and the number of seconds specified with MICSTART will give an error.'"
+  - "A one-dimensional destination array shorter than the number of samples copied is automatically extended (documented); the captured samples are written from the buffer at 0x01B20000 honoring the configured bit depth. Actual captured audio requires real microphone input and is not headless-harvestable."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is not 1, 2 or 3, or MICSAVE is used where a return value is expected" }
+  - { errnum: 8, name: "Type mismatch", when: "the destination (last) argument is not an array, or a numeric argument is given a string" }
+  - { errnum: 10, name: "Out of range", when: "the position or sample count falls outside the recorded sample range (rate × seconds from MICSTART)" }
+  - { errnum: 52, name: "Communication error", when: "wireless multiplayer communication is active (undocumented; not in the official error table)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/micsave.md (`MICSAVE [[Acquisition position,] Number of samples to get,] Array name` — 'Copies data from the internal sampling memory to an array'; position 'Position to start capturing from (0-)'; samples 'If omitted, the whole sampling buffer', 'Any value greater than the product of the sampling rate and the number of seconds specified with MICSTART will give an error'; array 'For one-dimensional arrays, if the number of samples exceeds the number of elements, the array will be extended automatically'; example `MICSTART 0,0,1` / `DIM WAVE%[8180]` / `MICSAVE 0,8180,WAVE%`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst MICSAVE handler @0x181e40: resultcount [r4,#0xc]==0 else mov r0,#0x4 errnum 4 (@0x181e50/@0x181ea4); comms flag [[0x305612]] (ldr [0x18293c]/ldrb @0x181e5c) -> mov r0,#0x34(52) errnum 52 (@0x181e70); argcount [r4,#0x4] dispatch ==1 (@0x181e80, array-only)/==2 (@0x181e90, count+array)/==3 (@0x181e98, pos+count+array) else errnum 4 (mov r0,#0x4 @0x181ea4); array-type guard type byte [desc+0x1] nonzero else mov r0,#0x8 errnum 8 (@0x181ebc-0x181ed8 / @0x181f14-0x181f34 / @0x181f9c-0x18201c); range check vs [state+0xc] (mic struct [[0x182944]]=0x315C18) negative clamp ldrlt [state+0xc] (@0x181ff0) / count>total -> mov r0,#0xa errnum 10 (@0x182000-0x182018 -> bl 0x1fffdc @0x181f38); copy from buffer 0x01B20000" }
+  - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d MICSAVE (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bMICSAVE\\b'): the documented 3-arg form `MICSAVE pos,count,array` is common (~29 calls, e.g. `MICSAVE 0,8180,WAVE%`). The 1-arg whole-buffer form is real: `MICSAVE WV%` (D2NQA34J/TXT/SBWAV.EXE, L1NV3344/TXT/SBWAV) and `MICSAVE ARRAY4` (L1NV3344/TXT/EX8TECHDEMO), confirming the handler's argcount-1 branch. Destinations are numeric arrays (`%`/real), no string-array form found." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11c): bare `MICSAVE` (0 args) and `MICSAVE 0,1,2,3` (4 args) both raise errnum 4 (Illegal function call, errline 1), confirming the 1/2/3-arg dispatch; `MICSAVE 0,1,X` (a scalar in the array slot) raises errnum 8 (Type mismatch, errline 1), confirming the array-type guard. Note these errored without a prior XON MIC, so the arg-count and array-type checks run BEFORE any mic-state check (MICSAVE never raised errnum 36). The recorded-range errnum-10 path and the actual copy need real mic hardware (queued)." }
+
+confidence: disassembled
+
+tests:
+  # The arg-count guard (errnum 4, 0/4 args) and the array-type guard (errnum 8) are
+  # hw_verified via the oracle (s_t11c) — and they fire BEFORE any mic-state check, so
+  # MICSAVE never raises errnum 36. Actual captured samples need real mic hardware.
+  - { name: too_few_args, code: "MICSAVE", expect: { error: { errnum: 4 } } }
+  - { name: too_many_args, code: "MICSAVE 0,1,2,3", expect: { error: { errnum: 4 } } }
+  - { name: not_an_array, code: "MICSAVE 0,1,X", expect: { error: { errnum: 8 } } }

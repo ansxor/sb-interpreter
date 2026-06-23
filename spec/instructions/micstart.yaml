@@ -1,0 +1,45 @@
+id: MICSTART
+kind: statement
+category: Various kinds of input
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: rate, type: integer, range: "0..3", desc: "Sampling rate: 0=8180Hz, 1=10910Hz, 2=16360Hz, 3=32730Hz." }
+      - { name: bits, type: integer, range: "0..3", desc: "Sample depth: 0=8 bits, 1=16 bits (documented). The handler range-checks 0..3 and treats the low bit as the depth selector (even=8 bits, odd=16 bits), so 2 behaves like 0 and 3 like 1." }
+      - { name: seconds, type: number, range: "0..max (max depends on rate and bits)", desc: "Recording length in seconds. 0 = loop mode (record forever, overwriting from the start once full). 1.. = fixed length, capped per rate/depth (see semantics)." }
+    note: "MICSTART rate, bits, seconds — exactly 3 arguments, all required; no return value. XON MIC must run first."
+
+summary: "Begins sampling audio from the microphone into the system's internal sampling buffer. The microphone must be enabled with XON MIC beforehand. Three required arguments choose the sampling rate (0..3 -> 8180/10910/16360/32730 Hz), the bit depth (0 = 8-bit, 1 = 16-bit), and the recording length in seconds. A length of 0 selects loop mode, in which recording wraps around and overwrites the buffer from the beginning once the maximum length is reached. The maximum fixed length depends on the rate and depth because the sampling buffer is a fixed size: at 8180 Hz it is 32 s (8-bit) / 16 s (16-bit), and each step up in rate (or up to 16-bit) halves it, down to 8 s (8-bit) / 4 s (16-bit) at 32730 Hz. If sampling is already running, MICSTART stops it first and restarts with the new settings."
+
+semantics:
+  - "MICSTART takes EXACTLY 3 arguments and returns nothing: the handler checks the argument count [r4,#0x4]==3 AND the result count [r4,#0xc]==0 (cmp r0,#0x3 / ldreq r0,[r4,#0xc] / cmpeq r0,#0x0 @0x1829f8-0x182a00); any other count raises errnum 4 (Illegal function call: mov r0,#0x4 @0x182a10 -> bl 0x1fffdc @0x182a34)."
+  - "If wireless multiplayer communication is active, MICSTART raises errnum 52 (undocumented communication error, not in the 0..47 table): the comms-active flag byte [[0x305612]] (ldr r0,[0x182c70] / ldrb @0x182a1c) when nonzero -> mov r0,#0x34(52) errnum 52 (@0x182a30). Mic and wireless share hardware. Not deterministically harvestable."
+  - "The microphone must be enabled with XON MIC first. The mic state struct [[0x182c74]]=0x315C18 holds a status word [state+0x4]: status 0 = not enabled (no XON MIC) -> errnum 36 (Mic is not available: mov r0,#0x24 @0x182a64 -> bl 0x1fffdc); status 2 = already sampling -> stop the running sampler first (bl 0x214c6c @0x182a70) and reset status to 1 (str #0x1 [state+0x4] @0x182a78); status 1 (enabled idle) -> proceed to arg evaluation."
+  - "Argument 1 (rate) is an integer range-checked 0..3: cmp r0,#0x0 / blt and cmp r0,#0x3 / ble (@0x182b60-0x182b70); out of range -> errnum 10 (Out of range: mov r0,#0xa @0x182b7c -> bl 0x1fffdc). The four values select 8180 / 10910 / 16360 / 32730 Hz."
+  - "Argument 2 (bits) is an integer range-checked 0..3 (cmp #0x0 / blt and cmp #0x3 / ble @0x182b90-0x182ba0; else errnum 10 @0x182bac). Documentation lists only 0 (8-bit) and 1 (16-bit); the depth is selected by the low bit (tst r0,#0x1 @0x182bf4 etc.), so an even value samples 8-bit and an odd value 16-bit — real corpus programs do pass bits=3 (e.g. `MICSTART 3,3,1`)."
+  - "Argument 3 (seconds) is evaluated as a Double and converted to an integer count (vcvt.s32.f64 s0,d0 @0x182bc4). It must be >= 0 (cmp r5(0),r0 / ble @0x182bcc; else errnum 10 @0x182bd8). 0 selects loop mode (record continuously, overwriting from the buffer start once the maximum length is reached). A positive length is bounds-checked against a per-rate, per-depth maximum (vcmpe.f64 against rate-specific constants, switching on rate at @0x182bf0-0x182c54 and on the bits low bit): the sampling buffer holds a fixed ~261760 bytes, so the max seconds = 261760 / (rate_hz * bytes_per_sample) — 8180Hz: 32s(8-bit)/16s(16-bit); 10910Hz: 24s/12s; 16360Hz: 16s/8s; 32730Hz: 8s/4s. Exceeding the max raises errnum 10."
+  - "On success the rate/depth/length are recorded into the mic state struct (loop-mode flag [state+0x0], depth [state+0x8], max-sample count [state+0xc] = rate_hz * seconds) and sampling begins (bl 0x181b18 @0x182b50); the handler returns 0. MICSIZE then reports the configured sample count and MICDATA/MICSAVE read from the live buffer at 0x01B20000."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "MICSTART is not called with exactly 3 arguments (or used as a function expecting a return value)" }
+  - { errnum: 10, name: "Out of range", when: "rate is outside 0..3, bits is outside 0..3, or seconds is negative or exceeds the per-rate/depth maximum length" }
+  - { errnum: 36, name: "Mic is not available", when: "the microphone was not enabled with XON MIC first" }
+  - { errnum: 52, name: "Communication error", when: "wireless multiplayer communication is active (undocumented; not in the official error table)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/micstart.md (`MICSTART Sampling rate, Number of bits, Number of seconds`; rate 0:8180Hz/1:10910Hz/2:16360Hz/3:32730Hz; bits 0:8/1:16; seconds 0:Loop mode, 1-: length with per-rate maxima 8180Hz up to 32s@8bit/16s@16bit ... 32730Hz up to 8s@8bit/4s@16bit, 'In loop mode, data will be overwritten from the beginning once the maximum number of seconds has been reached'; 'The microphone should be enabled beforehand with XON MIC'; example `XON MIC` / `MICSTART 0,1,10`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst MICSTART handler @0x1829e8: argcount [r4,#0x4]==3 AND resultcount [r4,#0xc]==0 else mov r0,#0x4 errnum 4 (@0x1829f8-0x182a10 -> bl 0x1fffdc @0x182a34); comms flag [[0x305612]] (ldr [0x182c70]/ldrb @0x182a1c) -> mov r0,#0x34(52) errnum 52 (@0x182a30); state [[0x182c74]]=0x315C18 status [state+0x4]: ==0 -> mov r0,#0x24(36) errnum 36 (@0x182a64), ==2 -> bl 0x214c6c stop + str #0x1 [state+0x4] (@0x182a70-0x182a78); arg1 rate range 0..3 cmp/blt cmp #0x3/ble else mov r0,#0xa errnum 10 (@0x182b60-0x182b7c); arg2 bits range 0..3 (@0x182b90-0x182bac); arg3 seconds vcvt.s32.f64 (@0x182bc4) must be >=0 (cmp r5/ble @0x182bcc) else errnum 10 (@0x182bd8), per-rate max via vcmpe.f64 switching on rate (@0x182bf0-0x182c54) and bits low bit (tst r0,#0x1 @0x182bf4); start bl 0x181b18 (@0x182b50), return 0" }
+  - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d MICSTART (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bMICSTART\\b'): ~45 real programs, ALWAYS the 3-arg form. The third (seconds) arg is often a variable, not a literal: `MICSTART 0,0,C_SPT` / `MICSTART 0,0,SECONDS` (1DVK34J/TXT/HNZVT), confirming computed/variable arguments. Loop mode is real: `MICSTART 0,0,0` (QREXZ3Y3/TXT/RECORDX). bits=3 (an odd value beyond the documented 0/1) is real: `MICSTART 0,3,0`, `MICSTART 2,3,0`, `MICSTART 3,3,1`, proving the handler accepts 0..3 for bits and selects depth by the low bit (e.g. 1DVK34J/TXT/HNZVT). No <3-arg or >3-arg form was found." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11c): `MICSTART 0,0` (2 args) and `MICSTART 0,0,1,0` (4 args) both raise errnum 4 (Illegal function call, errline 1), confirming exactly-3-args; `MICSTART 0,0,1` without a prior XON MIC raises errnum 36 (Mic is not available, errline 1), confirming the status==0 guard. The rate/bits/seconds range (errnum 10) and the wireless errnum-52 path need real hardware / XON MIC state (queued in HARVEST_QUEUE.md)." }
+
+confidence: disassembled
+
+tests:
+  # The arg-count guard (errnum 4, both too-few and too-many) and the no-XON-MIC errnum-36
+  # path are hw_verified via the oracle (s_t11c). The rate/seconds range guards (errnum 10)
+  # are pinned from the handler body; actual recorded audio needs real mic hardware.
+  - { name: too_few_args, code: "MICSTART 0,0", expect: { error: { errnum: 4 } } }
+  - { name: too_many_args, code: "MICSTART 0,0,1,0", expect: { error: { errnum: 4 } } }
+  - { name: no_xon_mic, code: "MICSTART 0,0,1", expect: { error: { errnum: 36 } } }

@@ -425,3 +425,12 @@ oracle to confirm exact output and promote to `hw_verified`.
     too-few-OUT errnum 4 guards are already hw_verified.
   - GYROSYNC recalibration side-effect (and the >1-call-per-frame prohibition): needs motion
     hardware; no observable return. no-XON errnum 37 and the arg-rejection errnum 4 hw_verified.
+  - S-T11c MIC (MICSTART/MICSTOP/MICDATA/MICSAVE): live captured audio is not headless-
+    harvestable (Azahar has no mic-input injection). UNHARVESTED: MICSTART rate/bits/seconds
+    range errors (errnum 10) and the per-rate max-seconds caps; MICDATA fixed-mode position
+    range (errnum 10) + loop-mode wrap + 8-bit/16-bit sample values (128-/32768-basis); MICSAVE
+    recorded-range error (errnum 10) + 1D array auto-extend + the actual copy; MICSTOP stopping
+    a live sampler (status 2). The shared wireless errnum 52 (comms active) needs an active
+    multiplayer session. All the no-XON-MIC (errnum 36), arg-count (errnum 4) and array-type
+    (errnum 8) guards are already hw_verified (s_t11c). The recording algorithm is pinned from
+    the disassembly (buffer 0x01B20000, ~261760-byte cap, state struct 0x315C18).
