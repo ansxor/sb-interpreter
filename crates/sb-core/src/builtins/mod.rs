@@ -31,6 +31,7 @@ pub(crate) mod bg;
 pub(crate) mod console;
 pub(crate) mod data;
 pub(crate) mod graphics;
+pub(crate) mod input;
 mod math;
 pub(crate) mod sprite;
 mod string;
@@ -129,6 +130,14 @@ pub const BUILTIN_NAMES: &[&str] = &[
     // lets programs that use them parse and run without auto-declaring them as variables.
     "WAIT",
     "VSYNC",
+    // Hardware input (M4-T1): BUTTON reads the button bitmask under a feature ID; STICK/
+    // STICKEX read the analog Circle Pad / Circle Pad Pro axes into OUT vars; BREPEAT
+    // configures BUTTON feature-1 key-repeat. They read/mutate the VM-owned `InputState`,
+    // so the VM routes them directly (like the graphics/sprite/BG commands).
+    "BUTTON",
+    "STICK",
+    "STICKEX",
+    "BREPEAT",
     // Graphics — GRP page model + color helpers (M2-T1). The page-state commands mutate
     // the VM-owned `GrpState`, so the VM routes them directly (like the console builtins);
     // they are registered here so the compiler treats them as builtins, not variables.

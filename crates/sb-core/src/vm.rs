@@ -40,6 +40,7 @@
 use crate::array::SbArray;
 use crate::ast::{BinOp, Name, UnOp};
 use crate::bytecode::{Const, Op, Program, VarRef, VarType};
+use crate::input::InputState;
 use crate::sysvars::ErrSysvar;
 use crate::token::Suffix;
 use crate::value::{Cell, ElemRef, RuntimeError, SbStr, Value};
@@ -157,6 +158,11 @@ pub struct Vm {
     /// `BGCLIP`/`BGPAGE`. The compositor (M3-T6) draws the visible layers into the
     /// framebuffer; animation/coord/load-save (M3-T5) extends it.
     bg: BgState,
+    /// The hardware-input snapshot (M4-T1): the per-frame button masks + analog stick axes
+    /// read by `BUTTON`/`STICK`/`STICKEX`, plus the `BREPEAT` key-repeat config. Headless it
+    /// is centred/released; the platform layer (M4-T5) fills it each frame and tests drive a
+    /// scripted timeline via [`InputState::advance_frame`].
+    input: InputState,
     /// The screen background color code (`BACKCOLOR`). The handler round-trips the user's
     /// RGB code, so we store it verbatim; the rendered border color is screen state (M2).
     back_color: i32,
@@ -203,6 +209,7 @@ impl Vm {
             grp: GrpState::new(),
             sprites: SpriteState::new(),
             bg: BgState::new(),
+            input: InputState::new(),
             back_color: 0,
             tabstep: 4,
             input_lines: VecDeque::new(),
@@ -247,6 +254,17 @@ impl Vm {
     /// Borrow the BG system state (the 4-layer tilemap table) for rendering / inspection.
     pub fn bg(&self) -> &BgState {
         &self.bg
+    }
+
+    /// Borrow the hardware-input snapshot (button masks + stick axes) — for inspection.
+    pub fn input(&self) -> &InputState {
+        &self.input
+    }
+
+    /// Mutably borrow the hardware-input snapshot so the platform layer (or a scripted-input
+    /// test) can advance the frame timeline / fill the button + stick state each frame.
+    pub fn input_mut(&mut self) -> &mut InputState {
+        &mut self.input
     }
 
     /// The console contents as text: each grid row trimmed of trailing blanks, rows joined
@@ -782,6 +800,12 @@ impl Vm {
         if self.call_bg(name, &args, out_argc, wants_value)? {
             return Ok(());
         }
+        // Hardware-input builtins (BUTTON/STICK/STICKEX/BREPEAT, M4-T1) read/mutate the
+        // VM-owned `InputState` and can leave OUT results, so they push their own results
+        // and bypass the stateless dispatch.
+        if self.call_input(name, &args, out_argc, wants_value)? {
+            return Ok(());
+        }
         let ret = crate::builtins::dispatch(name, args).map_err(sb)?;
         if wants_value {
             self.stack.push(ret);
@@ -1167,6 +1191,34 @@ impl Vm {
             "BGCOORD" => b::bgcoord(&self.bg, &args, ret_count),
             "BGSAVE" => b::bgsave(&self.bg, &args, ret_count),
             "BGLOAD" => b::bgload(&mut self.bg, &args, ret_count),
+            _ => return Ok(false),
+        };
+        for v in results.map_err(sb)? {
+            self.stack.push(v);
+        }
+        Ok(true)
+    }
+
+    /// Route a hardware-input builtin (M4-T1) over the VM-owned [`InputState`]. Returns
+    /// `Ok(true)` when handled — `BUTTON` pushes its one bitmask result, `STICK`/`STICKEX`
+    /// push two OUT axis Doubles, `BREPEAT` pushes nothing — or `Ok(false)` when `name` is
+    /// not an input builtin. Like the graphics/sprite/BG commands, the function
+    /// (`wants_value`) and `OUT` (`out_argc`) spellings collapse into one `ret_count`.
+    fn call_input(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        out_argc: u8,
+        wants_value: bool,
+    ) -> Result<bool, VmError> {
+        use crate::builtins::input as inp;
+        let ret_count = if wants_value { 1 } else { out_argc as usize };
+        let args: Vec<Value> = args.iter().map(|v| v.deref()).collect();
+        let results = match name {
+            "BUTTON" => inp::button(&self.input, &args, ret_count),
+            "STICK" => inp::stick(&self.input, &args, ret_count),
+            "STICKEX" => inp::stickex(&self.input, &args, ret_count),
+            "BREPEAT" => inp::brepeat(&mut self.input, &args, ret_count),
             _ => return Ok(false),
         };
         for v in results.map_err(sb)? {
@@ -3189,5 +3241,91 @@ H$=HEX$(255)"#);
             "BGSCREEN 0,8,8\nBGSCREEN 1,8,8\nBGPUT 0,1,1,&H1234\nDIM A[64]\nBGSAVE 0,A\nBGLOAD 1,A\nPRINT BGGET(1,1,1)",
         );
         assert_eq!(vm.console_text(), "4660"); // &H1234
+    }
+
+    // ---- hardware input (BUTTON/STICK/STICKEX/BREPEAT, M4-T1) ----
+
+    /// Compile (with the builtin registry), let `setup` fill the input snapshot, then run.
+    fn run_b_input(src: &str, setup: impl FnOnce(&mut crate::input::InputState)) -> Vm {
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        let ast = parse(src).expect("parse");
+        let program = compile_with(&ast, &StdBuiltins).expect("compile");
+        let mut vm = Vm::new(program);
+        setup(vm.input_mut());
+        vm.run().expect("run");
+        vm
+    }
+
+    #[test]
+    fn button_reads_held_mask_through_vm() {
+        // Hold A (16) + RIGHT (8); BUTTON() reports the combined mask.
+        let vm = run_b_input("PRINT BUTTON()", |i| {
+            i.advance_frame(16 | 8, (0.0, 0.0), (0.0, 0.0));
+        });
+        assert_eq!(vm.console_text(), "24");
+    }
+
+    #[test]
+    fn button_feature_edges_through_vm() {
+        // After a press-then-hold, feature 2 (raw pressed) clears but feature 0 (held) stays.
+        let vm = run_b_input("PRINT BUTTON(0);\",\";BUTTON(2)", |i| {
+            i.advance_frame(16, (0.0, 0.0), (0.0, 0.0)); // press A
+            i.advance_frame(16, (0.0, 0.0), (0.0, 0.0)); // hold A
+        });
+        assert_eq!(vm.console_text(), "16,0");
+    }
+
+    #[test]
+    fn button_statement_use_is_errnum_4() {
+        // BUTTON requires exactly one result; as a bare statement it raises errnum 4.
+        assert!(matches!(run_b_err("BUTTON"), VmError::Sb { errnum: 4, .. }));
+    }
+
+    #[test]
+    fn stick_writes_axes_through_vm() {
+        let vm = run_b_input("STICK OUT X,Y\nPRINT X;\",\";Y", |i| {
+            i.advance_frame(0, (0.5, -0.25), (0.0, 0.0));
+        });
+        assert_eq!(vm.console_text(), "0.5,-0.25");
+    }
+
+    #[test]
+    fn stickex_reads_right_stick_through_vm() {
+        let vm = run_b_input("STICKEX OUT X,Y\nPRINT X;\",\";Y", |i| {
+            i.advance_frame(0, (0.0, 0.0), (-1.0, 1.0));
+        });
+        assert_eq!(vm.console_text(), "-1,1");
+    }
+
+    #[test]
+    fn brepeat_then_button_feature1_refires() {
+        // BREPEAT runs in-program (configuring repeat); a later same-VM frame timeline drives
+        // the re-fire. Here we just confirm BREPEAT commits without error and BUTTON reads.
+        let vm = run_b_input("BREPEAT 4,1,2\nPRINT BUTTON(1)", |i| {
+            i.advance_frame(16, (0.0, 0.0), (0.0, 0.0)); // press A -> feature 1 fires
+        });
+        assert_eq!(vm.console_text(), "16");
+    }
+
+    #[test]
+    fn brepeat_reserved_id_is_errnum_4() {
+        assert!(matches!(
+            run_b_err("BREPEAT 10,15,4"),
+            VmError::Sb { errnum: 4, .. }
+        ));
+        assert!(matches!(
+            run_b_err("BREPEAT 13,15,4"),
+            VmError::Sb { errnum: 4, .. }
+        ));
+    }
+
+    #[test]
+    fn button_wireless_terminal_is_comms_error() {
+        // The 2-arg terminal form hits the wireless path; with no multiplayer it raises 52.
+        assert!(matches!(
+            run_b_err("A=BUTTON(0,1)"),
+            VmError::Sb { errnum: 52, .. }
+        ));
     }
 }

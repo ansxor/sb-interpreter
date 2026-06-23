@@ -196,6 +196,17 @@ const IN_SCOPE_BG: &[&str] = &[
     "BGCOLOR", "BGSHOW", "BGHIDE", "BGHOME", "BGCLIP", "BGANIM", "BGSTART", "BGSTOP", "BGCHK",
     "BGVAR", "BGFUNC", "BGCOPY", "BGCOORD", "BGLOAD", "BGSAVE",
 ];
+/// `Various kinds of input` instructions whose builtins `sb-core` implements (M4-T1: the
+/// hardware-input snapshot) and whose inline `tests:` are deterministic + checkable: `BUTTON`
+/// (the four feature masks — the no-input baseline 0 hw_verified; the feature-ID 0..3 range
+/// guard → errnum 10 hw_verified; live button magnitudes need input injection, queued),
+/// `STICK`/`STICKEX` (the centred (0,0) baseline + the exactly-2-OUT-var guard → errnum 4
+/// hw_verified; live axis magnitudes need hardware, queued), and `BREPEAT` (the 1-or-3 arg
+/// gate, the 10/13 reserved-ID → errnum 4 and the ≥14 / negative-start → errnum 10 guards,
+/// all hw_verified; the repeat *timing* surfaces only through `BUTTON` feature 1 under live
+/// input, exercised by the `input.rs` scripted-timeline unit tests, not the inline cases).
+/// Listed by id.
+const IN_SCOPE_INPUT: &[&str] = &["BUTTON", "STICK", "STICKEX", "BREPEAT"];
 /// Specs `sb-core` implements only **partially** in M1: each is in scope, but the named
 /// cases listed here are EXCLUDED because they block on a later milestone or the
 /// console-text oracle. Everything else in the spec — the deterministic, hw_verified
@@ -364,6 +375,7 @@ fn spec_in_scope(id: &str, category: Option<&str>) -> bool {
         || IN_SCOPE_SCREEN.contains(&id)
         || IN_SCOPE_SPRITES.contains(&id)
         || IN_SCOPE_BG.contains(&id)
+        || IN_SCOPE_INPUT.contains(&id)
         || IN_SCOPE_PARTIAL.iter().any(|(pid, _)| *pid == id)
 }
 

@@ -184,7 +184,7 @@ and name the instructions they cover inline.
 - [x] M3-T6 Composite + golden diffs → M3-T2, M3-T3, M3-T5, O-T6
 
 ## M4 — Input & timing  (gated on S-T11)
-- [ ] M4-T1 Buttons/sticks → S-T11
+- [x] M4-T1 Buttons/sticks → S-T11
 - [ ] M4-T2 Touch/keyboard → S-T11
 - [ ] M4-T3 Frame timing (VSYNC/WAIT/MAINCNT) → S-T4
 - [ ] M4-T4 Display config → S-T11

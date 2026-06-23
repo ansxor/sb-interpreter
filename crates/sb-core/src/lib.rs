@@ -18,6 +18,7 @@ pub mod builtins;
 pub mod bytecode;
 pub mod compiler;
 pub mod consts;
+pub mod input;
 pub mod lexer;
 pub mod parser;
 pub mod rng;

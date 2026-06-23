@@ -1094,3 +1094,20 @@ GRP round-trip) before they can be raised above `hypothesis`:
   NOT applied; tiles sample the sheet's RGBA directly. Needs the palette→color mapping.
 - **BG sheet tile layout + scroll sign** — char N → sheet tile `(N%(512/tile), N/(512/tile))`
   and `BGOFS` scroll direction (map = screen + ofs) are assumptions; confirm against a capture.
+
+## M4-T1 — Buttons / sticks (BUTTON/STICK/STICKEX/BREPEAT) — live input not headless-harvestable
+The oracle has NO input injection (Azahar lacks InputRedirection), so live button magnitudes,
+analog axis values, and key-repeat timing cannot be captured deterministically. Modeled to the
+disassembled handlers + docs; the no-input/centred baseline + arg/result-count + range error
+guards are hw_verified (s_t11a, already in the specs). Queued for a future input-capable oracle
+(or hardware capture):
+- **BREPEAT default repeat state** — whether SB pre-seeds a non-zero start/interval per button
+  at boot. Modeled OFF (feature 1 == feature 2 until BREPEAT sets it). Confirm the default.
+- **Key-repeat timing rule** — re-fire modeled as: press fires (raw edge), then after `start`
+  frames held the press re-fires, then every `interval` frames. The exact off-by-one (does the
+  first repeat land at hold==start or hold==start+1; is the press frame counted) is unverified.
+- **STICK/STICKEX axis scale** — raw 16-bit axis × fixed constant, clamped to ±1.0 (docs say
+  real extent ≈ ±0.86). The exact scale constant + the centred dead-zone are unpinned.
+- **BUTTON wireless terminal form (errnum 52)** — the 2-arg `BUTTON(f,term)` / `STICK term`
+  paths raise the undocumented comms error 52 when multiplayer is inactive; gated on live
+  wireless, so kept out of the deterministic golden.
