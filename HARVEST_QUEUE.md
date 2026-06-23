@@ -10,6 +10,13 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] M1-T14 (ENDIF leading-comment quirk) · A LEADING stray `ENDIF` raises errnum 28, but
+  `REM X` + newline + `ENDIF` raises NO error at all (sb-oracle 2026-06-23) — a leading comment
+  line suppresses the stray-ENDIF check. sb-core does NOT model this (it raises 28 for `REM
+  X\nENDIF` because REM lexes to a bare Newline, so the ENDIF is still the first statement). ·
+  Find the exact rule (is it any leading newline, or specifically a comment?). Probe: `\nENDIF`
+  (blank first line), `:ENDIF`, `'X\nENDIF`. Most IF-block mismatches → 3, leading ENDIF → 28
+  all hw_verified 2026-06-23 (if/endif/else.yaml + structural_errnums.yaml).
 - [ ] M1-T14 / S-T14c (undefined `#const`) · What does real SB 3.6.0 do with an UNDEFINED
   `#NAME` (one not among the 79 built-ins) — e.g. `PRINT #NOTACONST` / `DATA #FOO`? Syntax
   error 3 at parse, an undefined-variable error, or silently 0? · assumption: the 79 known

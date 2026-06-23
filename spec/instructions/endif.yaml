@@ -17,16 +17,23 @@ semantics:
   - "See [[if]] for full conditional semantics."
 
 errors:
-  - { errnum: 3, name: SyntaxError, when: "ENDIF has no matching multi-line IF, or a multi-line IF block is missing its ENDIF" }
+  - { errnum: 28, name: "ENDIF without IF", when: "a stray ENDIF that is the program's FIRST statement (no IF block to close). Real SB 3.6.0 surfaces 28 only in this leading position; a stray ENDIF after any other statement collapses to generic Syntax error 3." }
+  - { errnum: 3, name: SyntaxError, when: "a stray ENDIF that is NOT the program's first statement (e.g. `PRINT 1` then ENDIF, or a second ENDIF after a closed block); also a multi-line IF block missing its ENDIF (raised at the IF — see [[if]])." }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/endif.md (ends multi-line IF processing)" }
   - { type: disassembled, ref: "cia_3.6.0.lst ENDIF is a parser keyword (token @0x2ed5c8), not in the builtin dispatch table; handled by the IF compiler" }
+  - { type: disassembled, ref: "cia_3.6.0.lst errnum→string table @0x3054f8 (`ldrcc r0,[0x1e9584]`→0x3054f8, `ldrcc r9,[r0,r5,lsl #0x2]` indexes table[errnum]; see errors.yaml) entry 28 = 'ENDIF without IF'." }
+  - { type: hw_verified, ref: "sb-oracle structural-error |err probe 2026-06-23: a LEADING stray ENDIF raises 28 — `ENDIF` / `ENDIF<nl>PRINT 1` / `ENDIF:PRINT 1` / `ENDIF<nl>ENDIF` all → errnum 28 errline 1. A NON-leading stray ENDIF is generic Syntax error 3 — `PRINT 1<nl>ENDIF` / `A=1<nl>ENDIF` / `IF 1 THEN<nl>ENDIF<nl>ENDIF` all → 3. (Quirk: `REM X<nl>ENDIF` → no error — a leading comment line suppresses the check; not modeled, queued.)" }
   - { type: community, ref: "sbsave corpus: single-line IF...THEN...ENDIF attested in 86 programs (e.g. 1DVK34J/TXT/HNZBUS; 'IF BUTTON(0) AND #B THEN SPEED=2 ELSE SPEED=1 ENDIF'), contradicting the prior 'single-line form does not use ENDIF' claim. single_line_endif test below queued for oracle." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
   - { name: closes_block, code: "IF 1 THEN\nPRINT \"IN\"\nENDIF\nPRINT \"OUT\"", expect: { stdout: "IN\nOUT" } }
   - { name: skipped_block_rejoins, code: "IF 0 THEN\nPRINT \"IN\"\nENDIF\nPRINT \"OUT\"", expect: { stdout: "OUT" } }
   - { name: single_line_endif, code: 'IF 1 THEN PRINT "A" ENDIF', expect: { stdout: "A" } } # corpus-attested; oracle-pending
+  - { name: stray_endif_leading,    code: 'ENDIF',                  expect: { error: { errnum: 28 } } } # leading stray ENDIF → 28 (hw_verified 2026-06-23)
+  - { name: stray_endif_then_stmt,  code: "ENDIF\nPRINT 1",        expect: { error: { errnum: 28 } } } # still leading → 28
+  - { name: stray_endif_after_stmt, code: "PRINT 1\nENDIF",        expect: { error: { errnum: 3 } } }  # non-leading → 3 (hw_verified 2026-06-23)
+  - { name: stray_endif_after_block, code: "IF 1 THEN\nENDIF\nENDIF", expect: { error: { errnum: 3 } } } # second ENDIF non-leading → 3

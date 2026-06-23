@@ -16,15 +16,17 @@ semantics:
   - "See [[if]] for full conditional semantics and truthiness."
 
 errors:
-  - { errnum: 3, name: SyntaxError, when: "ELSE appears outside a well-formed IF construct" }
+  - { errnum: 3, name: SyntaxError, when: "ELSE appears outside a well-formed IF construct, or a multi-line IF block with this ELSE clause is missing its ENDIF. The error table reserves 27 'ELSE without ENDIF', but real SB 3.6.0 does NOT surface it — it raises generic Syntax error 3 (hw_verified 2026-06-23, see [[if]])." }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/else.md (control destination when the IF condition is not satisfied)" }
   - { type: disassembled, ref: "cia_3.6.0.lst ELSE is a parser keyword, not in the builtin dispatch table; handled by the IF compiler (keyword table region @0x2ed5c8..0x2ed678)" }
   - { type: hw_verified, ref: "sb-oracle branch-selection probe 2026-06-22: the ELSE process runs when the condition is false (IF 0 THEN A=1 ELSE A=ASC(\"\") -> errnum 4) and is skipped when true (IF 1 THEN A=1 ELSE A=ASC(\"\") -> no error). See [[if]]." }
+  - { type: hw_verified, ref: "sb-oracle structural-error |err probe 2026-06-23: a stray `ELSE` (no IF) → errnum 3 (NOT the reserved 27); a multi-line IF whose ELSE clause has no ENDIF → 3." }
 
 confidence: hw_verified
 
 tests:
   - { name: else_runs_when_false, code: 'IF 0 THEN PRINT "T" ELSE PRINT "F"', expect: { stdout: "F" } }
   - { name: else_skipped_when_true, code: 'IF 1 THEN PRINT "T" ELSE PRINT "F"', expect: { stdout: "T" } }
+  - { name: stray_else,           code: 'ELSE',                            expect: { error: { errnum: 3 } } } # stray ELSE → 3, NOT 27 (hw_verified 2026-06-23)

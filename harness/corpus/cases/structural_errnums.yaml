@@ -17,3 +17,16 @@ cases:
   - { name: while_without_wend,  code: "WHILE 1\nPRINT 1",  expect: { error: { errnum: 24 } } }
   - { name: repeat_without_until, code: "REPEAT\nPRINT 1",  expect: { error: { errnum: 22 } } }
   - { name: def_without_end,     code: "DEF F\nA=1",        expect: { error: { errnum: 29 } } }
+  # IF-block family — hw_verified via the sb-oracle structural-error |err probe 2026-06-23.
+  # The error table reserves 26 'THEN without ENDIF' / 27 'ELSE without ENDIF' / 28 'ENDIF
+  # without IF', but real SB 3.6.0 surfaces 28 ONLY for a LEADING stray ENDIF (the program's
+  # first statement) and collapses every other IF-block mismatch — unterminated multi-line IF,
+  # dangling ELSE, non-leading stray ENDIF, stray ELSE — to generic Syntax error 3. (Quirk not
+  # modeled: `REM X<nl>ENDIF` → no error; queued in HARVEST_QUEUE.md.)
+  - { name: endif_leading,       code: "ENDIF",             expect: { error: { errnum: 28 } } } # leading stray → 28
+  - { name: endif_leading_then_stmt, code: "ENDIF\nPRINT 1", expect: { error: { errnum: 28 } } }
+  - { name: endif_after_stmt,    code: "PRINT 1\nENDIF",    expect: { error: { errnum: 3 } } }  # non-leading → 3
+  - { name: endif_after_closed,  code: "IF 1 THEN\nENDIF\nENDIF", expect: { error: { errnum: 3 } } } # second ENDIF → 3
+  - { name: if_no_endif,         code: "IF 1 THEN\nPRINT 1", expect: { error: { errnum: 3 } } } # unterminated → 3
+  - { name: else_no_endif,       code: "IF 1 THEN\nA=1\nELSE\nB=2", expect: { error: { errnum: 3 } } } # dangling ELSE → 3
+  - { name: stray_else,          code: "ELSE",              expect: { error: { errnum: 3 } } } # stray ELSE → 3

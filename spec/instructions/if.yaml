@@ -24,11 +24,13 @@ semantics:
   - "Logical operators AND/&&, OR/|| combine conditions; comparison operators are == != > < >= <=."
 
 errors:
-  - { errnum: 3, name: SyntaxError, when: "the IF construct is malformed (e.g. ENDIF missing for a multi-line block, or a label string used where a bare label is required)" }
+  - { errnum: 3, name: SyntaxError, when: "the IF construct is malformed — including a multi-line IF block (newline after THEN) with no matching ENDIF (with or without an ELSE clause), a label string used where a bare label is required, or THEN/GOTO missing after the condition. NOTE: although the error table reserves 26 'THEN without ENDIF' / 27 'ELSE without ENDIF', real SB 3.6.0 does NOT surface them for an unterminated IF — it raises generic Syntax error 3 (hw_verified)." }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/if.md (forms: 2 — THEN/ELSE/ENDIF and GOTO @label; truthiness, comparison/logical operators)" }
   - { type: disassembled, ref: "cia_3.6.0.lst IF/THEN/ELSE/ELSEIF/ENDIF are parser keywords (not in builtin dispatch table); keyword tokens in the compiler keyword table @0x2ed5c8 (ENDIF) / 0x2ed5f8 (ELSEIF) / 0x2ed678 (THEN); branch selection is compiled to conditional jumps, condition truthiness = nonzero" }
+  - { type: disassembled, ref: "cia_3.6.0.lst errnum→string table @0x3054f8 (`ldrcc r0,[0x1e9584]`→0x3054f8, `ldrcc r9,[r0,r5,lsl #0x2]` indexes table[errnum], out-of-range `adrcs r9,0x1e9588`; see errors.yaml) reserves block-structure errnums 26 'THEN without ENDIF' / 27 'ELSE without ENDIF' / 28 'ENDIF without IF'. Unlike the FOR/WHILE/REPEAT family (20-25), the IF parser does NOT emit 26/27 — see the hw_verified note below." }
+  - { type: hw_verified, ref: "sb-oracle structural-error |err probe 2026-06-23: an unterminated multi-line IF raises generic Syntax error 3, NOT the table's 26/27 — `IF 1 THEN<nl>PRINT 1` → errnum 3, `IF 1 THEN<nl>A=1<nl>ELSE<nl>B=2` → errnum 3 (both errline 1). Only a LEADING stray ENDIF surfaces a dedicated errnum (28; see [[endif]])." }
   - { type: hw_verified, ref: "sb-oracle branch-selection probe 2026-06-22 (error-as-signal: 'IF cond THEN A=ASC(\"\")' raises errnum 4 iff the THEN branch executes): IF 1 / IF -1 / IF 0.5 / IF 2>1 take THEN (errnum 4); IF 0 / IF 0.0 / IF 1>2 skip it (no error). ELSE runs only when the condition is false; ELSEIF runs only when earlier conditions were false and its own is true. Single-line THEN/ELSE/ELSEIF confirmed. Multi-line/ENDIF and GOTO-omission queued." }
   - { type: community, ref: "sbsave corpus: single-line 'IF cond THEN stmt [ELSE stmt] ENDIF' attested in 86 programs (e.g. 1DVK34J/TXT/HNZBUS) — the on-one-line ENDIF-terminated form. Queued for oracle." }
 
@@ -42,3 +44,5 @@ tests:
   - { name: negative_true, code: 'IF -1 THEN PRINT "T" ELSE PRINT "F"', expect: { stdout: "T" } }
   - { name: comparison,  code: 'IF 2>1 THEN PRINT "T" ELSE PRINT "F"', expect: { stdout: "T" } }
   - { name: multiline,   code: "IF 1 THEN\nPRINT \"A\"\nELSE\nPRINT \"B\"\nENDIF", expect: { stdout: "A" } }
+  - { name: multiline_no_endif,      code: "IF 1 THEN\nPRINT \"A\"",            expect: { error: { errnum: 3 } } } # unterminated multi-line IF → 3, NOT 26 (hw_verified 2026-06-23)
+  - { name: multiline_else_no_endif, code: "IF 1 THEN\nA=1\nELSE\nB=2",         expect: { error: { errnum: 3 } } } # dangling ELSE, no ENDIF → 3, NOT 27 (hw_verified 2026-06-23)
