@@ -223,6 +223,11 @@ oracle to confirm exact output and promote to `hw_verified`.
   1024.0 precisely (only Z=2000 -> errnum 10 is hw_verified so far). · assumption (disasm
   @0x14bce0 float constants 0xC3800000 = -256.0, 0x44800000 = 1024.0, inclusive): out raises
   errnum 10.
+- [ ] S-T5a LOCATE column-50 print behavior · `LOCATE 50,0` sets the cursor to the off-screen
+  right edge (X=50 is accepted, 0..49 is displayable). What does `PRINT "X"` do there — wrap
+  to column 0 of the next row, drop the character, or something else? sb-core currently wraps
+  and the scrape becomes "\nX". · assumption: wraps like any past-right-edge cursor (osb behavior);
+  needs console-grid/screenshot oracle to confirm.
 - [ ] S-T5b INPUT/LINPUT array-element receivers · Confirm `INPUT "...";WORD$[0]` and
   `LINPUT NAMES$[0]` runtime-assign into array elements (syntax proven by corpus:
   D5243E8E/TXT/TXTDEMO:41, E3S34XGX/TXT/BATTLESHIP:84). · assumption (disasm @0x14b534 lvalue

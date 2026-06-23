@@ -126,19 +126,16 @@ const IN_SCOPE_SCREEN: &[&str] = &["ACLS", "BACKCOLOR"];
 /// cases listed here are EXCLUDED because they block on a later milestone or the
 /// console-text oracle. Everything else in the spec — the deterministic, hw_verified
 /// arg-count / range / out-of-bounds error guards — replays green today (M1-T14 increment
-/// 2026-06-23). `LOCATE`: its two *positioned-output* cases (`basic_xy`, `x_edge_50_ok`)
-/// scrape to leading-whitespace / newline-prefixed text the value-oracle never captured —
-/// oracle-pending (S-T5a, `HARVEST_QUEUE.md`); its range (51,0 / 0,30 / 0,0,2000 → 10) and
-/// arg-shape (single-arg / as-function → 4) cases fold in now. `GSPOIT`: its three
-/// `GPSET`-then-read round-trip cases need the drawing primitives (`GPSET`, M2-T2); its
-/// OOB-returns-0 and arg-count → 4 cases fold in now. `CHKCHR`: its one `read_printed_char`
-/// case prints a setup glyph (`PRINT "A";`) that stays on the grid, so the scraped
-/// `console_text()` is `"A65"` not the value-oracle's `"65"` — excluded here, covered by
-/// `cases/chkchr.yaml`'s CLS-cleaned round-trip; its empty-cell/OOB/arg-count cases fold in
-/// now. Tuples are `(spec id, &[excluded case names])`.
+/// 2026-06-23). `LOCATE`: `basic_xy` now folds in with a `console_text()`-aware expect
+/// (15 leading empty rows + the positioned X); `x_edge_50_ok` stays excluded because
+/// column-50 is the off-screen right edge and the wrap/no-display behavior is
+/// oracle-pending (S-T5a, `HARVEST_QUEUE.md`). `GSPOIT`: its three `GPSET`-then-read
+/// round-trip cases need the drawing primitives (`GPSET`, M2-T2); its OOB-returns-0 and
+/// arg-count → 4 cases fold in now. `CHKCHR`: `read_printed_char` now folds in with the
+/// harness scrape `"A65"` (the setup glyph stays on the grid); its empty-cell/OOB/arg-count
+/// cases fold in now. Tuples are `(spec id, &[excluded case names])`.
 const IN_SCOPE_PARTIAL: &[(&str, &[&str])] = &[
-    ("LOCATE", &["basic_xy", "x_edge_50_ok"]),
-    ("CHKCHR", &["read_printed_char"]),
+    ("LOCATE", &["x_edge_50_ok"]),
     (
         "GSPOIT",
         &[

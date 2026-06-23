@@ -33,7 +33,9 @@ confidence: hw_verified
 
 tests:
   # value/out-of-bounds/error expects are hw_verified (sb-oracle 2026-06-22).
-  - { name: read_printed_char, code: 'LOCATE 0,0:PRINT "A";:C=CHKCHR(0,0):PRINT C', expect: { stdout: "65" } }
+  # `read_printed_char` stdout is the harness's `console_text()` scrape: the setup "A" stays
+  # on the grid, then `PRINT C` appends "65". The underlying CHKCHR value (65) is verified.
+  - { name: read_printed_char, code: 'LOCATE 0,0:PRINT "A";:C=CHKCHR(0,0):PRINT C', expect: { stdout: "A65" } }
   - { name: empty_cell_zero, code: 'ACLS:C=CHKCHR(10,10):PRINT C', expect: { stdout: "0" } }
   - { name: out_of_bounds_zero, code: 'C=CHKCHR(-1,0):PRINT C', expect: { stdout: "0" } }
   - { name: y_out_of_bounds_zero, code: 'C=CHKCHR(0,100):PRINT C', expect: { stdout: "0" } }

@@ -35,7 +35,9 @@ confidence: hw_verified
 
 tests:
   # bounds + error expects are hw_verified (sb-oracle 2026-06-22). NOTE: X max is 50, not 49.
-  - { name: basic_xy, code: 'LOCATE 20,15:PRINT "X"', expect: { stdout: "X" } }
+  # `basic_xy` stdout is the harness's `console_text()` scrape (value oracle captured the
+  # PRINTed value, not grid position): 15 empty rows, then an X at column 20 of row 15.
+  - { name: basic_xy, code: 'LOCATE 20,15:PRINT "X"', expect: { stdout: "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n                    X" } }
   - { name: x_edge_50_ok, code: 'LOCATE 50,0:PRINT "X"', expect: { stdout: "X" } }
   - { name: x_out_of_range, code: "LOCATE 51,0", expect: { error: { errnum: 10 } } }
   - { name: y_out_of_range, code: "LOCATE 0,30", expect: { error: { errnum: 10 } } }
