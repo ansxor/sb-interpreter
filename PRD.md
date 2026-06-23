@@ -100,7 +100,7 @@ and name the instructions they cover inline.
 - [x] S-T10a BGM playback — BGMPLAY · BGMSTOP · BGMCHK · BGMVOL · BGMVAR
 - [x] S-T10b BGM setup — BGMSET · BGMSETD · BGMCLEAR · BEEP
 - [x] S-T10c Effects — EFCON · EFCOFF · EFCSET · EFCWET
-- [ ] S-T10d Voice & wave — TALK · TALKCHK · TALKSTOP · WAVSET · WAVSETA
+- [x] S-T10d Voice & wave — TALK · TALKCHK · TALKSTOP · WAVSET · WAVSETA
 
 #### S-T11 Various input + Screen control (20) → S-T0
 - [ ] S-T11a Buttons & sticks — BUTTON · BREPEAT · STICK · STICKEX

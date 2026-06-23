@@ -1,0 +1,35 @@
+id: TALKSTOP
+kind: statement
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    note: "TALKSTOP — stop the synthesized speech that is currently playing (no args)."
+
+summary: "Stops the synthesized speech currently playing (started by TALK). Takes no arguments and returns nothing (statement). If no speech is playing it has no effect."
+
+semantics:
+  - "Call-shape gate (@0x1a39d4): the argument count [r0,#0x4] must be 0 and the result count [r0,#0xc] must be 0 — TALKSTOP takes no operands and is a statement (ldr r1,[r0,#0x4] / cmp r1,#0x0 / ldreq r0,[r0,#0xc] / cmpeq r0,#0x0 / beq @0x1a3a00). Any argument, or use in a result/function context, raises errnum 4 (Illegal function call) with errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / b 0x1fffdc @0x1a39ec-0x1a39fc)."
+  - "Stop action (@0x1a3a00): the handler loads the speech state [0x1a3a10]=0x01D0C984 and calls the stop routine (bl 0x28a81c), then returns 0 (mov r0,#0x0 @0x1a3a08). Stopping when nothing is playing is a no-op."
+  - "TALKSTOP halts the asynchronous utterance started by [[talk]]; after it [[talkchk]] reports FALSE (0). The audio transition has no deterministic emulator golden (O-T7) — the call shape (no args, statement) and the stop semantics are pinned here."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "TALKSTOP is given any argument, or used in a result/function context" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/talkstop.md (`TALKSTOP` — 'Stops the synthesized speech currently playing'; example `TALKSTOP`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst TALKSTOP handler @0x1a39d4: argcount [r0,#0x4] cmp #0x0 / rescount [r0,#0xc] cmpeq #0x0 / beq @0x1a3a00, else errnum 4 errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / b 0x1fffdc @0x1a39ec-0x1a39fc); stop ldr r0,[0x1a3a10]=0x01D0C984 / bl 0x28a81c / mov r0,#0x0 @0x1a3a00-0x1a3a08" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d TALK stop (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bTALKSTOP\\b'): always a bare statement, never with args or parens; commonly colon-chained, e.g. `BGMSTOP:TALKSTOP` (1DVK34J/TXT/HNZVT). Confirms the no-arg statement form is the only legal shape; audio transition unproven (no oracle, O-T7)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar): error condition confirmed — `TALKSTOP 1` (an argument) raises errnum 4 (Illegal function call), errline 1. The bare no-arg statement runs without error (no-op when nothing is playing); the audio transition is not deterministically harvestable (O-T7)." }
+
+confidence: disassembled
+
+tests:
+  # No-arg statement contract from the handler body. Audio transition is not deterministically
+  # harvestable (O-T7); this pins the call shape (no-op when nothing is playing).
+  - { name: stop_basic, code: "TALKSTOP", expect: { stdout: "" } }
+  - { name: stop_when_idle, code: "TALKSTOP:TALKSTOP", expect: { stdout: "" } }
+  # hw_verified (sb-oracle): TALKSTOP given an argument raises errnum 4.
+  - { name: with_arg_errors, code: "TALKSTOP 1", expect: { error: { errnum: 4 } } }

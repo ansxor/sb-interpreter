@@ -1,0 +1,56 @@
+id: WAVSETA
+kind: statement
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: defnum, type: integer, range: "224..255", desc: "User-defined instrument number (selected later with the MML @ command)." }
+      - { name: attack, type: integer, range: "0..127", desc: "Envelope attack (A)." }
+      - { name: decay, type: integer, range: "0..127", desc: "Envelope decay (D)." }
+      - { name: sustain, type: integer, range: "0..127", desc: "Envelope sustain (S)." }
+      - { name: release, type: integer, range: "0..127", desc: "Envelope release (R)." }
+      - { name: array, type: array, desc: "Numeric array of sample values (e.g. from MICSAVE), up to 16384 samples, 8180 Hz / 8-bit fixed." }
+      - { name: ref_pitch, type: integer, range: "0..127", optional: true, default: 69, desc: "Reference pitch (MIDI note); 69 = O4A. If omitted, 69." }
+      - { name: start_idx, type: integer, optional: true, default: 0, desc: "Subscript of the first array element to read. If omitted, 0. Range 0..(last index)." }
+      - { name: end_idx, type: integer, optional: true, desc: "Subscript of the last array element to read. If omitted, the last element. Range 0..(last index); must be >= start_idx." }
+    note: "WAVSETA defnum, A, D, S, R, array [, ref_pitch] [, start_idx] [, end_idx] — define a user instrument from a numeric sample array (6-9 args)."
+
+summary: "Defines the waveform of an MML user-defined instrument from a numeric sample array (such as one captured with MICSAVE), at a fixed 8180 Hz / 8-bit sampling. The instrument number (224-255) is later selected in MML with the @ command. A,D,S,R are the envelope parameters (each 0-127). An optional reference pitch (0-127, default 69 = O4A), start subscript (default 0) and end subscript (default the last element) select the pitch and the slice of the array to use (up to 16384 samples). Returns nothing (statement)."
+
+semantics:
+  - "Call-shape gate (@0x1a2f94): the argument count [r0,#0x4] must be 6, 7, 8 or 9 (sub r0,r6,#0x6 / cmp r0,#0x4 / bcs @0x1a3108 -> errnum 4) and the result count [r5,#0xc] must be 0 (cmp r0,#0x0 / bne @0x1a3108 -> errnum 4 Illegal function call, errline -1: mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 @0x1a3108-0x1a3114). The optional args are, in order, reference pitch (7th), start subscript (8th) and end subscript (9th)."
+  - "defnum (arg 0) is range-checked 224..255 through the shared integer-arg helper FUN_001eec7c (str #0xff(255)=max / mov r3,#0xe0(224)=min / bl 0x1eec7c @0x1a2fbc-0x1a2fd4); out of range raises errnum 10 (Out of range)."
+  - "Envelope A,D,S,R (args 1-4) are evaluated in a 4-iteration loop (cmp r4,#0x4 / blt @0x1a2fec); each value is unsigned-compared against 128 (cmp r0,#0x80 / bcc ok @0x1a3118) and a value >= 128 (including any negative integer read unsigned) raises errnum 10 (mov r0,#0xa @0x1a3124). So each of A,D,S,R must be 0..127."
+  - "The sample source (arg 5) must be a numeric array: the handler reads the operand's array tag (ldr [r0,#0x50] / ldrb [r1,#0x1] / cmp #0x0 / beq @0x1a3140) and raises errnum 8 (Type mismatch) if it is not an array (mov r0,#0x8 @0x1a3140-0x1a314c). The array length is read and its last index (length-1) is computed as the default end subscript (sub r4,r0,#0x1 @0x1a3060)."
+  - "Optional-argument defaults and ranges: reference pitch defaults to 69 (mov r1,#0x45 / str [sp,#0x14] @0x1a3058) and, when arg 7 is present, is range-checked 0..127 via FUN_001eec7c (max #0x7f / min 0 / arg index 6 @0x1a3078-0x1a3090, errnum 10). Start subscript defaults to 0 (mov r8,#0x0 / str [sp,#0x8] @0x1a305c) and, when arg 8 is present, is range-checked 0..last-index (max = r4 = length-1, arg index 7 @0x1a30a8-0x1a30b8). End subscript defaults to the last index (str r4,[sp,#0x10] @0x1a306c) and, when arg 9 is present, is range-checked 0..last-index (arg index 8 @0x1a30d4-0x1a30e4)."
+  - "Range relation: the end subscript must be >= the start subscript (subs r2,end,start / bpl @0x1a3158 to proceed); if end < start the handler raises errnum 4 (Illegal function call, @0x1a3100-0x1a3114)."
+  - "On success the selected slice (clamped to at most 16384 samples; cmp #0x4000 @0x1a3168, with the sample count rounded to a power of two) is committed to the user-instrument slot with the envelope and reference pitch. The instrument becomes playable via the MML @defnum command (see [[wavset]] for the hex-string variant and [[micsave]] for capturing the source array). Audio output has no deterministic emulator golden (O-T7) — the argument shape, ranges and error conditions are pinned here."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is not 6..9, WAVSETA is used in a result context, or the end subscript is less than the start subscript" }
+  - { errnum: 8, name: "Type mismatch", when: "the sample-source operand (arg 5) is not a numeric array" }
+  - { errnum: 10, name: "Out of range", when: "defnum not in 224..255, any of A/D/S/R not in 0..127, reference pitch not in 0..127, or start/end subscript not in 0..(last index)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/wavseta.md (`WAVSETA Definition number,A,D,S,R,Numerical value array [,Reference pitch][,Start subscript][,End subscript]` — 'Defines the sound of an MML user-defined musical instrument from an array' (array from MICSAVE); 8180 Hz sampling, 8 bits fixed; defnum 224-255; A/D/S/R 0-127; array up to 16384 samples; reference pitch omitted = 69 (O4A); start subscript omitted = 0; end subscript omitted = last element; example `WAVSETA 224,0,95,100,20,SMPDATA`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst WAVSETA handler @0x1a2f94: argcount [r0,#0x4] sub #0x6 cmp #0x4 bcs @0x1a3108 (so 6..9), rescount [r5,#0xc]==0 else errnum 4 (mov r0,#0x4 @0x1a3108); defnum via bl 0x1eec7c min #0xe0(224) max #0xff(255) @0x1a2fbc; A/D/S/R loop x4 cmp #0x80 bcc ok else errnum 10 (mov r0,#0xa @0x1a3124); array tag ldr [r0,#0x50]/ldrb [r1,#0x1] beq @0x1a3140 -> errnum 8 (mov r0,#0x8 @0x1a3140); default refpitch mov r1,#0x45(69) @0x1a3058, start 0 @0x1a305c, end r4=len-1 @0x1a306c; opt refpitch via bl 0x1eec7c max #0x7f min 0 idx6 @0x1a3078, start idx7 max r4 @0x1a30a8, end idx8 max r4 @0x1a30d4; end>=start subs bpl @0x1a3158 else errnum 4 @0x1a3100; max samples cmp #0x4000(16384) @0x1a3168" }
+  - { type: disassembled, ref: "cia_3.6.0.lst shared integer-arg range helper FUN_001eec7c @0x1eec7c: evaluates an arg, bounds-checks value against min r3 and max [sp,#0x0], raising errnum 10 (mov r0,#0xa / b 0x1fffdc @0x1eeccc) — enforces the WAVSETA defnum (224..255), reference-pitch (0..127) and start/end subscript (0..last-index) bounds; same helper used by [[wavset]] / [[beep]]" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d WAVSETA (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bWAVSETA\\b'): the full 9-argument form is used in the wild — `WAVSETA 255,120,0,127,124,FWAVCACHE,45,649,17032` (refpitch=45, start=649, end=17032; 7ECYA3DJ/TXT/E-OSCILLO_6.03); defnum is often a computed expression `WAVSETA 224+I,...`; ~58 corpus files use >=8-arg forms. Proves the optional args (ref pitch / start / end) and computed-arg forms are legal; audio output unproven (no oracle, O-T7)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar): error conditions confirmed (all errline 1), using a scalar 6th operand so the defnum/envelope checks (which precede the array-type check) fire first — `WAVSETA 224,0,95,100,20` (5 args) raises errnum 4 (Illegal function call); `WAVSETA 223,0,95,100,20,0` and `WAVSETA 256,0,95,100,20,0` (defnum out of 224..255) raise errnum 10 (Out of range); `WAVSETA 224,128,95,100,20,0` (attack > 127) raises errnum 10; `WAVSETA 224,0,95,100,20,12345` (non-array source) raises errnum 8 (Type mismatch). The reference-pitch / start / end-subscript range errors and the end<start case need a live array operand (the array-type check precedes them) and are oracle-pending (HARVEST_QUEUE.md); audio output is not deterministically harvestable (O-T7)." }
+
+confidence: disassembled
+
+tests:
+  # Argument shape, ranges and error conditions read from the handler body. Audio output is not
+  # deterministically harvestable (O-T7); these pin the statement contract.
+  - { name: define_6args, code: "DIM SMP(16):WAVSETA 224,0,95,100,20,SMP", expect: { stdout: "" } }
+  - { name: define_9args, code: "DIM SMP(16):WAVSETA 255,120,0,127,124,SMP,45,0,15", expect: { stdout: "" } }
+  - { name: defnum_below_range, code: "DIM SMP(16):WAVSETA 223,0,95,100,20,SMP", expect: { error: { errnum: 10 } } }
+  - { name: defnum_above_range, code: "DIM SMP(16):WAVSETA 256,0,95,100,20,SMP", expect: { error: { errnum: 10 } } }
+  - { name: decay_out_of_range, code: "DIM SMP(16):WAVSETA 224,0,128,100,20,SMP", expect: { error: { errnum: 10 } } }
+  - { name: ref_pitch_out_of_range, code: "DIM SMP(16):WAVSETA 224,0,95,100,20,SMP,128", expect: { error: { errnum: 10 } } }
+  - { name: source_not_array, code: "WAVSETA 224,0,95,100,20,12345", expect: { error: { errnum: 8 } } }
+  - { name: end_before_start, code: "DIM SMP(16):WAVSETA 224,0,95,100,20,SMP,69,10,5", expect: { error: { errnum: 4 } } }
+  - { name: bad_arg_count_5, code: "DIM SMP(16):WAVSETA 224,0,95,100,20", expect: { error: { errnum: 4 } } }

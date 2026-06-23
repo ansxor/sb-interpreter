@@ -1,0 +1,37 @@
+id: TALKCHK
+kind: function
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    returns: { type: integer, desc: "TRUE (1) if speech synthesis is currently playing, FALSE (0) if stopped." }
+    note: "status = TALKCHK() — query whether synthesized speech (see TALK) is currently playing."
+
+summary: "Returns the status of speech synthesis: TRUE (non-zero) while a TALK utterance is playing, FALSE (0) when speech is stopped. Takes no arguments and is used as a function (one return value), so the call form is TALKCHK()."
+
+semantics:
+  - "Call-shape gate (@0x1a2bcc): the argument count [r4,#0x4] must be 0 and the result count [r4,#0xc] must be 1 — TALKCHK is a no-arg function (ldr r0,[r4,#0x4] / cmp r0,#0x0 / ldrle r0,[r4,#0xc] / cmple r0,#0x1 / beq @0x1a2bfc). Any argument, or use in a statement (non-result) context, raises errnum 4 (Illegal function call) with errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / bl 0x1fffdc @0x1a2be8-0x1a2bf8)."
+  - "Status read (@0x1a2bfc): the handler loads the speech state [0x1a2c20]=0x01D0C984 and calls the playing-status query (bl 0x1f1670); the boolean result is returned through the result vtable [r4,#0x10]->[+0x14] (bx r3 @0x1a2c1c). Docs: FALSE = stopped, TRUE = playing. SmileBASIC TRUE is 1 and FALSE is 0."
+  - "TALKCHK reports the live speech transport state started by [[talk]] and cleared by [[talkstop]] (or when the utterance finishes). The exact non-zero value while playing is audio-runtime state with no deterministic emulator golden (O-T7) — the call shape (no args, one result) and the 0/1 boolean semantics are pinned here. When no speech is playing it returns 0."
+  - "Note on call-as-statement: a bare `TALKCHK()` used as a statement (its return value discarded) is rejected by the parser/compiler with errnum 3 (Syntax error), not by the handler's errnum-4 gate — a function must be used in a value context. Passing an argument, `X=TALKCHK(0)`, does reach the handler and raises errnum 4 (both confirmed on real SB 3.6.0)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the call shape is not (0 args, exactly 1 result)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/talkchk.md (`Variable=TALKCHK()` — 'Checks the status of speech synthesis'; return FALSE = Stopped, TRUE = Playing; example `RET=TALKCHK()`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst TALKCHK handler @0x1a2bcc: argcount [r4,#0x4] cmp #0x0 / rescount [r4,#0xc] cmple #0x1 / beq @0x1a2bfc, else errnum 4 errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / b 0x1fffdc @0x1a2be8-0x1a2bf8); status query ldr r0,[0x1a2c20]=0x01D0C984 / bl 0x1f1670 @0x1a2bfc-0x1a2c00, result via [r4,#0x10]->[+0x14] bx r3 @0x1a2c0c-0x1a2c1c" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d TALK status (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bTALKCHK\\b'): always called as `TALKCHK()` with empty parens (never with args), read into conditions — `WHILE TALKCHK():WEND` spin-wait (RN32XL3/TXT/TALK.PRG), `UNTIL !TALKCHK()` (XRV43KKE), assignment `TA=TALKCHK()` (NDEXREM3). Confirms the no-arg function form is the only legal shape; boolean playing value unproven (no oracle, O-T7)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar): `PRINT TALKCHK()` with no speech playing returns 0 (FALSE). Error conditions confirmed: `X=TALKCHK(0)` (an argument) raises errnum 4 (Illegal function call), errline 1; a bare `TALKCHK()` statement raises errnum 3 (Syntax error) — function-as-statement is rejected at parse, not by the handler's errnum-4 gate. The non-zero playing value is not deterministically harvestable (O-T7)." }
+
+confidence: disassembled
+
+tests:
+  # Call shape + the documented 0-when-stopped value. At program start no speech is playing, so
+  # TALKCHK() reads FALSE (0). The playing (non-zero) value is oracle-pending (O-T7).
+  # hw_verified (sb-oracle): idle returns 0; arg -> errnum 4 (handler); bare statement -> errnum 3 (parser).
+  - { name: check_stopped, code: "PRINT TALKCHK()", expect: { stdout: "0\n" } }
+  - { name: with_arg_errors, code: "X=TALKCHK(0)", expect: { error: { errnum: 4 } } }
+  - { name: bare_statement_syntax_error, code: "TALKCHK()", expect: { error: { errnum: 3 } } }

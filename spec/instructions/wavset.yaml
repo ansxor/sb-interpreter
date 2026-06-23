@@ -1,0 +1,62 @@
+id: WAVSET
+kind: statement
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — without reference pitch (6 args), defaults to 69 (O4A).
+  - args:
+      - { name: defnum, type: integer, range: "224..255", desc: "User-defined instrument number (selected later with the MML @ command)." }
+      - { name: attack, type: integer, range: "0..127", desc: "Envelope attack (A)." }
+      - { name: decay, type: integer, range: "0..127", desc: "Envelope decay (D)." }
+      - { name: sustain, type: integer, range: "0..127", desc: "Envelope sustain (S)." }
+      - { name: release, type: integer, range: "0..127", desc: "Envelope release (R)." }
+      - { name: waveform, type: string, desc: "Hex string: two characters per 8-bit sample value (&H00=0 - &H80=128 - &HFF=255). 16, 32, 64, 128, 256 or 512 samples; the string length is twice the number of samples." }
+    note: "WAVSET defnum, A, D, S, R, waveform$ — define a user instrument; reference pitch defaults to 69 (O4A)."
+  # Form 2 — explicit reference pitch (7 args).
+  - args:
+      - { name: defnum, type: integer, range: "224..255", desc: "User-defined instrument number (selected later with the MML @ command)." }
+      - { name: attack, type: integer, range: "0..127", desc: "Envelope attack (A)." }
+      - { name: decay, type: integer, range: "0..127", desc: "Envelope decay (D)." }
+      - { name: sustain, type: integer, range: "0..127", desc: "Envelope sustain (S)." }
+      - { name: release, type: integer, range: "0..127", desc: "Envelope release (R)." }
+      - { name: waveform, type: string, desc: "Hex string: two characters per 8-bit sample (&H00 - &HFF); 16/32/64/128/256/512 samples." }
+      - { name: ref_pitch, type: integer, range: "0..127", optional: true, default: 69, desc: "Reference pitch (MIDI note); 69 = O4A. If omitted, 69." }
+    note: "WAVSET defnum, A, D, S, R, waveform$, ref_pitch — as Form 1 with an explicit reference pitch."
+
+summary: "Defines the waveform of an MML user-defined instrument from a hexadecimal sample string. The instrument number (224-255) is later selected in MML with the @ command. A,D,S,R are the envelope parameters (each 0-127). The waveform string holds two hex characters per 8-bit sample (&H00-&HFF, where &H80=128 is the zero/center level) and must contain 16, 32, 64, 128, 256 or 512 samples. An optional reference pitch (0-127, default 69 = O4A) sets the pitch the supplied waveform represents. Returns nothing (statement)."
+
+semantics:
+  - "Call-shape gate (@0x1a1ef4): the result count [r6,#0xc] must be 0 (cmp r0,#0x0 / beq @0x1a1f28, else errnum 4) and the argument count [r6,#0x4] must be exactly 6 or 7 (cmp r9,#0x6 / cmpne r9,#0x7 / bne @0x1a1f10 -> errnum 4 Illegal function call, errline -1: mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / bl 0x1fffdc @0x1a1f10-0x1a1f1c). 6 args = no reference pitch; 7 args = explicit reference pitch."
+  - "defnum (arg 0) is range-checked 224..255 through the shared integer-arg helper FUN_001eec7c (str #0xff(255)=max / mov r3,#0xe0(224)=min / bl 0x1eec7c @0x1a1f34-0x1a1f50); out of range raises errnum 10 (Out of range) inside the helper."
+  - "Envelope A,D,S,R (args 1-4) are evaluated in a 4-iteration loop (cmp r5,#0x4 / blt @0x1a1f64); each value is unsigned-compared against 128 (cmp r0,#0x80 / bcc ok) and a value >= 128 (including any negative integer, which is >= 128 when read unsigned) raises errnum 10 (mov r0,#0xa @0x1a1fa4). So each of A,D,S,R must be 0..127."
+  - "Reference pitch defaults to 69 (mov r0,#0x45 / str [sp,#0x420] @0x1a1fe8). When 7 args are given, the reference pitch (arg 6) is range-checked 0..127 via FUN_001eec7c (mov r0,#0x7f(127)=max / mov r3,#0x0=min / mov r1,#0x6 / bl 0x1eec7c @0x1a1ff8-0x1a2010); out of range raises errnum 10."
+  - "The waveform operand (arg 5) must be a string: the handler reads the operand's type tag and raises errnum 8 (Type mismatch) if it is not a string (mov r0,#0x8 / bl 0x1fffdc @0x1a2074-0x1a207c). The string is parsed two characters per byte as hexadecimal (digit decoders sub #0x41/#0x37 for A-F, sub #0x61/#0x57 for a-f, sub #0x30 for 0-9 @0x1a2308-0x1a2360); a non-hex character or a malformed/wrong-length sample sequence raises errnum 4 (mov r0,#0x4 @0x1a2394-0x1a23a0). The parser also honours bracketed repeat groups using `[` (0x5b) and `]` (0x5d) markers in the string. Each decoded byte is the unsigned 8-bit sample (&H00-&HFF, &H80 = center)."
+  - "On success the decoded samples (buffer size up to 0x200=512) are committed to the user-instrument slot with the envelope and reference pitch (bl 0x1a4d00 @0x1a2448). The instrument becomes playable via the MML @defnum command (see [[wavseta]] for the array-based variant and the BGM/MML commands [[bgmplay]] / [[bgmset]]). Audio output has no deterministic emulator golden (O-T7) — the argument shape, ranges, error conditions and the hex-string sample format are pinned here."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is not 6 or 7, WAVSET is used in a result context, or the waveform string is malformed (non-hex / wrong sample count)" }
+  - { errnum: 8, name: "Type mismatch", when: "the waveform operand (arg 5) is not a string" }
+  - { errnum: 10, name: "Out of range", when: "defnum not in 224..255, any of A/D/S/R not in 0..127, or reference pitch not in 0..127" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/wavset.md (`WAVSET Definition number,A,D,S,R,\"Waveform string\" [,Reference pitch]` — 'Defines the sound of an MML user-defined musical instrument'; defnum 224-255 (used with MML @); A/D/S/R 0-127; waveform = hex string, two chars per 8-bit sample &H00-&H80(128)-&HFF, 16/32/64/128/256/512 samples (chars = 2x samples); reference pitch omitted = 69 (O4A); example `W$=\"7F7F...\"*4 : WAVSET 224,3,10,30,5,W$,69`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst WAVSET handler @0x1a1ef4: rescount [r6,#0xc]==0 else errnum 4 (mov r0,#0x4 @0x1a1f10); argcount [r6,#0x4] cmp #0x6 / cmpne #0x7 / bne @0x1a1f10 (errnum 4); defnum via bl 0x1eec7c min r3=#0xe0(224) max sp[0]=#0xff(255) @0x1a1f34-0x1a1f50; A/D/S/R loop x4 cmp #0x80 bcc ok else errnum 10 (mov r0,#0xa @0x1a1fa4); refpitch default mov r0,#0x45(69) @0x1a1fe8, if 7 args via bl 0x1eec7c min 0 max #0x7f(127) @0x1a1ff8-0x1a2010; waveform must be string else errnum 8 (mov r0,#0x8 @0x1a2074); hex parse sub #0x41/#0x37/#0x61/#0x57/#0x30 @0x1a2308-0x1a2360 with `[`/`]` (0x5b/0x5d) repeat markers, bad sample -> errnum 4 (mov r0,#0x4 @0x1a2394); commit bl 0x1a4d00 buffer 0x200(512) @0x1a2448" }
+  - { type: disassembled, ref: "cia_3.6.0.lst shared integer-arg range helper FUN_001eec7c @0x1eec7c: evaluates an arg, bounds-checks value against min r3 and max [sp,#0x0], raising errnum 10 (mov r0,#0xa / b 0x1fffdc @0x1eeccc) — enforces the WAVSET defnum (224..255) and reference-pitch (0..127) bounds; same helper used by [[beep]] / [[efcset]]" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d WAVSET (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bWAVSET '): the waveform is almost always a string variable / array element, not a literal — `WAVSET 224, 127,0,127,123,WAVE$[24],69-12*2` (1K237KNV/TXT/FREEBGM_RWI2), and string concatenation is legal `WAVSET 224,122,0,0,125,A$+B$,33` (428X78NE/TXT/PRG). The reference pitch is frequently a computed expression (e.g. 69-12*2, 69+12*OCTAVE). Corpus uses are all 6 or 7 args (no 8th arg). Proves the string-operand + computed-arg forms are legal; audio output unproven (no oracle, O-T7)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar): error conditions confirmed (all errline 1) — `WAVSET 224,3,10,30,5` (5 args) raises errnum 4 (Illegal function call); `WAVSET 223,...` and `WAVSET 256,...` (defnum out of 224..255) raise errnum 10 (Out of range); `WAVSET 224,128,10,30,5,\"...\"` (attack > 127) raises errnum 10; `WAVSET 224,3,10,30,5,\"...\",128` (reference pitch > 127) raises errnum 10; `WAVSET 224,3,10,30,5,12345` (non-string waveform) raises errnum 8 (Type mismatch). Audio output itself is not deterministically harvestable (O-T7)." }
+
+confidence: disassembled
+
+tests:
+  # Argument shape, ranges and error conditions read from the handler body. Audio output is not
+  # deterministically harvestable (O-T7); these pin the statement contract.
+  - { name: define_6args, code: "WAVSET 224,3,10,30,5,\"7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF\"", expect: { stdout: "" } }
+  - { name: define_7args, code: "W$=\"7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF\":WAVSET 224,3,10,30,5,W$,69", expect: { stdout: "" } }
+  - { name: defnum_below_range, code: "WAVSET 223,3,10,30,5,\"7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF\"", expect: { error: { errnum: 10 } } }
+  - { name: defnum_above_range, code: "WAVSET 256,3,10,30,5,\"7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF\"", expect: { error: { errnum: 10 } } }
+  - { name: attack_out_of_range, code: "WAVSET 224,128,10,30,5,\"7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF\"", expect: { error: { errnum: 10 } } }
+  - { name: ref_pitch_out_of_range, code: "W$=\"7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF\":WAVSET 224,3,10,30,5,W$,128", expect: { error: { errnum: 10 } } }
+  - { name: waveform_not_string, code: "WAVSET 224,3,10,30,5,12345", expect: { error: { errnum: 8 } } }
+  - { name: bad_arg_count_5, code: "WAVSET 224,3,10,30,5", expect: { error: { errnum: 4 } } }

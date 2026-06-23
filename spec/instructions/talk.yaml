@@ -1,0 +1,39 @@
+id: TALK
+kind: statement
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: voice, type: string, desc: "Synthesized-speech string. Alphanumeric symbols are read out character-by-character; <S speed> / <P pitch> commands embedded in the string change the voice (see below)." }
+    note: "TALK voice$ — generate synthesized speech from a string (1 string arg)."
+
+summary: "Generates synthesized speech (text-to-speech) from a string. Characters are read out directly; alphanumeric symbols are read character-by-character. Special commands enclosed in <> control the voice: <S speed> sets speech speed (0-65536, default 32768) and <P pitch> sets the tone pitch (0-65536, default 32768). Returns nothing (statement). Audio output has no deterministic emulator golden (O-T7)."
+
+semantics:
+  - "Call-shape gate (@0x1a3c5c): argcount [r5,#0x4] is read first; an argcount of exactly 1 with result count [r5,#0xc]==0 takes the speak path (cmp r0,#0x1 / ldreq r0,[r5,#0xc] / cmpeq r0,#0x0 / beq @0x1a3f08). Otherwise (any argcount > 1, or use in a result/function context) raises errnum 4 (Illegal function call) with errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / bl 0x1fffdc @0x1a3c88-0x1a3c94). The argcount==0 branch (beq @0x1a3ca0) constructs an empty string and proceeds, so TALK is effectively given one string operand."
+  - "The voice string is parsed character-by-character through a 24-case (cmp r0,#0x18) dispatch table (switchD @0x1a3ccc, switchdataD @0x1a3cd4) that classifies each character/glyph against the speech tables loaded from [0x1a401c]. Embedded special commands of the form <X value> are recognized while scanning: the documented set is <S speed> (speech speed) and <P pitch> (tone pitch). The string content (including the <> commands) is copied into a working buffer (the ldrh/strh copy loop @0x1a3de4-0x1a3e0c) before being handed to the synth engine."
+  - "Speech parameters: speed (S) and pitch (P) each accept 0..65536 with a default of 32768 (mid-scale); the values take effect from the point in the string where the command appears and persist for subsequent characters, so a single string may switch speed/pitch mid-utterance (e.g. \"ABCDE<P50000><S20000>FGHIJKLM\")."
+  - "Speech plays asynchronously: TALK starts the utterance and returns immediately. Use [[talkchk]] to poll whether speech is still playing and [[talkstop]] to stop it. The synthesized audio itself has no deterministic emulator golden (real-time TTS; O-T7) — the statement contract (one string arg, the <S>/<P> commands and their 0..65536 ranges/defaults, the shape error) is pinned here."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "TALK is given more than one argument, or used in a result/function context" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/talk.md (`TALK \"Voice string\"` — 'Generates synthesized speech, alphanumeric symbols are read out character-by-character'; special commands in <>: <S Speed> speech speed 0-65536 default 32768, <P Pitch> tone pitch 0-65536 default 32768; example `TALK \"ABCDE<P50000><S20000>FGHIJKLM\"`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst TALK handler @0x1a3c5c: argcount [r5,#0x4] / argcount==1 && rescount [r5,#0xc]==0 -> speak @0x1a3f08 (cmp r0,#0x1 / ldreq r0,[r5,#0xc] / cmpeq r0,#0x0 / beq @0x1a3f08), else errnum 4 errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / bl 0x1fffdc @0x1a3c88-0x1a3c94); per-char 24-case dispatch ldrsb r0,[sp,#0xc] cmp r0,#0x18 / ldrcc pc,[pc,r0,lsl #0x2] (switchD @0x1a3ccc, table @0x1a3cd4) against speech tables [0x1a401c]; string copy loop ldrh/strh @0x1a3de4-0x1a3e0c" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d TALK (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bTALK ['\"]'): TALK accepts any string expression, not just a literal — string concatenation `TALK \"<P36000>\"+ANSTALK$` (1BWX7ENV/TXT/AND-OS), indexed array element `TALK RDV$[RD]` and `TALK C_AVC$[NL]+\"...\"` (4K2KNDZS/TXT/ARCS), string functions `TALK MID$(...)` (EK3E9F/TXT/ALPHAOS). The <S>/<P> control commands are used inline, e.g. `TALK \"<P20000><S40000>OKCU\"` (43K53XRD/TXT/00_SLOT3D_01), `TALK \"<S35000><P25000>...\"` (4DKX3X8D/TXT/HEXAGON_V2). Proves the string-operand forms + inline <S>/<P> commands are legal; audio output unproven (no oracle, O-T7)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar): error condition confirmed — `X=TALK(\"HI\")` (TALK used in a result/function context) raises errnum 4 (Illegal function call), errline 1. The TTS audio output itself is not deterministically harvestable (real-time; O-T7)." }
+
+confidence: disassembled
+
+tests:
+  # Statement contract + shape error from the handler body. Audio output is not deterministically
+  # harvestable (real-time TTS; O-T7); these pin the call shape and the <S>/<P> command syntax.
+  - { name: speak_literal, code: "TALK \"ABCDE\"", expect: { stdout: "" } }
+  - { name: speak_with_commands, code: "TALK \"ABCDE<P50000><S20000>FGHIJKLM\"", expect: { stdout: "" } }
+  - { name: speak_string_var, code: "S$=\"HELLO\":TALK S$", expect: { stdout: "" } }
+  - { name: speak_concat, code: "TALK \"<P36000>\"+\"HI\"", expect: { stdout: "" } }
+  # hw_verified (sb-oracle): TALK in a result/function context raises errnum 4.
+  - { name: result_context_errors, code: "X=TALK(\"HI\")", expect: { error: { errnum: 4 } } }

@@ -379,3 +379,25 @@ oracle to confirm exact output and promote to `hw_verified`.
     volume outside 0..127, pan outside 0..127 -> errnum 10; >4 args -> errnum 4. ALSO verify the
     disasm+corpus extended sound banks 224..255 and 256..383 play (no error) on real SB — docs
     only mention 0..133 but corpus uses BEEP 224/293/303/354/382 (no oracle = legal-syntax only).
+
+- [~] S-T10d Voice & wave (TALK · TALKCHK · TALKSTOP · WAVSET · WAVSETA) — specs pinned from
+  disasm (confidence: disassembled); audio/TTS output has no deterministic golden (O-T7).
+  CONFIRMED on real SB 3.6.0 (Azahar) and folded in as hw_verified:
+  - TALK `X=TALK(...)` (result context) -> errnum 4. (parser DOES reach the handler.)
+  - TALKCHK idle `TALKCHK()` == 0; `X=TALKCHK(0)` (arg) -> errnum 4; bare `TALKCHK()` statement
+    -> errnum 3 (Syntax error — function-as-statement rejected at PARSE, not the handler gate).
+  - TALKSTOP `TALKSTOP 1` (arg) -> errnum 4.
+  - WAVSET: 5 args -> errnum 4; defnum 223/256 -> errnum 10; attack 128 -> errnum 10;
+    refpitch 128 -> errnum 10; non-string waveform -> errnum 8.
+  - WAVSETA: 5 args -> errnum 4; defnum 223/256 -> errnum 10; attack 128 -> errnum 10;
+    non-array source -> errnum 8. (Used scalar 6th operand: defnum/envelope checks precede the
+    array-type check.)
+  STILL PENDING (need a live array operand, or are audio-only — left disassembled):
+  - WAVSETA refpitch/start/end-subscript out-of-range -> errnum 10, and end < start -> errnum 4:
+    the array-type check precedes these, so they need `DIM A(N):WAVSETA ...,A,...` — the batch
+    `|err` harness mangles colon multi-statement lines (returns spurious errnum 3); harvest with
+    a single-statement form or a pre-declared persistent array.
+  - WAVSET malformed-hex vs wrong-sample-count (16/32/64/128/256/512) exact errnum (disasm: 4);
+    `[`/`]` repeat-marker semantics in the hex string.
+  - WAVSETA 16384-sample cap + power-of-two sample-count rounding (observation only, audio).
+  - TALK <S>/<P> speed/pitch realization; TALKCHK non-zero playing value mid-TALK (audio, O-T7).
