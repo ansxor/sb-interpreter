@@ -22,6 +22,21 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   golden path (M2-T5), harvest per-primitive goldens and pixel-diff the rasterizers against
   real SB 3.6.0, correcting any algorithm that diverges.
 
+- [ ] M2-T5 / GLINE + GTRI diagonal rasterization DIVERGES from the device — RE the handler.
+  The M2-T5 golden gate is live and the committed goldens are **hw_verified oracle GRP
+  captures** (gcls_blue, gpset_corners, gfill_box, gcircle_mid, scene_mixed all pixel-EXACT vs
+  real SB 3.6.0). Harvesting surfaced a real bug: **GLINE diagonals don't match**. For
+  `GLINE 0,0,399,239` the device plots y per x as `0,0,1,1,2,3,3,4,4,5,…` = `floor(0.6·x)`
+  (slope 0.6 = 240/400, a fixed-point DDA), while sb-core's textbook Bresenham (dx=399,dy=239,
+  slope 0.599) plots `0,1,1,2,2,3,4,4,5,5,…` (638/96000 px differ on the cross). **GTRI**
+  diverges the same way (its diagonal edges; the original triangle scene differed 159px at the
+  apex). Axis-aligned runs match (GBOX, horizontal/vertical GLINE) and GCIRCLE's midpoint
+  matches exactly, so this is specifically the diagonal line/edge stepping. Fix in M2-T2:
+  read the GLINE/GTRI handler in the disassembly (sb-disasm) to pin the exact slope/DDA +
+  rounding, change `crates/sb-render/src/raster.rs` to match, then add `gline_cross.sb3` (+ a
+  GTRI scene) back as committed goldens and re-harvest. (Supersedes the generic "line endpoint
+  rule / triangle edge inclusivity" sub-items of the M2-T2 entry above for the diagonal case.)
+
 - [ ] M1-T14 (ENDIF leading-comment quirk) · A LEADING stray `ENDIF` raises errnum 28, but
   `REM X` + newline + `ENDIF` raises NO error at all (sb-oracle 2026-06-23) — a leading comment
   line suppresses the stray-ENDIF check. sb-core does NOT model this (it raises 28 for `REM

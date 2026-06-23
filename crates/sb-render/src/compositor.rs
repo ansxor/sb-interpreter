@@ -161,6 +161,27 @@ pub fn compose_top_screen(grp: &GrpState, console: &Console, backdrop: u32) -> F
     )
 }
 
+/// Render the top-left `width`×`height` crop of a GRP page to an RGBA8888 framebuffer — the
+/// **golden surface** pixel-diffed against an oracle GRP capture (M2-T5).
+///
+/// Unlike [`GrpLayer::composite`] (which alpha-keys transparent pixels onto a backdrop),
+/// this reproduces the raw page exactly as `SAVE"GRPn:NAME"` does on real SB 3.6.0: every
+/// device pixel is expanded RGBA5551→ARGB8888 ([`rgba5551_to_argb8888`]), so an alpha-bit-
+/// clear pixel becomes fully-transparent black `0x00000000`. That matches the oracle decode
+/// (`sb_grp.py`, shift expansion, O-T6) byte-for-byte, so a committed golden PNG diffs to
+/// zero against a clean renderer. The page is 512×512; the visible top screen is its top-left
+/// 400×240 crop (`GRP_VISIBLE_WIDTH`×`GRP_VISIBLE_HEIGHT`), the usual `width`/`height`.
+pub fn grp_page_to_framebuffer(page: &GrpPage, width: usize, height: usize) -> Framebuffer {
+    let mut fb = Framebuffer::new(width, height);
+    for y in 0..height.min(GRP_DIM) {
+        let row = y * GRP_DIM;
+        for x in 0..width.min(GRP_DIM) {
+            fb.set_argb(x, y, rgba5551_to_argb8888(page.pixels[row + x]));
+        }
+    }
+    fb
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

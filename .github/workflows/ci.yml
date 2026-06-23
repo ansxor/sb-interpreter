@@ -33,6 +33,13 @@ jobs:
       - name: Test (deterministic conformance + units)
         run: cargo test --workspace
 
+      - name: Graphics golden pixel-diff (M2-T5)
+        # Build the headless renderer, then pixel-diff each committed graphics golden against
+        # `sb-run --grp` output. Hermetic — the goldens are frozen fixtures, no emulator.
+        run: |
+          cargo build -p sb-platform-native --bin sb-run
+          python3 harness/diff/replay.py
+
       - name: Spec coverage report
         run: cargo run -q -p sb-spec --bin sb-spec-coverage | tee coverage.txt
       - uses: actions/upload-artifact@v4

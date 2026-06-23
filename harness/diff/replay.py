@@ -16,9 +16,12 @@ deterministic suite inventory and exits 0. Execution wiring lands in M1.
 """
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from png_util import decode_rgba, diff_rgba  # noqa: E402
 
 
 def count(glob_dir, pattern):
@@ -30,6 +33,49 @@ def sb_core_runner():
     """Path to the headless sb-core runner, if it has been built (M1)."""
     candidate = ROOT / "target" / "debug" / "sb-run"  # built in M1
     return candidate if candidate.exists() else None
+
+
+def diff_goldens(runner):
+    """M2-T5 graphics gate: render each golden program through `sb-run --grp` and pixel-diff
+    its GRP display page against the committed golden PNG. Hermetic — no emulator: the golden
+    is a frozen fixture (an oracle GRP capture, O-T6; or an oracle-pending sb-core render).
+    Returns the list of FAILED golden stems (a pixel mismatch or a runner failure)."""
+    goldens = count("harness/corpus/golden/gfx", "*.png")
+    if not goldens:
+        return []
+    print(f"\npixel-diffing {len(goldens)} graphics golden(s) via {runner.name} ...")
+    failed = []
+    for golden in goldens:
+        prog = golden.with_suffix(".sb3")
+        if not prog.exists():
+            print(f"  [FAIL] {golden.name}: no sibling program {prog.name}")
+            failed.append(golden.stem)
+            continue
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+            tmp = Path(tf.name)
+        try:
+            proc = subprocess.run(
+                [str(runner), "--grp", str(tmp), str(prog)],
+                capture_output=True,
+                text=True,
+            )
+            if proc.returncode not in (0, 1):  # 1 = SB error, page still rendered
+                note = proc.stderr.strip().splitlines()[0] if proc.stderr.strip() else ""
+                print(f"  [FAIL] {golden.name}: sb-run exit {proc.returncode}  {note}")
+                failed.append(golden.stem)
+                continue
+            bad, total, first = diff_rgba(
+                decode_rgba(golden.read_bytes()), decode_rgba(tmp.read_bytes())
+            )
+            if bad == 0:
+                print(f"  [PASS] {golden.name}  ({total} px)")
+            else:
+                where = "size mismatch" if first is None else f"first @ {first}"
+                print(f"  [FAIL] {golden.name}: {bad}/{total} px differ ({where})")
+                failed.append(golden.stem)
+        finally:
+            tmp.unlink(missing_ok=True)
+    return failed
 
 
 def main():
@@ -83,10 +129,15 @@ def main():
         if gated and not ok:
             failed.append(prog.name)
 
-    if failed:
-        print(f"\n{len(failed)} expected-pass program(s) failed: {', '.join(failed)}")
+    golden_failed = diff_goldens(runner)
+
+    if failed or golden_failed:
+        if failed:
+            print(f"\n{len(failed)} expected-pass program(s) failed: {', '.join(failed)}")
+        if golden_failed:
+            print(f"{len(golden_failed)} graphics golden(s) failed: {', '.join(golden_failed)}")
         return 1
-    print("\nall expected-pass programs OK.")
+    print("\nall expected-pass programs OK; all graphics goldens match.")
     return 0
 
 

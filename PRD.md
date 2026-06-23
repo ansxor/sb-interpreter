@@ -17,7 +17,7 @@ under `prd/` (start at `prd/README.md`). Task IDs here match those docs.
 | **S** | **Spec build-out (all sources)** | `prd/specs.md` | 🔥 active |
 | **O** | **Oracle engine — `sb-oracle` skill** | `prd/oracle.md` | 🔥 value/errnum/graphics harvest work; audio = MML-event specs (no emulator golden) + ref capture |
 | M1 | Core VM + a real window | `prd/M1.md` | ✅ done (T1–T14; conformance gate green, native + wasm) |
-| M2 | Graphics (GRP + compositor) | `prd/M2.md` | ⬜ gated on S |
+| M2 | Graphics (GRP + compositor) | `prd/M2.md` | ✅ done (T1–T5; GRP model, primitives, bitmap ops, compositor, hw_verified golden pixel-diff) |
 | M3 | Sprites & BG | `prd/M3.md` | ⬜ gated on S |
 | M4 | Input & timing | `prd/M4.md` | ⬜ gated on S |
 | M5 | Audio (MML) | `prd/M5.md` | ⬜ gated on S |
@@ -173,7 +173,7 @@ and name the instructions they cover inline.
 - [x] M2-T2 Drawing primitives → M2-T1
 - [x] M2-T3 Bitmap ops → M2-T1
 - [x] M2-T4 Compositor → M2-T2, M2-T3
-- [ ] M2-T5 Golden PNG harvest + pixel-diff → M2-T4, O-T6
+- [x] M2-T5 Golden PNG harvest + pixel-diff → M2-T4, O-T6
 
 ## M3 — Sprites & BG  (gated on S-T8, S-T9)
 - [ ] M3-T1 Sprite core → S-T8, M2-T4
