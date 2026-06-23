@@ -701,3 +701,20 @@ oracle to confirm exact output and promote to `hw_verified`.
 - **Double→Integer coercion overflow**: `A%=1E20` / values outside i32 range. value.rs uses
   Rust `f64 as i32` (saturating; ARM VCVT-style). Confirm SB's wrap/saturate behavior vs
   oracle (large + NaN/Inf inputs).
+
+## M1-T5 — Bytecode / Compiler (lowering decisions to confirm)
+- **FOR re-evaluation**: the compiler re-evaluates the `TO` and `STEP` expressions every
+  iteration (mirrors osb compileFor). Confirm vs oracle whether SB evaluates them once at
+  loop entry or each iteration (observable when `TO`/`STEP` reference a variable mutated in
+  the body). assumption: re-evaluated each iteration.
+- **Auto-declare scope inside DEF**: an undeclared variable first used inside a `DEF` body is
+  auto-declared as a **function-local** (execution-model: "variables inside a DEF are local").
+  osb auto-declares such reads to a global. Confirm vs oracle whether implicit (non-`VAR`)
+  variables inside a DEF are local or global. assumption: local to the DEF.
+- **`&&`/`||` result value**: short-circuit ops (`LogicalAnd`/`LogicalOr`) keep the last
+  evaluated operand rather than normalizing to 0/1. Confirm SB yields 0/1 vs the operand.
+  assumption: last-operand (C-like), no ConvertBool.
+- **Suffix-less numeric array default type**: `DIM A[n]` with no suffix makes an Integer-
+  element array (matches M1-T4 `default_for_suffix(None)=Int`). But `OPTION DEFINT` "makes the
+  default Integer" implies the *non-DEFINT* default is Double. Confirm `DIM A[1]:A[0]=2.7:
+  PRINT A[0]` (→2 if Int, →2.7 if Real). assumption: Int element (cross-ref M1-T4 queue).

@@ -6,17 +6,22 @@
 //! threads so it builds for `wasm32-unknown-unknown`; platform concerns live in
 //! the `sb-platform-*` crates.
 //!
-//! The lexer (M1-T1), AST node types (M1-T2), parser (M1-T3) and the runtime
-//! value/array types (M1-T4) are implemented so far.
+//! The lexer (M1-T1), AST node types (M1-T2), parser (M1-T3), runtime
+//! value/array types (M1-T4) and the bytecode + compiler (M1-T5) are implemented
+//! so far.
 
 pub mod array;
 pub mod ast;
+pub mod bytecode;
+pub mod compiler;
 pub mod lexer;
 pub mod parser;
 pub mod token;
 pub mod value;
 
 pub use array::{ArrayRef, SbArray};
+pub use bytecode::{Const, Function, Op, OptionFlags, Program, VarInfo, VarRef, VarType};
+pub use compiler::{compile, compile_with, Builtins, CompileError, NoBuiltins};
 pub use lexer::Lexer;
 pub use parser::{parse, parse_expression, ParseError, Parser};
 pub use token::{SourceLoc, Suffix, Token, TokenKind};
