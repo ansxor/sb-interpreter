@@ -14,7 +14,8 @@ summary: "Defines a user instruction/function, from DEF to END, optionally takin
 
 semantics:
   - "Three call shapes: niladic (USER), single-return (A=USER(X)), and multi-return (USER(X) OUT A,B)."
-  - "The body spans DEF to END; variables and labels declared inside are LOCAL to the function."
+  - "The body spans DEF to END; labels declared inside are LOCAL to the function."
+  - "Variable scoping (hw_verified, sb-oracle 2026-06-23): a DIM or VAR *declaration* inside a DEF binds a fresh function-LOCAL that shadows any same-named global (e.g. A=5 then a DEF doing DIM A[3] or VAR A=99 leaves the top-level A == 5). A plain reference (read or assignment) inside a DEF resolves to the GLOBAL if one of that name exists — so A=99 inside a DEF DOES overwrite a global A, and a read sees the global value; a plain assignment to a name that is NOT a global creates a local. Globals are otherwise shared across DEFs via this visibility (and across slots via [[common]])."
   - "Argument types are not strictly checked; a return value's type is taken from the value first assigned to the output variable (e.g. A=100 is Integer, A=100.0 is Double)."
   - "If a return value's type differs from what the caller expects, an error occurs."
   - "GOTO out of the DEF..END range is not allowed; GOSUB/ON GOSUB inside a DEF require a slot-qualified label (e.g. GOSUB \"0:@SUB\")."
@@ -27,7 +28,8 @@ errors:
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/def.md (DEF user instructions; 3 forms; local vars/labels; type-from-first-assignment)" }
   - { type: disassembled, ref: "cia_3.6.0.lst DEF is a parser keyword (name @0x2ccbfe), not in the builtin dispatch table; compiled to a user-function definition with a local scope; DEF-without-END -> errnum 29, nested DEF -> errnum 32 (spec/reference/errors.yaml)" }
-  - { type: hw_verified, ref: "sb-oracle DEF probe 2026-06-22 (error-as-signal): a defined instruction runs when invoked; DEF DBL(X):RETURN X*2:END gives DBL(5)=10; a variable assigned inside DEF is LOCAL (does not leak to the caller); DEF without END -> errnum 29; a DEF nested in a DEF -> errnum 32." }
+  - { type: hw_verified, ref: "sb-oracle DEF probe 2026-06-22 (error-as-signal): a defined instruction runs when invoked; DEF DBL(X):RETURN X*2:END gives DBL(5)=10; a fresh variable assigned inside DEF is LOCAL (does not leak to the caller); DEF without END -> errnum 29; a DEF nested in a DEF -> errnum 32." }
+  - { type: hw_verified, ref: "sb-oracle scoping probes 2026-06-23: scope_write (A=5; DEF SETA: A=99) -> top-level A==99 (plain assign hits the global); scope_read (DEF GETA(): RETURN A) -> 5 (global visible); scope_dim (DEF MKARR: DIM A[3]) -> top-level A==5 (DIM binds a local, shadows global); var_shadow (DEF SETV: VAR A=99) -> 5 (VAR binds a local); newname_local (DEF MKC: C=7) -> top-level C==0 (fresh non-global name is local); dim_then_use (DEF MK: DIM A[3]:A[0]=8) -> top-level A==5, local array usable. See harness/corpus/cases/def_scope.yaml." }
 
 confidence: hw_verified
 
@@ -35,3 +37,5 @@ tests:
   - { name: niladic_runs, code: "DEF HELLO\nPRINT \"HI\"\nEND\nHELLO", expect: { stdout: "HI" } }
   - { name: function_returns, code: "DEF DBL(X)\nRETURN X*2\nEND\nPRINT DBL(5)", expect: { stdout: "10" } }
   - { name: def_without_end, code: "DEF F\nA=1", expect: { error: { errnum: 29 } } }
+  - { name: def_dim_shadows_global, code: "A=5\nMKARR\nPRINT A\nDEF MKARR\n DIM A[3]\nEND", expect: { stdout: "5" } }
+  - { name: def_plain_assign_writes_global, code: "A=5\nSETA\nPRINT A\nDEF SETA\n A=99\nEND", expect: { stdout: "99" } }

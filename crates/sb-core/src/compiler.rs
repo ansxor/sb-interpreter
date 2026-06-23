@@ -437,6 +437,42 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    /// Declare a variable via a `DIM`/`VAR` declaration. Inside a `DEF` this ALWAYS
+    /// binds a function-local, *shadowing* any same-named global — hw_verified
+    /// (sb-oracle 2026-06-23): `DIM`/`VAR` of a name that also exists as a global
+    /// creates a fresh local, leaving the global untouched (`A=5` then a DEF doing
+    /// `DIM A[3]`/`VAR A=99` leaves the top-level `A` == 5). A repeated declaration of
+    /// a name already local to this `DEF` (e.g. a param) reuses that slot. Contrast
+    /// [`Self::resolve_scalar`]/[`resolve_array`], used for plain references, which fall
+    /// through to a global if one exists (a plain `A=99` inside a DEF *does* write the
+    /// global — hw_verified). At top level a declaration binds/updates the global.
+    fn declare_decl(&mut self, name: &Name, is_array: bool) -> VarRef {
+        if let Some(fs) = &mut self.func {
+            if let Some(i) = fs.locals.iter().position(|v| &v.name == name) {
+                if is_array {
+                    fs.locals[i].is_array = true;
+                }
+                return VarRef::Local(i as u32);
+            }
+            fs.locals.push(VarInfo {
+                name: name.clone(),
+                is_array,
+            });
+            return VarRef::Local((fs.locals.len() - 1) as u32);
+        }
+        if let Some(i) = self.globals.iter().position(|v| &v.name == name) {
+            if is_array {
+                self.globals[i].is_array = true;
+            }
+            return VarRef::Global(i as u32);
+        }
+        self.globals.push(VarInfo {
+            name: name.clone(),
+            is_array,
+        });
+        VarRef::Global((self.globals.len() - 1) as u32)
+    }
+
     fn err(&self, errnum: u32, msg: String) -> CompileError {
         CompileError {
             loc: self.cur_loc,
@@ -689,11 +725,9 @@ impl<'a> Compiler<'a> {
         for item in items {
             match item {
                 DimItem::Scalar { name, init } => {
-                    // Ensure the variable exists (declared, even without an init).
-                    let v = match self.lookup(name) {
-                        Some((vref, _)) => vref,
-                        None => self.declare(name, false),
-                    };
+                    // A VAR declaration binds the name in the current scope (local inside
+                    // a DEF, shadowing any global; see `declare_decl`).
+                    let v = self.declare_decl(name, false);
                     if let Some(e) = init {
                         self.compile_expr(e)?;
                         self.emit(Op::PopVar(v));
@@ -703,10 +737,9 @@ impl<'a> Compiler<'a> {
                     for d in dims {
                         self.compile_expr(d)?;
                     }
-                    let v = match self.lookup(name) {
-                        Some((vref, _)) => vref,
-                        None => self.declare(name, true),
-                    };
+                    // A DIM declaration binds a fresh array in the current scope (local
+                    // inside a DEF, shadowing any same-named global; see `declare_decl`).
+                    let v = self.declare_decl(name, true);
                     self.emit(Op::NewArray {
                         var: v,
                         ty: VarType::from_suffix(name.suffix),
@@ -1452,6 +1485,33 @@ mod tests {
             .code
             .iter()
             .any(|o| matches!(o, Op::PushVar(VarRef::Local(_)))));
+    }
+
+    #[test]
+    fn def_dim_binds_local_shadowing_global() {
+        // `A` is a top-level global scalar; `DIM A[3]` inside the DEF must bind a fresh
+        // function-LOCAL array (shadowing the global), NOT flip the global to an array.
+        // hw_verified scoping (sb-oracle 2026-06-23, def_scope.yaml).
+        let p = comp("A=5\nMK\nDEF MK\nDIM A[3]\nEND");
+        let g = p.globals.iter().find(|v| v.name.ident == "A").unwrap();
+        assert!(!g.is_array, "global A must stay a scalar");
+        let f = p.functions.iter().find(|f| f.name.ident == "MK").unwrap();
+        assert!(
+            f.locals.iter().any(|v| v.name.ident == "A" && v.is_array),
+            "DIM A[3] must bind a local array inside the DEF"
+        );
+    }
+
+    #[test]
+    fn def_plain_assign_hits_global() {
+        // A plain assignment inside a DEF to a name that already exists as a global
+        // writes the GLOBAL (no new local). hw_verified scope_write -> 99.
+        let p = comp("A=5\nSETA\nDEF SETA\nA=99\nEND");
+        let f = p.functions.iter().find(|f| f.name.ident == "SETA").unwrap();
+        assert!(
+            !f.locals.iter().any(|v| v.name.ident == "A"),
+            "plain A=99 must not create a local when a global A exists"
+        );
     }
 
     #[test]

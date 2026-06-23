@@ -1,0 +1,40 @@
+# DEF variable scoping — hw_verified (sb-oracle 2026-06-23).
+# The rule (proven by the six probes below): globals (names created by top-level code)
+# ARE visible inside a DEF for plain reads/writes, but a DIM/VAR *declaration* inside a
+# DEF always binds a fresh function-LOCAL that shadows the same-named global; a plain
+# assignment to a name that is not a global creates a local too.
+cases:
+  # A plain assignment inside a DEF to a name that already exists as a global writes the
+  # GLOBAL (globals are visible inside a DEF). oracle scope_write -> 99.
+  - name: def_plain_assign_writes_global
+    code: "A=5\nSETA\nPRINT A\nDEF SETA\n A=99\nEND"
+    expect: { stdout: "99" }
+  # A plain read inside a DEF sees the global value. oracle scope_read -> 5.
+  - name: def_plain_read_sees_global
+    code: "A=5\nB=GETA()\nPRINT B\nDEF GETA()\n RETURN A\nEND"
+    expect: { stdout: "5" }
+  # DIM inside a DEF binds a fresh LOCAL array, shadowing the global scalar (which keeps
+  # its value). oracle scope_dim -> 5.
+  - name: def_dim_shadows_global
+    code: "A=5\nMKARR\nPRINT A\nDEF MKARR\n DIM A[3]\nEND"
+    expect: { stdout: "5" }
+  # VAR inside a DEF likewise binds a fresh local, leaving the global untouched.
+  # oracle var_shadow -> 5.
+  - name: def_var_shadows_global
+    code: "A=5\nSETV\nPRINT A\nDEF SETV\n VAR A=99\nEND"
+    expect: { stdout: "5" }
+  # KNOWN LIMITATION (not asserted): `MKC\nPRINT C\nDEF MKC\n C=7\nEND`.
+  # Real SB prints 0 (oracle newname_local): MKC runs first, and because no global C
+  # exists yet, `C=7` binds a DEF-LOCAL; the later top-level `PRINT C` then auto-declares
+  # a fresh global C == 0. This is a genuinely RUNTIME-ORDER-dependent outcome — a name
+  # written only inside a DEF and read only at top level is local because the DEF executes
+  # before the read. sb-core's static slot compiler pre-declares C as a global from the
+  # top-level `PRINT C` (compiled before the deferred DEF body), so `C=7` writes that
+  # global and it prints 7. Matching this needs execution-order dataflow; queued in
+  # HARVEST_QUEUE.md. It does NOT affect programs that create shared globals by WRITING
+  # them at top level first (the otya pattern), which resolve correctly.
+  # A DIM'd local array is usable inside the DEF; the global scalar is untouched.
+  # oracle dim_then_use -> 0 (GA is itself DEF-local, top-level read is 0).
+  - name: def_dim_local_usable
+    code: "A=5\nMK\nDEF MK\n DIM A[3]\n A[0]=8\n PRINT A[0]\nEND"
+    expect: { stdout: "8" }

@@ -811,17 +811,29 @@ oracle to confirm exact output and promote to `hw_verified`.
   const overflow promote too, then fix the folder (arithmetic/M7). Does NOT affect otya_test
   (uses the runtime `MAX(…)*…` form). e.g. `?2*&H7FFFFFFF` → 4.29497e+09.
 
-## M1-T5 / execution-model — DEF-local variable scoping
-- **`DIM`/plain vars inside a `DEF` must be DEF-LOCAL, not global.** Surfaced by the
-  M1-T14 PUSH increment: `otya_test.sb3` uses `A`/`B` as DEF-local arrays
-  (`DIM A[…]` inside SORTTEST/STABLESORTTEST/SORTTEST2) AND as top-level/`VAR` scalars
-  (`A=0` line 285, `VAR A=1` line 113). sb-core's compiler resolves all `A` to ONE global
-  slot, so the scalar use flips the slot's `is_array=false` and `PUSH A`/`DIM A[…]` inside
-  the DEFs then raise Type mismatch (8) at otya line 77/64. Repro: the STABLESORTTEST
-  subtree passes alone, but prepending a top-level `A=0`/`B=0` reproduces errnum 8.
-  assumption (needs oracle/disasm confirmation): real SB gives each DEF its own variable
-  scope for plain assignment + `DIM` (not just `VAR`), with globals reachable via `COMMON`.
-  Pin the exact scoping rule (is plain assignment in a DEF local or global? does `DIM`
-  create a local? interaction with `COMMON`/`OUT`), then fix the compiler's per-DEF var
-  resolution (execution-model / M1-T5). Blocks otya_test (with sprite `CALL`, `DTREAD`,
-  `DATE$`/`TIME$`).
+## M1-T5 / execution-model — DEF-local variable scoping  [RESOLVED 2026-06-23]
+- **FIXED (M1-T14 increment 2026-06-23).** The rule was pinned via six sb-oracle probes
+  (def_scope.yaml): globals (names created by top-level code) ARE visible inside a DEF for
+  plain reads/writes (`A=99` inside a DEF overwrites a global A); a `DIM`/`VAR`
+  *declaration* inside a DEF binds a fresh function-LOCAL that shadows the same-named
+  global; a plain assignment to a name that is not a global creates a local. Compiler fix:
+  `compile_dim` now routes through `declare_decl`, which force-binds a local inside a DEF
+  (the earlier `lookup`-first path reused the global). Advanced otya 77 → 127.
+- **Known residual limitation (static-model divergence, low priority).** A name WRITTEN
+  only inside a DEF and READ only at top level (`MKC\nPRINT C\nDEF MKC\n C=7\nEND`) prints
+  0 on real SB (the DEF runs first, so `C=7` is local; the later top-level read makes a
+  fresh global 0) but 7 in sb-core (the static compiler pre-declares C global from the
+  top-level read). Matching needs execution-order dataflow. Does not affect the otya
+  pattern (shared globals are WRITTEN at top level first). Documented in def_scope.yaml.
+
+## M1-T14 / SWAP — typed-variable coercion (NEW, otya line 127)
+- **`SWAP A%,B#` must re-coerce each value to the destination variable's declared type.**
+  Surfaced once the scoping fix advanced otya to SWAPTEST (line 127, `ASSERT__ A%==2`).
+  otya: `VAR A%=1 : VAR B#=2.34567 : SWAP A%,B#` then asserts `B#==1` (passes) and
+  `A%==2` (FAILS in sb-core). Real SB: after the swap A% holds the Double 2.34567 coerced
+  to its Integer type → truncates to 2, so `A%==2`. sb-core's `Op::Swap` exchanges the raw
+  cell values without re-coercing to each var's suffix-declared type. Fix: SWAP (and likely
+  any assignment-through-ref) should coerce the incoming value to the target's declared
+  numeric type. Harvest the exact SWAP coercion rule (does it truncate like assignment? what
+  about string↔numeric → Type mismatch 8?) and fix `Op::Swap`. Now the otya blocker
+  (with sprite `CALL`, `DTREAD`, `DATE$`/`TIME$` still beyond).
