@@ -52,11 +52,17 @@ const IN_SCOPE_CATEGORIES: &[&str] = &["Mathematics", "Strings"];
 const IN_SCOPE_OPERATORS: &[&str] = &["AND", "OR", "XOR", "DIV", "MOD"];
 /// Control-flow instructions (category `Control`) that `sb-core` implements in M1 (M1-T8 +
 /// parser/compiler lowering) and whose inline `tests:` are `PRINT`-comparable. The category
-/// is NOT taken wholesale: `CALL`/`COMMON` are dynamic-dispatch / multi-slot (M6), and
-/// `XON`/`XOFF` are input toggles (M4) — those fold in with their milestones. Listed by id.
+/// is NOT taken wholesale: `XON`/`XOFF` are input toggles (M4) — those fold in with their
+/// milestones. `CALL` (dynamic dispatch) and `COMMON` (same-slot `COMMON DEF`) are now in
+/// scope (M6-T6): `CALL "name"` resolves a DEF by a runtime name string (`Op::CallDynamic`),
+/// so `calls_by_name` (→ stdout) and `undefined_instruction` (→ errnum 16) replay green, and a
+/// `COMMON DEF` is invoked just like a plain DEF in its own slot. (Cross-slot COMMON visibility
+/// and EXEC/USE program switching are the remaining M6-T6 multi-program work — queued.) Listed
+/// by id.
 const IN_SCOPE_CONTROL: &[&str] = &[
     "IF", "THEN", "ELSE", "ELSEIF", "ENDIF", "FOR", "NEXT", "TO", "STEP", "WHILE", "WEND",
     "REPEAT", "UNTIL", "BREAK", "CONTINUE", "GOTO", "GOSUB", "RETURN", "ON", "END", "STOP", "DEF",
+    "CALL", "COMMON",
 ];
 /// Array / variable **mutation** instructions (`Variables and Arrays` category) that
 /// `sb-core` fully implements — including the array-element reference forms (`SWAP A[i],A[j]`,

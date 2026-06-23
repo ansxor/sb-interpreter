@@ -711,8 +711,14 @@ impl Vm {
             } => self.do_input(count, question, has_prompt, &types)?,
             Op::Linput { has_prompt } => self.do_linput(has_prompt)?,
 
+            // `CALL "name"` — dynamic dispatch to a DEF instruction (M6-T6).
+            Op::CallDynamic {
+                argc,
+                out_argc,
+                wants_value,
+            } => self.call_dynamic(argc, out_argc, wants_value)?,
+
             // -- deferred to later milestones --------------------------------------
-            Op::CallDynamic { .. } => return Err(VmError::Unsupported("CALL (M6)")),
             Op::Use => return Err(VmError::Unsupported("USE (M6)")),
             Op::Exec => return Err(VmError::Unsupported("EXEC (M6)")),
             Op::PushRefExpr | Op::PopRef => {
@@ -842,6 +848,47 @@ impl Vm {
             errnum: ERR_UNDEFINED_FUNCTION,
             line: 0,
         })?;
+        self.invoke_function(func, argc, out_argc, wants_value)
+    }
+
+    /// `CALL "name" [,args] [OUT outs]` — dynamic dispatch (M6-T6): resolve a `DEF`
+    /// instruction by a **runtime** name string and invoke it exactly like a literal
+    /// [`Op::CallUser`]. On entry the operand stack is (bottom→top)
+    /// `[name, arg0, …, arg{argc-1}]` — the name string was pushed first (it is the
+    /// CALL's first source argument), so it sits *under* the value args. A non-string
+    /// name → Type mismatch (8); an unknown instruction → Undefined function (16) — both
+    /// hw_verified (`call.yaml`).
+    fn call_dynamic(&mut self, argc: u8, out_argc: u8, wants_value: bool) -> Result<(), VmError> {
+        // Lift the value args off the top so the name string underneath is reachable.
+        let mut args = Vec::with_capacity(argc as usize);
+        for _ in 0..argc {
+            args.push(self.pop()?);
+        }
+        let name_val = self.pop()?.deref();
+        let ident = String::from_utf16_lossy(name_val.as_str().map_err(sb)?).to_ascii_uppercase();
+        // A user instruction name carries no type suffix.
+        let name = Name::new(ident, Suffix::None);
+        let func = self.program.function_index(&name).ok_or(VmError::Sb {
+            errnum: ERR_UNDEFINED_FUNCTION,
+            line: 0,
+        })?;
+        // Restore the value args in source order for `invoke_function` to bind.
+        for v in args.into_iter().rev() {
+            self.stack.push(v);
+        }
+        self.invoke_function(func, argc, out_argc, wants_value)
+    }
+
+    /// Push an activation [`Frame`] for function index `func` and jump to its entry,
+    /// binding the `argc` by-value args already on the operand stack. Shared by the
+    /// static [`Op::CallUser`] path and the dynamic [`Op::CallDynamic`] (`CALL "name"`).
+    fn invoke_function(
+        &mut self,
+        func: usize,
+        argc: u8,
+        out_argc: u8,
+        wants_value: bool,
+    ) -> Result<(), VmError> {
         if self.depth() >= CALL_STACK_LIMIT {
             return Err(VmError::Sb {
                 errnum: ERR_STACK_OVERFLOW,
@@ -3655,6 +3702,71 @@ C$=A$+B$"#);
     fn def_recursion_factorial() {
         let vm = run("DEF FACT(N)\nIF N<=1 THEN RETURN 1\nRETURN N*FACT(N-1)\nEND\nA=FACT(5)");
         assert_eq!(int(&vm, "A"), 120);
+    }
+
+    // ---- CALL "name" — dynamic dispatch (M6-T6) ----
+
+    #[test]
+    fn call_by_name_runs_the_def() {
+        // hw_verified (call.yaml calls_by_name): CALL "GREET" invokes DEF GREET.
+        let vm = run(r#"DEF GREET
+PRINT "HI"
+END
+CALL "GREET""#);
+        assert_eq!(vm.console_text(), "HI");
+    }
+
+    #[test]
+    fn call_undefined_name_is_undefined_function() {
+        // hw_verified (call.yaml undefined_instruction): an unknown name → errnum 16.
+        let err = run_err(r#"CALL "NOPE""#);
+        assert_eq!(err.errnum(), Some(16));
+    }
+
+    #[test]
+    fn call_name_is_case_insensitive() {
+        // Names fold ASCII to uppercase, so a lowercase CALL string still resolves.
+        let vm = run(r#"DEF GREET
+PRINT "HI"
+END
+CALL "greet""#);
+        assert_eq!(vm.console_text(), "HI");
+    }
+
+    #[test]
+    fn call_name_from_a_string_variable() {
+        // The target is chosen at runtime — a string variable selects the DEF.
+        let vm = run(r#"N$="GREET"
+DEF GREET
+PRINT "HI"
+END
+CALL N$"#);
+        assert_eq!(vm.console_text(), "HI");
+    }
+
+    #[test]
+    fn call_passes_value_args() {
+        let vm = run(r#"DEF ADD A,B
+PRINT A+B
+END
+CALL "ADD",2,3"#);
+        assert_eq!(vm.console_text(), "5");
+    }
+
+    #[test]
+    fn call_returns_out_args() {
+        let vm = run(r#"DEF ADDOUT A,B OUT R
+R=A+B
+END
+CALL "ADDOUT",2,3 OUT X"#);
+        assert_eq!(int(&vm, "X"), 5);
+    }
+
+    #[test]
+    fn call_with_a_non_string_name_is_type_mismatch() {
+        // The name operand must be a string; a numeric one → Type mismatch (8).
+        let err = run_err("CALL 5");
+        assert_eq!(err.errnum(), Some(8));
     }
 
     #[test]
