@@ -41,11 +41,12 @@ use crate::ast::{BinOp, Name, UnOp};
 use crate::bytecode::{Const, Op, Program, VarRef, VarType};
 use crate::sysvars::ErrSysvar;
 use crate::token::Suffix;
-use crate::value::{swap_cells, Cell, RuntimeError, SbStr, Value};
+use crate::value::{Cell, RuntimeError, SbStr, Value};
 use sb_render::console::Console;
 use sb_render::grp::GrpState;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
+use std::rc::Rc;
 
 /// Max combined depth of the `GOSUB` return stack + `DEF` call frames before raising
 /// **Stack overflow** (errnum 5). The exact value real SB 3.6.0 trips at is queued
@@ -434,11 +435,25 @@ impl Vm {
                 let new = operate(BinOp::Add, cur, delta).map_err(sb)?;
                 target.assign_through(new).map_err(sb)?;
             }
-            Op::Swap => {
+            Op::Swap {
+                a: sa,
+                b: sb_suffix,
+            } => {
                 let b = as_ref(self.pop()?)?;
                 let a = as_ref(self.pop()?)?;
                 if let (Value::Ref(ca), Value::Ref(cb)) = (&a, &b) {
-                    swap_cells(ca, cb);
+                    if !Rc::ptr_eq(ca, cb) {
+                        // Each target re-coerces the incoming value to its declared
+                        // suffix (typed var truncates/widens like an assignment; an
+                        // untyped var takes it verbatim). Coerce both before writing
+                        // so a Type-mismatch (8) leaves both cells untouched.
+                        let va = ca.borrow().clone();
+                        let vb = cb.borrow().clone();
+                        let into_a = vb.coerce_to_suffix(sa).map_err(sb)?;
+                        let into_b = va.coerce_to_suffix(sb_suffix).map_err(sb)?;
+                        *ca.borrow_mut() = into_a;
+                        *cb.borrow_mut() = into_b;
+                    }
                 }
             }
 
@@ -1748,6 +1763,43 @@ C$=A$+B$"#);
         let vm = run("A=1\nB=2\nSWAP A,B");
         assert_eq!(int(&vm, "A"), 2);
         assert_eq!(int(&vm, "B"), 1);
+    }
+
+    #[test]
+    fn swap_typed_var_truncates_to_declared_type() {
+        // The otya SWAPTEST case: `SWAP A%,B#` re-coerces each value to its
+        // destination's declared suffix. A% (Integer) truncates B#'s 2.34567 → 2;
+        // B# (Real) widens A%'s 1 → 1.0. (swap.yaml hw_verified coercion rule.)
+        let vm = run("A%=1\nB#=2.34567\nSWAP A%,B#");
+        match vm.global_value("A", Suffix::Int).expect("A% exists") {
+            Value::Int(i) => assert_eq!(i, 2),
+            other => panic!("A% is not Int: {other:?}"),
+        }
+        match vm.global_value("B", Suffix::Real).expect("B# exists") {
+            Value::Real(r) => assert_eq!(r, 1.0),
+            other => panic!("B# is not Real: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn swap_untyped_var_keeps_value_verbatim() {
+        // An untyped numeric var takes the swapped value VERBATIM (no truncation):
+        // `SWAP A,B#` leaves A holding the Double 2.5, B# holding 1.0.
+        // (swap.yaml hw_verified 2026-06-22.)
+        let vm = run("A=1\nB#=2.5\nSWAP A,B#");
+        assert_eq!(real(&vm, "A"), 2.5);
+        match vm.global_value("B", Suffix::Real).expect("B# exists") {
+            Value::Real(r) => assert_eq!(r, 1.0),
+            other => panic!("B# is not Real: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn swap_string_numeric_is_type_mismatch_8() {
+        // Mixing a string and a numeric operand → Type mismatch (8). The coerce
+        // happens before either cell is written, so both stay untouched.
+        let e = run_err("A=1\nB$=\"x\"\nSWAP A,B$");
+        assert_eq!(e.errnum(), Some(8));
     }
 
     // ---- DEF functions ----

@@ -1,0 +1,29 @@
+# SWAP — value exchange with destination-type coercion.
+# A %/#/$-typed target re-coerces the incoming value to its declared type (an
+# Integer target truncates like an assignment); an untyped numeric target takes
+# the value VERBATIM. swap.yaml hw_verified (sb-oracle 2026-06-22 cross-numeric +
+# 2026-06-23 typed truncation: A%=1:B#=2.34567:SWAP A%,B# -> A%=2,B#=1).
+cases:
+  - name: swap_int_scalars
+    code: "A=1\nB=2\nSWAP A,B\nPRINT A;B"
+    expect: { stdout: "21" }
+  - name: swap_strings
+    code: "A$=\"X\"\nB$=\"Y\"\nSWAP A$,B$\nPRINT A$;B$"
+    expect: { stdout: "YX" }
+  # NB: array-element SWAP operands (SWAP A[0],A[2]) are hw_verified in swap.yaml
+  # but not replayed here — `Op::PushArrayRef` (array-element references) is not
+  # yet wired in the VM. They fold in when that lands.
+  # Untyped numeric var takes the value verbatim — A becomes the Double 2.5,
+  # B# coerces 1 to its double slot. (oracle 2026-06-22)
+  - name: swap_untyped_keeps_double
+    code: "A=1\nB#=2.5\nSWAP A,B#\nPRINT A;\",\";B#"
+    expect: { stdout: "2.5,1" }
+  # Integer-typed target truncates the swapped-in Double like an assignment
+  # (otya SWAPTEST): A% holds 2, B# holds 1.0.
+  - name: swap_typed_int_truncates
+    code: "A%=1\nB#=2.34567\nSWAP A%,B#\nPRINT A%;\",\";B#"
+    expect: { stdout: "2,1" }
+  # String ↔ numeric is a Type mismatch (8).
+  - name: swap_string_numeric_mismatch
+    code: "A=1\nB$=\"x\"\nSWAP A,B$"
+    expect: { error: { errnum: 8 } }

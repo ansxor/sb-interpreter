@@ -704,9 +704,14 @@ impl<'a> Compiler<'a> {
                 self.emit(Op::IncRef);
             }
             StmtKind::Swap { a, b } => {
+                let a_suffix = self.lvalue_suffix(a);
+                let b_suffix = self.lvalue_suffix(b);
                 self.compile_push_ref(a)?;
                 self.compile_push_ref(b)?;
-                self.emit(Op::Swap);
+                self.emit(Op::Swap {
+                    a: a_suffix,
+                    b: b_suffix,
+                });
             }
             StmtKind::Option(_) => { /* handled in scan_options */ }
             StmtKind::Use(e) => {
@@ -1212,6 +1217,21 @@ impl<'a> Compiler<'a> {
         self.compile_expr(expr)
     }
 
+    /// The static declared [`Suffix`] of an lvalue, used to coerce a value
+    /// assigned into it (e.g. `SWAP`). A scalar/array name carries its suffix;
+    /// a runtime `VAR()` ref has no static type, so it takes values verbatim
+    /// (`Suffix::None`).
+    fn lvalue_suffix(&self, expr: &Expr) -> Suffix {
+        match &expr.kind {
+            ExprKind::Var(name) => name.suffix,
+            ExprKind::Index { array, .. } => match &array.kind {
+                ExprKind::Var(name) => name.suffix,
+                _ => Suffix::None,
+            },
+            _ => Suffix::None,
+        }
+    }
+
     /// Compile a reference to an lvalue (for `SWAP`/`INC`/`AssignRef` targets).
     fn compile_push_ref(&mut self, expr: &Expr) -> CResult<()> {
         match &expr.kind {
@@ -1554,7 +1574,7 @@ mod tests {
                 .count(),
             2
         );
-        assert!(p.code.contains(&Op::Swap));
+        assert!(p.code.iter().any(|o| matches!(o, Op::Swap { .. })));
     }
 
     #[test]

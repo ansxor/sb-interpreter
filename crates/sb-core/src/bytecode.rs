@@ -221,8 +221,12 @@ pub enum Op {
     // --- misc statements ------------------------------------------------------
     /// `INC`/`DEC`: pop a reference then a delta, add the delta through the reference.
     IncRef,
-    /// `SWAP`: pop two references, exchange the cells.
-    Swap,
+    /// `SWAP`: pop two references and exchange the cells, re-coercing each
+    /// incoming value to the *destination* variable's declared [`Suffix`] (a
+    /// `%`/`#`/`$` target truncates/widens like an assignment; an untyped target
+    /// takes the value verbatim). `a`/`b` are the static suffixes of the two
+    /// operands in push order.
+    Swap { a: Suffix, b: Suffix },
     /// `USE n`: pop a slot expression, make that slot executable.
     Use,
     /// `EXEC target`: pop a slot/file expression, load+run it.

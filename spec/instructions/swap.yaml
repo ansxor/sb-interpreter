@@ -19,6 +19,7 @@ semantics:
   - "Array elements are valid operands: SWAP A[I],A[J] swaps two elements; SWAP A[X1,Y1],A[X2,Y2] works for 2D arrays."
   - "Mixed-kind operands (scalar vs. array element) are also legal: SWAP SCALAR,ARRAY[I]."
   - "Cross-numeric swap (integer var ↔ double var) is allowed: SWAP A,B# where A holds integer 1 and B# holds double 2.5 leaves A=2.5 and B#=1.0. An untyped numeric var is dynamically typed and takes the swapped value VERBATIM (no truncation to integer); the explicitly-typed B# coerces 1 to its double slot. (oracle-verified 2026-06-22)"
+  - "Each operand re-coerces the swapped-in value to ITS OWN declared type, exactly like an assignment: a %-typed target truncates toward zero, a #-typed target widens. SWAP A%,B# where A%=1 and B#=2.34567 leaves A%=2 (2.34567 truncated) and B#=1.0. (oracle-verified 2026-06-23)"
 
 errors:
   - { errnum: 8, name: TypeMismatch, when: "one operand is a string and the other is numeric" }
@@ -29,6 +30,7 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst: SWAP keyword in DATA table @0x3067fc (name ptr 0x2ed654, token id 328 = 0x148); not in builtin dispatch table — compiled to a VM opcode handled in FUN_0019D508 (@0x19d508); a two-operand-dereference handler in that table (caseD_42 @0x19da44) loads both operand types and errors when mismatched, consistent with SWAP TypeMismatch" }
   - { type: community, ref: "sbsave corpus: SWAP on array elements (SWAP A_X_L[L],A_X_L[L-1], SWAP BVX[N],BVY[N]) in 200+ uses, e.g. 13D4DV3V/TXT/MAIN_PRG_V2; SWAP between scalar and array element (SWAP EXPS%,STRAGE[MAX_STRAGE,0]) in 30+ uses; SWAP on string arrays (SWAP RING$[I],RING$[J]) in 10+ uses; zero corpus instances of cross-type (string↔number) swap" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4a): A=1:B=2:SWAP A,B -> A=2,B=1; A$=\"X\":B$=\"Y\":SWAP A$,B$ -> A$=Y,B$=X; SWAP A[0],A[2] (10,99) -> 99,10; X=5,B[1]=9:SWAP X,B[1] -> X=9,B[1]=5; A=1(int):B#=2.5:SWAP A,B# -> A=2.5,B#=1 (cross-numeric ok, no truncation); A=1:B$=\"x\":SWAP A,B$ -> errnum 8 (Type mismatch), errline 1" }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-23: A%=1:B#=2.34567:SWAP A%,B# -> A%=2 (truncated toward zero, NOT 2.34567), B#=1 — a typed target coerces the swapped-in value to its declared type like an assignment" }
 
 confidence: hw_verified
 
@@ -38,4 +40,5 @@ tests:
   - { name: array_swap,      code: "DIM A[3]\nA[0]=10\nA[2]=99\nSWAP A[0],A[2]\nPRINT A[0];A[2]", expect: { stdout: "9910" } }
   - { name: scalar_arr_swap, code: "X=5\nDIM B[3]\nB[1]=9\nSWAP X,B[1]\nPRINT X;B[1]", expect: { stdout: "95" } }
   - { name: cross_numeric,   code: "A=1\nB#=2.5\nSWAP A,B#\nPRINT A;\",\";B#", expect: { stdout: "2.5,1" } }
+  - { name: typed_truncates, code: "A%=1\nB#=2.34567\nSWAP A%,B#\nPRINT A%;\",\";B#", expect: { stdout: "2,1" } }
   - { name: type_mismatch,   code: "A=1\nB$=\"x\"\nSWAP A,B$",          expect: { error: { errnum: 8 } } }

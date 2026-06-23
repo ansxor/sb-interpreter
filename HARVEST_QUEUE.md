@@ -826,14 +826,9 @@ oracle to confirm exact output and promote to `hw_verified`.
   top-level read). Matching needs execution-order dataflow. Does not affect the otya
   pattern (shared globals are WRITTEN at top level first). Documented in def_scope.yaml.
 
-## M1-T14 / SWAP — typed-variable coercion (NEW, otya line 127)
-- **`SWAP A%,B#` must re-coerce each value to the destination variable's declared type.**
-  Surfaced once the scoping fix advanced otya to SWAPTEST (line 127, `ASSERT__ A%==2`).
-  otya: `VAR A%=1 : VAR B#=2.34567 : SWAP A%,B#` then asserts `B#==1` (passes) and
-  `A%==2` (FAILS in sb-core). Real SB: after the swap A% holds the Double 2.34567 coerced
-  to its Integer type → truncates to 2, so `A%==2`. sb-core's `Op::Swap` exchanges the raw
-  cell values without re-coercing to each var's suffix-declared type. Fix: SWAP (and likely
-  any assignment-through-ref) should coerce the incoming value to the target's declared
-  numeric type. Harvest the exact SWAP coercion rule (does it truncate like assignment? what
-  about string↔numeric → Type mismatch 8?) and fix `Op::Swap`. Now the otya blocker
-  (with sprite `CALL`, `DTREAD`, `DATE$`/`TIME$` still beyond).
+## M1-T14 / SWAP — typed-variable coercion — RESOLVED 2026-06-23
+- Fixed: `Op::Swap` now carries each operand's static suffix and re-coerces the swapped-in
+  value to the destination's declared type (typed target truncates/widens like an assignment;
+  untyped target takes it verbatim). hw_verified by sb-oracle 2026-06-23
+  (`A%=1:B#=2.34567:SWAP A%,B# -> A%=2,B#=1`); folded into swap.yaml + harness/corpus/cases/
+  swap.yaml. This advanced otya line 127 → 207 (`CALL "SPDEF"`, sprite — M3, the next blocker).
