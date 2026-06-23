@@ -276,9 +276,10 @@ oracle to confirm exact output and promote to `hw_verified`.
   oracle (O-T6, not yet in the skill). Behavior is from docs + disassembly + corpus.
 - [ ] S-T7e color read (GSPOIT · RGB · RGBREAD) · Value/error expects HARVESTED (sb-oracle 2026-06-22 s_t7e):
   GSPOIT off-page -> 0 (NOT -1 as PTC docs claim); RGB clamps channels to 0-255 (RGB(999,999,999)=-1);
-  RGB/GSPOIT arg-count errors -> errnum 4. STILL PENDING: (a) GSPOIT post-draw round-trip color through the
-  RGBA5551 device format (e.g. after GPSET x,y,RGB(255,0,0), what does GSPOIT(x,y) return?) — needs the
-  framebuffer oracle (O-T6) since the value-batch can't set up a draw. (b) RGBREAD value round-trip
+  RGB/GSPOIT arg-count errors -> errnum 4. RESOLVED 2026-06-23 (s_c2): (a) GSPOIT post-draw round-trip is
+  HARVESTED via the multi-statement prog path (GPSET x,y,RGB(...):GSPOIT(x,y)) — RGB(255,0,0)->-524288,
+  RGB(255,255,255)->-460552 (==#WHITE), RGB(0,100,0)->-16752640; folded into GSPOIT.yaml tests (hw_verified)
+  and spec/concepts/screen-and-color-model.md. STILL PENDING: (b) RGBREAD value round-trip
   (RGBREAD &HFF804020 OUT R,G,B -> R,G,B) — RGBREAD is a statement writing OUT vars, so the expr/value batch
   can't capture it (prog path returns None for stmt+expr); extraction is fully disassembled (shift+mask) but a
   direct hw_verified anchor is queued. (c) GSPOIT errnum 49 (0x31) graphics-state guard @0x1543bc — undocumented
