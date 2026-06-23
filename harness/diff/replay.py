@@ -59,10 +59,12 @@ def main():
     # (harness/corpus/cases + spec/tests + in-scope spec inline tests) are replayed by the
     # hermetic `cargo test -p sb-core` conformance runner; here we add full-program replay.
     #
-    # `EXPECTED_PASS` programs gate the exit code; everything else is informational (e.g.
-    # `otya_test.sb3` exercises SORT/RSORT, sprite CALL, DTREAD, DATE$/TIME$ and
-    # out-of-range decimal-literal i32 wrap — features that land in later milestones).
-    expected_pass = {"m1_conformance.sb3", "fizzbuzz.sb3"}
+    # `EXPECTED_PASS` programs gate the exit code; everything else is informational. The
+    # FULL `otya_test.sb3` is still informational — it exercises sprite CALL, DTREAD,
+    # DATE$/TIME$ and out-of-range decimal-literal i32 wrap (later milestones) — but its
+    # M1-implemented subset is gated as `otya_m1.sb3` (the real golden's RANDOMTEST/MAXMIN/
+    # SORT/SWAP/REPEAT/IF/math/string/DATA assertions; see PRD.md M1-T14).
+    expected_pass = {"m1_conformance.sb3", "fizzbuzz.sb3", "otya_m1.sb3"}
     print(f"\nrunning {len(programs)} full program(s) through {runner.name} ...")
     failed = []
     for prog in programs:

@@ -23,7 +23,9 @@
 //!    intentionally out of scope here (their behavior is page/layer state, exercised by the VM
 //!    unit tests + corpus cases) and are folded in as their milestones land.
 //!
-//! Self-checking `ASSERT__` programs are replayed by [`assert_programs_pass`] below.
+//! Self-checking `ASSERT__` programs are replayed by [`assert_programs_pass`] below —
+//! `m1_conformance.sb3` (hand-written) and `otya_m1.sb3` (the real `otya_test.sb3` golden
+//! sliced to the M1 feature set; the full file folds in once CALL/DATE$/DTREAD land).
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -267,7 +269,13 @@ fn in_scope_instruction_specs_pass() {
 /// condition — M1-T14).
 #[test]
 fn assert_programs_pass() {
-    let programs = [root().join("harness/corpus/programs/m1_conformance.sb3")];
+    let programs = [
+        root().join("harness/corpus/programs/m1_conformance.sb3"),
+        // The real otya_test.sb3 golden, sliced to the M1-implemented feature set (the
+        // CALL/DATE$/TIME$/DTREAD blocks are removed — they land in M3/M6, after which the
+        // full file folds in here; see PRD.md M1-T14 and the fixture's header comment).
+        root().join("harness/corpus/programs/otya_m1.sb3"),
+    ];
     for path in programs {
         let src = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
