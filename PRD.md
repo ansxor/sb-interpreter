@@ -114,7 +114,7 @@ and name the instructions they cover inline.
 - [x] S-T12b File management — CHKFILE · RENAME · USE · EXEC
 - [x] S-T12c Source read — PRGGET$ · PRGNAME$ · PRGSIZE
 - [x] S-T12d Source edit — PRGSET · PRGINS · PRGDEL · PRGEDIT
-- [ ] S-T12e DIRECT-mode — RUN · CONT · NEW · CLEAR · LIST · BACKTRACE · PROJECT
+- [x] S-T12e DIRECT-mode — RUN · CONT · NEW · CLEAR · LIST · BACKTRACE · PROJECT
 
 #### S-T13 Wireless (8) → S-T0
 - [ ] S-T13a Session — MPSTART · MPEND · MPSET · MPSTAT

@@ -1,0 +1,38 @@
+id: LIST
+kind: statement
+category: DIRECT mode
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — no argument: switch to EDIT mode (equivalent to pressing EDIT).
+  - args: []
+    returns: { type: void }
+    note: "LIST — switch to EDIT mode and start editing at the default line (equivalent to pressing the EDIT button)."
+  # Form 2 — line target: a line number, a slot:line target (e.g. 2:120), or ERR.
+  - args:
+      - { name: target, type: integer, range: "Line number to start the listing at. A program SLOT may be prefixed, e.g. `2:120` (slot 2, line 120). The bare token `ERR` selects the line of the last error.", optional: true }
+    returns: { type: void }
+    note: "LIST line | LIST slot:line | LIST ERR — switch to EDIT mode positioned at the given line (or the last-error line for ERR)."
+
+summary: "DIRECT-mode-only command that switches to EDIT mode and begins editing. With no argument it is equivalent to pressing the EDIT button (editor opens at the default line). A line number positions the editor at that line; a `slot:line` form (e.g. `2:120`) targets a specific program SLOT; the keyword `ERR` positions at the line where the last error occurred. LIST is a DIRECT-mode keyword, not a reserved identifier in program mode: inside a program the token LIST is parsed as an ordinary variable (`LIST=expr` assigns it)."
+
+semantics:
+  - "LIST is not in the builtin dispatch table (disasm.py dispatch LIST: 'not in dispatch table') — it is a DIRECT-mode command keyword handled by the command-line interpreter, so its EDIT-mode-switch handler is index-dispatched and not body-pinned here."
+  - "No argument = press-EDIT-button equivalent: enter EDIT mode at the default line (docs)."
+  - "Argument forms (docs): a line number to start the list at; a slot-qualified target `slot:line` (e.g. `2:120` lists slot 2 from line 120); or the special token `ERR`, which positions at the line where the last error occurred (`LIST ERR`)."
+  - "In PROGRAM mode LIST is a plain identifier, not a keyword: `LIST=9 : ... LIST` reads/writes a variable named LIST (oracle: `LIST=9` then `LIST` -> 9). The command form as a statement in a program is a Syntax error (errnum 3), not 'Can't use in program' (44)."
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "used as a command (`LIST` / `LIST target` as a statement) inside a program — the name is a variable there" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/list.md ('Switches to EDIT mode and starts editing. DIRECT mode only.' 'Using LIST with no argument is equal to pressing the EDIT button.' Form `LIST [ Line number/ERR ]`; line number 'If unspecified, the displayed list will start with the default line', 'A program SLOT can be specified, e.g., by entering 2:120'; ERR 'Specifies the line where the last error occurred.' Examples `LIST ERR`, `LIST 1:`.)" }
+  - { type: hypothesis, ref: "cia_3.6.0.lst: LIST is NOT in the builtin dispatch table (disasm.py dispatch LIST -> 'not in dispatch table'); it is a DIRECT-mode command keyword (UTF-16 'LIST' @0x2ef948, referenced from the DIRECT-command/help table @0x2c93f0). The EDIT-mode-switch handler is index-dispatched by the command-line interpreter and was not body-pinned, so the algorithm and the `slot:line`/`ERR` parsing are not `disassembled`." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bLIST\\b'): LIST appears as a user VARIABLE/array name in shipped programs (and inside strings), never as an executable command. Confirms LIST is not a reserved identifier in program mode." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-23 (s_t12e): program `LIST=9` then evaluate `LIST` -> 9 (LIST is a usable variable in program mode); command-form bare `LIST` statement -> errnum 3 errline 1 (Syntax error, not errnum 44)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: list_as_variable, code: "LIST=9\nPRINT LIST", expect: { stdout: "9" } }
+  - { name: list_command_in_program, code: "LIST", expect: { error: { errnum: 3 } } }

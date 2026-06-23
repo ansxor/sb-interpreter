@@ -1,0 +1,43 @@
+id: PROJECT
+kind: statement
+category: DIRECT mode
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — set the current (non-execution-time) project. DIRECT-mode only.
+  - args:
+      - { name: project_name, type: string, range: "Name of the project to switch to. \"\" selects the default project. 1-15 chars; allowed chars are alphanumerics plus '_' '-' '.' and '$' ('$' not as the first char)." }
+    returns: { type: void }
+    note: "PROJECT \"name\" — switch the current project (used at non-execution time). DIRECT-mode only."
+  # Form 2 — read the current project name into an OUT variable. Usable inside programs.
+  - args: []
+    out:
+      - { name: project_name, type: string, desc: "Receives the current project name." }
+    note: "PROJECT OUT name$ — obtain the current project name. Can also be used from within a program."
+
+summary: "DIRECT-mode command with two forms. `PROJECT \"name\"` switches the current project (the project used at non-execution time); an empty string selects the default project, and changing it cascades to the subordinate execution-time project on the next RUN/tool launch. `PROJECT OUT name$` reads the current project name into a string variable and — unlike the set form — may also be used from inside a running program. A project name must be 1-15 characters of alphanumerics plus '_', '-', '.', '$' (with '$' not first); an invalid name or wrong argument shape raises errnum 4."
+
+semantics:
+  - "Argument dispatch on the input-argument count [r3,#0xc] (@0x18d5d8): 0 input args = the OUT (read) form; 1 input arg = the set form (the arg's type byte [r3,#0x4] must be 0 = string, else fall to errnum 4); any other shape -> errnum 4 (Illegal function call: mov r0,#0x4 @0x18d62c -> bl 0x1fffdc)."
+  - "Read/OUT form (@0x18d5f8): guarded by a global byte flag (ldr r0,[0x18d8e4]/ldrb r0,[r0,#0x0]/cmp r0,#0x0); when the flag is set the command raises errnum 0x2c (44 'Can't use in program', mov r0,#0x2c @0x18d610, errline -1 via mvn r1,#0x0). When clear it proceeds and requires exactly one OUT parameter (ldr r0,[r3,#0x4]/cmp r0,#0x1/beq 0x18d63c, else errnum 4), into which it writes the current project name."
+  - "Project-name validation (set path and shared, @0x18d65c-@0x18d844): length must be <= 15 (cmp r6,#0xf/bcs 0x18d844 -> errnum 4); the first character may not be '.' (cmp r6,#0x1/.../cmpge r0,#0x2e/beq 0x18d844); each character is checked against the allowed set — alphanumerics (via the char-class table bl 0x20cc9c/ldrb r0,[r0,r4]/tst r0,#0x38) plus '_' (0x5f), '-' (0x2d), '.' (0x2e), and '$' (0x24) where '$' is only legal when it is not the first character (cmp r7,#0x0/cmpeq r4,#0x24/bne 0x18d844). A disallowed character or length -> errnum 4 (mov r0,#0x4 @0x18d84c -> bl 0x1fffdc); a character that fails the table lookup path raises errnum 8 (Type mismatch: mov r0,#0x8 @0x18d6c0)."
+  - "Empty string \"\" is the documented way to select the default project. Changing the current project cascades: the supplement notes that setting the non-execution-time project also updates the execution-time project on the next RUN/tool/file-viewer launch (the execution-time project is initialized from the non-execution-time project when execution starts)."
+  - "The set form is DIRECT-mode only: used in a program it raises errnum 44 'Can't use in program' (oracle: `PROJECT \"X\"` -> errnum 44 errline 1). The OUT/read form 'Can be also used from within programs' (docs) and runs without error in a program (oracle: `PROJECT OUT PJ$` -> NOERR; the read name is the current project, empty on a default install)."
+  - "PROJECT is also usable as an ordinary variable name in program mode (oracle: `PROJECT=6` then `PROJECT` -> 6); the parser treats a following `=` as assignment rather than the command."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "wrong argument shape (not 0-in/1-out for read or 1-string-in for set), a project name longer than 15 chars, or a name with a disallowed character (including '.' as the first char or '$' as the first char)" }
+  - { errnum: 8, name: "Type mismatch", when: "a project-name character fails the character-class lookup" }
+  - { errnum: 44, name: "Can't use in program", when: "the set form (or the read form while the in-program guard flag is set) is used from a running program rather than DIRECT mode" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/project.md (2 forms. (1) `PROJECT \"Project name\"` — 'Switches the default project. DIRECT mode only.' Project name \"\" specifies the default project; supplement describes the 3 current-project conditions and the non-execution-time -> execution-time cascade on RUN/EXEC. (2) `PROJECT OUT PJ$` — 'Obtains the default project. Can be also used from within programs.' Returns the current project name. Example `PROJECT \"\"`.)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst PROJECT handler @0x18d5cc: input-arg-count dispatch ldr r0,[r0,#0xc]/cmp r0,#0x0/beq 0x18d5f8 (read form), cmp r0,#0x1 (set form); OUT-form in-program guard ldr r0,[0x18d8e4]/ldrb r0,[r0,#0x0]/beq 0x18d618 else errnum 0x2c (44) mov r0,#0x2c @0x18d610; OUT-arg count ldr r0,[r3,#0x4]/cmp r0,#0x1/beq 0x18d63c else errnum 4 mov r0,#0x4 @0x18d62c -> bl 0x1fffdc; name length guard cmp r6,#0xf/bcs 0x18d844; char-class loop ldrh r4,[r0]/cmp r4,#0xff/bl 0x20cc9c/ldrb r0,[r0,r4]/tst r0,#0x38 with allowed cmp r4,#0x5f/cmpne #0x2d/cmpne #0x2e and '$' 0x24 not-first (cmp r7,#0x0/cmpeq r4,#0x24/bne 0x18d844); invalid -> errnum 4 mov r0,#0x4 @0x18d84c -> bl 0x1fffdc; errnum 8 site mov r0,#0x8 @0x18d6c0", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-23 (s_t12e): set form in a program `PROJECT \"X\"` -> errnum 44 errline 1 (Can't use in program), confirming the in-program guard @0x18d610; read form `PROJECT OUT PJ$` -> NOERR (allowed in programs; returns the current project, empty string on this install); `PROJECT=6` then `PROJECT` -> 6 (usable as a variable name)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: set_form_in_program, code: "PROJECT \"X\"", expect: { error: { errnum: 44 } } }
+  - { name: project_as_variable, code: "PROJECT=6\nPRINT PROJECT", expect: { stdout: "6" } }

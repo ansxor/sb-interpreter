@@ -506,3 +506,20 @@ oracle to confirm exact output and promote to `hw_verified`.
     PRGSET line-substitution + append-on-EOF; PRGINS inserted line + flag(before/after) +
     CHR$(10) multi-line split; PRGDEL deletion + negative=delete-all. All need a known program
     loaded into a slot (M6-T4 source-edit harness).
+
+## S-T12e — DIRECT-mode (RUN · CONT · NEW · CLEAR · LIST · BACKTRACE · PROJECT)
+- Harvested 2026-06-23 (hw_verified, frozen into spec/instructions/*.yaml):
+  - RUN/NEW/CLEAR/LIST/CONT/BACKTRACE/PROJECT are all usable as VARIABLE names in program mode
+    (`NAME=k` then `NAME` -> k). Command-form in a program: RUN/NEW/CLEAR/LIST/CONT -> errnum 3
+    (Syntax error, NOT 44 — they're plain identifiers in program mode). BACKTRACE is a real
+    builtin: bare `BACKTRACE` -> NOERR (runs); `BACKTRACE 1`/`BACKTRACE 1,2` -> errnum 4.
+    PROJECT set form `PROJECT "X"` -> errnum 44; `PROJECT OUT PJ$` -> NOERR (allowed in program).
+- UNHARVESTED (console-render-only / DIRECT-mode-only — no scalar golden, needs O-T6 render
+  capture or a DIRECT-mode driver):
+  - BACKTRACE actual multi-line slot:line output after a STOP/error halt (needs a suspended
+    program + console capture).
+  - RUN slot-launch behavior / NEW slot-erase / CLEAR memory-init / LIST EDIT-mode switch +
+    `slot:line`/`ERR` target parsing — all DIRECT-mode-only effects, not capturable as a value.
+  - PROJECT OUT PJ$ returned "" on this install (default project); the real current-project
+    name and the set-form project-name validation (errnum 4 length>15 / bad chars; errnum 8
+    char-class) are not separable as scalar goldens in a warm program-mode session.

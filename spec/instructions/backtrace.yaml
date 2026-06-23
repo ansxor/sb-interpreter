@@ -1,0 +1,34 @@
+id: BACKTRACE
+kind: statement
+category: DIRECT mode
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    returns: { type: void }
+    note: "BACKTRACE — print the caller history (slot:line of each pending GOSUB/function caller) of the most recently suspended program. Takes no arguments."
+
+summary: "DIRECT-mode-only command that displays the call-stack history (the chain of previous callers) of the program that was most recently stopped — e.g. by the STOP instruction, the START button, or an error. Each entry is a program SLOT number and a line number, from the innermost caller outward, printed to the console. BACKTRACE takes no arguments; supplying one raises errnum 4. It reads the saved call frames captured at the moment execution halted, so it is only meaningful after a suspend/halt."
+
+semantics:
+  - "Takes no arguments. The handler's first guard checks the argument frame (ldr r1,[r0,#0x4]/cmp r1,#0x0 then ldreq r0,[r0,#0xc]/cmpeq r0,#0x0): only the no-argument form (count and type-byte both zero) is accepted; any supplied argument falls through to errnum 4 (Illegal function call: mov r0,#0x4 @0x146740 -> bl 0x1fffdc, with errline = -1 via mvn r1,#0x0)."
+  - "On the no-arg path (@0x146750) it loads the interpreter's saved call-stack state from globals (ldr r0,[0x146898]/ldr r7,[r0,#0x4]; ldr r0,[0x14689c]/ldr r5,[r0,#0x2dc], falling back to [r0,#0x2d8] when 0x2dc is null), then walks the chain of caller frames (ldr r4,[r5,#0x4]/ldr r6,[r5,#0x28]; the loop terminates when the frame pointer is null: cmp r4,#0x0/beq 0x1467ec)."
+  - "For each frame it formats a slot:line entry (loads the line number ldr r0,[r5,#0x1c], resolves the slot via bl 0x1ec3b0, and prints through the console formatter bl 0x1eed50 using the format template @0x1468a0). The history is the callers captured at the last suspend/halt; if nothing has been suspended the chain is empty and nothing is listed."
+  - "Although documented as DIRECT-mode only, BACKTRACE is a real dispatch-table builtin, so a bare `BACKTRACE` statement inside a program does NOT raise (oracle: NOERR) — it simply runs and lists the (typically empty) current caller history; it does not raise errnum 44. Its output is multi-line console text (slot + line numbers), which has no scalar/value golden — console-render capture only (oracle-pending)."
+  - "BACKTRACE is also usable as an ordinary variable name in program mode (oracle: `BACKTRACE=4` then `BACKTRACE` -> 4); the parser treats a following `=` as assignment."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "any argument is supplied (BACKTRACE takes none) — e.g. `BACKTRACE 1` or `BACKTRACE 1,2`" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/backtrace.md ('Displays the history of previous callers.' DIRECT mode only; 'When execution has been stopped, for example with the STOP instruction, the caller history up to the point just before it was stopped will be displayed'; 'A list of slot numbers and line numbers will be displayed.' Form: `BACKTRACE`, no arguments.)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BACKTRACE handler @0x14671c: arg guard ldr r1,[r0,#0x4]/cmp r1,#0x0/ldreq r0,[r0,#0xc]/cmpeq r0,#0x0/beq 0x146750 (only the no-arg form proceeds); any argument -> errnum 4 (mov r0,#0x4 @0x146740 -> bl 0x1fffdc, errline mvn r1,#0x0 = -1); no-arg path @0x146750 loads saved call state (ldr r0,[0x146898]/ldr r7,[r0,#0x4]; ldr r0,[0x14689c]/ldr r5,[r0,#0x2dc]/ldreq r5,[r0,#0x2d8]) and walks caller frames (ldr r4,[r5,#0x4]/ldr r6,[r5,#0x28]/cmp r4,#0x0/beq 0x1467ec), formatting each slot:line via bl 0x1ec3b0 + bl 0x1eed50 with template @0x1468a0", confidence: disassembled }
+  - { type: community, ref: "osb/SMILEBASIC (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-23 (s_t12e): `BACKTRACE 1` -> errnum 4 errline 1 and `BACKTRACE 1,2` -> errnum 4 errline 1 (any argument rejected); bare `BACKTRACE` statement in a program -> NOERR (it is a real builtin, not errnum 44, and lists the current/empty caller history); `BACKTRACE=4` then `BACKTRACE` -> 4 (usable as a variable name)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: arg_rejected, code: "BACKTRACE 1", expect: { error: { errnum: 4 } } }
+  - { name: two_args_rejected, code: "BACKTRACE 1,2", expect: { error: { errnum: 4 } } }
+  - { name: backtrace_as_variable, code: "BACKTRACE=4\nPRINT BACKTRACE", expect: { stdout: "4" } }

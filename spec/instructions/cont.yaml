@@ -1,0 +1,32 @@
+id: CONT
+kind: statement
+category: DIRECT mode
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    returns: { type: void }
+    note: "CONT — DIRECT-mode command that resumes a suspended program from where it stopped. No arguments."
+
+summary: "DIRECT-mode-only command that resumes a program suspended by the START button, the STOP instruction, or an error, continuing from the point of suspension. It cannot resume if the program was edited after stopping, if it was suspended while waiting for user input, or for some error types. CONT is distinct from the program-mode CONTINUE keyword; it is a DIRECT-mode keyword and not a reserved identifier in program mode, where the token CONT is parsed as an ordinary variable (`CONT=expr` assigns it)."
+
+semantics:
+  - "CONT is not in the builtin dispatch table (disasm.py dispatch CONT: 'not in dispatch table') — it is a DIRECT-mode command keyword handled by the command-line interpreter, so its resume handler is index-dispatched and not body-pinned here. (Distinct from CONTINUE, the in-loop control keyword — see continue.yaml.)"
+  - "Takes no arguments (docs: form `CONT`). Resumes execution from the location where it was suspended."
+  - "Resume is NOT always possible (docs): a program that was stopped and then edited cannot be resumed; a program suspended while waiting for user input cannot be resumed; and depending on the error type, an error-halted program may not be resumable."
+  - "In PROGRAM mode CONT is a plain identifier, not a keyword: `CONT=2 : ... CONT` reads/writes a variable named CONT (oracle: `CONT=2` then `CONT` -> 2). The command form as a statement in a program is a Syntax error (errnum 3), not 'Can't use in program' (44)."
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "used as a command (bare `CONT` statement) inside a program — the name is a variable there" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/cont.md ('Resumes a suspended program. DIRECT mode only.' 'Execution is resumed from the location it was suspended at using the START button, the STOP instruction, or due to an error.' Cannot resume if edited after stopping, if suspended while waiting for user input, or depending on the error type. Form `CONT`, no arguments.)" }
+  - { type: hypothesis, ref: "cia_3.6.0.lst: CONT is NOT in the builtin dispatch table (disasm.py dispatch CONT -> 'not in dispatch table'); it is a DIRECT-mode command keyword (UTF-16 'CONT' @0x2ef8e6/0x2ef8f0, in the DIRECT-command keyword region near 0x2c93f0). The resume handler is index-dispatched by the command-line interpreter and was not body-pinned, so the resume algorithm is not `disassembled`." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bCONT\\b'): CONT appears as a user VARIABLE in shipped programs, never as an executable command. Confirms CONT is not a reserved identifier in program mode (distinct from CONTINUE)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-23 (s_t12e): program `CONT=2` then evaluate `CONT` -> 2 (CONT is a usable variable in program mode); command-form bare `CONT` statement -> errnum 3 errline 1 (Syntax error, not errnum 44)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: cont_as_variable, code: "CONT=2\nPRINT CONT", expect: { stdout: "2" } }
+  - { name: cont_command_in_program, code: "CONT", expect: { error: { errnum: 3 } } }

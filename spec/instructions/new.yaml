@@ -1,0 +1,32 @@
+id: NEW
+kind: statement
+category: DIRECT mode
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: slot, type: integer, range: "0-3: erase only this program SLOT. If omitted, ALL slots are erased.", optional: true }
+    returns: { type: void }
+    note: "NEW [slot] — DIRECT-mode command that erases program source. With a slot, only that slot; with no argument, all slots."
+
+summary: "DIRECT-mode-only command that erases program source. `NEW slot` (0-3) clears just that program SLOT; bare `NEW` erases all four slots. NEW is a DIRECT-mode keyword, not a reserved identifier in program mode: inside a program the token NEW is parsed as an ordinary variable (`NEW=expr` assigns it), and a command-style `NEW`/`NEW slot` statement is a syntax error (errnum 3)."
+
+semantics:
+  - "NEW is not in the builtin dispatch table (disasm.py dispatch NEW: 'not in dispatch table') — it is a DIRECT-mode command keyword handled by the command-line interpreter, so its erase handler is index-dispatched and not body-pinned here."
+  - "Optional SLOT argument 0-3 erases only that slot; if the argument is omitted ALL slots are erased (docs)."
+  - "In PROGRAM mode NEW is a plain identifier, not a keyword: `NEW=7 : ... NEW` reads/writes a variable named NEW (oracle: `NEW=7` then `NEW` -> 7). The command form as a statement in a program is a Syntax error (errnum 3), not 'Can't use in program' (44)."
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "used as a command (`NEW` or `NEW slot` as a statement) inside a program — the name is a variable there" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/new.md ('Erases programs. DIRECT mode only.' Form `NEW [Program SLOT]`; SLOT 0-3 'Erases the specified SLOT only'; 'If unspecified, all SLOTs are erased.' Examples `NEW`, `NEW 3`.)" }
+  - { type: hypothesis, ref: "cia_3.6.0.lst: NEW is NOT in the builtin dispatch table (disasm.py dispatch NEW -> 'not in dispatch table'); it is a DIRECT-mode command keyword (UTF-16 'NEW' @0x2efa00, referenced from the DIRECT-command/help table @0x2c93f0). The erase handler is index-dispatched by the command-line interpreter and was not body-pinned, so the slot-clear algorithm is not `disassembled`." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bNEW\\b'): NEW appears as a user VARIABLE (`NEW=CHKFILE(...)`) and inside string literals ('NEW GAME', 'NEW 3DS/2DS') in shipped programs, never as an executable command. Confirms NEW is not a reserved identifier in program mode." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-23 (s_t12e): program `NEW=7` then evaluate `NEW` -> 7 (NEW is a usable variable in program mode); command-form `NEW 3` -> errnum 3 errline 1 and bare `NEW` statement -> errnum 3 errline 1 (Syntax error, not errnum 44)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: new_as_variable, code: "NEW=7\nPRINT NEW", expect: { stdout: "7" } }
+  - { name: new_command_in_program, code: "NEW 3", expect: { error: { errnum: 3 } } }

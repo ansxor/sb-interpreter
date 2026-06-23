@@ -1,0 +1,33 @@
+id: RUN
+kind: statement
+category: DIRECT mode
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: slot, type: integer, range: "0-3: program SLOT to execute. If omitted, 0.", optional: true, default: 0 }
+    returns: { type: void }
+    note: "RUN [slot] — DIRECT-mode command that begins executing the program in the given SLOT (default 0)."
+
+summary: "DIRECT-mode-only command that starts running the program held in the given program SLOT (0-3, default 0). Typed at the DIRECT-mode prompt it compiles and executes the slot from its first line. RUN is a DIRECT-mode keyword and is NOT a reserved identifier in program mode: inside a program the token RUN is parsed as an ordinary variable, so `RUN=expr` assigns a variable and a command-style `RUN`/`RUN slot` is a syntax error (errnum 3)."
+
+semantics:
+  - "RUN is not in the builtin dispatch table (disasm.py dispatch RUN: 'not in dispatch table') — it is a DIRECT-mode command keyword handled by the command-line interpreter, not a program-mode builtin, so its execution-start handler is index-dispatched and not body-pinned here."
+  - "Optional SLOT argument 0-3 selects the program to run; omitted means slot 0 (docs). On a fresh launch the current execution-time project is initialized from the non-execution-time project (see PROJECT)."
+  - "In PROGRAM mode RUN is a plain identifier, not a keyword: `RUN=5 : ... RUN` reads/writes a variable named RUN (oracle: `RUN=5` then `RUN` -> 5). A command-form `RUN` or `RUN 1` as a statement in a program is a Syntax error (errnum 3), NOT 'Can't use in program' (44) — the parser treats RUN as a variable and the command syntax does not form a valid statement."
+  - "Console output is whatever the launched program prints; RUN itself has no return value or scalar golden."
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "used as a command (`RUN` or `RUN slot` as a statement) inside a program — the name is a variable there, so the command syntax is ungrammatical" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/run.md ('Program execution. DIRECT mode only.' Form `RUN [Program SLOT]`; SLOT 0-3, 'If omitted, 0'. Examples `RUN`, `RUN 1`.)" }
+  - { type: hypothesis, ref: "cia_3.6.0.lst: RUN is NOT in the builtin dispatch table (disasm.py dispatch RUN -> 'not in dispatch table'); it is a DIRECT-mode command keyword (UTF-16 'RUN' @0x2ef63c, referenced from the DIRECT-command/help table @0x2c93f0). The execution-start handler is index-dispatched by the command-line interpreter and was not body-pinned, so the slot-launch algorithm is not `disassembled`." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bRUN\\b'): RUN appears overwhelmingly as a user VARIABLE in shipped programs — `RUN=TRUE`, `RUN%=FALSE`, `RUN=0` — never as an executable command (it is DIRECT-mode only). Confirms RUN is not a reserved identifier in program mode." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-23 (s_t12e): program `RUN=5` then evaluate `RUN` -> 5 (RUN is a usable variable in program mode); program statement `RUN 1` -> errnum 3 errline 1 (Syntax error); bare `RUN` statement -> errnum 3 errline 1. Confirms RUN is a non-reserved identifier in program mode and the command form is a syntax error there (not errnum 44)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: run_as_variable, code: "RUN=5\nPRINT RUN", expect: { stdout: "5" } }
+  - { name: run_command_in_program, code: "RUN 1", expect: { error: { errnum: 3 } } }

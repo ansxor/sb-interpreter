@@ -1,0 +1,31 @@
+id: CLEAR
+kind: statement
+category: DIRECT mode
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    returns: { type: void }
+    note: "CLEAR — DIRECT-mode command that initializes the BASIC internal memory (variables, arrays, etc.). No arguments."
+
+summary: "DIRECT-mode-only command that initializes the BASIC internal memory — clearing the running program's variables, arrays, and related interpreter state. CLEAR is a DIRECT-mode keyword, not a reserved identifier in program mode: inside a program the token CLEAR is parsed as an ordinary variable (and is commonly used as an array, e.g. `CLEAR[MAP]=1`), so a command-style `CLEAR` statement is a syntax error (errnum 3)."
+
+semantics:
+  - "CLEAR is not in the builtin dispatch table (disasm.py dispatch CLEAR: 'not in dispatch table') — it is a DIRECT-mode command keyword handled by the command-line interpreter, so its memory-initialization handler is index-dispatched and not body-pinned here."
+  - "Takes no arguments (docs: form `CLEAR`). Initializes the BASIC internal memory."
+  - "In PROGRAM mode CLEAR is a plain identifier, not a keyword: `CLEAR=3 : ... CLEAR` reads/writes a variable named CLEAR (oracle: `CLEAR=3` then `CLEAR` -> 3), and it is frequently used as an array name in real programs (`CLEAR[MAP]=1`). The command form as a statement in a program is a Syntax error (errnum 3), not 'Can't use in program' (44)."
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "used as a command (bare `CLEAR` statement) inside a program — the name is a variable/array there" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/clear.md ('Initializes the BASIC internal memory. DIRECT mode only.' Form `CLEAR`, no arguments.)" }
+  - { type: hypothesis, ref: "cia_3.6.0.lst: CLEAR is NOT in the builtin dispatch table (disasm.py dispatch CLEAR -> 'not in dispatch table'); it is a DIRECT-mode command keyword (UTF-16 'CLEAR' @0x2ef732, referenced from the DIRECT-command/help table @0x2c93f0). The memory-init handler is index-dispatched by the command-line interpreter and was not body-pinned, so the algorithm is not `disassembled`." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bCLEAR\\b'): CLEAR appears as a user ARRAY/variable in shipped programs — `CLEAR[MAP]=1`, `CLEAR[90]=1`, `CLEAR=0` — never as an executable command. Confirms CLEAR is not a reserved identifier in program mode." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-23 (s_t12e): program `CLEAR=3` then evaluate `CLEAR` -> 3 (CLEAR is a usable variable in program mode); command-form bare `CLEAR` statement -> errnum 3 errline 1 (Syntax error, not errnum 44)." }
+
+confidence: hw_verified
+
+tests:
+  - { name: clear_as_variable, code: "CLEAR=3\nPRINT CLEAR", expect: { stdout: "3" } }
+  - { name: clear_command_in_program, code: "CLEAR", expect: { error: { errnum: 3 } } }
