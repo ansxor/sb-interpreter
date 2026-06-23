@@ -689,3 +689,15 @@ oracle to confirm exact output and promote to `hw_verified`.
     accepts comma-separated call args; confirm whether `;` is legal there or DIALOG-specific.
   - `^` (power) operator: lexer has no caret token and the AST omits it; precedence rank +
     associativity still queued (S-C1/execution-model open item).
+
+## M1-T4 — Value / Array (runtime types) edge cases
+- [x] Array **rank mismatch** errnum — RESOLVED hw_verified 2026-06-23 (sb-oracle): a wrong
+  subscript COUNT is errnum 3 (Syntax error), genuine out-of-range is errnum 31. `DIM Z[3,2]:
+  A=Z[1]`→3, `DIM Z[3]:A=Z[1,1]`→3, `DIM Z[3]:A=Z[3]`→31. Folded into dim.yaml + array.rs.
+- **POP/SHIFT on an empty 1D array** errnum: assumed Illegal function call (errnum 4). Confirm
+  vs oracle (`DIM A[0]:X=POP(A)` style — note POP/SHIFT are statements/funcs, S-T4b).
+- **PUSH/POP/SHIFT/UNSHIFT on a multi-dimensional array** errnum: assumed errnum 4. Confirm
+  vs oracle.
+- **Double→Integer coercion overflow**: `A%=1E20` / values outside i32 range. value.rs uses
+  Rust `f64 as i32` (saturating; ARM VCVT-style). Confirm SB's wrap/saturate behavior vs
+  oracle (large + NaN/Inf inputs).

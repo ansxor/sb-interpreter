@@ -28,8 +28,13 @@ semantics:
   - "Type suffix (% for integer, # for double, $ for string) is valid on any name: DIM GH%[321,241], DIM M#[10], DIM FILE$[0]."
   - "Mixed declarations are allowed on one line: DIM A=1, B[10], C$[5], M#[3,3]."
   - "Declaring the same variable name twice raises errnum 18 (Duplicate variable)."
+  - "Assigning a Double to an integer-typed (%) array element truncates toward zero, exactly like a % scalar: DIM Q%[1]:Q%[0]=2.7 stores 2 (hw_verified)."
+  - "Indexing an array with an out-of-range or negative subscript raises errnum 31 (Subscript out of range): DIM Z[3]:A=Z[3] → errnum 31 (hw_verified)."
+  - "Indexing an array with the wrong NUMBER of subscripts (a rank mismatch) raises errnum 3 (Syntax error), NOT errnum 31: DIM Z[3,2]:A=Z[1] → errnum 3; DIM Z[3]:A=Z[1,1] → errnum 3 (hw_verified)."
 
 errors:
+  - { errnum: 31, name: SubscriptOutOfRange, when: "an array subscript is < 0 or >= the declared dimension size" }
+  - { errnum: 3,  name: SyntaxError, when: "an array is indexed with the wrong number of subscripts (rank mismatch)" }
   - { errnum: 18, name: DuplicateVariable, when: "the same variable name is declared more than once" }
   - { errnum: 3,  name: SyntaxError, when: "() used instead of [] for array size, or brackets malformed" }
   - { errnum: 11, name: OutOfMemory, when: "the declared array is too large to allocate" }
@@ -39,6 +44,7 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst: DIM keyword in DATA table @0x3068dc (name ptr 0x2ed6ec, token id 313 = 0x139; sequential to VAR=312, confirming they share a code path); not in builtin dispatch table — parsed as a special compiler form" }
   - { type: community, ref: "sbsave corpus: DIM with initial value (DIM X=56, DIM MAX=24*9) in 2,092+ programs, e.g. 13D4DV3V/TXT/MAIN_PRG_V2; type-suffixed arrays (DIM GH%[321,241], DIM M#[10]) in 2,400+ programs, e.g. 1DVK34J/TXT/HNZMJG and 1DE453HV/TXT/SPACE_MOLE; 4D arrays (DIM PEN_STAMP[8,8,4,2]) in ~6 programs, e.g. 1DVENVAE/TXT/PICS_R1_1V" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4a): DIM B[3] gives B[0]=0; DIM A[5]:A[2]=7->7; DIM POS[3,2]:POS[2,1]=9->9; DIM X=56->56; DIM N->0; DIM A=1,B[3]:B[0]=2->1,2; DIM G%[4]:G%[1]=99->99; DIM M#[2]:M#[0]=3.5->3.5; DIM S$[3]:S$[1]=\"hi\"->hi; DIM MAX=24*9->216 (init expr evaluated)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-23 (m1_t4): DIM Q%[1]:Q%[0]=2.7->2 (Double->Integer array element truncates toward zero, same as a % scalar); DIM Z[3]:A=Z[3] -> errnum 31 (OOR); DIM Z[3,2]:A=Z[1] -> errnum 3 and DIM Z[3]:A=Z[1,1] -> errnum 3 (rank mismatch = Syntax error, NOT Subscript out of range)" }
 
 confidence: hw_verified
 
@@ -53,3 +59,7 @@ tests:
   - { name: type_dbl_array,    code: "DIM M#[2]\nM#[0]=3.5\nPRINT M#[0]",   expect: { stdout: "3.5" } }
   - { name: string_array,      code: "DIM S$[3]\nS$[1]=\"hi\"\nPRINT S$[1]", expect: { stdout: "hi" } }
   - { name: scalar_init_expr,  code: "DIM MAX=24*9\nPRINT MAX",          expect: { stdout: "216" } }
+  - { name: array_int_coerce,  code: "DIM Q%[1]\nQ%[0]=2.7\nPRINT Q%[0]", expect: { stdout: "2" } }
+  - { name: subscript_oor,     code: "DIM Z[3]\nA=Z[3]",   expect: { error: { errnum: 31 } } }
+  - { name: rank_too_few,      code: "DIM Z[3,2]\nA=Z[1]", expect: { error: { errnum: 3 } } }
+  - { name: rank_too_many,     code: "DIM Z[3]\nA=Z[1,1]", expect: { error: { errnum: 3 } } }

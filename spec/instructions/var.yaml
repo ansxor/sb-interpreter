@@ -29,6 +29,8 @@ semantics:
   - "Multiple items (scalars and/or arrays of any type) may appear on one VAR line, comma-separated."
   - "Declaring the same variable name twice raises errnum 18 (Duplicate variable) at compile/parse time."
   - "Under OPTION STRICT, using a variable that has not been declared raises errnum 15 (Undefined variable)."
+  - "Assigning a Double to an integer (%) variable truncates toward zero — not rounding, not floor: X%=2.7→2, X%=2.5→2, X%=4.5→4, X%=-2.7→-2, X%=-2.5→-2 (hw_verified)."
+  - "A suffix-less variable keeps the assigned value's own runtime type: A=2.7 stays Double, A=5 stays Integer; it is NOT coerced to integer. Assigning an Integer to a # (double) variable widens it (A#=2→2.0)."
 
 errors:
   - { errnum: 18, name: DuplicateVariable, when: "the same variable name is declared more than once" }
@@ -41,6 +43,7 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst: VAR keyword in DATA table @0x30677c (name ptr 0x2ed5dc, token id 312 = 0x138); VAR is parsed as a special form (not in builtin dispatch table); token handler in the parser/compiler, not VM dispatch" }
   - { type: community, ref: "sbsave corpus: VAR with initial value (VAR X=5, VAR S$=\"\") in 756+ programs, e.g. 1DE453HV/TXT/SPACE_MOLE; type-suffixed scalars (VAR X%, VAR M#) in 884+ programs, e.g. 12C3NWQE/TXT/3DSCLOSEGAME; all forms are legal syntax" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4a): VAR X=7->7; VAR N->0; VAR S$=\"hi\"->hi; VAR T$->\"\"; VAR A=1,B=2->1,2; VAR X%=42->42; VAR A[4] gives A[0]=0; VAR A[3]:A[1]=99->99; VAR POS[3,2]:POS[1,0]=5->5; VAR M#[3]:M#[0]=1.5->1.5; VAR Q=1:VAR Q=2 -> errnum 18 (Duplicate variable), errline 1" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-23 (m1_t4 coercion): A%=2.7->2, A%=2.5->2, A%=3.5->3, A%=4.5->4, A%=-2.7->-2, A%=-2.5->-2, A%=-3.5->-3 (Double->Integer truncates toward zero); A=2.7 keeps Double (A==FLOOR(A) is 0/false), A=5 keeps Integer; A#=2->2 (Integer widens to Double)" }
 
 confidence: hw_verified
 
@@ -56,3 +59,8 @@ tests:
   - { name: type_suffix_int,  code: "VAR X%=42\nPRINT X%",           expect: { stdout: "42" } }
   - { name: type_suffix_arr,  code: "VAR M#[3]\nM#[0]=1.5\nPRINT M#[0]", expect: { stdout: "1.5" } }
   - { name: duplicate_error,  code: "VAR Q=1\nVAR Q=2", expect: { error: { errnum: 18 } } }
+  - { name: coerce_dbl_to_int,      code: "A%=2.7\nPRINT A%",  expect: { stdout: "2" } }
+  - { name: coerce_dbl_to_int_half, code: "A%=2.5\nPRINT A%",  expect: { stdout: "2" } }
+  - { name: coerce_dbl_to_int_neg,  code: "A%=-2.7\nPRINT A%", expect: { stdout: "-2" } }
+  - { name: no_suffix_keeps_real,   code: "A=2.7\nPRINT A==FLOOR(A)", expect: { stdout: "0" } }
+  - { name: int_widens_to_double,   code: "A#=2\nPRINT A#",    expect: { stdout: "2" } }
