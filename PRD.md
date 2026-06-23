@@ -169,7 +169,7 @@ and name the instructions they cover inline.
 - [ ] M1-T14 Conformance wiring (run spec/tests + corpus; ASSERT__; otya_test) → M1-T11
 
 ## M2 — Graphics  (gated on S-T7)
-- [ ] M2-T1 GRP page model → S-T7
+- [x] M2-T1 GRP page model → S-T7
 - [ ] M2-T2 Drawing primitives → M2-T1
 - [ ] M2-T3 Bitmap ops → M2-T1
 - [ ] M2-T4 Compositor → M2-T2, M2-T3

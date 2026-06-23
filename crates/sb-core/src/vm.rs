@@ -43,6 +43,7 @@ use crate::sysvars::ErrSysvar;
 use crate::token::Suffix;
 use crate::value::{swap_cells, Cell, RuntimeError, SbStr, Value};
 use sb_render::console::Console;
+use sb_render::grp::GrpState;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 
@@ -138,6 +139,10 @@ pub struct Vm {
     /// The text console model (M1-T10): grid + cursor + COLOR/ATTR state, driven by
     /// `PRINT`/`LOCATE`/`COLOR`/`CLS`/`ACLS` (M1-T8).
     console: Console,
+    /// The GRP graphics state (M2-T1): 6 pages + page selection / draw color / Z priority
+    /// / clip rectangles, driven by `GPAGE`/`GCLS`/`GCOLOR`/`GPRIO`/`GCLIP`/`GSPOIT`. The
+    /// compositor (M2-T4) turns the display page into the framebuffer.
+    grp: GrpState,
     /// The screen background color code (`BACKCOLOR`). The handler round-trips the user's
     /// RGB code, so we store it verbatim; the rendered border color is screen state (M2).
     back_color: i32,
@@ -176,6 +181,7 @@ impl Vm {
             data_cursor: 0,
             rng: crate::rng::Rng::new(),
             console: Console::top(),
+            grp: GrpState::new(),
             back_color: 0,
             tabstep: 4,
             input_lines: VecDeque::new(),
@@ -203,6 +209,11 @@ impl Vm {
     /// Borrow the text console (grid + cursor + colors) for rendering / inspection.
     pub fn console(&self) -> &Console {
         &self.console
+    }
+
+    /// Borrow the GRP graphics state (pages + draw state) for rendering / inspection.
+    pub fn grp(&self) -> &GrpState {
+        &self.grp
     }
 
     /// The console contents as text: each grid row trimmed of trailing blanks, rows joined
@@ -609,7 +620,6 @@ impl Vm {
         out_argc: u8,
         wants_value: bool,
     ) -> Result<(), VmError> {
-        let _ = out_argc; // math/string builtins produce no OUT results.
         let mut args = Vec::with_capacity(argc as usize);
         for _ in 0..argc {
             args.push(self.pop()?);
@@ -636,6 +646,12 @@ impl Vm {
             if wants_value && !matches!(ret, Value::Void) {
                 self.stack.push(ret);
             }
+            return Ok(());
+        }
+        // Graphics builtins (GPAGE/GCLS/GCOLOR/GPRIO/GCLIP/RGB/RGBREAD/GSPOIT, M2-T1) mutate
+        // or read the VM-owned `GrpState` and can leave OUT results, so they push their own
+        // results and bypass the stateless dispatch.
+        if self.call_graphics(name, &args, out_argc, wants_value)? {
             return Ok(());
         }
         let ret = crate::builtins::dispatch(name, args).map_err(sb)?;
@@ -737,6 +753,40 @@ impl Vm {
             "BACKCOLOR" => Ok(Some(self.backcolor(&args, wants_value)?)),
             _ => Ok(None),
         }
+    }
+
+    /// Route a graphics builtin (M2-T1) over the VM-owned [`GrpState`]. Returns `Ok(true)`
+    /// when handled (the function's result values are pushed onto the stack in source
+    /// order — none for a plain command, one for a function, several for an `OUT` form), or
+    /// `Ok(false)` when `name` is not a graphics builtin (the caller falls through to the
+    /// stateless dispatch). The SET/GET form is chosen by the **return count**, which
+    /// collapses the function (`wants_value`) and `OUT` (`out_argc`) spellings — exactly the
+    /// disassembled handlers' `[r0,#0xc]` check.
+    fn call_graphics(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        out_argc: u8,
+        wants_value: bool,
+    ) -> Result<bool, VmError> {
+        use crate::builtins::graphics as gfx;
+        let ret_count = if wants_value { 1 } else { out_argc as usize };
+        let args: Vec<Value> = args.iter().map(|v| v.deref()).collect();
+        let results = match name {
+            "RGB" => gfx::rgb(&args, ret_count),
+            "RGBREAD" => gfx::rgbread(&args, ret_count),
+            "GSPOIT" => gfx::gspoit(&self.grp, &args, ret_count),
+            "GPAGE" => gfx::gpage(&mut self.grp, &args, ret_count),
+            "GCLS" => gfx::gcls(&mut self.grp, &args, ret_count),
+            "GCOLOR" => gfx::gcolor(&mut self.grp, &args, ret_count),
+            "GPRIO" => gfx::gprio(&mut self.grp, &args, ret_count),
+            "GCLIP" => gfx::gclip(&mut self.grp, &args, ret_count),
+            _ => return Ok(false),
+        };
+        for v in results.map_err(sb)? {
+            self.stack.push(v);
+        }
+        Ok(true)
     }
 
     /// `ASSERT__ condition[, message$]` — the test-mode assertion (M1-T14). A truthy

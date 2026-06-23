@@ -28,6 +28,7 @@
 //! tie-breaking / very-large-magnitude edges are M7-T4; see `HARVEST_QUEUE.md`).
 
 pub(crate) mod console;
+pub(crate) mod graphics;
 mod math;
 mod string;
 
@@ -108,6 +109,17 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "ACLS",
     "BACKCOLOR",
     "INKEY$",
+    // Graphics — GRP page model + color helpers (M2-T1). The page-state commands mutate
+    // the VM-owned `GrpState`, so the VM routes them directly (like the console builtins);
+    // they are registered here so the compiler treats them as builtins, not variables.
+    "GPAGE",
+    "GCLS",
+    "GCOLOR",
+    "GPRIO",
+    "GCLIP",
+    "RGB",
+    "RGBREAD",
+    "GSPOIT",
     // Test-mode assertion (M1-T14): the VM handles it directly (a false condition halts
     // with `VmError::Assert`), so it is not in the stateless `dispatch`.
     "ASSERT__",

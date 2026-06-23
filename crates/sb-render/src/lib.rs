@@ -12,6 +12,7 @@
 
 pub mod console;
 pub mod font;
+pub mod grp;
 pub mod png;
 
 /// The 3DS upper screen is 400×240; the lower (touch) screen is 320×240.

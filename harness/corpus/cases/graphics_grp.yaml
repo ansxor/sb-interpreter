@@ -1,0 +1,161 @@
+# GRP page-model + color-helper conformance cases (M2-T1). The error/argument-count
+# expects are hw_verified (sb-oracle 2026-06-22, s_t7a/s_t7e); the SET/GET round-trips and
+# RGB/RGBREAD values are hw_verified value cases that PRINT can show without a framebuffer
+# harvest. Pixel/draw side-effects (and GSPOIT post-draw round-trip, which needs GPSET from
+# M2-T2) are exercised by the sb-render unit tests and land in the graphics spec sweep when
+# the drawing primitives + framebuffer oracle (O-T6) arrive. Statements are joined with `:`
+# so each case stays a single source line.
+cases:
+  # -- GPAGE: SET/GET round-trip + form/range errors -----------------------------------
+  - name: gpage_roundtrip_pages
+    code: 'GPAGE 1,2:GPAGE OUT V,W:PRINT V;W'
+    expect: { stdout: "12" }
+  - name: gpage_roundtrip_zero
+    code: 'GPAGE 0,0:GPAGE OUT V,W:PRINT V;W'
+    expect: { stdout: "00" }
+  - name: gpage_display_out_of_range
+    code: 'GPAGE 6,0'
+    expect: { error: { errnum: 10 } }
+  - name: gpage_manip_out_of_range
+    code: 'GPAGE 0,-1'
+    expect: { error: { errnum: 10 } }
+  - name: gpage_three_args_errors
+    code: 'GPAGE 0,0,0'
+    expect: { error: { errnum: 4 } }
+  - name: gpage_wrong_arg_count
+    code: 'GPAGE 0'
+    expect: { error: { errnum: 4 } }
+
+  # -- GCLS: clear forms + misuse ------------------------------------------------------
+  - name: gcls_clear_black_ok
+    code: 'GCLS'
+    expect: { stdout: "" }
+  - name: gcls_clear_color_ok
+    code: 'GCLS RGB(32,32,32)'
+    expect: { stdout: "" }
+  - name: gcls_as_function_errors
+    code: 'A=GCLS()'
+    expect: { error: { errnum: 4 } }
+  - name: gcls_too_many_args_errors
+    code: 'GCLS 0,0'
+    expect: { error: { errnum: 4 } }
+
+  # -- GCOLOR: SET, OUT-get, function-get + misuse -------------------------------------
+  - name: gcolor_roundtrip_color
+    code: 'GCOLOR 100:GCOLOR OUT C:PRINT C'
+    expect: { stdout: "100" }
+  - name: gcolor_roundtrip_function_get
+    code: 'GCOLOR 100:C=GCOLOR():PRINT C'
+    expect: { stdout: "100" }
+  - name: gcolor_roundtrip_zero
+    code: 'GCOLOR 0:GCOLOR OUT C:PRINT C'
+    expect: { stdout: "0" }
+  - name: gcolor_set_rgb_ok
+    code: 'GCOLOR RGB(255,0,0)'
+    expect: { stdout: "" }
+  - name: gcolor_no_arg_set_errors
+    code: 'GCOLOR'
+    expect: { error: { errnum: 4 } }
+  - name: gcolor_too_many_args_errors
+    code: 'GCOLOR 1,2'
+    expect: { error: { errnum: 4 } }
+
+  # -- GPRIO: range edges + misuse -----------------------------------------------------
+  - name: gprio_front_ok
+    code: 'GPRIO -100'
+    expect: { stdout: "" }
+  - name: gprio_rear_max_ok
+    code: 'GPRIO 1024'
+    expect: { stdout: "" }
+  - name: gprio_front_min_ok
+    code: 'GPRIO -256'
+    expect: { stdout: "" }
+  - name: gprio_too_far_back_errors
+    code: 'GPRIO 1025'
+    expect: { error: { errnum: 10 } }
+  - name: gprio_too_far_front_errors
+    code: 'GPRIO -257'
+    expect: { error: { errnum: 10 } }
+  - name: gprio_as_function_errors
+    code: 'A=GPRIO(0)'
+    expect: { error: { errnum: 4 } }
+
+  # -- GCLIP: 1-arg reset, 5-arg rect + misuse -----------------------------------------
+  - name: gclip_rect_ok
+    code: 'GCLIP 0,100,100,200,200'
+    expect: { stdout: "" }
+  - name: gclip_mode_only_display_ok
+    code: 'GCLIP 0'
+    expect: { stdout: "" }
+  - name: gclip_mode_only_write_ok
+    code: 'GCLIP 1'
+    expect: { stdout: "" }
+  - name: gclip_bad_arg_count_errors
+    code: 'GCLIP 0,1,2'
+    expect: { error: { errnum: 4 } }
+  - name: gclip_as_function_errors
+    code: 'A=GCLIP(0)'
+    expect: { error: { errnum: 4 } }
+
+  # -- RGB: pack/clamp values (returned as i32, so alpha-set codes read negative) -------
+  - name: rgb_red_opaque
+    code: 'PRINT RGB(255,0,0)'
+    expect: { stdout: "-65536" }
+  - name: rgb_black_opaque
+    code: 'PRINT RGB(0,0,0)'
+    expect: { stdout: "-16777216" }
+  - name: rgb_white_opaque
+    code: 'PRINT RGB(255,255,255)'
+    expect: { stdout: "-1" }
+  - name: rgb_four_arg_alpha
+    code: 'PRINT RGB(128,255,0,0)'
+    expect: { stdout: "-2130771968" }
+  - name: rgb_clamp_high
+    code: 'PRINT RGB(999,999,999)'
+    expect: { stdout: "-1" }
+  - name: rgb_clamp_mixed
+    code: 'PRINT RGB(-5,300,0)'
+    expect: { stdout: "-16711936" }
+  - name: rgb_two_args_errors
+    code: 'X=RGB(1,2)'
+    expect: { error: { errnum: 4 } }
+  - name: rgb_five_args_errors
+    code: 'X=RGB(1,2,3,4,5)'
+    expect: { error: { errnum: 4 } }
+
+  # -- RGBREAD: split into channels (exact inverse of RGB) ------------------------------
+  - name: rgbread_split_rgb_3out
+    code: 'RGBREAD &HFF804020 OUT R,G,B:PRINT R;",";G;",";B'
+    expect: { stdout: "128,64,32" }
+  - name: rgbread_split_argb_4out
+    code: 'RGBREAD &H80FF8040 OUT A,R,G,B:PRINT A;",";R;",";G;",";B'
+    expect: { stdout: "128,255,128,64" }
+  - name: rgbread_split_negative_white
+    code: 'RGBREAD -1 OUT A,R,G,B:PRINT A;",";R;",";G;",";B'
+    expect: { stdout: "255,255,255,255" }
+  - name: rgbread_roundtrip_rgb
+    code: 'RGBREAD RGB(160,128,96) OUT R,G,B:PRINT R;",";G;",";B'
+    expect: { stdout: "160,128,96" }
+  - name: rgbread_two_out_errors
+    code: 'RGBREAD 0 OUT R,G'
+    expect: { error: { errnum: 4 } }
+  - name: rgbread_five_out_errors
+    code: 'RGBREAD 0 OUT A,R,G,B,X'
+    expect: { error: { errnum: 4 } }
+
+  # -- GSPOIT: off-page reads 0 + form errors (post-draw round-trip needs GPSET, M2-T2) -
+  - name: gspoit_oob_negative_returns_0
+    code: 'PRINT GSPOIT(-1,-1)'
+    expect: { stdout: "0" }
+  - name: gspoit_oob_high_returns_0
+    code: 'PRINT GSPOIT(400,240)'
+    expect: { stdout: "0" }
+  - name: gspoit_one_arg_errors
+    code: 'A=GSPOIT(1)'
+    expect: { error: { errnum: 4 } }
+  - name: gspoit_three_args_errors
+    code: 'A=GSPOIT(1,2,3)'
+    expect: { error: { errnum: 4 } }
+  - name: gspoit_as_statement_errors
+    code: 'GSPOIT(1,1)'
+    expect: { error: { errnum: 4 } }
