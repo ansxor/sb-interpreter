@@ -40,6 +40,7 @@
 use crate::array::SbArray;
 use crate::ast::{BinOp, Name, UnOp};
 use crate::builtins::screen::ScreenConfig;
+use crate::builtins::sound::AudioState;
 use crate::bytecode::{Const, Op, Program, VarRef, VarType};
 use crate::clock::FrameClock;
 use crate::input::InputState;
@@ -190,6 +191,11 @@ pub struct Vm {
     /// per-screen `VISIBLE` layer flags and the `HARDWARE` model. The compositor reads the
     /// Upper-screen visibility flags via [`Vm::screen_visibility`].
     screen: ScreenConfig,
+    /// The BGM state (M5-T3): registered user-defined tunes (128..255 → compiled MML) +
+    /// per-track transport state, driven by `BGMPLAY`/`BGMSTOP`/`BGMCHK`/`BGMVAR`/`BGMVOL`/
+    /// `BGMSET`/`BGMSETD`/`BGMCLEAR`. The live audio backend (M5-T5) renders the playing
+    /// tracks through the synth; the audible output has no deterministic golden (O-T7).
+    audio: AudioState,
 }
 
 impl Vm {
@@ -223,6 +229,7 @@ impl Vm {
             errprg: 0,
             clock: FrameClock::new(),
             screen: ScreenConfig::new(),
+            audio: AudioState::new(),
         }
     }
 
@@ -844,6 +851,12 @@ impl Vm {
             }
             return Ok(());
         }
+        // BGM commands (BGMPLAY/…/BGMCLEAR, M5-T3) manage the VM-owned `AudioState` (and, for
+        // BGMSETD, read MML from the program's DATA pool), so they bypass the stateless
+        // dispatch. They push their own result (BGMCHK / the BGMVAR read form).
+        if self.call_sound(name, &args, wants_value)? {
+            return Ok(());
+        }
         let ret = crate::builtins::dispatch(name, args).map_err(sb)?;
         if wants_value {
             self.stack.push(ret);
@@ -1100,6 +1113,89 @@ impl Vm {
             "HARDWARE" => Ok(Some(self.screen.hardware(&args)?)),
             _ => Ok(None),
         }
+    }
+
+    /// Route a BGM command (BGMPLAY/BGMSTOP/BGMCHK/BGMVAR/BGMVOL/BGMSET/BGMSETD/BGMCLEAR,
+    /// M5-T3) over the VM-owned [`AudioState`]. Returns `Ok(true)` when handled — the
+    /// function/read forms (`BGMCHK`, the 2-arg `BGMVAR`) push their result onto the stack —
+    /// or `Ok(false)` when `name` is not a BGM command (the caller falls through to the
+    /// stateless dispatch). The SET/GET-style form selection follows the disassembled
+    /// handlers' result-count (`wants_value`) + argument-count checks.
+    fn call_sound(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        wants_value: bool,
+    ) -> Result<bool, VmError> {
+        let args: Vec<Value> = args.iter().map(|v| v.deref()).collect();
+        match name {
+            "BGMPLAY" => self.audio.bgmplay(&args, wants_value).map_err(sb)?,
+            "BGMSTOP" => self.audio.bgmstop(&args, wants_value).map_err(sb)?,
+            "BGMVOL" => self.audio.bgmvol(&args, wants_value).map_err(sb)?,
+            "BGMSET" => self.audio.bgmset(&args, wants_value).map_err(sb)?,
+            "BGMCLEAR" => self.audio.bgmclear(&args, wants_value).map_err(sb)?,
+            "BGMCHK" => {
+                let v = self.audio.bgmchk(&args, wants_value).map_err(sb)?;
+                if wants_value {
+                    self.stack.push(v);
+                }
+            }
+            "BGMVAR" => {
+                if let Some(v) = self.audio.bgmvar(&args, wants_value).map_err(sb)? {
+                    if wants_value {
+                        self.stack.push(v);
+                    }
+                }
+            }
+            "BGMSETD" => self.call_bgmsetd(&args, wants_value)?,
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
+    /// `BGMSETD tune, "@Label"` — register a user-defined tune (128..255) from MML stored in
+    /// a `DATA` block. Statement (return context → errnum 4); exactly 2 args (else errnum 4);
+    /// tune outside 128..255 → errnum 10; a non-string label → errnum 8; an undefined label →
+    /// errnum 14 (the RESTORE-shared lookup); MML that fails to compile → errnum 47. The MML
+    /// is gathered from consecutive string `DATA` items under the label, terminated by the
+    /// first numeric `DATA` item (`bgmsetd.yaml`). Lives in the VM (not `AudioState`) because
+    /// it reads the program's DATA pool.
+    fn call_bgmsetd(&mut self, args: &[Value], wants_value: bool) -> Result<(), VmError> {
+        use crate::builtins::sound::{compile_mml, ranged};
+        if wants_value || args.len() != 2 {
+            return Err(sb(crate::builtins::illegal()));
+        }
+        let tune = ranged(&args[0], 128, 255).map_err(sb)?;
+        let label = match &args[1] {
+            Value::Str(s) => s.clone(),
+            _ => return Err(sb(crate::builtins::type_mismatch())),
+        };
+        // A label may carry a leading `N:` MML-channel prefix (corpus `"1:@MML"`); strip it,
+        // then the `@`, and case-fold like the other label lookups.
+        let raw = String::from_utf16_lossy(&label);
+        let after_chan = raw.rsplit(':').next().unwrap_or(&raw);
+        let name = after_chan.trim_start_matches('@').to_ascii_uppercase();
+        let idx = self
+            .program
+            .data_labels
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, i)| *i)
+            .ok_or(VmError::Sb {
+                errnum: ERR_UNDEFINED_LABEL,
+                line: 0,
+            })?;
+        // Gather consecutive string DATA items, stopping at the first numeric item (the
+        // documented terminator) or the end of the pool.
+        let mut mml = String::new();
+        let mut k = idx;
+        while let Some(Const::Str(s)) = self.program.data.get(k) {
+            mml.push_str(&String::from_utf16_lossy(s));
+            k += 1;
+        }
+        let song = compile_mml(&mml).map_err(sb)?;
+        self.audio.register_tune(tune, song);
+        Ok(())
     }
 
     /// Route a graphics builtin (M2-T1) over the VM-owned [`GrpState`]. Returns `Ok(true)`
@@ -3606,5 +3702,50 @@ H$=HEX$(255)"#);
         let ast = parse("MAINCNT=5").expect("parse");
         let err = compile_with(&ast, &StdBuiltins).expect_err("MAINCNT is read-only");
         assert_eq!(err.errnum, 3);
+    }
+
+    // ---- BGM commands: BGMPLAY/BGMSTOP/BGMCHK/BGMVAR/BGMVOL/BGMSET/BGMSETD/BGMCLEAR (M5-T3) ----
+
+    #[test]
+    fn bgmchk_tracks_play_and_stop() {
+        // Fresh: nothing playing. BGMPLAY a tune, BGMCHK reports playing; BGMSTOP clears it.
+        let vm = run_b("A=BGMCHK(0):BGMPLAY 0,27:B=BGMCHK(0):BGMSTOP 0:C=BGMCHK(0)");
+        assert_eq!(int(&vm, "A"), 0);
+        assert_eq!(int(&vm, "B"), 1);
+        assert_eq!(int(&vm, "C"), 0);
+    }
+
+    #[test]
+    fn bgmvar_round_trips_while_playing() {
+        // Stopped: read returns -1. Playing: read returns the written value.
+        let vm = run_b("BGMVAR 0,5,42:A=BGMVAR(0,5):BGMPLAY 0:B=BGMVAR(0,5)");
+        assert_eq!(int(&vm, "A"), -1);
+        assert_eq!(int(&vm, "B"), 42);
+    }
+
+    #[test]
+    fn bgmset_then_play_user_tune() {
+        // Compile an inline MML tune, register it under 128, then play it — no error.
+        run_b(r#"BGMSET 128,"T120O4L4CDE":BGMPLAY 128"#);
+    }
+
+    #[test]
+    fn bgmsetd_gathers_mml_from_data() {
+        // The DATA-stored MML compiles + registers, then plays (the conformance gate's `basic`
+        // case is excluded because it has no DATA block; this exercises the real happy path).
+        run_b("BGMSETD 128,\"@MMLTOP\":BGMPLAY 128\n@MMLTOP\nDATA \"T120O4\",\"CDEFG\"\nDATA 0");
+    }
+
+    #[test]
+    fn bgmsetd_undefined_label_is_errnum_14() {
+        // No matching DATA block → Undefined label (the RESTORE-shared lookup), errnum 14.
+        assert_eq!(run_b_err("BGMSETD 128,\"@NOPE\"").errnum(), Some(14));
+    }
+
+    #[test]
+    fn bgm_malformed_mml_is_errnum_47() {
+        // BGMSET / BGMPLAY of a string both surface the MML parser's Illegal MML (47).
+        assert_eq!(run_b_err(r#"BGMSET 128,"+R""#).errnum(), Some(47));
+        assert_eq!(run_b_err(r#"BGMPLAY "+R""#).errnum(), Some(47));
     }
 }

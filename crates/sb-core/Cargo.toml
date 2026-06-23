@@ -14,6 +14,10 @@ workspace = true
 # sb-core's wasm32 build intact; the VM owns a Console and PRINT/LOCATE/COLOR/CLS drive it.
 sb-render = { path = "../sb-render" }
 
+# The MML parser + synth (M5). Device- and I/O-free (pure integer/`f32` math), so it keeps
+# sb-core's wasm32 build intact; BGMSET/BGMPLAY compile MML into the VM-owned AudioState.
+sb-audio = { path = "../sb-audio" }
+
 # Dev-only: replay the YAML conformance fixtures (harness/corpus/cases) through the VM.
 # Dev-dependencies don't affect the wasm32 lib build.
 [dev-dependencies]

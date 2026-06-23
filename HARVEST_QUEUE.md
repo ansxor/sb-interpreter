@@ -1175,3 +1175,19 @@ deterministic (tested). Per O-T7 there is NO emulator audio golden, so the items
   SB synth scheduler in the disassembly (shared with the M5-T1 "Tick base" item).
 - **Percussion (`@128`/`@129`) drum map + voices** — pitch→drum mapping (S-C5 table) is not yet
   applied to distinct samples; all percussion is a short noise burst. Needs the drum sample ROM.
+
+### M5-T3 BGM commands — oracle-pending runtime behavior (no deterministic golden, O-T7)
+The call shapes + arg ranges + the MML-compile error (47) are disassembled and tested; the
+*runtime transport values* below are sb-core's documented assumptions (per the specs) and want
+a live SB 3.6.0 read:
+- **BGMSETD undefined label** — sb-core raises Undefined label (errnum 14) for `BGMSETD tune,"@L"`
+  with no matching DATA block (the RESTORE-shared lookup `bl 0x1ee960`). The `bgmsetd.yaml` `basic`
+  case assumes empty stdout; the real errnum/behavior on a missing label is unconfirmed (excluded
+  from the conformance gate via `IN_SCOPE_PARTIAL` until harvested). Verify whether a missing label
+  errors (14) or silently no-ops.
+- **BGMCHK playing value** — the exact non-zero value while a track plays (sb-core returns 1; docs
+  say TRUE — could be a richer flag). Stopped → 0 is confirmed-shape.
+- **BGMVAR stored/read value while playing** — sb-core stores the written i32 and returns it during
+  playback, -1 when stopped (the documented value). The live value mid-tune is unconfirmed.
+- **BGMVOL / 3-arg BGMPLAY volume + fade** — the audible mix level / `BGMSTOP track,fade` fade curve
+  have no scalar golden.

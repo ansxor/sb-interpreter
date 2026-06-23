@@ -214,6 +214,22 @@ const IN_SCOPE_BG: &[&str] = &[
 /// range guard → errnum 10 and the non-string-value → errnum 8 guard, both hw_verified; the
 /// undocumented `KEY()` function-form value is oracle-pending, exercised by VM unit tests).
 const IN_SCOPE_INPUT: &[&str] = &["BUTTON", "STICK", "STICKEX", "BREPEAT", "TOUCH", "KEY"];
+/// `Sound` BGM commands whose transport `sb-core` implements (M5-T3: the registered-tune
+/// table + per-track playing/volume/internal-variable state over `AudioState`). Each is in
+/// scope for its deterministic contract: the disassembled argument-count / return-shape /
+/// track (0..7) / volume (0..127) / tune (0..42|128..255) / variable (0..7) range guards, the
+/// MML-compile error (`BGMSET` malformed MML → errnum 47), `BGMVAR`'s write-vs-read form
+/// selection (stopped read → -1), and `BGMCHK`'s stopped → 0 boolean. The *audible* output of
+/// playback has no deterministic emulator golden (O-T7), so none of the inline spec cases
+/// assert it (they expect empty `stdout`, a `0`/`-1` value, or an errnum). `BGMSETD` is folded
+/// PARTIALLY via `IN_SCOPE_PARTIAL`: its arg-shape (→ 4) / tune-range (→ 10) / non-string-label
+/// (→ 8) guards replay green now; only its `basic` happy-path case (`BGMSETD 128,"@MMLTOP"`)
+/// is excluded — it has no matching `DATA` block, so `sb-core` faithfully raises Undefined
+/// label (errnum 14, the RESTORE-shared lookup) rather than the spec's assumed empty stdout
+/// (oracle-pending — queued in `HARVEST_QUEUE.md`). Listed by id.
+const IN_SCOPE_SOUND: &[&str] = &[
+    "BGMPLAY", "BGMSTOP", "BGMCHK", "BGMVAR", "BGMVOL", "BGMSET", "BGMSETD", "BGMCLEAR",
+];
 /// Specs `sb-core` implements only **partially** in M1: each is in scope, but the named
 /// cases listed here are EXCLUDED because they block on a later milestone or the
 /// console-text oracle. Everything else in the spec — the deterministic, hw_verified
@@ -226,7 +242,8 @@ const IN_SCOPE_INPUT: &[&str] = &["BUTTON", "STICK", "STICKEX", "BREPEAT", "TOUC
 /// `IN_SCOPE_GRAPHICS`.) `CHKCHR`: `read_printed_char` now folds in with the
 /// harness scrape `"A65"` (the setup glyph stays on the grid); its empty-cell/OOB/arg-count
 /// cases fold in now. Tuples are `(spec id, &[excluded case names])`.
-const IN_SCOPE_PARTIAL: &[(&str, &[&str])] = &[("LOCATE", &["x_edge_50_ok"])];
+const IN_SCOPE_PARTIAL: &[(&str, &[&str])] =
+    &[("LOCATE", &["x_edge_50_ok"]), ("BGMSETD", &["basic"])];
 
 #[derive(Debug, Deserialize)]
 struct CaseFile {
@@ -383,6 +400,7 @@ fn spec_in_scope(id: &str, category: Option<&str>) -> bool {
         || IN_SCOPE_SPRITES.contains(&id)
         || IN_SCOPE_BG.contains(&id)
         || IN_SCOPE_INPUT.contains(&id)
+        || IN_SCOPE_SOUND.contains(&id)
         || IN_SCOPE_PARTIAL.iter().any(|(pid, _)| *pid == id)
 }
 

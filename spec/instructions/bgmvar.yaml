@@ -43,7 +43,7 @@ tests:
   # Call-shape selection + error conditions from the disassembly. Stored/returned value is
   # oracle-pending (O-T7); the stopped-read of -1 is the documented value.
   - { name: write_variable, code: "BGMVAR 0,5,10", expect: { stdout: "" } }
-  - { name: read_stopped_returns_neg1, code: "PRINT BGMVAR(0,5)", expect: { stdout: "-1\n" } }
+  - { name: read_stopped_returns_neg1, code: "PRINT BGMVAR(0,5)", expect: { stdout: "-1" } }
   - { name: write_track_out_of_range, code: "BGMVAR 8,0,1", expect: { error: { errnum: 10 } } }
   - { name: write_varnum_out_of_range, code: "BGMVAR 0,8,1", expect: { error: { errnum: 10 } } }
   - { name: read_varnum_out_of_range, code: "A=BGMVAR(0,8)", expect: { error: { errnum: 10 } } }

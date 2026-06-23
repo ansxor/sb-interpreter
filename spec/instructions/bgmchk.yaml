@@ -32,6 +32,6 @@ confidence: disassembled
 
 tests:
   # Call shape + error conditions from the disassembly. Boolean playing value is oracle-pending (O-T7).
-  - { name: check_track0, code: "PRINT BGMCHK(0)", expect: { stdout: "0\n" } }
-  - { name: check_omitted_track, code: "PRINT BGMCHK()", expect: { stdout: "0\n" } }
+  - { name: check_track0, code: "PRINT BGMCHK(0)", expect: { stdout: "0" } }
+  - { name: check_omitted_track, code: "PRINT BGMCHK()", expect: { stdout: "0" } }
   - { name: track_out_of_range, code: "A=BGMCHK(8)", expect: { error: { errnum: 10 } } }

@@ -34,6 +34,7 @@ pub(crate) mod graphics;
 pub(crate) mod input;
 mod math;
 pub(crate) mod screen;
+pub(crate) mod sound;
 pub(crate) mod sprite;
 mod string;
 
@@ -266,6 +267,19 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "DISPLAY",
     "VISIBLE",
     "HARDWARE",
+    // BGM commands (M5-T3): BGMPLAY/BGMSTOP/BGMCHK/BGMVAR/BGMVOL/BGMSET/BGMSETD/BGMCLEAR
+    // manage the VM-owned `AudioState` (registered user tunes + per-track transport state).
+    // BGMSETD additionally reads MML from the program's DATA pool, so the VM routes it like
+    // COPY; the rest route over `AudioState`. They are registered here so the compiler treats
+    // them as builtins rather than variables.
+    "BGMPLAY",
+    "BGMSTOP",
+    "BGMCHK",
+    "BGMVAR",
+    "BGMVOL",
+    "BGMSET",
+    "BGMSETD",
+    "BGMCLEAR",
     // Test-mode assertion (M1-T14): the VM handles it directly (a false condition halts
     // with `VmError::Assert`), so it is not in the stateless `dispatch`.
     "ASSERT__",

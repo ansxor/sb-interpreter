@@ -20,7 +20,7 @@ under `prd/` (start at `prd/README.md`). Task IDs here match those docs.
 | M2 | Graphics (GRP + compositor) | `prd/M2.md` | ✅ done (T1–T5; GRP model, primitives, bitmap ops, compositor, hw_verified golden pixel-diff) |
 | M3 | Sprites & BG | `prd/M3.md` | ✅ done (T1–T6; sprite/BG state + collision/anim/transforms, full compositor stack with Z-interleaving; composite pixel-exactness queued O-T6) |
 | M4 | Input & timing | `prd/M4.md` | ✅ done (T1–T5; input state + 60fps clock + host keymap wired native + wasm; live-program input awaits the frame-yielding model) |
-| M5 | Audio (MML) | `prd/M5.md` | 🔧 in progress (T1 MML parser, T2 synth engine done; T3–T6 todo) |
+| M5 | Audio (MML) | `prd/M5.md` | 🔧 in progress (T1 MML parser, T2 synth engine, T3 BGM commands done; T4–T6 todo) |
 | M6 | Files, projects, system, stubs | `prd/M6.md` | ⬜ gated on S |
 | M7 | Hardening | `prd/M7.md` | ⬜ |
 
@@ -198,7 +198,7 @@ and name the instructions they cover inline.
 > verification is a deferred refining layer.
 - [x] M5-T1 MML parser → S-C5  (parse-to-events: deterministically verifiable) — new `sb-audio` crate; `mml.rs` parses an MML string → per-channel `Vec<Event>` timeline (channels, tempo/length/gate/ties/portamento, pitch/octave/key, volume/pan/envelope, instruments, detune/LFOs/modulation, finite-unrolled `[ ]N` repeats + endless-loop markers, `$0`–`$7` vars, case-sensitive `{macro}`s); malformed → errnum 47 with caret offset. 35 unit tests + a 550-string corpus sweep (98.4% of complete real BGM* literals parse). Corpus-surfaced forms folded in as community/oracle-pending (`(N`/`)N` volume steps, dotted `L<n>.`, leading accidentals, case-sensitive labels) — spec S-C5 + HARVEST_QUEUE updated.
 - [x] M5-T2 Synth engine → M5-T1  (⚠ output fidelity not e2e-verifiable; param tables are) — new `synth.rs`+`instruments.rs` render a parsed `Song` → interleaved stereo PCM16. **Signal path grounded on the real 3DS DSP** via citra/azahar `audio_core`: native rate 32728 Hz, 160-sample frames, per-voice fractional resample with the DSP's Q24 linear interpolation + saturated delta (`interpolate.cpp` `Linear`). Instruments = single-cycle wavetables (Saw/Pulse/Triangle/Sine/Noise) resampled like the hardware sample ROM; ADSR (`@E`), gate `Q`, per-note velocity/`V` volume, equal-power pan `P`, `@D` detune, portamento `_`, `@MON`-gated vibrato/tremolo/autopan LFOs, 16-channel additive mix with saturating clamp. Timing per S-C5 (48 ticks/quarter, `samples/tick=32728·60/(T·48)`). Fully **deterministic** (integer/`f32` math, seeded-LCG noise) — same MML → byte-identical PCM. 25 new tests (timing/tempo, pitch via zero-crossings, octave/detune, pan, gate staccato, mix, endless-loop frame-budget fill, interp endpoints, ADSR). Per **O-T7** there is no emulator audio golden, so output *fidelity* (real instrument ROM, exact envelope/LFO/`@V` curves, drum samples) is the **deferred refining layer** — queued in `HARVEST_QUEUE.md`.
-- [ ] M5-T3 BGM commands → M5-T2, S-T10
+- [x] M5-T3 BGM commands → M5-T2, S-T10
 - [ ] M5-T4 SFX/voice → M5-T2, S-T10
 - [ ] M5-T5 Audio backend → M5-T2
 - [ ] M5-T6 Golden WAV harvest + diff → M5-T3, M5-T4, O-T7  (⚠ NOT a deterministic golden — reference/loose-spectral only; deferred refining layer)
