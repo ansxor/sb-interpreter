@@ -663,3 +663,29 @@ oracle to confirm exact output and promote to `hw_verified`.
   - STOP/START suspend display: confirm literal "SLOT:line" format and whether it matches the
     error-halt display.
   - errnum 1 vs out-of-range both render "Internal Error" — confirm no other visible distinction.
+
+- M1-T3 · Parser — recursive-descent + precedence + const-fold authored in
+  `crates/sb-core/src/parser.rs` (precedence ladder + `constcalc` from osb structurally;
+  operator type/wrap semantics from spec/instructions + execution-model.md). A corpus
+  parse-sweep over 3,019 small `sbsave` TXT bodies parses ~78% (remainder dominated by
+  non-program text files, SB4 BIG programs, and the lexer-level gaps below). Open items
+  oracle-/disasm-pending:
+  - `#const` in a `DATA` statement (e.g. `DATA #RED,#LIME`, `DATA 30,#WHITE`): the parser
+    keeps a `#NAME` as a `Var` marker (compiler resolves it), so it can't fold a `DATA` item
+    to a `Lit` — those `DATA` lines currently raise Syntax error. Needs the constant table
+    (M1-T5/M1-T7) so `DATA` can resolve `#NAME` to its integer value at compile time.
+  - Single-line `IF` extent vs `NEXT`: this parser follows osb — a single-line `IF c THEN …`
+    body runs to newline/`ELSE`/`ELSEIF`/`ENDIF`, and a `NEXT` used as a statement is a
+    loop-continue (`IF c THEN NEXT` idiom), so `FOR…:IF c THEN x:NEXT` on one line makes the
+    `NEXT` part of the IF (FOR then has no terminator). Confirm 3.6.0 single-line-IF extent +
+    whether `NEXT`/`WEND`/`UNTIL` as bare statements continue/break vs error.
+  - Stray/unbalanced block keywords (a lone `ENDIF`, a multi-line `IF` with no `ENDIF`):
+    parser is strict (Syntax error). Confirm whether real SB tolerates an extra `ENDIF` or an
+    `IF…THEN`-newline with no `ENDIF` (some shipped programs have these).
+  - Lexer-level (M1-T1) gaps surfaced by the sweep, not the parser: `#` as a Double-literal
+    suffix on numbers (`0#`, `2#`), scientific-notation literals (`13e4`, `5E2`), and `DATA`
+    unquoted strings containing spaces. Queued against M1-T1.
+  - `name(a;b;c)` semicolon-separated call args (seen in `DIALOG(…;…;…)`): parser only
+    accepts comma-separated call args; confirm whether `;` is legal there or DIALOG-specific.
+  - `^` (power) operator: lexer has no caret token and the AST omits it; precedence rank +
+    associativity still queued (S-C1/execution-model open item).

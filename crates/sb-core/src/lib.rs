@@ -6,11 +6,14 @@
 //! threads so it builds for `wasm32-unknown-unknown`; platform concerns live in
 //! the `sb-platform-*` crates.
 //!
-//! The lexer (M1-T1) and AST node types (M1-T2) are implemented so far.
+//! The lexer (M1-T1), AST node types (M1-T2) and parser (M1-T3) are implemented
+//! so far.
 
 pub mod ast;
 pub mod lexer;
+pub mod parser;
 pub mod token;
 
 pub use lexer::Lexer;
+pub use parser::{parse, parse_expression, ParseError, Parser};
 pub use token::{SourceLoc, Suffix, Token, TokenKind};
