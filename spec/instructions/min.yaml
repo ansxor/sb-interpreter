@@ -5,20 +5,22 @@ version: { introduced: "3.0.0", verified_on: "3.6.0" }
 
 signatures:
   - args:
-      - { name: values, type: number, range: "any", desc: "One or more numeric values, comma-separated (variadic)" }
-    returns: { type: number, desc: "Smallest of the values; keeps the winning element's own type (Integer or Double)" }
-    note: "Varargs form: MIN(a, b, c, ...). Needs at least one value; comparisons are done in Double but the original value is returned."
+      - { name: values, type: number, range: "any", desc: "Two or more numeric values, comma-separated (variadic)" }
+    returns: { type: number, desc: "Smallest of the values. Type: Integer iff EXACTLY two all-Integer args; three or more args are ALWAYS Double; two mixed args are Double" }
+    note: "Varargs form: MIN(a, b, c, ...). Comparison is in Double. Two Integer args return Integer; three or more args return Double regardless of arg types."
   - args:
       - { name: array, type: number_array, desc: "A numeric array; the smallest element is returned" }
-    returns: { type: number, desc: "Smallest element of the array" }
+    returns: { type: number, desc: "Smallest element of the array, keeping the array's own element type (Integer array → Integer, Real array → Double)" }
     note: "Array form: MIN(arr). Scans every element."
 
 summary: "Returns the smallest of the supplied numeric values, or the smallest element of a numeric array."
 
 semantics:
   - "Two call forms: MIN(arr) over a numeric array, or MIN(a,b,...) over directly-enumerated values."
-  - "Comparison is performed in Double, but the returned value keeps the original type of the chosen element (e.g. MIN(3,2.5)=2.5 Double; MIN(50,3)=3 Integer)."
-  - "With a single numeric value the result is that value; with an empty array the result is element-wise empty (see errors)."
+  - "Comparison is always performed in Double; the chosen value (the smaller) is the same for either type."
+  - "RESULT TYPE depends on the call form (hw_verified 2026-06-23): array form keeps the array's element type; two all-Integer scalar args return Integer; two scalar args of mixed type return Double; THREE OR MORE scalar args ALWAYS return Double, even when every arg is Integer. So MIN(2%,4)*&H7FFFFFFF int-wraps to -2, but MIN(2%,4,4)*&H7FFFFFFF floats to 4294967294.0."
+  - "The Integer-preserving 2-arg case matches SmileBASIC compiling the two-operand form inline; the 3+-arg form is the dispatched MIN handler, whose scalar path always returns Double."
+  - "Mirror of MAX, using the less-than comparison method."
 
 errors:
   - { errnum: 8, name: TypeMismatch, when: "any argument or array element is a string" }
@@ -26,8 +28,8 @@ errors:
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/min.md (forms: 2 — array and varargs)" }
-  - { type: disassembled, ref: "cia_3.6.0.lst MIN handler @0x148558; array path uses compare vtable +0x34; coerces each element to Double (vtable +0x44); string element -> errnum 8 (mov r0,#8 @0x14861c); selected element returned via its own return method, preserving Integer/Double type" }
-  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: MIN(1,2,3,4)=1, MIN(50,3)=3, MIN(-5,2,-10)=-10, MIN(1.5,2.5)=1.5, MIN(3,2.5)=2.5 (Double type preserved); MIN(1,\"x\") -> errnum 8. Array form MIN(TMP) queued (multi-statement, not batch-harvestable)." }
+  - { type: disassembled, ref: "cia_3.6.0.lst MIN handler FUN_00148558 @0x148558: arg-count 0 -> errnum 4 (mov r0,#0x4 @0x148708); single-arg array path coerces each element to Double (vtable +0x44) and rejects a string element with errnum 8 (mov r0,#0x8 @0x14861c); the multi-arg scalar path (argcount>=2) exits via the Double return vldr.64 d0,[sp,#0x8] @0x148664 — i.e. the dispatched handler's scalar result is always Double" }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-23: result-type rule isolated with the overflow probe *&H7FFFFFFF. MIN(2,4)*&H7FFFFFFF==-2 -> 1; MIN(2,4,4)*&H7FFFFFFF==4294967294 -> 1; MIN(A%,3)*&H7FFFFFFF -> 2147483645 (2-arg Integer wrap) for A%=7. The 2026-06-22 'keeps element type' note happened to be right for MIN(3,2.5)=2.5 (the smaller element was already Double) but is wrong as a general rule — see MAX(3,2.5), which is Double, not Integer." }
 
 confidence: hw_verified
 
@@ -36,6 +38,8 @@ tests:
   - { name: two_ints,      code: "PRINT MIN(50,3)",    expect: { stdout: "3" } }
   - { name: negatives,     code: "PRINT MIN(-5,2,-10)", expect: { stdout: "-10" } }
   - { name: doubles,       code: "PRINT MIN(1.5,2.5)", expect: { stdout: "1.5" } }
-  - { name: mixed_keeps_double, code: "PRINT MIN(3,2.5)", expect: { stdout: "2.5" } }
+  - { name: mixed_value,   code: "PRINT MIN(3,2.5)", expect: { stdout: "2.5" } }
   - { name: array_form,    code: "DIM TMP[2]:TMP[0]=50:TMP[1]=3:PRINT MIN(TMP)", expect: { stdout: "3" } }
   - { name: string_type_mismatch, code: 'A=MIN(1,"x")', expect: { error: { errnum: 8 } } }
+  - { name: two_int_keeps_int,  code: "PRINT MIN(2,4)*&H7FFFFFFF==-2", expect: { stdout: "1" } }
+  - { name: three_args_double,  code: "PRINT MIN(2,4,4)*&H7FFFFFFF==4294967294", expect: { stdout: "1" } }

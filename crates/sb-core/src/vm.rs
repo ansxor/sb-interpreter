@@ -1648,8 +1648,8 @@ C$=A$+B$"#);
         let vm = run("A=FLOOR(3.7)\nB=ABS(-5)\nC=MAX(3,2.5)\nD=MIN(1,2,3,4)");
         assert_eq!(real(&vm, "A"), 3.0);
         assert_eq!(int(&vm, "B"), 5);
-        assert_eq!(int(&vm, "C"), 3); // MAX keeps the Integer winner's type
-        assert_eq!(int(&vm, "D"), 1);
+        assert_eq!(real(&vm, "C"), 3.0); // 2 mixed args -> Double (hw_verified)
+        assert_eq!(real(&vm, "D"), 1.0); // 3+ args -> always Double (hw_verified)
     }
 
     #[test]

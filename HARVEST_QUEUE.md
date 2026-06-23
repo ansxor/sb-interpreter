@@ -799,3 +799,14 @@ oracle to confirm exact output and promote to `hw_verified`.
 - **ACLS full reset**: resets the console color/attr/grid + VM back_color/tabstep here. The
   full documented visual reset (font/sprite/BG reload, both screens, fade/palette) and the
   undocumented 3-arg per-flag selective reset are screen state — oracle-pending (O-T6).
+
+## M1-T14 / arithmetic — constant int*int overflow folds to Double
+- **Compile-time int*int overflow promotes to Double on real SB.** Oracle 2026-06-23:
+  `2*&H7FFFFFFF` and `2*2147483647` (both constant) → `4.29497e+09` (Double), and
+  `2*&H7FFFFFFF==-2` → 0. sb-core's parser constant folder (`fold_binary`) i32-wraps the
+  product to `-2` instead. assumption: SB's compile-time folder computes int*int (and
+  presumably int+int / int-int) in a wider/Double domain on overflow, while RUNTIME int*int
+  still i32-wraps (confirmed: `MAX(A%,3)*&H7FFFFFFF`→2147483641 wraps). Pin the exact folded
+  domain (does `1000000*1000000` const → `1e+12` Double? oracle said yes) and whether `+`/`-`
+  const overflow promote too, then fix the folder (arithmetic/M7). Does NOT affect otya_test
+  (uses the runtime `MAX(…)*…` form). e.g. `?2*&H7FFFFFFF` → 4.29497e+09.

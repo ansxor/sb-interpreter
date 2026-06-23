@@ -107,34 +107,65 @@ pub(super) fn classify(args: &[Value]) -> Result<Value, RuntimeError> {
 }
 
 /// `MIN(...)` / `MAX(...)` — the smallest/largest of either a numeric array's elements
-/// (single array arg) or the directly-enumerated values. Comparison is in Double, but
-/// the chosen element keeps its own Integer/Double type (`min.yaml`/`max.yaml`).
+/// (single array arg) or the directly-enumerated scalar values. Comparison is always in
+/// Double, but the RESULT TYPE follows a per-form rule (hw_verified 2026-06-23 via
+/// sb-oracle — `min.yaml`/`max.yaml`):
+///
+/// * **Array form** `MAX(arr)` (one array arg): the extreme *element*, keeping the
+///   array's own Integer/Double element type (`MAX(Q%)` of `[7,3,1]` → Integer `7`, so
+///   `MAX(Q%)*&H7FFFFFFF` int-wraps to `2147483641`). String array → Type mismatch (8).
+/// * **Two scalar args** `MAX(a,b)`: standard numeric promotion — Integer iff *both* args
+///   are Integer, otherwise Double (`MAX(7%,3)` → Integer; `MAX(7%,3.0)` → Double `7.0`).
+///   This matches SmileBASIC compiling the 2-operand form inline.
+/// * **Three or more scalar args** `MAX(a,b,c,…)`: **always Double**, regardless of arg
+///   types (`MAX(7%,3,1)` → Double `7.0`, so `MAX(7%,3,1)*&H7FFFFFFF` floats to
+///   `15032385529.0`). This matches the dispatched MAX/MIN handler (disasm
+///   FUN_00148230 @0x148230: arg-count 0 → errnum 4 site @0x1483e0 `mov r0,#0x4`; scalar
+///   path exits via the Double return `vldr.64 d0,[sp,#0x8]` @0x14833c).
 pub(super) fn min_max(args: &[Value], want_max: bool) -> Result<Value, RuntimeError> {
     if args.is_empty() {
-        return Err(illegal());
+        return Err(illegal()); // arg-count 0 → errnum 4 (FUN_00148230 @0x1483e0)
     }
-    // Array form: MIN(arr) scans every element. Otherwise compare the args directly.
-    let elems: Vec<Value> = if args.len() == 1 && args[0].is_array() {
-        array_elements(&args[0])?
+
+    // Array form (single array arg): the extreme element, preserving element type.
+    if args.len() == 1 && args[0].is_array() {
+        let elems = array_elements(&args[0])?; // string array → Type mismatch (8)
+        if elems.is_empty() {
+            // An empty array has no element to return; the exact real-SB result is
+            // queued (HARVEST_QUEUE.md).
+            return Err(illegal());
+        }
+        return Ok(pick_extreme(&elems, want_max)?.clone());
+    }
+
+    // Single scalar arg is degenerate — return it (exact real-SB form queued).
+    if args.len() == 1 {
+        args[0].to_real()?; // string scalar → Type mismatch (8)
+        return Ok(args[0].clone());
+    }
+
+    // Scalar forms with ≥2 args. The extreme is chosen by Double magnitude…
+    let winner = pick_extreme(args, want_max)?;
+    // …but the result TYPE is Integer only for exactly two all-Integer args; two mixed
+    // args promote to Double, and three or more args are always Double.
+    let all_int = args.iter().all(|a| matches!(a, Value::Int(_)));
+    if args.len() == 2 && all_int {
+        Ok(Value::Int(winner.to_int()?))
     } else {
-        args.to_vec()
-    };
-    if elems.is_empty() {
-        // An empty array has no element to return; treat like a bad call. The exact
-        // real-SB result for MIN of an empty array is queued (HARVEST_QUEUE.md).
-        return Err(illegal());
+        Ok(Value::Real(winner.to_real()?))
     }
-    let mut best = elems[0].clone();
-    let mut best_key = best.to_real()?; // string element → Type mismatch (errnum 8)
+}
+
+/// The extreme (`max`/`min` by Double magnitude) of `elems`, returned by reference so the
+/// caller can decide the result type. Ties keep the first occurrence. A string element
+/// raises Type mismatch (errnum 8) via `to_real`.
+fn pick_extreme(elems: &[Value], want_max: bool) -> Result<&Value, RuntimeError> {
+    let mut best = &elems[0];
+    let mut best_key = best.to_real()?;
     for v in &elems[1..] {
         let key = v.to_real()?;
-        let take = if want_max {
-            key > best_key
-        } else {
-            key < best_key
-        };
-        if take {
-            best = v.clone();
+        if (want_max && key > best_key) || (!want_max && key < best_key) {
+            best = v;
             best_key = key;
         }
     }
@@ -352,19 +383,30 @@ mod tests {
 
     #[test]
     fn min_max_varargs_and_array() {
-        assert_eq!(call("MIN", vec![int(1), int(2), int(3), int(4)]), int(1));
-        assert_eq!(call("MIN", vec![int(-5), int(2), int(-10)]), int(-10));
-        // Comparison in Double, but the chosen element keeps its own type.
+        // hw_verified 2026-06-23 (sb-oracle): result TYPE follows a per-form rule.
+        // Two all-Integer scalar args → Integer (int-wraps under `*&H7FFFFFFF`).
+        assert_eq!(call("MAX", vec![int(7), int(3)]), int(7));
+        assert_eq!(call("MIN", vec![int(2), int(4)]), int(2));
+        // Two mixed scalar args → Double (value preserved, retyped).
         assert_eq!(call("MIN", vec![int(3), real(2.5)]), real(2.5));
-        assert_eq!(call("MAX", vec![int(3), real(2.5)]), int(3));
-        assert_eq!(call("MAX", vec![int(1), int(2), int(3), int(4)]), int(4));
-        // Array form.
+        assert_eq!(call("MAX", vec![int(3), real(2.5)]), real(3.0));
+        // Three or more scalar args → ALWAYS Double, even all-Integer.
+        assert_eq!(call("MAX", vec![int(7), int(3), int(1)]), real(7.0));
+        assert_eq!(call("MIN", vec![int(1), int(2), int(3), int(4)]), real(1.0));
+        assert_eq!(call("MIN", vec![int(-5), int(2), int(-10)]), real(-10.0));
+        // Array form → keeps the array's element type (Integer array → Integer).
         let mut a = SbArray::<i32>::new(&[2]).unwrap();
         a.set(&[0], 50).unwrap();
         a.set(&[1], 3).unwrap();
         let arr = Value::IntArray(a.into_ref());
         assert_eq!(call("MIN", vec![arr.clone()]), int(3));
         assert_eq!(call("MAX", vec![arr]), int(50));
+        // A Real array stays Double.
+        let mut r = SbArray::<f64>::new(&[2]).unwrap();
+        r.set(&[0], 2.5).unwrap();
+        r.set(&[1], 9.5).unwrap();
+        let rarr = Value::RealArray(r.into_ref());
+        assert_eq!(call("MAX", vec![rarr]), real(9.5));
         // No args → Illegal function call.
         assert_eq!(err("MIN", vec![]), 4);
         // String element → Type mismatch.

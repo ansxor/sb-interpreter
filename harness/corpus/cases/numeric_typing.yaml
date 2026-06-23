@@ -1,0 +1,33 @@
+# Numeric result-type cases (hw_verified via sb-oracle 2026-06-23). These pin behaviour
+# that PRINT alone cannot show: the *&H7FFFFFFF probe makes an Integer product i32-wrap
+# (so it differs from the exact Double product), exposing the result type. Surfaced by
+# wiring otya_test.sb3 into the M1-T14 conformance gate (its MAXMINTEST relies on these).
+cases:
+  # MIN/MAX result type by call form. Two all-Integer args → Integer (wraps); three or
+  # more args → always Double; an Integer array keeps Integer.
+  - name: max_two_ints_wrap
+    code: 'PRINT MAX(2,0)*&H7FFFFFFF==-2'
+    expect: { stdout: "1" }
+  - name: max_three_args_double
+    code: 'PRINT MAX(2,0,0)*&H7FFFFFFF==4294967294'
+    expect: { stdout: "1" }
+  - name: min_two_ints_wrap
+    code: 'PRINT MIN(2,4)*&H7FFFFFFF==-2'
+    expect: { stdout: "1" }
+  - name: min_three_args_double
+    code: 'PRINT MIN(2,4,4)*&H7FFFFFFF==4294967294'
+    expect: { stdout: "1" }
+  - name: max_three_args_double_big
+    code: 'PRINT MAX(7,3,1)*&H7FFFFFFF==15032385529'
+    expect: { stdout: "1" }
+  - name: max_two_mixed_double
+    code: 'PRINT MAX(7,3.0)==7.0'
+    expect: { stdout: "1" }
+  - name: max_int_array_keeps_int
+    code: 'DIM Q%[3]:Q%[0]=7:Q%[1]=3:Q%[2]=1:PRINT MAX(Q%)*&H7FFFFFFF==2147483641'
+    expect: { stdout: "1" }
+  # An out-of-range DECIMAL integer literal promotes to Double (it does NOT i32-wrap), so
+  # it is unequal to the wrapped value. (&H… hex/binary literals DO wrap — that is separate.)
+  - name: decimal_overflow_is_double
+    code: 'PRINT 4294967294==-2'
+    expect: { stdout: "0" }

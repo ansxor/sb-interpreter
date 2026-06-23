@@ -5,19 +5,21 @@ version: { introduced: "3.0.0", verified_on: "3.6.0" }
 
 signatures:
   - args:
-      - { name: values, type: number, range: "any", desc: "One or more numeric values, comma-separated (variadic)" }
-    returns: { type: number, desc: "Largest of the values; keeps the winning element's own type (Integer or Double)" }
-    note: "Varargs form: MAX(a, b, c, ...). Needs at least one value; comparisons are done in Double but the original value is returned."
+      - { name: values, type: number, range: "any", desc: "Two or more numeric values, comma-separated (variadic)" }
+    returns: { type: number, desc: "Largest of the values. Type: Integer iff EXACTLY two all-Integer args; three or more args are ALWAYS Double; two mixed args are Double" }
+    note: "Varargs form: MAX(a, b, c, ...). Comparison is in Double. Two Integer args return Integer; three or more args return Double regardless of arg types."
   - args:
       - { name: array, type: number_array, desc: "A numeric array; the largest element is returned" }
-    returns: { type: number, desc: "Largest element of the array" }
+    returns: { type: number, desc: "Largest element of the array, keeping the array's own element type (Integer array → Integer, Real array → Double)" }
     note: "Array form: MAX(arr). Scans every element."
 
 summary: "Returns the largest of the supplied numeric values, or the largest element of a numeric array."
 
 semantics:
   - "Two call forms: MAX(arr) over a numeric array, or MAX(a,b,...) over directly-enumerated values."
-  - "Comparison is performed in Double, but the returned value keeps the original type of the chosen element (e.g. MAX(3,2.5)=3 Integer; MAX(1.5,2.5)=2.5 Double)."
+  - "Comparison is always performed in Double; the chosen value (the larger) is the same for either type."
+  - "RESULT TYPE depends on the call form (hw_verified 2026-06-23): array form keeps the array's element type; two all-Integer scalar args return Integer; two scalar args of mixed type return Double; THREE OR MORE scalar args ALWAYS return Double, even when every arg is Integer. So MAX(7%,3)*&H7FFFFFFF int-wraps to 2147483641, but MAX(7%,3,1)*&H7FFFFFFF floats to 15032385529.0."
+  - "The Integer-preserving 2-arg case matches SmileBASIC compiling the two-operand form inline; the 3+-arg form is the dispatched MAX handler, whose scalar path always returns Double."
   - "Mirror of MIN, using the greater-than comparison method."
 
 errors:
@@ -26,8 +28,8 @@ errors:
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/max.md (forms: 2 — array and varargs)" }
-  - { type: disassembled, ref: "cia_3.6.0.lst MAX handler @0x148230; array path uses compare vtable +0x38 (vs MIN's +0x34); coerces each element to Double (vtable +0x44); string element -> errnum 8 (mov r0,#8 @0x1482f4); selected element returned via its own return method, preserving Integer/Double type" }
-  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: MAX(1,2,3,4)=4, MAX(50,3)=50, MAX(-5,2,-10)=2, MAX(1.5,2.5)=2.5, MAX(3,2.5)=3 (Integer type preserved). String-element (errnum 8) and array form MAX(TMP) queued (oracle capture flaked / multi-statement); errnum 8 is the verified MIN mirror." }
+  - { type: disassembled, ref: "cia_3.6.0.lst MAX handler FUN_00148230 @0x148230: arg-count 0 -> errnum 4 (mov r0,#0x4 @0x1483e0); single-arg array path @0x148288 coerces each element to Double (vtable +0x44) and rejects a string element with errnum 8 (mov r0,#0x8 @0x1482f4); the multi-arg scalar path (argcount>=2) exits via the Double return vldr.64 d0,[sp,#0x8] @0x14833c — i.e. the dispatched handler's scalar result is always Double" }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-23: result-type rule isolated with the overflow probe *&H7FFFFFFF (a Double product is exact, an Integer product i32-wraps). MAX(2,0)*&H7FFFFFFF==-2 -> 1; MAX(2,0,0)*&H7FFFFFFF==4294967294 -> 1; MAX(7,3)*&H7FFFFFFF==2147483641 -> 1; MAX(7,3,1)*&H7FFFFFFF==15032385529 -> 1; MAX(7,3.0)==7.0 -> 1; MAX(A%,3)*&H7FFFFFFF -> 2147483641 (2-arg Integer), MAX(A%,3,1)*&H7FFFFFFF -> 1.50324e+10 (3-arg Double), MAX(A%,3.0)*&H7FFFFFFF -> 1.50324e+10 (mixed Double) for A%=7; array MAX(Q%) of [7,3,1] *&H7FFFFFFF==2147483641 -> 1 (Integer array preserved). This CORRECTS the 2026-06-22 claim that MAX(3,2.5) stays Integer: PRINT 3.0 also shows '3', so the older capture could not see the Double type." }
 
 confidence: hw_verified
 
@@ -36,6 +38,9 @@ tests:
   - { name: two_ints,      code: "PRINT MAX(50,3)",    expect: { stdout: "50" } }
   - { name: negatives,     code: "PRINT MAX(-5,2,-10)", expect: { stdout: "2" } }
   - { name: doubles,       code: "PRINT MAX(1.5,2.5)", expect: { stdout: "2.5" } }
-  - { name: mixed_keeps_int, code: "PRINT MAX(3,2.5)", expect: { stdout: "3" } }
+  - { name: mixed_value,   code: "PRINT MAX(3,2.5)", expect: { stdout: "3" } }
   - { name: array_form,    code: "DIM TMP[2]:TMP[0]=50:TMP[1]=3:PRINT MAX(TMP)", expect: { stdout: "50" } }
   - { name: string_type_mismatch, code: 'A=MAX(1,"x")', expect: { error: { errnum: 8 } } }
+  - { name: two_int_keeps_int,  code: "PRINT MAX(2,0)*&H7FFFFFFF==-2", expect: { stdout: "1" } }
+  - { name: three_args_double,  code: "PRINT MAX(2,0,0)*&H7FFFFFFF==4294967294", expect: { stdout: "1" } }
+  - { name: array_int_preserved, code: "DIM Q%[3]:Q%[0]=7:Q%[1]=3:Q%[2]=1:PRINT MAX(Q%)*&H7FFFFFFF==2147483641", expect: { stdout: "1" } }
