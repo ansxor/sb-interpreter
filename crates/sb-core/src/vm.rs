@@ -896,6 +896,19 @@ impl Vm {
             "INKEY$" => Ok(Some(cons::inkey(&args)?)),
             "CHKCHR" => Ok(Some(cons::chkchr(&self.console, &args, wants_value)?)),
             "BACKCOLOR" => Ok(Some(self.backcolor(&args, wants_value)?)),
+            "ATTR" => {
+                cons::attr(&mut self.console, &args, wants_value)?;
+                Ok(Some(Value::Void))
+            }
+            "SCROLL" => {
+                cons::scroll(&mut self.console, &args, wants_value)?;
+                Ok(Some(Value::Void))
+            }
+            "WIDTH" => Ok(Some(cons::width(&mut self.console, &args, wants_value)?)),
+            "FONTDEF" => {
+                cons::fontdef(&mut self.console, &args, wants_value)?;
+                Ok(Some(Value::Void))
+            }
             _ => Ok(None),
         }
     }
@@ -1267,7 +1280,7 @@ fn operate(op: BinOp, lhs: Value, rhs: Value) -> Result<Value, RuntimeError> {
     match op {
         Add => add(lhs, rhs),
         Sub => num_arith(lhs, rhs, i32::wrapping_sub, |a, b| a - b),
-        Mul => num_arith(lhs, rhs, i32::wrapping_mul, |a, b| a * b),
+        Mul => mul(lhs, rhs),
         Div => {
             let (x, y) = (lhs.to_real()?, rhs.to_real()?);
             if y == 0.0 {
@@ -1299,6 +1312,25 @@ fn add(lhs: Value, rhs: Value) -> Result<Value, RuntimeError> {
         }
         _ if lhs.is_numeric() && rhs.is_numeric() => {
             num_arith(lhs, rhs, i32::wrapping_add, |a, b| a + b)
+        }
+        _ => Err(RuntimeError::new(ERR_TYPE_MISMATCH)),
+    }
+}
+
+/// `*`: numeric multiply (Integer wraps; a Double promotes) or string repetition
+/// (`"A"*3` = "AAA"; `3*"A"` = "AAA"). A non-integer repeat count is type mismatch.
+fn mul(lhs: Value, rhs: Value) -> Result<Value, RuntimeError> {
+    match (&lhs, &rhs) {
+        (Value::Str(s), Value::Int(n)) | (Value::Int(n), Value::Str(s)) => {
+            let count = (*n).max(0) as usize;
+            let mut out = Vec::with_capacity(s.len().saturating_mul(count));
+            for _ in 0..count {
+                out.extend_from_slice(s);
+            }
+            Ok(Value::Str(out))
+        }
+        _ if lhs.is_numeric() && rhs.is_numeric() => {
+            num_arith(lhs, rhs, i32::wrapping_mul, |a, b| a * b)
         }
         _ => Err(RuntimeError::new(ERR_TYPE_MISMATCH)),
     }
@@ -1794,6 +1826,15 @@ C$=A$+B$"#);
             Value::Str(s) => assert_eq!(String::from_utf16_lossy(&s), "foobar"),
             other => panic!("not a string: {other:?}"),
         }
+    }
+
+    #[test]
+    fn string_repetition() {
+        // `"A"*3` and `3*"AB"` repeat the string; a non-positive count yields ""
+        // (behavior uncovered by the FONTDEF conformance cases).
+        assert_eq!(out(r#"PRINT "A"*3"#), "AAA");
+        assert_eq!(out(r#"PRINT 3*"AB""#), "ABABAB");
+        assert_eq!(out(r#"PRINT "X"*0"#), "");
     }
 
     #[test]

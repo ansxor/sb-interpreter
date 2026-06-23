@@ -115,6 +115,11 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "ACLS",
     "BACKCOLOR",
     "INKEY$",
+    // Console attributes / font (S-T5c; M1-T14 increment).
+    "ATTR",
+    "SCROLL",
+    "WIDTH",
+    "FONTDEF",
     // CHKCHR(x,y) reads the VM-owned console grid (function only), so the VM routes it
     // directly like the other console builtins (M1-T14 increment).
     "CHKCHR",

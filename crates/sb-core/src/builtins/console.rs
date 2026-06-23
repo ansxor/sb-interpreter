@@ -28,7 +28,8 @@
 
 use sb_render::console::{Console, DEFAULT_BG, DEFAULT_FG};
 
-use super::{illegal, out_of_range};
+use super::{illegal, out_of_range, type_mismatch};
+use crate::array::ArrayRef;
 use crate::value::{RuntimeError, SbStr, Value};
 
 /// `LOCATE [x],[y][,z]` — move the text cursor. X/Y are integer cells, Z a float depth;
@@ -140,6 +141,151 @@ pub fn chkchr(console: &Console, args: &[Value], wants_value: bool) -> Result<Va
     // `cell()` already returns a cleared cell (ch == 0) for coordinates past the grid edge,
     // matching the handler's "out-of-bounds returns 0" path.
     Ok(Value::Int(console.cell(x as usize, y as usize).ch as i32))
+}
+
+/// `ATTR attribute` — set the console display attribute (0..15, statement only).
+pub fn attr(console: &mut Console, args: &[Value], wants_value: bool) -> Result<(), RuntimeError> {
+    if wants_value || args.len() != 1 {
+        return Err(illegal());
+    }
+    let a = args[0].to_int()?;
+    if !(0..=15).contains(&a) {
+        return Err(out_of_range());
+    }
+    console.set_attr(a as u8);
+    Ok(())
+}
+
+/// `SCROLL x,y` — shift the console viewpoint by (x,y) character cells (statement only).
+pub fn scroll(
+    console: &mut Console,
+    args: &[Value],
+    wants_value: bool,
+) -> Result<(), RuntimeError> {
+    if wants_value || args.len() != 2 {
+        return Err(illegal());
+    }
+    let x = args[0].to_int()?;
+    let y = args[1].to_int()?;
+    console.scroll(x, y);
+    Ok(())
+}
+
+/// `WIDTH size` (statement) / `WIDTH()` (function) — console font size 8 or 16.
+pub fn width(
+    console: &mut Console,
+    args: &[Value],
+    wants_value: bool,
+) -> Result<Value, RuntimeError> {
+    if wants_value {
+        if !args.is_empty() {
+            return Err(illegal());
+        }
+        return Ok(Value::Int(console.font_size() as i32));
+    }
+    if args.len() != 1 {
+        return Err(illegal());
+    }
+    let size = args[0].to_int()?;
+    if size != 8 && size != 16 {
+        return Err(illegal());
+    }
+    console.set_font_size(size as u8);
+    Ok(Value::Void)
+}
+
+/// `FONTDEF code,"hex"` / `FONTDEF code,array` / `FONTDEF` (reset). Statement only.
+pub fn fontdef(
+    console: &mut Console,
+    args: &[Value],
+    wants_value: bool,
+) -> Result<(), RuntimeError> {
+    if wants_value {
+        return Err(illegal());
+    }
+    match args.len() {
+        0 => {
+            console.reset_font();
+            Ok(())
+        }
+        2 => {
+            let code = args[0].to_int()?;
+            if !(0..=65535).contains(&code) {
+                return Err(out_of_range());
+            }
+            let glyph = match &args[1] {
+                Value::Str(s) => fontdef_from_string(s)?,
+                Value::IntArray(a) => fontdef_from_array(a)?,
+                Value::RealArray(a) => fontdef_from_array(a)?,
+                _ => return Err(type_mismatch()),
+            };
+            console.set_custom_glyph(code as u16, glyph);
+            Ok(())
+        }
+        _ => Err(illegal()),
+    }
+}
+
+/// Parse a 256-character RGBA5551 hex string into an 8×8 glyph (alpha bit = opacity).
+fn fontdef_from_string(s: &SbStr) -> Result<[u8; 8], RuntimeError> {
+    if s.len() != 256 {
+        return Err(illegal());
+    }
+    let mut glyph = [0u8; 8];
+    for (row, bits) in glyph.iter_mut().enumerate() {
+        *bits = 0;
+        for col in 0..8 {
+            let base = (row * 8 + col) * 4;
+            let v = parse_hex_quad(&s[base..base + 4])?;
+            // RGBA5551 layout: A is bit 0; a set alpha bit means an opaque (foreground) dot.
+            if v & 1 != 0 {
+                *bits |= 1 << (7 - col);
+            }
+        }
+    }
+    Ok(glyph)
+}
+
+fn parse_hex_quad(chars: &[u16]) -> Result<u16, RuntimeError> {
+    let mut v = 0u16;
+    for &c in chars {
+        let digit = match c {
+            0x30..=0x39 => c - 0x30,
+            0x41..=0x46 => c - 0x41 + 10,
+            0x61..=0x66 => c - 0x61 + 10,
+            _ => return Err(illegal()),
+        };
+        v = (v << 4) | digit;
+    }
+    Ok(v)
+}
+
+/// Parse the first 64 elements of a numeric array into an 8×8 glyph.
+fn fontdef_from_array<T>(arr: &ArrayRef<T>) -> Result<[u8; 8], RuntimeError>
+where
+    T: Copy + Into<f64> + Clone + Default + PartialEq + 'static,
+{
+    let borrowed = arr.borrow();
+    if borrowed.len() < 64 {
+        return Err(super::subscript_out_of_range());
+    }
+    let slice = borrowed.as_slice();
+    let mut glyph = [0u8; 8];
+    for (row, bits) in glyph.iter_mut().enumerate() {
+        *bits = 0;
+        for col in 0..8 {
+            let idx = row * 8 + col;
+            let f: f64 = slice[idx].into();
+            if !(0.0..=65535.0).contains(&f) {
+                return Err(out_of_range());
+            }
+            let v = f as u32;
+            if v & 1 != 0 {
+                *bits |= 1 << (7 - col);
+            }
+        }
+    }
+    Ok(glyph)
 }
 
 /// Format one `PRINT` item to the UTF-16 code units it puts on the console: a number via

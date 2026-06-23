@@ -1,0 +1,8 @@
+# String operator behaviors surfaced by the M1-T14 conformance fold (FONTDEF tests use
+# `"FFFF"*64` string repetition, which sb-core now implements).
+cases:
+  - { name: repeat_right, code: 'PRINT "A"*3', expect: { stdout: "AAA" } }
+  - { name: repeat_left, code: 'PRINT 3*"AB"', expect: { stdout: "ABABAB" } }
+  - { name: repeat_zero, code: 'PRINT "X"*0', expect: { stdout: "" } }
+  - { name: repeat_negative, code: 'PRINT "X"*-2', expect: { stdout: "" } }
+  - { name: string_concat, code: 'PRINT "A"+"B"', expect: { stdout: "AB" } }

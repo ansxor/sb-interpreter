@@ -21,6 +21,8 @@
 //! takes whatever glyph table that module exposes, so swapping in a harvested font later
 //! does not change the model.
 
+use std::collections::HashMap;
+
 use crate::font;
 use crate::Framebuffer;
 
@@ -99,6 +101,14 @@ pub struct Console {
     pub fg: u8,
     pub bg: u8,
     pub attr: u8,
+    /// Console font size in pixels: 8 (standard) or 16 (double). Affects glyph scale only;
+    /// the grid dimensions stay fixed in this model (the reflow is screen-state, M2-T4).
+    pub font_size: u8,
+    /// Console scroll offset in character cells (positive = viewpoint moves right/down).
+    pub scroll_x: i32,
+    pub scroll_y: i32,
+    /// Custom 8×8 glyphs defined by FONTDEF; code → row bitmaps.
+    custom_glyphs: HashMap<u16, [u8; 8]>,
 }
 
 impl Console {
@@ -113,6 +123,10 @@ impl Console {
             fg: DEFAULT_FG,
             bg: DEFAULT_BG,
             attr: 0,
+            font_size: 8,
+            scroll_x: 0,
+            scroll_y: 0,
+            custom_glyphs: HashMap::new(),
         }
     }
 
@@ -165,6 +179,40 @@ impl Console {
     /// `ATTR a`: set the persistent display attribute applied to subsequent characters.
     pub fn set_attr(&mut self, attr: u8) {
         self.attr = attr;
+    }
+
+    /// `WIDTH size`: set the console font size (8 or 16).
+    pub fn set_font_size(&mut self, size: u8) {
+        self.font_size = size;
+    }
+
+    /// `WIDTH()` query.
+    pub fn font_size(&self) -> u8 {
+        self.font_size
+    }
+
+    /// `SCROLL x,y`: set the viewpoint offset in character cells.
+    pub fn scroll(&mut self, x: i32, y: i32) {
+        self.scroll_x = x;
+        self.scroll_y = y;
+    }
+
+    /// `FONTDEF code,"string"` / `FONTDEF code,array`: install a custom 8×8 glyph.
+    pub fn set_custom_glyph(&mut self, code: u16, glyph: [u8; 8]) {
+        self.custom_glyphs.insert(code, glyph);
+    }
+
+    /// `FONTDEF` with no arguments: reset all custom font definitions.
+    pub fn reset_font(&mut self) {
+        self.custom_glyphs.clear();
+    }
+
+    /// Glyph for a character code, preferring a FONTDEF override over the built-in font.
+    fn glyph_for(&self, ch: u16) -> [u8; 8] {
+        if let Some(&g) = self.custom_glyphs.get(&ch) {
+            return g;
+        }
+        font::glyph(char::from_u32(ch as u32).unwrap_or('\u{FFFD}'))
     }
 
     /// Write one character at the cursor using the current color/attribute, then advance.
@@ -266,7 +314,7 @@ impl Console {
         let glyph = if cell.ch == 0 {
             [0u8; 8]
         } else {
-            font::glyph(char::from_u32(cell.ch as u32).unwrap_or('\u{FFFD}'))
+            self.glyph_for(cell.ch)
         };
         let fg = TEXT_PALETTE[(cell.fg & 0x0F) as usize];
         let bg = TEXT_PALETTE[(cell.bg & 0x0F) as usize];
@@ -321,6 +369,8 @@ mod tests {
         let c = Console::top();
         assert_eq!((c.cols, c.rows), (50, 30));
         assert_eq!((c.fg, c.bg, c.attr), (15, 0, 0));
+        assert_eq!(c.font_size, 8);
+        assert_eq!((c.scroll_x, c.scroll_y), (0, 0));
         assert_eq!(c.cur_x, 0);
         assert_eq!(c.cur_y, 0);
     }

@@ -89,7 +89,9 @@ const IN_SCOPE_DATA_ARRAY_CONSOLE: &[&str] = &[
 /// on the grid, so the scraped `console_text()` is `"A65"`, not the value-oracle's `"65"`
 /// (the CHKCHR read itself is covered by `cases/chkchr.yaml`'s CLS-cleaned round-trip + the
 /// console-builtin unit test). Those fold in with their own increments. Listed by id.
-const IN_SCOPE_CONSOLE: &[&str] = &["PRINT", "COLOR", "CLS", "INKEY$", "CHKCHR"];
+const IN_SCOPE_CONSOLE: &[&str] = &[
+    "PRINT", "COLOR", "CLS", "INKEY$", "CHKCHR", "ATTR", "SCROLL", "WIDTH", "FONTDEF",
+];
 /// `Data operations and others` instructions whose semantics `sb-core` implements in M1 and
 /// whose inline `tests:` are deterministic + `console_text()`-comparable (M1-T14 increment
 /// 2026-06-23): `READ` (walks the DATA cursor — sequential, across-line, float, array-element
