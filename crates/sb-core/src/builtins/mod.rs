@@ -30,6 +30,7 @@
 pub(crate) mod bg;
 pub(crate) mod console;
 pub(crate) mod data;
+pub(crate) mod files;
 pub(crate) mod graphics;
 pub(crate) mod input;
 mod math;
@@ -299,6 +300,17 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "EFCWET",
     "WAVSET",
     "WAVSETA",
+    // File commands (M6-T2): SAVE/LOAD/DELETE/RENAME a resource, FILES lists, CHKFILE tests
+    // existence, PROJECT reads/sets the current project. They operate on the VM-owned
+    // `Storage` (M6-T1) + current project, so the VM routes them via `call_files` rather than
+    // the stateless `dispatch`. (COPY is the array op, registered with the data builtins.)
+    "SAVE",
+    "LOAD",
+    "FILES",
+    "DELETE",
+    "RENAME",
+    "CHKFILE",
+    "PROJECT",
     // Test-mode assertion (M1-T14): the VM handles it directly (a false condition halts
     // with `VmError::Assert`), so it is not in the stateless `dispatch`.
     "ASSERT__",

@@ -44,6 +44,10 @@ use crate::builtins::sound::AudioState;
 use crate::bytecode::{Const, Op, Program, VarRef, VarType};
 use crate::clock::FrameClock;
 use crate::input::InputState;
+use crate::storage::{
+    parse_files_filter, parse_resource, FilesFilter, Folder, MemStorage, ResourceKind, Storage,
+    DEFAULT_PROJECT,
+};
 use crate::sysvars::ErrSysvar;
 use crate::token::Suffix;
 use crate::value::{Cell, ElemRef, RuntimeError, SbStr, Value};
@@ -196,6 +200,16 @@ pub struct Vm {
     /// `BGMSET`/`BGMSETD`/`BGMCLEAR`. The live audio backend (M5-T5) renders the playing
     /// tracks through the synth; the audible output has no deterministic golden (O-T7).
     audio: AudioState,
+    /// The file/project store (M6-T1/T2) behind `SAVE`/`LOAD`/`FILES`/`DELETE`/`RENAME`/
+    /// `CHKFILE`/`PROJECT`. Defaults to an in-memory [`MemStorage`] (wasm-safe, I/O-free); the
+    /// native host can swap in a real filesystem impl via [`Vm::set_storage`].
+    storage: Box<dyn Storage>,
+    /// The current project name (M6-T2). `SAVE`/`LOAD`/`FILES`/… are keyed against it;
+    /// `PROJECT OUT name$` reads it. Defaults to [`DEFAULT_PROJECT`].
+    current_project: String,
+    /// The running program slot (0..3). A bare resource name (`SAVE "NAME"`) targets this
+    /// slot's `TXT` namespace. Single-slot in M6-T2 (always 0); multi-slot is M6-T6.
+    current_slot: u8,
 }
 
 impl Vm {
@@ -230,7 +244,21 @@ impl Vm {
             clock: FrameClock::new(),
             screen: ScreenConfig::new(),
             audio: AudioState::new(),
+            storage: Box::new(MemStorage::new()),
+            current_project: DEFAULT_PROJECT.to_string(),
+            current_slot: 0,
         }
+    }
+
+    /// Replace the file/project store (M6-T2). The native host injects a real-filesystem
+    /// [`Storage`] here; the default is an in-memory [`MemStorage`].
+    pub fn set_storage(&mut self, storage: Box<dyn Storage>) {
+        self.storage = storage;
+    }
+
+    /// The current project name (M6-T2).
+    pub fn current_project(&self) -> &str {
+        &self.current_project
     }
 
     /// The `ERRNUM` of the last halting error (0 = none) — the DIRECT-mode residue.
@@ -857,6 +885,12 @@ impl Vm {
         if self.call_sound(name, &args, wants_value)? {
             return Ok(());
         }
+        // File commands (SAVE/LOAD/FILES/DELETE/RENAME/CHKFILE/PROJECT, M6-T2) operate on the
+        // VM-owned `Storage` + current project, and can read/write array/OUT operands or push a
+        // value (CHKFILE / LOAD function form), so they bypass the stateless dispatch.
+        if self.call_files(name, &args, out_argc, wants_value)? {
+            return Ok(());
+        }
         let ret = crate::builtins::dispatch(name, args).map_err(sb)?;
         if wants_value {
             self.stack.push(ret);
@@ -930,6 +964,268 @@ impl Vm {
             let vals = read_values(src, src_offset, count)?;
             write_values(dest, dest_offset, &vals, true)
         }
+    }
+
+    /// File commands (M6-T2) over the VM-owned [`Storage`](crate::storage::Storage) + current
+    /// project. Returns `Ok(true)` when `name` is a file command (handled — pushing any value
+    /// itself), `Ok(false)` otherwise (the caller falls through to the stateless dispatch).
+    /// Argument-shape / type / load-failure errnums follow the
+    /// `spec/instructions/{save,load,files,delete,rename,chkfile,project}.yaml` contracts.
+    fn call_files(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        out_argc: u8,
+        wants_value: bool,
+    ) -> Result<bool, VmError> {
+        let args: Vec<Value> = args.iter().map(|v| v.deref()).collect();
+        match name {
+            "SAVE" => self.file_save(&args, wants_value).map_err(sb)?,
+            "LOAD" => self.file_load(&args, out_argc, wants_value).map_err(sb)?,
+            "FILES" => self.file_files(&args, wants_value).map_err(sb)?,
+            "DELETE" => self.file_delete(&args, wants_value).map_err(sb)?,
+            "RENAME" => self.file_rename(&args, wants_value).map_err(sb)?,
+            "CHKFILE" => self.file_chkfile(&args, wants_value).map_err(sb)?,
+            "PROJECT" => self
+                .file_project(&args, out_argc, wants_value)
+                .map_err(sb)?,
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
+    /// `SAVE "[Resource:]Name"[, data]` — write a resource. Statement-only and ≥1 arg (else
+    /// Syntax error 3); the first operand must be a string (else Type mismatch 8). `TXT:` takes
+    /// a string data operand (UTF-8 body), `DAT:` a numeric-array operand. Program-slot /
+    /// graphic / font (form 1) record an empty body for now (payload plumbing queued, O-T3).
+    fn file_save(&mut self, args: &[Value], wants_value: bool) -> Result<(), RuntimeError> {
+        use crate::builtins::files::{encode_dat, encode_txt, resolve_kind, storage_errnum};
+        use crate::builtins::ERR_SYNTAX;
+        if wants_value || args.is_empty() {
+            return Err(RuntimeError::new(ERR_SYNTAX));
+        }
+        let name = String::from_utf16_lossy(args[0].as_str()?);
+        let (spec, fname) =
+            parse_resource(&name).map_err(|e| RuntimeError::new(e.errnum() as u32))?;
+        let kind = resolve_kind(spec, self.current_slot);
+        let body = match kind {
+            ResourceKind::Data => {
+                let arr = args.get(1).ok_or_else(|| RuntimeError::new(ERR_SYNTAX))?;
+                encode_dat(arr)?
+            }
+            ResourceKind::Text => match args.get(1) {
+                Some(v) => encode_txt(v.as_str()?),
+                None => Vec::new(),
+            },
+            _ => Vec::new(),
+        };
+        self.storage
+            .write(&self.current_project, kind.folder(), fname, &body)
+            .map_err(|e| storage_errnum(&e))
+    }
+
+    /// `LOAD "[Resource:]Name"[, …]` — read a resource. ≥1 arg (else Illegal function call 4);
+    /// the first operand must be a string (else Type mismatch 8). `TXT:` returns the text as a
+    /// string (function form, or the `OUT` target); `DAT:` reads into the numeric-array
+    /// operand; program/graphic/font (form 1) confirm existence (Load failed 46 if missing).
+    fn file_load(
+        &mut self,
+        args: &[Value],
+        out_argc: u8,
+        wants_value: bool,
+    ) -> Result<(), RuntimeError> {
+        use crate::builtins::files::{decode_dat_into, decode_txt, resolve_kind, storage_errnum};
+        use crate::builtins::ERR_ILLEGAL_FUNCTION_CALL;
+        if args.is_empty() {
+            return Err(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL));
+        }
+        let name = String::from_utf16_lossy(args[0].as_str()?);
+        let (spec, fname) =
+            parse_resource(&name).map_err(|e| RuntimeError::new(e.errnum() as u32))?;
+        let kind = resolve_kind(spec, self.current_slot);
+        match kind {
+            ResourceKind::Text => {
+                let body = self
+                    .storage
+                    .read(&self.current_project, Folder::Txt, fname)
+                    .map_err(|e| storage_errnum(&e))?;
+                if wants_value || out_argc == 1 {
+                    self.stack.push(Value::Str(decode_txt(&body)));
+                }
+            }
+            ResourceKind::Data => {
+                let dest = args
+                    .get(1)
+                    .ok_or_else(|| RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL))?;
+                let body = self
+                    .storage
+                    .read(&self.current_project, Folder::Dat, fname)
+                    .map_err(|e| storage_errnum(&e))?;
+                decode_dat_into(dest, &body)?;
+            }
+            _ => {
+                // Program slot / graphic page / font page (form 1): confirm existence
+                // (Load failed 46 if missing); restoring into the slot/page is queued (O-T3).
+                self.storage
+                    .read(&self.current_project, kind.folder(), fname)
+                    .map_err(|e| storage_errnum(&e))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// `FILES ["filter"][, strArray$]` — list files. Statement-only. One operand is either a
+    /// filter string or an output string array; two operands are filter + output array; a
+    /// wrong operand type is Type mismatch (8), more than two operands Syntax error (3). With
+    /// an output array the names fill it (1-D auto-extends); otherwise they list to the console.
+    fn file_files(&mut self, args: &[Value], wants_value: bool) -> Result<(), RuntimeError> {
+        use crate::builtins::files::storage_errnum;
+        use crate::builtins::ERR_SYNTAX;
+        if wants_value {
+            return Err(RuntimeError::new(ERR_SYNTAX));
+        }
+        let (filter, out_array): (FilesFilter, Option<&Value>) = match args {
+            [] => (FilesFilter::All, None),
+            [a] => match a {
+                Value::Str(s) => (parse_files_filter(&String::from_utf16_lossy(s)), None),
+                Value::StrArray(_) => (FilesFilter::All, Some(a)),
+                _ => return Err(RuntimeError::new(crate::builtins::ERR_TYPE_MISMATCH)),
+            },
+            [f, arr] => {
+                let s = f.as_str()?;
+                if !matches!(arr, Value::StrArray(_)) {
+                    return Err(RuntimeError::new(crate::builtins::ERR_TYPE_MISMATCH));
+                }
+                (parse_files_filter(&String::from_utf16_lossy(s)), Some(arr))
+            }
+            _ => return Err(RuntimeError::new(ERR_SYNTAX)),
+        };
+        let names = self.files_list(&filter).map_err(|e| storage_errnum(&e))?;
+        if let Some(Value::StrArray(a)) = out_array {
+            let mut a = a.borrow_mut();
+            let _ = a.resize(names.len());
+            let n = a.len().min(names.len());
+            let slice = a.as_mut_slice();
+            for (i, nm) in names.iter().take(n).enumerate() {
+                slice[i] = nm.encode_utf16().collect();
+            }
+        } else {
+            for nm in &names {
+                for u in nm.encode_utf16() {
+                    self.console.put_char(u);
+                }
+                self.console.newline();
+            }
+        }
+        Ok(())
+    }
+
+    /// Resolve a [`FilesFilter`] to the sorted names it lists in the current project (or, for
+    /// the project-list / named-project filters, across projects).
+    fn files_list(
+        &self,
+        filter: &FilesFilter,
+    ) -> Result<Vec<String>, crate::storage::StorageError> {
+        let both = |proj: &str| -> Result<Vec<String>, crate::storage::StorageError> {
+            let mut names = self.storage.list(proj, Folder::Txt)?;
+            names.extend(self.storage.list(proj, Folder::Dat)?);
+            names.sort();
+            names.dedup();
+            Ok(names)
+        };
+        match filter {
+            FilesFilter::All => both(&self.current_project),
+            FilesFilter::Txt => self.storage.list(&self.current_project, Folder::Txt),
+            FilesFilter::Dat => self.storage.list(&self.current_project, Folder::Dat),
+            FilesFilter::Projects => self.storage.projects(),
+            FilesFilter::Project(p) => both(p),
+        }
+    }
+
+    /// `DELETE "[Filetype:]Name"` — delete a file. Statement-only and exactly 1 arg (else
+    /// Syntax error 3); the operand must be a string (else Type mismatch 8). Deleting a
+    /// missing file is a no-op (no error).
+    fn file_delete(&mut self, args: &[Value], wants_value: bool) -> Result<(), RuntimeError> {
+        use crate::builtins::files::{resolve_kind, storage_errnum};
+        use crate::builtins::ERR_SYNTAX;
+        if wants_value || args.len() != 1 {
+            return Err(RuntimeError::new(ERR_SYNTAX));
+        }
+        let name = String::from_utf16_lossy(args[0].as_str()?);
+        let (spec, fname) =
+            parse_resource(&name).map_err(|e| RuntimeError::new(e.errnum() as u32))?;
+        let kind = resolve_kind(spec, self.current_slot);
+        self.storage
+            .delete(&self.current_project, kind.folder(), fname)
+            .map_err(|e| storage_errnum(&e))?;
+        Ok(())
+    }
+
+    /// `RENAME "[Resource:]Name","[Resource:]New"` — rename a file. Statement-only and exactly
+    /// 2 args (else Syntax error 3); both operands must be strings (the first non-string → Type
+    /// mismatch 8). The rename stays within the source resource's folder (cross-resource
+    /// retype is corpus-only / queued).
+    fn file_rename(&mut self, args: &[Value], wants_value: bool) -> Result<(), RuntimeError> {
+        use crate::builtins::files::{resolve_kind, storage_errnum};
+        use crate::builtins::ERR_SYNTAX;
+        if wants_value || args.len() != 2 {
+            return Err(RuntimeError::new(ERR_SYNTAX));
+        }
+        let from = String::from_utf16_lossy(args[0].as_str()?);
+        let to = String::from_utf16_lossy(args[1].as_str()?);
+        let (fspec, fname) =
+            parse_resource(&from).map_err(|e| RuntimeError::new(e.errnum() as u32))?;
+        let (_tspec, tname) =
+            parse_resource(&to).map_err(|e| RuntimeError::new(e.errnum() as u32))?;
+        let folder = resolve_kind(fspec, self.current_slot).folder();
+        self.storage
+            .rename(&self.current_project, folder, fname, tname)
+            .map_err(|e| storage_errnum(&e))?;
+        Ok(())
+    }
+
+    /// `CHKFILE("[Resource:]Name")` → `TRUE`/`FALSE` for existence. Function-only (read for a
+    /// value) and exactly 1 arg (else Illegal function call 4); the operand must be a string
+    /// (else Type mismatch 8). Pushes the boolean result.
+    fn file_chkfile(&mut self, args: &[Value], wants_value: bool) -> Result<(), RuntimeError> {
+        use crate::builtins::files::resolve_kind;
+        use crate::builtins::ERR_ILLEGAL_FUNCTION_CALL;
+        if !wants_value || args.len() != 1 {
+            return Err(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL));
+        }
+        let name = String::from_utf16_lossy(args[0].as_str()?);
+        let (spec, fname) =
+            parse_resource(&name).map_err(|e| RuntimeError::new(e.errnum() as u32))?;
+        let kind = resolve_kind(spec, self.current_slot);
+        let exists = self
+            .storage
+            .exists(&self.current_project, kind.folder(), fname);
+        self.stack.push(Value::Int(i32::from(exists)));
+        Ok(())
+    }
+
+    /// `PROJECT "name"` (set) / `PROJECT OUT name$` (read). The **set** form is DIRECT-mode
+    /// only, so from a running program it is always Can't-use-in-program (errnum 44); the
+    /// **read** form (0 input args, 1 `OUT`) pushes the current project name and is allowed in
+    /// a program. Any other shape is Illegal function call (4). (`PROJECT=v` is an ordinary
+    /// variable assignment handled by the compiler, never reaching here.)
+    fn file_project(
+        &mut self,
+        args: &[Value],
+        out_argc: u8,
+        wants_value: bool,
+    ) -> Result<(), RuntimeError> {
+        use crate::builtins::files::ERR_CANT_USE_IN_PROGRAM;
+        use crate::builtins::ERR_ILLEGAL_FUNCTION_CALL;
+        if args.is_empty() && out_argc == 1 && !wants_value {
+            let name: SbStr = self.current_project.encode_utf16().collect();
+            self.stack.push(Value::Str(name));
+            return Ok(());
+        }
+        if args.len() == 1 && out_argc == 0 && !wants_value {
+            return Err(RuntimeError::new(ERR_CANT_USE_IN_PROGRAM));
+        }
+        Err(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL))
     }
 
     /// Handle the RNG builtins against the VM-owned [`Rng`](crate::rng::Rng). Returns

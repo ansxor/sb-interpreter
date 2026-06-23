@@ -1211,3 +1211,32 @@ either unverifiable audio output (O-T7) or a broader interpreter gap to revisit:
 - **WAVSETA reference-pitch / start / end range errors + end<start** — need a live array operand
   (the array-type check precedes them); harvest the errnum for each via the oracle (sb-core: 10/10/10
   for ranges, 4 for end<start, per the disassembly).
+
+### M6-T2 File commands — oracle-pending + interpreter-gap notes
+The arg-shape (errnum 3/4) / type (8) / DIRECT-only (44) guards are hw_verified and tested; the
+file effects (filesystem state) have no scalar golden but are exercised end-to-end over the
+VM-owned in-memory `Storage`. Items to confirm / extend:
+- **DAT PCBN byte layout (O-T3)** — sb-core's `SAVE "DAT:"`/`LOAD "DAT:"` use an internal,
+  self-describing `"SBDA"` body codec (tag + count + LE elements) so arrays round-trip *within*
+  the interpreter. The real SmileBASIC `PCBN0001` element-type tagging (int/double/ushort, array
+  dimensions) is queued: until it's pinned, loading a real corpus PCBN `DAT` blob raises Illegal
+  file format (35) rather than decoding. Harvest the exact header from a known `SAVE "DAT:"` →
+  read-off-disk round-trip (O-T3/O-T4) and replace the codec.
+- **Program-slot / GRP / GRPF payloads** — `SAVE`/`LOAD` of a program slot, graphic page or font
+  page (form 1) record / require an (empty) resource so existence/FILES/DELETE/RENAME stay
+  coherent, but the actual payload (program source text; GRP page bytes) is owned by other
+  subsystems and not yet plumbed into the file layer. Wire program source (M6-T4) + GRP pages
+  (GSAVE/GLOAD share the page bytes) through `Storage` and confirm the round-trips on real SB.
+- **Load-failure errnums 46 / 35** — sb-core maps a missing file → 46 (Load failed) and a
+  bad/foreign body → 35 (Illegal file format) per the disassembled `StorageError` map; these are
+  documented/disassembled, not yet oracle-confirmed (the `load.yaml` happy/missing-file cases are
+  queued — no committed `expect`). Harvest a real missing-file `LOAD` to confirm 46 vs another code.
+- **FILES console listing format** — with no output array, sb-core lists one name per line to the
+  console. The real on-screen column layout / ordering is unconfirmed (no scalar golden); the
+  array-output form (sorted names, 1-D auto-extend) is what the gate asserts.
+- **PROGRAM current-slot for bare names** — a bare resource name (`SAVE "NAME"`) targets program
+  slot 0 (single-slot M6-T2). Multi-slot routing (the running slot vs. an explicit `PRGn:`) is
+  M6-T6; confirm the bare-name → current-slot resolution once multi-slot lands.
+- **Cross-resource RENAME (TXT:→PRG:)** — sb-core renames within the *source* resource's folder
+  (TXT and program both live in the TXT folder, so the corpus `RENAME "TXT:"+N$,"PRG:"+N$` retype
+  works as a same-folder rename). Confirm the real retype semantics on the oracle.

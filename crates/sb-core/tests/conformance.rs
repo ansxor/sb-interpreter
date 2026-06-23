@@ -242,6 +242,16 @@ const IN_SCOPE_SOUND: &[&str] = &[
     "BGMPLAY", "BGMSTOP", "BGMCHK", "BGMVAR", "BGMVOL", "BGMSET", "BGMSETD", "BGMCLEAR", "BEEP",
     "TALK", "TALKCHK", "TALKSTOP", "EFCSET", "EFCON", "EFCOFF", "EFCWET", "WAVSET", "WAVSETA",
 ];
+/// The file commands (M6-T2): `SAVE`/`LOAD`/`FILES`/`DELETE`/`RENAME`/`CHKFILE` (category
+/// `Files`) + `PROJECT` (category `DIRECT mode`), over the VM-owned `Storage` (M6-T1). Listed
+/// by id rather than category because other `Files`/`DIRECT mode` specs (e.g. `USE`/`EXEC`/
+/// `PRG*`/`RUN`/`LIST`) are not yet implemented. Each spec's inline cases are the
+/// hw_verified arg-shape (→ 3/4) / type (→ 8) / DIRECT-only (→ 44) guards plus the
+/// `PROJECT=v` variable form; the data-round-trip behaviour is exercised by
+/// `harness/corpus/cases/files.yaml`.
+const IN_SCOPE_FILES: &[&str] = &[
+    "SAVE", "LOAD", "FILES", "DELETE", "RENAME", "CHKFILE", "PROJECT",
+];
 /// Specs `sb-core` implements only **partially** in M1: each is in scope, but the named
 /// cases listed here are EXCLUDED because they block on a later milestone or the
 /// console-text oracle. Everything else in the spec — the deterministic, hw_verified
@@ -416,6 +426,7 @@ fn spec_in_scope(id: &str, category: Option<&str>) -> bool {
         || IN_SCOPE_BG.contains(&id)
         || IN_SCOPE_INPUT.contains(&id)
         || IN_SCOPE_SOUND.contains(&id)
+        || IN_SCOPE_FILES.contains(&id)
         || IN_SCOPE_PARTIAL.iter().any(|(pid, _)| *pid == id)
 }
 

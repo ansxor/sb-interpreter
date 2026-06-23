@@ -1,0 +1,51 @@
+# File commands (M6-T2): SAVE/LOAD/FILES/DELETE/RENAME/CHKFILE/PROJECT over the VM-owned
+# in-memory Storage (M6-T1). Each program runs against a fresh, empty store, so SAVE-then-LOAD
+# round-trips within one run. The data-round-trip / listing behaviour here is the documented
+# resource model; the arg-shape/type/DIRECT-only error guards live in the per-instruction
+# spec `tests:` (replayed via IN_SCOPE_FILES). Bodies are the logical TXT (UTF-8) / DAT (SBDA)
+# payloads — real PCBN byte-layout is queued (O-T3, HARVEST_QUEUE.md).
+cases:
+  # SAVE "TXT:…",str then read it back via the function form.
+  - name: save_load_text_function
+    code: "SAVE \"TXT:MEMO\",CHR$(72)+\"I\"\nPRINT LOAD(\"TXT:MEMO\")"
+    expect: { stdout: "HI" }
+  # SAVE "TXT:…" then LOAD … OUT into a string variable.
+  - name: save_load_text_out
+    code: "A$=\"WORLD\"\nSAVE \"TXT:GREET\",A$\nLOAD \"TXT:GREET\" OUT B$\nPRINT B$"
+    expect: { stdout: "WORLD" }
+  # SAVE "DAT:…",array then LOAD it into another array — round-trips the elements.
+  - name: save_load_int_array
+    code: "DIM A[3]\nA[0]=10\nA[1]=20\nA[2]=30\nSAVE \"DAT:NUMS\",A\nDIM B[3]\nLOAD \"DAT:NUMS\",B\nPRINT B[0];B[1];B[2]"
+    expect: { stdout: "102030" }
+  # LOAD "DAT:…" into a too-small 1-D array auto-extends it to the stored length.
+  - name: load_dat_autoextends
+    code: "DIM A[3]\nA[0]=7\nA[1]=8\nA[2]=9\nSAVE \"DAT:V\",A\nDIM B[0]\nLOAD \"DAT:V\",B\nPRINT LEN(B);B[2]"
+    expect: { stdout: "39" }
+  # CHKFILE is FALSE before a SAVE and TRUE after.
+  - name: chkfile_before_after_save
+    code: "PRINT CHKFILE(\"TXT:Z\");\nSAVE \"TXT:Z\",\"x\"\nPRINT CHKFILE(\"TXT:Z\")"
+    expect: { stdout: "01" }
+  # DELETE removes a saved file (CHKFILE then FALSE again).
+  - name: delete_removes_file
+    code: "SAVE \"TXT:D\",\"x\"\nDELETE \"TXT:D\"\nPRINT CHKFILE(\"TXT:D\")"
+    expect: { stdout: "0" }
+  # RENAME moves a file: the old name is gone, the new name exists.
+  - name: rename_moves_file
+    code: "SAVE \"TXT:OLD\",\"x\"\nRENAME \"TXT:OLD\",\"TXT:NEW\"\nPRINT CHKFILE(\"TXT:OLD\");CHKFILE(\"TXT:NEW\")"
+    expect: { stdout: "01" }
+  # RENAME preserves the contents under the new name.
+  - name: rename_keeps_contents
+    code: "SAVE \"TXT:SRC\",\"KEEP\"\nRENAME \"TXT:SRC\",\"TXT:DST\"\nPRINT LOAD(\"TXT:DST\")"
+    expect: { stdout: "KEEP" }
+  # FILES "TXT:",array$ fills the array with the (sorted) text-folder names.
+  - name: files_into_array
+    code: "SAVE \"TXT:BBB\",\"x\"\nSAVE \"TXT:AAA\",\"x\"\nDIM F$[0]\nFILES \"TXT:\",F$\nPRINT LEN(F$);F$[0];F$[1]"
+    expect: { stdout: "2AAABBB" }
+  # FILES "DAT:" lists only the binary folder (TXT files are not counted).
+  - name: files_dat_filter
+    code: "SAVE \"TXT:T1\",\"x\"\nDIM A[1]\nSAVE \"DAT:D1\",A\nDIM F$[0]\nFILES \"DAT:\",F$\nPRINT LEN(F$);F$[0]"
+    expect: { stdout: "1D1" }
+  # PROJECT OUT name$ reads the current project name (default project on a fresh VM).
+  - name: project_out_default
+    code: "PROJECT OUT P$\nPRINT P$"
+    expect: { stdout: "DEFAULT" }
