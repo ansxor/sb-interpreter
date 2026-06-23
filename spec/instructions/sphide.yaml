@@ -30,7 +30,7 @@ confidence: disassembled
 
 tests:
   # hide side-effect needs the sprite-framebuffer oracle (O-T6, queued); error expects are hw_verified (sb-oracle 2026-06-22 s_t8a).
-  - { name: hide_after_spset_ok, code: 'SPSET 0,0\nSPHIDE 0', expect: { stdout: "" } }
+  - { name: hide_after_spset_ok, code: "SPSET 0,0\nSPHIDE 0", expect: { stdout: "" } }
   - { name: hide_before_spset_errors, code: "SPHIDE 0", expect: { error: { errnum: 4 } } }
   - { name: mgmt_out_of_range, code: "SPHIDE 512", expect: { error: { errnum: 10 } } }
   - { name: mgmt_negative, code: "SPHIDE -1", expect: { error: { errnum: 10 } } }

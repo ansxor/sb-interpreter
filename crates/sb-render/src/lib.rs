@@ -17,6 +17,7 @@ pub mod font;
 pub mod grp;
 pub mod png;
 pub mod raster;
+pub mod sprite;
 
 /// The 3DS upper screen is 400×240; the lower (touch) screen is 320×240.
 pub const TOP_WIDTH: usize = 400;

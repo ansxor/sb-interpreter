@@ -85,8 +85,8 @@ tests:
   - { name: create_from_template_ok, code: "SPSET 0,0", expect: { stdout: "" } }
   - { name: create_direct_ok, code: "SPSET 54,0,0,32,32,1", expect: { stdout: "" } }
   - { name: create_direct_no_wh_ok, code: "SPSET 10,0,0,1", expect: { stdout: "" } }
-  - { name: out_alloc_from_template_ok, code: 'SPSET 0 OUT IX\nPRINT IX>=0', expect: { stdout: "1" } }
-  - { name: func_alloc_form_ok, code: 'SP=SPSET(0)\nPRINT SP>=0', expect: { stdout: "1" } }
+  - { name: out_alloc_from_template_ok, code: "SPSET 0 OUT IX\nPRINT IX>=0", expect: { stdout: "1" } }
+  - { name: func_alloc_form_ok, code: "SP=SPSET(0)\nPRINT SP>=0", expect: { stdout: "1" } }
   - { name: mgmt_out_of_range, code: "SPSET 512,0", expect: { error: { errnum: 10 } } }
   - { name: mgmt_negative, code: "SPSET -1,0", expect: { error: { errnum: 10 } } }
   - { name: defn_out_of_range, code: "SPSET 0,4096", expect: { error: { errnum: 10 } } }

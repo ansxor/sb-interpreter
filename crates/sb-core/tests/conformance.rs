@@ -134,6 +134,17 @@ const IN_SCOPE_GRAPHICS: &[&str] = &[
 /// stays excluded: `DISPLAY`/`FADE`/`FADECHK`/`VISIBLE`/`XSCREEN` are display-config / frame
 /// effects (M4) and aren't implemented yet. Listed by id.
 const IN_SCOPE_SCREEN: &[&str] = &["ACLS", "BACKCOLOR"];
+/// `Sprites` instructions whose lifecycle `sb-core` implements (M3-T1: the 512-slot sprite
+/// table + create/release/show/hide/query commands) and whose inline `tests:` are
+/// deterministic + checkable: `SPSET` (six forms — explicit slot or auto-allocate, range /
+/// arg-count errnums hw_verified, OUT/function allocation returning a slot ≥ 0), `SPCLR`
+/// (release one/all, range errnum), `SPSHOW`/`SPHIDE` (display toggle + the used-before-SPSET
+/// errnum 4 guard, both hw_verified), and `SPUSED` (TRUE=1/FALSE=0, hw_verified). The
+/// category is NOT taken wholesale: the transform/animation/collision instructions
+/// (`SPOFS`/`SPCHR`/`SPANIM`/`SPCOL`/…) land with M3-T2/T3 and the visible-render side-effects
+/// (a sprite at the right place/orientation) block on the framebuffer oracle (O-T6 / M3-T6,
+/// queued). Listed by id.
+const IN_SCOPE_SPRITES: &[&str] = &["SPSET", "SPCLR", "SPSHOW", "SPHIDE", "SPUSED"];
 /// Specs `sb-core` implements only **partially** in M1: each is in scope, but the named
 /// cases listed here are EXCLUDED because they block on a later milestone or the
 /// console-text oracle. Everything else in the spec — the deterministic, hw_verified
@@ -300,6 +311,7 @@ fn spec_in_scope(id: &str, category: Option<&str>) -> bool {
         || IN_SCOPE_DATA_OPS.contains(&id)
         || IN_SCOPE_GRAPHICS.contains(&id)
         || IN_SCOPE_SCREEN.contains(&id)
+        || IN_SCOPE_SPRITES.contains(&id)
         || IN_SCOPE_PARTIAL.iter().any(|(pid, _)| *pid == id)
 }
 

@@ -377,6 +377,15 @@ oracle to confirm exact output and promote to `hw_verified`.
   image, attribute bits applied), SPSHOW/SPHIDE display-flag toggle, SPCLR slot-free + bulk clear-all (0-arg),
   SPPAGE render-page redirect, SPSET OUT -1 pool-exhaustion result, SPSET reinit (SPVAR -> 0). All disassembled
   + documented; runtime visual confirmation queued.
+- [ ] M3-T1 SPSET direct-image source-rect overflow errnum · docs say `U+W` / `V+H` > 512 (rect runs off the
+  512-px sheet) raises an error; the exact errnum is unconfirmed. sb-core currently raises errnum 10 (the spec's
+  documented assumption). ORACLE: `SPSET 0,500,0,32,32,1|err` (U+W=532) and `SPSET 0,0,500,32,32,1|err` (V+H=532)
+  -> capture ERRNUM. If not 10, fix `rect()` in `crates/sb-core/src/builtins/sprite.rs` + spset.yaml errors.
+- [ ] M3-T1 SPSET auto-allocate scan tie-break · which free slot the OUT/function forms pick when several are free
+  (lowest-first assumed; the [upper,lower] range scan direction for forms 5/6). sb-core scans start→end and picks
+  the first free (lowest for whole-range forms 3/4). ORACLE: with sprites 0,2 free and 1 used, `X=SPSET(0):?X`
+  expects 0; range `SPSET(5,9,...)` with 5 used expects 6; reversed `SPSET(9,5,...)` direction. Confirm against
+  the OUT branch @0x141990; adjust `SpriteState::alloc` if the device picks differently.
 - [x] S-T8b error + round-trip values HARVESTED (2026-06-22 s_t8b): mgmt out-of-range (512) -> errnum 10 for
   SPOFS/SPROT/SPSCALE/SPHOME/SPCHR; used-before-SPSET -> errnum 4 (all five); bad argcount -> errnum 4
   (SPOFS 0,0 / SPROT 0); SPCHR defn 4096 -> errnum 10. Round-trips: SPOFS 0,50,80 OUT->50,80; SPROT 0,45->45;

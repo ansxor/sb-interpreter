@@ -176,7 +176,7 @@ and name the instructions they cover inline.
 - [x] M2-T5 Golden PNG harvest + pixel-diff → M2-T4, O-T6
 
 ## M3 — Sprites & BG  (gated on S-T8, S-T9)
-- [ ] M3-T1 Sprite core → S-T8, M2-T4
+- [x] M3-T1 Sprite core → S-T8, M2-T4
 - [ ] M3-T2 Animation/link/vars → M3-T1
 - [ ] M3-T3 Collision → M3-T1
 - [ ] M3-T4 BG core → S-T9, M2-T4

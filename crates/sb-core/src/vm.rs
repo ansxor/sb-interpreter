@@ -45,6 +45,7 @@ use crate::token::Suffix;
 use crate::value::{Cell, ElemRef, RuntimeError, SbStr, Value};
 use sb_render::console::Console;
 use sb_render::grp::GrpState;
+use sb_render::sprite::SpriteState;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 
@@ -144,6 +145,10 @@ pub struct Vm {
     /// / clip rectangles, driven by `GPAGE`/`GCLS`/`GCOLOR`/`GPRIO`/`GCLIP`/`GSPOIT`. The
     /// compositor (M2-T4) turns the display page into the framebuffer.
     grp: GrpState,
+    /// The sprite system state (M3-T1): the 512-slot sprite table, driven by the lifecycle
+    /// commands `SPSET`/`SPCLR`/`SPSHOW`/`SPHIDE`/`SPUSED`. The compositor (M3-T6) draws the
+    /// live sprites into the framebuffer; the transform/animation setters extend it (M3-T2+).
+    sprites: SpriteState,
     /// The screen background color code (`BACKCOLOR`). The handler round-trips the user's
     /// RGB code, so we store it verbatim; the rendered border color is screen state (M2).
     back_color: i32,
@@ -188,6 +193,7 @@ impl Vm {
             rng: crate::rng::Rng::new(),
             console: Console::top(),
             grp: GrpState::new(),
+            sprites: SpriteState::new(),
             back_color: 0,
             tabstep: 4,
             input_lines: VecDeque::new(),
@@ -222,6 +228,11 @@ impl Vm {
     /// Borrow the GRP graphics state (pages + draw state) for rendering / inspection.
     pub fn grp(&self) -> &GrpState {
         &self.grp
+    }
+
+    /// Borrow the sprite system state (the 512-slot table) for rendering / inspection.
+    pub fn sprites(&self) -> &SpriteState {
+        &self.sprites
     }
 
     /// The console contents as text: each grid row trimmed of trailing blanks, rows joined
@@ -745,6 +756,12 @@ impl Vm {
         if self.call_graphics(name, &args, out_argc, wants_value)? {
             return Ok(());
         }
+        // Sprite lifecycle builtins (SPSET/SPCLR/SPSHOW/SPHIDE/SPUSED, M3-T1) mutate or read
+        // the VM-owned `SpriteState` and can leave OUT results, so they push their own
+        // results and bypass the stateless dispatch.
+        if self.call_sprite(name, &args, out_argc, wants_value)? {
+            return Ok(());
+        }
         let ret = crate::builtins::dispatch(name, args).map_err(sb)?;
         if wants_value {
             self.stack.push(ret);
@@ -1010,6 +1027,36 @@ impl Vm {
             "GCOPY" => gfx::gcopy(&mut self.grp, &args, ret_count),
             "GSAVE" => gfx::gsave(&mut self.grp, &args, ret_count),
             "GLOAD" => gfx::gload(&mut self.grp, &args, ret_count),
+            _ => return Ok(false),
+        };
+        for v in results.map_err(sb)? {
+            self.stack.push(v);
+        }
+        Ok(true)
+    }
+
+    /// Route a sprite lifecycle builtin (M3-T1) over the VM-owned [`SpriteState`]. Returns
+    /// `Ok(true)` when handled (pushing the command's result values — none for `SPSET`
+    /// (explicit form) / `SPCLR` / `SPSHOW` / `SPHIDE`, one for an `SPSET` auto-allocate or
+    /// `SPUSED`), or `Ok(false)` when `name` is not a sprite builtin. Like the graphics
+    /// commands, the SET/GET-style form is chosen by the **return count**, collapsing the
+    /// function (`wants_value`) and `OUT` (`out_argc`) spellings.
+    fn call_sprite(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        out_argc: u8,
+        wants_value: bool,
+    ) -> Result<bool, VmError> {
+        use crate::builtins::sprite as spr;
+        let ret_count = if wants_value { 1 } else { out_argc as usize };
+        let args: Vec<Value> = args.iter().map(|v| v.deref()).collect();
+        let results = match name {
+            "SPSET" => spr::spset(&mut self.sprites, &args, ret_count),
+            "SPCLR" => spr::spclr(&mut self.sprites, &args, ret_count),
+            "SPSHOW" => spr::spshow(&mut self.sprites, &args, ret_count),
+            "SPHIDE" => spr::sphide(&mut self.sprites, &args, ret_count),
+            "SPUSED" => spr::spused(&self.sprites, &args, ret_count),
             _ => return Ok(false),
         };
         for v in results.map_err(sb)? {

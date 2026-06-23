@@ -31,6 +31,7 @@ pub(crate) mod console;
 pub(crate) mod data;
 pub(crate) mod graphics;
 mod math;
+pub(crate) mod sprite;
 mod string;
 
 use crate::value::{RuntimeError, SbStr, Value};
@@ -153,6 +154,15 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "GCOPY",
     "GSAVE",
     "GLOAD",
+    // Sprite lifecycle (M3-T1): SPSET/SPCLR/SPSHOW/SPHIDE create/release/show/hide sprites
+    // in the VM-owned `SpriteState`; SPUSED queries a slot. The VM routes them directly
+    // like the graphics commands (they mutate/read sprite-system state, not return a pure
+    // value), so they are registered here for the compiler to treat as builtins.
+    "SPSET",
+    "SPCLR",
+    "SPSHOW",
+    "SPHIDE",
+    "SPUSED",
     // Array data-ops (M1-T14): SORT/RSORT mutate their array arguments in place, so the
     // VM routes them to `data::sort` rather than the value-returning `dispatch`.
     "SORT",
@@ -351,6 +361,7 @@ mod tests {
         assert!(b.is_builtin("PI"));
         assert!(b.is_builtin("RND")); // M1-T9
         assert!(b.is_builtin("RANDOMIZE")); // M1-T9
-        assert!(!b.is_builtin("SPSET")); // later milestone
+        assert!(b.is_builtin("SPSET")); // M3-T1
+        assert!(!b.is_builtin("SPOFS")); // later milestone (M3-T2)
     }
 }

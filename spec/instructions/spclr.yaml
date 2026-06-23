@@ -33,8 +33,8 @@ confidence: disassembled
 
 tests:
   # clear side-effect needs the sprite-framebuffer oracle (O-T6, queued); error expects are hw_verified (sb-oracle 2026-06-22 s_t8a).
-  - { name: clear_one_ok, code: 'SPSET 0,0\nSPCLR 0', expect: { stdout: "" } }
-  - { name: clear_all_ok, code: 'SPSET 0,0\nSPSET 1,0\nSPCLR', expect: { stdout: "" } }
+  - { name: clear_one_ok, code: "SPSET 0,0\nSPCLR 0", expect: { stdout: "" } }
+  - { name: clear_all_ok, code: "SPSET 0,0\nSPSET 1,0\nSPCLR", expect: { stdout: "" } }
   - { name: clear_unused_ok, code: "SPCLR 5", expect: { stdout: "" } }
   - { name: mgmt_out_of_range, code: "SPCLR 512", expect: { error: { errnum: 10 } } }
   - { name: mgmt_negative, code: "SPCLR -1", expect: { error: { errnum: 10 } } }
