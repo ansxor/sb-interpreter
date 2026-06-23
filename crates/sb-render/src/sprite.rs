@@ -39,6 +39,64 @@ pub const SPRITE_PAGE_DEFAULT: u8 = 4;
 pub const SPRITE_DEFAULT_WH: i32 = 16;
 /// Default `SPSET` attribute when `attr` is omitted: display ON only (`#SPSHOW` &H01).
 pub const SPRITE_DEFAULT_ATTR: i32 = 0x01;
+/// Number of `SPDEF` definition-template slots: 0..4095 (the `cmp r8,#0x1000` clamp
+/// @0x13ff48 in the `SPDEF` handler).
+pub const SPDEF_TEMPLATE_COUNT: usize = 4096;
+
+/// One `SPDEF` definition template: the pre-set source rectangle, home/origin point, and
+/// attribute that `SPSET` copies from when creating a sprite by definition number. The
+/// template table is seeded from `spdef.csv` on the real machine; absent that resource we
+/// model the initial/reset state as the documented defaults (16×16 at the sheet origin,
+/// home 0,0, attribute display-ON). The exact `spdef.csv` per-template rectangles are
+/// oracle-pending (no framebuffer harvest yet — see `HARVEST_QUEUE.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpdefEntry {
+    /// Source-image X,Y on the sprite sheet.
+    pub u: i32,
+    pub v: i32,
+    /// Source-image width/height (default 16×16).
+    pub w: i32,
+    pub h: i32,
+    /// Reference (home) point for the sprite's coordinates (default 0,0).
+    pub origin_x: i32,
+    pub origin_y: i32,
+    /// Display/rotation/flip/blend attribute bits (default &H01 = display ON).
+    pub attr: i32,
+}
+
+impl Default for SpdefEntry {
+    fn default() -> Self {
+        Self {
+            u: 0,
+            v: 0,
+            w: SPRITE_DEFAULT_WH,
+            h: SPRITE_DEFAULT_WH,
+            origin_x: 0,
+            origin_y: 0,
+            attr: SPRITE_DEFAULT_ATTR,
+        }
+    }
+}
+
+/// The shared collision-result record written by the most recent `SPHIT*` and read back by
+/// `SPHITINFO`: a swept-frame collision `time` (0..1) plus the collision-time coordinates
+/// and velocities of the two colliding objects (object 1 = the tested sprite/rectangle,
+/// object 2 = the sprite it hit). `collision_coordinate = position_at_detection +
+/// velocity * time`. The default (no collision yet) is all-zero. The non-zero swept `time`
+/// is oracle-pending; with the velocities we model (static, vel 0 unless `SPCOLVEC` set)
+/// it stays 0, matching the documented "position at detection" coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct HitInfo {
+    pub time: f64,
+    pub x1: f64,
+    pub y1: f64,
+    pub vx1: f64,
+    pub vy1: f64,
+    pub x2: f64,
+    pub y2: f64,
+    pub vx2: f64,
+    pub vy2: f64,
+}
 
 /// Why an `SPANIM` keyframe list was rejected. The lifecycle/argument errnums (4/8/10)
 /// are decided by the builtin; these are the data-build errnums raised by the keyframe
@@ -223,6 +281,26 @@ pub struct Sprite {
     pub func: Option<String>,
     /// The per-channel `SPANIM` animations (one optional animation per target 0..7).
     pub anims: [Option<SpriteAnim>; ANIM_CHANNELS],
+    /// Collision detection enabled (`SPCOL`). A sprite only participates in `SPHIT*` once
+    /// `SPCOL` has been called; a fresh sprite does not collide.
+    pub col_enabled: bool,
+    /// Detection rectangle start, relative to `SPHOME` (the home point is the area origin
+    /// 0,0). Defaults to 0,0 (the top-left of the sprite).
+    pub col_sx: i32,
+    pub col_sy: i32,
+    /// Detection rectangle size. When `SPCOL` is enabled without an explicit range these
+    /// default to the sprite's full `W,H`.
+    pub col_w: i32,
+    pub col_h: i32,
+    /// Synchronize the detection area with `SPSCALE` (the `SPCOL` scale-adjust flag).
+    pub col_scale_adjust: bool,
+    /// 32-bit collision mask (`SPCOL`). Two objects collide only when `maskA AND maskB`
+    /// is non-zero. Default all bits set (`&HFFFFFFFF`).
+    pub col_mask: u32,
+    /// Per-frame movement vector carried into swept collision (`SPCOLVEC`), reported by
+    /// `SPHITINFO` as VX/VY. Default 0,0.
+    pub col_vx: f64,
+    pub col_vy: f64,
 }
 
 impl Default for Sprite {
@@ -255,6 +333,15 @@ impl Default for Sprite {
             parent: None,
             func: None,
             anims: std::array::from_fn(|_| None),
+            col_enabled: false,
+            col_sx: 0,
+            col_sy: 0,
+            col_w: 0,
+            col_h: 0,
+            col_scale_adjust: false,
+            col_mask: 0xFFFF_FFFF,
+            col_vx: 0.0,
+            col_vy: 0.0,
         }
     }
 }
@@ -317,6 +404,10 @@ impl Sprite {
 pub struct SpriteState {
     /// The 512 sprite slots, indexed by management number.
     pub sprites: Vec<Sprite>,
+    /// The 4096 `SPDEF` definition templates `SPSET` (form 1) copies from.
+    pub spdef: Vec<SpdefEntry>,
+    /// The shared `SPHIT*` collision-result record `SPHITINFO` reads back.
+    pub hit: HitInfo,
 }
 
 impl Default for SpriteState {
@@ -330,6 +421,8 @@ impl SpriteState {
     pub fn new() -> Self {
         Self {
             sprites: vec![Sprite::default(); SPRITE_COUNT],
+            spdef: vec![SpdefEntry::default(); SPDEF_TEMPLATE_COUNT],
+            hit: HitInfo::default(),
         }
     }
 
@@ -345,9 +438,16 @@ impl SpriteState {
     }
 
     /// Initialise a slot as a live sprite, resetting transform/vars to defaults. `rect` is
-    /// the source rectangle `(U,V,W,H)`; `defno` is the `SPDEF` template number, or -1 for
-    /// the direct-image forms.
-    fn create(&mut self, mgmt: usize, rect: (i32, i32, i32, i32), attr: i32, defno: i32) {
+    /// the source rectangle `(U,V,W,H)`; `home` is the home/origin offset; `defno` is the
+    /// `SPDEF` template number, or -1 for the direct-image forms.
+    fn create(
+        &mut self,
+        mgmt: usize,
+        rect: (i32, i32, i32, i32),
+        home: (i32, i32),
+        attr: i32,
+        defno: i32,
+    ) {
         let (u, v, w, h) = rect;
         let mut sp = Sprite {
             active: true,
@@ -356,25 +456,31 @@ impl SpriteState {
             v,
             w,
             h,
+            home_x: home.0,
+            home_y: home.1,
             ..Sprite::default()
         };
         sp.set_attr(attr);
         self.sprites[mgmt] = sp;
     }
 
-    /// `SPSET mgmt, U,V,W,H, attr` — create a directly-imaged sprite at an explicit slot.
+    /// `SPSET mgmt, U,V,W,H, attr` — create a directly-imaged sprite at an explicit slot
+    /// (home/origin 0,0).
     pub fn set_direct(&mut self, mgmt: usize, u: i32, v: i32, w: i32, h: i32, attr: i32) {
-        self.create(mgmt, (u, v, w, h), attr, -1);
+        self.create(mgmt, (u, v, w, h), (0, 0), attr, -1);
     }
 
-    /// `SPSET mgmt, defn` — create a sprite at an explicit slot from an `SPDEF` template.
-    /// The template's `U,V,W,H` are resolved once `SPDEF` lands (M3-T3); for now the slot
-    /// records `defno` and uses the default 16×16 rectangle.
-    pub fn set_template(&mut self, mgmt: usize, defno: i32, attr: i32) {
+    /// `SPSET mgmt, defn` — create a sprite at an explicit slot from an `SPDEF` template:
+    /// the slot copies the template's source rectangle, home/origin, and attribute (so a
+    /// later `SPDEF` does not retroactively change a created sprite). The caller has already
+    /// range-checked `defno` (0..4095).
+    pub fn set_template(&mut self, mgmt: usize, defno: i32) {
+        let t = self.spdef[defno as usize];
         self.create(
             mgmt,
-            (0, 0, SPRITE_DEFAULT_WH, SPRITE_DEFAULT_WH),
-            attr,
+            (t.u, t.v, t.w, t.h),
+            (t.origin_x, t.origin_y),
+            t.attr,
             defno,
         );
     }
@@ -535,6 +641,250 @@ impl SpriteState {
             }
         }
     }
+
+    // -- collision (M3-T3) -----------------------------------------------------
+
+    /// `SPCOL` — enable collision on a sprite. `rect` is the explicit detection rectangle
+    /// `(sx,sy,w,h)` relative to `SPHOME`; when `None` the detection area defaults to the
+    /// sprite's full `W,H` (origin 0,0). The caller has validated mgmt/active.
+    pub fn set_col(
+        &mut self,
+        mgmt: usize,
+        rect: Option<(i32, i32, i32, i32)>,
+        scale_adjust: bool,
+        mask: u32,
+    ) {
+        let (w, h) = (self.sprites[mgmt].w, self.sprites[mgmt].h);
+        let sp = &mut self.sprites[mgmt];
+        sp.col_enabled = true;
+        sp.col_scale_adjust = scale_adjust;
+        sp.col_mask = mask;
+        match rect {
+            Some((sx, sy, rw, rh)) => {
+                sp.col_sx = sx;
+                sp.col_sy = sy;
+                sp.col_w = rw;
+                sp.col_h = rh;
+            }
+            None => {
+                sp.col_sx = 0;
+                sp.col_sy = 0;
+                sp.col_w = w;
+                sp.col_h = h;
+            }
+        }
+    }
+
+    /// `SPCOLVEC` — set the per-frame collision movement vector. `v` is the explicit vector;
+    /// `None` is the auto-calculated form (the `SPANIM` "XY" linear-interpolation delta when
+    /// running, otherwise 0,0 — the running-delta case is oracle-pending, so we model the
+    /// documented stationary default 0,0). The caller has validated mgmt/active.
+    pub fn set_colvec(&mut self, mgmt: usize, v: Option<(f64, f64)>) {
+        let (vx, vy) = v.unwrap_or((0.0, 0.0));
+        self.sprites[mgmt].col_vx = vx;
+        self.sprites[mgmt].col_vy = vy;
+    }
+
+    /// World-space AABB detection rectangle `(x,y,w,h)` of a collision-enabled sprite, or
+    /// `None` when the sprite is inactive or has not had `SPCOL` called (such a sprite does
+    /// not collide). The rectangle is the sprite's display position (incl. `SPLINK`
+    /// inheritance) plus the detection start, sized by the detection `W,H` (scaled by
+    /// `SPSCALE` when the scale-adjust flag is set).
+    fn col_aabb(&self, mgmt: usize) -> Option<(f64, f64, f64, f64)> {
+        let sp = &self.sprites[mgmt];
+        if !sp.active || !sp.col_enabled {
+            return None;
+        }
+        let (dx, dy) = self.display_pos(mgmt);
+        let (mut w, mut h) = (sp.col_w as f64, sp.col_h as f64);
+        if sp.col_scale_adjust {
+            w *= sp.scale_x.abs();
+            h *= sp.scale_y.abs();
+        }
+        Some((dx + sp.col_sx as f64, dy + sp.col_sy as f64, w, h))
+    }
+
+    /// Record a sprite-vs-sprite hit into the shared `SPHITINFO` record (object 1 = the
+    /// tested sprite `a`, object 2 = the sprite it hit `b`); `time` is 0 (static collision —
+    /// the swept time is oracle-pending).
+    fn record_hit_sp(&mut self, a: usize, b: usize) {
+        let (ax, ay) = self.display_pos(a);
+        let (bx, by) = self.display_pos(b);
+        let (avx, avy) = (self.sprites[a].col_vx, self.sprites[a].col_vy);
+        let (bvx, bvy) = (self.sprites[b].col_vx, self.sprites[b].col_vy);
+        self.hit = HitInfo {
+            time: 0.0,
+            x1: ax,
+            y1: ay,
+            vx1: avx,
+            vy1: avy,
+            x2: bx,
+            y2: by,
+            vx2: bvx,
+            vy2: bvy,
+        };
+    }
+
+    /// Record a rectangle-vs-sprite hit (object 1 = the tested rectangle, object 2 = the
+    /// sprite it hit).
+    fn record_hit_rc(&mut self, rect: (f64, f64, f64, f64), mv: (f64, f64), b: usize) {
+        let (bx, by) = self.display_pos(b);
+        let (bvx, bvy) = (self.sprites[b].col_vx, self.sprites[b].col_vy);
+        self.hit = HitInfo {
+            time: 0.0,
+            x1: rect.0,
+            y1: rect.1,
+            vx1: mv.0,
+            vy1: mv.1,
+            x2: bx,
+            y2: by,
+            vx2: bvx,
+            vy2: bvy,
+        };
+    }
+
+    /// `SPHITSP(mgmt[,first,last])` — test one sprite against a management-number range
+    /// (inclusive, defaulting to the whole table). Returns the first colliding sprite's
+    /// management number (skipping the tested sprite), or -1 when none collide.
+    pub fn hit_sp_range(&mut self, mgmt: usize, first: usize, last: usize) -> i32 {
+        let Some(a) = self.col_aabb(mgmt) else {
+            return -1;
+        };
+        let amask = self.sprites[mgmt].col_mask;
+        let (lo, hi) = if first <= last {
+            (first, last)
+        } else {
+            (last, first)
+        };
+        for opp in lo..=hi {
+            if opp == mgmt {
+                continue;
+            }
+            let Some(b) = self.col_aabb(opp) else {
+                continue;
+            };
+            if amask & self.sprites[opp].col_mask == 0 {
+                continue;
+            }
+            if aabb_overlap(a, b) {
+                self.record_hit_sp(mgmt, opp);
+                return opp as i32;
+            }
+        }
+        -1
+    }
+
+    /// `SPHITSP(mgmt, opponent)` — test two specific sprites. Returns true on collision.
+    pub fn hit_sp_pair(&mut self, mgmt: usize, opp: usize) -> bool {
+        let (Some(a), Some(b)) = (self.col_aabb(mgmt), self.col_aabb(opp)) else {
+            return false;
+        };
+        if self.sprites[mgmt].col_mask & self.sprites[opp].col_mask == 0 {
+            return false;
+        }
+        if aabb_overlap(a, b) {
+            self.record_hit_sp(mgmt, opp);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// `SPHITRC` — test a (moving) rectangle against a management-number range. Returns the
+    /// first colliding sprite's management number, or -1 when none collide.
+    pub fn hit_rc_range(
+        &mut self,
+        rect: (f64, f64, f64, f64),
+        mask: u32,
+        mv: (f64, f64),
+        first: usize,
+        last: usize,
+    ) -> i32 {
+        let (lo, hi) = if first <= last {
+            (first, last)
+        } else {
+            (last, first)
+        };
+        for opp in lo..=hi {
+            let Some(b) = self.col_aabb(opp) else {
+                continue;
+            };
+            if mask & self.sprites[opp].col_mask == 0 {
+                continue;
+            }
+            if aabb_overlap(rect, b) {
+                self.record_hit_rc(rect, mv, opp);
+                return opp as i32;
+            }
+        }
+        -1
+    }
+
+    /// `SPHITRC(mgmt, …)` — test a (moving) rectangle against one specific sprite. Returns
+    /// true on collision.
+    pub fn hit_rc_one(
+        &mut self,
+        rect: (f64, f64, f64, f64),
+        mask: u32,
+        mv: (f64, f64),
+        opp: usize,
+    ) -> bool {
+        let Some(b) = self.col_aabb(opp) else {
+            return false;
+        };
+        if mask & self.sprites[opp].col_mask == 0 {
+            return false;
+        }
+        if aabb_overlap(rect, b) {
+            self.record_hit_rc(rect, mv, opp);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// `SPCHK(mgmt)` — the 8-bit animation-status bitmask: bit `c` is set when channel `c`
+    /// has a running (not finished) `SPANIM`. A stopped sprite (`SPSTOP`) reads 0.
+    pub fn anim_status(&self, mgmt: usize) -> i32 {
+        let sp = &self.sprites[mgmt];
+        if sp.anim_stopped {
+            return 0;
+        }
+        let mut bits = 0;
+        for (ch, slot) in sp.anims.iter().enumerate() {
+            if let Some(a) = slot {
+                if !a.done {
+                    bits |= 1 << ch;
+                }
+            }
+        }
+        bits
+    }
+
+    // -- SPDEF definition templates (M3-T3) ------------------------------------
+
+    /// `SPDEF` (no args) — reset every definition template to its initial default.
+    pub fn spdef_reset(&mut self) {
+        for e in &mut self.spdef {
+            *e = SpdefEntry::default();
+        }
+    }
+
+    /// Read a definition template (the caller has range-checked `defnum` 0..4095).
+    pub fn spdef_get(&self, defnum: usize) -> SpdefEntry {
+        self.spdef[defnum]
+    }
+
+    /// Write a definition template (the caller has range-checked `defnum` and the fields).
+    pub fn spdef_set(&mut self, defnum: usize, entry: SpdefEntry) {
+        self.spdef[defnum] = entry;
+    }
+}
+
+/// Standard AABB overlap test for two `(x,y,w,h)` rectangles (touching edges do not
+/// count as overlap).
+fn aabb_overlap(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {
+    a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
 }
 
 #[cfg(test)]
@@ -552,7 +902,7 @@ mod tests {
     #[test]
     fn create_then_clear_round_trips_used() {
         let mut st = SpriteState::new();
-        st.set_template(0, 0, SPRITE_DEFAULT_ATTR);
+        st.set_template(0, 0);
         assert!(st.is_used(0));
         // Default attr = display ON only.
         assert!(st.sprites[0].display);
@@ -608,8 +958,8 @@ mod tests {
     #[test]
     fn clear_all_frees_every_slot() {
         let mut st = SpriteState::new();
-        st.set_template(0, 0, 1);
-        st.set_template(5, 0, 1);
+        st.set_template(0, 0);
+        st.set_template(5, 0);
         st.clear_all();
         assert!(st.sprites.iter().all(|s| !s.active));
     }
@@ -703,6 +1053,186 @@ mod tests {
         st.set_anim_stopped(0, false);
         st.tick(1);
         assert_eq!(st.sprites[0].anims[1].as_ref().unwrap().frame, 1);
+    }
+
+    /// Place a default 16×16 collision-enabled sprite at `(x,y)`.
+    fn place_col(st: &mut SpriteState, mgmt: usize, x: f64, y: f64) {
+        st.set_direct(mgmt, 0, 0, 16, 16, 1);
+        st.sprites[mgmt].x = x;
+        st.sprites[mgmt].y = y;
+        st.set_col(mgmt, None, false, 0xFFFF_FFFF);
+    }
+
+    #[test]
+    fn col_default_rect_is_full_sprite() {
+        let mut st = SpriteState::new();
+        st.set_direct(0, 0, 0, 24, 32, 1);
+        st.set_col(0, None, false, 0xFFFF_FFFF);
+        let s = &st.sprites[0];
+        assert!(s.col_enabled);
+        assert_eq!((s.col_sx, s.col_sy, s.col_w, s.col_h), (0, 0, 24, 32));
+    }
+
+    #[test]
+    fn hit_sp_overlap_and_separation() {
+        let mut st = SpriteState::new();
+        place_col(&mut st, 0, 100.0, 100.0);
+        place_col(&mut st, 1, 100.0, 100.0);
+        // Overlapping: vs-all finds sprite 1, the pair test is true.
+        assert_eq!(st.hit_sp_range(0, 0, SPRITE_COUNT - 1), 1);
+        assert!(st.hit_sp_pair(0, 1));
+        // Move sprite 1 fully clear (16px sprites, 200px apart): no collision.
+        st.sprites[1].x = 200.0;
+        st.sprites[1].y = 200.0;
+        assert_eq!(st.hit_sp_range(0, 0, SPRITE_COUNT - 1), -1);
+        assert!(!st.hit_sp_pair(0, 1));
+    }
+
+    #[test]
+    fn hit_sp_edge_touch_does_not_collide() {
+        let mut st = SpriteState::new();
+        place_col(&mut st, 0, 0.0, 0.0);
+        // Exactly adjacent (sprite 1 starts where sprite 0 ends): touching edges ≠ overlap.
+        place_col(&mut st, 1, 16.0, 0.0);
+        assert!(!st.hit_sp_pair(0, 1));
+        st.sprites[1].x = 15.0;
+        assert!(st.hit_sp_pair(0, 1));
+    }
+
+    #[test]
+    fn hit_sp_skips_disabled_and_self() {
+        let mut st = SpriteState::new();
+        place_col(&mut st, 0, 10.0, 10.0);
+        // An overlapping sprite that never had SPCOL does not collide.
+        st.set_direct(2, 0, 0, 16, 16, 1);
+        st.sprites[2].x = 10.0;
+        st.sprites[2].y = 10.0;
+        assert_eq!(st.hit_sp_range(0, 0, SPRITE_COUNT - 1), -1);
+        // A disabled test sprite never collides.
+        st.set_direct(3, 0, 0, 16, 16, 1);
+        st.sprites[3].x = 10.0;
+        st.sprites[3].y = 10.0;
+        assert_eq!(st.hit_sp_range(3, 0, SPRITE_COUNT - 1), -1);
+    }
+
+    #[test]
+    fn hit_sp_mask_filters() {
+        let mut st = SpriteState::new();
+        place_col(&mut st, 0, 0.0, 0.0);
+        place_col(&mut st, 1, 0.0, 0.0);
+        // Disjoint masks (0b01 vs 0b10): AND == 0 → no collision despite overlap.
+        st.sprites[0].col_mask = 0b01;
+        st.sprites[1].col_mask = 0b10;
+        assert!(!st.hit_sp_pair(0, 1));
+        // Overlapping bit set → collision.
+        st.sprites[1].col_mask = 0b11;
+        assert!(st.hit_sp_pair(0, 1));
+    }
+
+    #[test]
+    fn hit_sp_range_returns_lowest_in_range() {
+        let mut st = SpriteState::new();
+        place_col(&mut st, 0, 0.0, 0.0);
+        place_col(&mut st, 5, 0.0, 0.0);
+        place_col(&mut st, 8, 0.0, 0.0);
+        // Restricting the range skips sprite 5, finds sprite 8.
+        assert_eq!(st.hit_sp_range(0, 6, 10), 8);
+    }
+
+    #[test]
+    fn hit_rc_against_sprites() {
+        let mut st = SpriteState::new();
+        place_col(&mut st, 0, 8.0, 8.0);
+        // A 16×16 quad at the origin overlaps the sprite at (8,8).
+        assert_eq!(
+            st.hit_rc_range(
+                (0.0, 0.0, 16.0, 16.0),
+                0xFFFF_FFFF,
+                (0.0, 0.0),
+                0,
+                SPRITE_COUNT - 1
+            ),
+            0
+        );
+        assert!(st.hit_rc_one((0.0, 0.0, 16.0, 16.0), 0xFFFF_FFFF, (0.0, 0.0), 0));
+        // A far-away quad misses.
+        assert_eq!(
+            st.hit_rc_range(
+                (100.0, 100.0, 4.0, 4.0),
+                0xFFFF_FFFF,
+                (0.0, 0.0),
+                0,
+                SPRITE_COUNT - 1
+            ),
+            -1
+        );
+    }
+
+    #[test]
+    fn hit_records_info_for_sphitinfo() {
+        let mut st = SpriteState::new();
+        place_col(&mut st, 0, 50.0, 60.0);
+        place_col(&mut st, 1, 55.0, 65.0);
+        st.set_colvec(0, Some((2.0, -1.0)));
+        st.set_colvec(1, Some((0.0, 3.0)));
+        assert!(st.hit_sp_pair(0, 1));
+        assert_eq!(st.hit.time, 0.0);
+        assert_eq!((st.hit.x1, st.hit.y1), (50.0, 60.0));
+        assert_eq!((st.hit.vx1, st.hit.vy1), (2.0, -1.0));
+        assert_eq!((st.hit.x2, st.hit.y2), (55.0, 65.0));
+        assert_eq!((st.hit.vx2, st.hit.vy2), (0.0, 3.0));
+    }
+
+    #[test]
+    fn col_aabb_inherits_link_position() {
+        let mut st = SpriteState::new();
+        place_col(&mut st, 0, 100.0, 50.0);
+        place_col(&mut st, 1, 10.0, 5.0);
+        st.link(1, 0);
+        // Sprite 1's detection box is offset by its parent's position.
+        assert_eq!(st.col_aabb(1), Some((110.0, 55.0, 16.0, 16.0)));
+    }
+
+    #[test]
+    fn anim_status_bits() {
+        let mut st = SpriteState::new();
+        st.set_direct(0, 0, 0, 16, 16, 1);
+        assert_eq!(st.anim_status(0), 0);
+        // Z (channel 1) + R (channel 4) running → bits 0b10010 = 18.
+        st.set_anim(0, 1, false, &[10.0, 5.0], 0).unwrap();
+        st.set_anim(0, 4, false, &[10.0, 90.0], 0).unwrap();
+        assert_eq!(st.anim_status(0), (1 << 1) | (1 << 4));
+        // Stopped → 0.
+        st.set_anim_stopped(0, true);
+        assert_eq!(st.anim_status(0), 0);
+    }
+
+    #[test]
+    fn spdef_define_read_reset_copy() {
+        let mut st = SpriteState::new();
+        // Default template is 16×16, attr display-ON.
+        let d = st.spdef_get(0);
+        assert_eq!((d.w, d.h, d.attr), (16, 16, 1));
+        // Define template 1, then SPSET copies its rect/home/attr.
+        st.spdef_set(
+            1,
+            SpdefEntry {
+                u: 32,
+                v: 48,
+                w: 24,
+                h: 24,
+                origin_x: 12,
+                origin_y: 12,
+                attr: 1,
+            },
+        );
+        st.set_template(0, 1);
+        let sp = &st.sprites[0];
+        assert_eq!((sp.u, sp.v, sp.w, sp.h), (32, 48, 24, 24));
+        assert_eq!((sp.home_x, sp.home_y), (12, 12));
+        // Reset restores defaults.
+        st.spdef_reset();
+        assert_eq!(st.spdef_get(1), SpdefEntry::default());
     }
 
     #[test]

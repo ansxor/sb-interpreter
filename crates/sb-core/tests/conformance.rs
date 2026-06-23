@@ -149,10 +149,38 @@ const IN_SCOPE_SCREEN: &[&str] = &["ACLS", "BACKCOLOR"];
 /// inline spec cases), `SPSTART`/`SPSTOP` (all/one forms + errnums), `SPFUNC` (callback bind
 /// — the `CALL SPRITE` dispatch is M3-T6/oracle-pending), `SPVAR` (read/write the 8 internal
 /// variables, hw_verified), and `SPLINK`/`SPUNLINK` (parent link + the undocumented
-/// `=SPLINK(mgmt)` getter, hw_verified). Listed by id.
+/// `=SPLINK(mgmt)` getter, hw_verified). M3-T3's collision + definition-template commands
+/// fold in here for their deterministic contract: `SPCOL` (enable + detection rect/mask,
+/// setter forms + the used-before-SPSET/range errnums hw_verified — `OUT`-getter read-back
+/// values are oracle-pending), `SPCOLVEC` (movement vector, errnums hw_verified), `SPCHK`
+/// (animation-status bitmask — stopped → 0 hw_verified; mid-anim bit values oracle-pending),
+/// `SPHITSP`/`SPHITRC` (sprite/rect collision — overlapping/non-overlapping hit results +
+/// errnums hw_verified), `SPHITINFO` (read the hit record — TM=0 default + arg-shape errnums
+/// hw_verified; the swept-collision coordinate/velocity values are oracle-pending), and
+/// `SPDEF` (definition templates — define/read/reset/copy + the W,H=16/attr=1 defaults and
+/// the U+W>512 range error hw_verified; non-default field read-back oracle-pending). Listed
+/// by id.
 const IN_SCOPE_SPRITES: &[&str] = &[
-    "SPSET", "SPCLR", "SPSHOW", "SPHIDE", "SPUSED", "SPANIM", "SPSTART", "SPSTOP", "SPFUNC",
-    "SPVAR", "SPLINK", "SPUNLINK",
+    "SPSET",
+    "SPCLR",
+    "SPSHOW",
+    "SPHIDE",
+    "SPUSED",
+    "SPANIM",
+    "SPSTART",
+    "SPSTOP",
+    "SPFUNC",
+    "SPVAR",
+    "SPLINK",
+    "SPUNLINK",
+    "SPOFS",
+    "SPCOL",
+    "SPCOLVEC",
+    "SPCHK",
+    "SPHITSP",
+    "SPHITRC",
+    "SPHITINFO",
+    "SPDEF",
 ];
 /// Specs `sb-core` implements only **partially** in M1: each is in scope, but the named
 /// cases listed here are EXCLUDED because they block on a later milestone or the

@@ -178,7 +178,7 @@ and name the instructions they cover inline.
 ## M3 — Sprites & BG  (gated on S-T8, S-T9)
 - [x] M3-T1 Sprite core → S-T8, M2-T4
 - [x] M3-T2 Animation/link/vars → M3-T1
-- [ ] M3-T3 Collision → M3-T1
+- [x] M3-T3 Collision → M3-T1
 - [ ] M3-T4 BG core → S-T9, M2-T4
 - [ ] M3-T5 BG extras → M3-T4
 - [ ] M3-T6 Composite + golden diffs → M3-T2, M3-T3, M3-T5, O-T6

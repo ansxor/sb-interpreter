@@ -33,6 +33,6 @@ confidence: hw_verified
 
 tests:
   # Stopped=0 + error cases hw_verified (sb-oracle 2026-06-22 s_t8e). Mid-animation bit values oracle-pending (need SPANIM running, see HARVEST_QUEUE.md).
-  - { name: stopped_returns_zero, code: "SPSET 0,0\nPRINT SPCHK(0)", expect: { stdout: "0\n" } }
+  - { name: stopped_returns_zero, code: "SPSET 0,0\nPRINT SPCHK(0)", expect: { stdout: "0" } }
   - { name: before_spset, code: "SPCLR\nPRINT SPCHK(5)", expect: { error: { errnum: 4 } } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nPRINT SPCHK(512)", expect: { error: { errnum: 10 } } }

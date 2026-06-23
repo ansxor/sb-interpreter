@@ -436,6 +436,16 @@ oracle to confirm exact output and promote to `hw_verified`.
     accepted and returns TM + object-1 coords (no corpus example found).
   - SPHITRC mask AND-filtering + swept-movement outcomes; SPHITSP swept-with-SPCOLVEC outcomes (do the
     movement vectors change a same-frame hit/miss vs the static AABB?).
+  - M3-T3 IMPLEMENTATION NOTES (sb-core, code task — what's modeled vs pending). Implemented as
+    STATIC AABB: SPHITSP/SPHITRC overlap = strict-inequality AABB of the SPCOL detection rect placed
+    at the sprite's SPOFS position (+ SPLINK inheritance), AND-mask filtered; SPHITINFO time is always 0
+    (= "position at detection") and coords are the SPOFS positions. PENDING: (a) the swept/time math
+    (does a non-zero SPCOLVEC/move ever flip a same-frame hit, and what TM?); (b) whether touching edges
+    count as a hit (we say no); (c) the scale-adjust flag — we multiply detection W,H by |SPSCALE|, the
+    exact "only affects later SPSCALE" timing is unverified; (d) SPDEF non-default field read-back +
+    whether form-2-vs-form-6 (define vs copy) is really disambiguated by a skipped/`,,` arg or argcount
+    (we treat argc==2 OR any Void override as the copy form); (e) the real spdef.csv default-template
+    rectangles (we seed every template to 16×16 at origin 0,0 attr 1).
 
 - [ ] S-T8e vars/funcs/state — remaining VALUE/render harvests (core forms + error cases already
   hw_verified s_t8e batch 2026-06-22: SPVAR read/write round-trip, SPCHK stopped=0, SPUSED TRUE/FALSE,

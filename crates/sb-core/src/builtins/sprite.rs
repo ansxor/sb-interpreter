@@ -25,7 +25,7 @@
 //!   or a source rectangle that runs off the 512-pixel sheet (`U+W` / `V+H` > 512).
 
 use sb_render::sprite::{
-    AnimError, SpriteState, ANIM_ITEMS, SPDEF_MAX, SPRITE_COUNT, SPRITE_DEFAULT_ATTR,
+    AnimError, SpdefEntry, SpriteState, ANIM_ITEMS, SPDEF_MAX, SPRITE_COUNT, SPRITE_DEFAULT_ATTR,
     SPRITE_DEFAULT_WH,
 };
 
@@ -111,7 +111,7 @@ fn spset_explicit(sp: &mut SpriteState, args: &[Value]) -> Result<(), RuntimeErr
         [m, d] => {
             let slot = mgmt(m)?;
             let d = defn(d)?;
-            sp.set_template(slot, d, SPRITE_DEFAULT_ATTR);
+            sp.set_template(slot, d);
         }
         // Form 2 — direct image, W,H default 16, attr default &H01.
         [m, u, v] => {
@@ -184,7 +184,7 @@ fn spset_alloc(sp: &mut SpriteState, args: &[Value]) -> Result<i32, RuntimeError
     match sp.alloc(start, end) {
         Some(slot) => {
             match image {
-                Image::Template(d) => sp.set_template(slot, d, SPRITE_DEFAULT_ATTR),
+                Image::Template(d) => sp.set_template(slot, d),
                 Image::Direct { u, v, w, h, a } => sp.set_direct(slot, u, v, w, h, a),
             }
             Ok(slot as i32)
@@ -530,4 +530,441 @@ pub fn spanim(
     let (channel, relative) = parse_target(target_v)?;
     sp.set_anim(slot, channel, relative, data, loop_count)
         .map_err(anim_err)
+}
+
+/// `SPOFS mgmt, X, Y [,Z]` (set) / `SPOFS mgmt OUT X,Y[,Z]` (get) — move or read a sprite's
+/// screen position. Implemented here as the positioning glue M3-T3 collision needs (the
+/// other transform setters land later). The set form takes 3 or 4 arguments; an empty
+/// (`,`-skipped) coordinate keeps its current value. The get form returns X,Y (2 OUT) or
+/// X,Y,Z (3 OUT). The sprite must be `SPSET` (errnum 4); mgmt ∉ 0..511 is errnum 10; a bad
+/// argument/OUT count is errnum 4.
+pub fn spofs(
+    sp: &mut SpriteState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if args.is_empty() {
+        return Err(illegal());
+    }
+    let slot = mgmt(&args[0])?;
+    if !sp.is_used(slot) {
+        return Err(illegal());
+    }
+    if ret_count == 0 {
+        let rest = &args[1..];
+        if !matches!(rest.len(), 2 | 3) {
+            return Err(illegal());
+        }
+        let s = &mut sp.sprites[slot];
+        if !matches!(rest[0], Value::Void) {
+            s.x = rest[0].to_real()?;
+        }
+        if !matches!(rest[1], Value::Void) {
+            s.y = rest[1].to_real()?;
+        }
+        if rest.len() == 3 && !matches!(rest[2], Value::Void) {
+            s.z = rest[2].to_real()?;
+        }
+        Ok(vec![])
+    } else {
+        let s = &sp.sprites[slot];
+        let out = match ret_count {
+            2 => vec![Value::Real(s.x), Value::Real(s.y)],
+            3 => vec![Value::Real(s.x), Value::Real(s.y), Value::Real(s.z)],
+            _ => return Err(illegal()),
+        };
+        Ok(out)
+    }
+}
+
+// -- collision (M3-T3) --------------------------------------------------------
+
+/// The `SPCOL` scale-adjustment flag: a Void (skipped `,,`) field is the default FALSE,
+/// otherwise it is truthy/falsy (non-zero).
+fn scale_arg(v: &Value) -> Result<bool, RuntimeError> {
+    if matches!(v, Value::Void) {
+        Ok(false)
+    } else {
+        Ok(v.to_int()? != 0)
+    }
+}
+
+/// A 32-bit collision mask argument: a Void (skipped) field is the default all-bits mask,
+/// otherwise the value reinterpreted as 32 bits (`&HFFFFFFFF` parses to the i32 `-1`).
+fn mask_arg(v: &Value) -> Result<u32, RuntimeError> {
+    if matches!(v, Value::Void) {
+        Ok(0xFFFF_FFFF)
+    } else {
+        Ok(v.to_int()? as u32)
+    }
+}
+
+/// An explicit `SPCOL` detection rectangle `(sx,sy,w,h)`.
+fn rect_arg(
+    sx: &Value,
+    sy: &Value,
+    w: &Value,
+    h: &Value,
+) -> Result<(i32, i32, i32, i32), RuntimeError> {
+    Ok((sx.to_int()?, sy.to_int()?, w.to_int()?, h.to_int()?))
+}
+
+/// `SPCOL` — configure collision (setters, `ret_count` 0, forms 1-3) or read it back
+/// (`OUT` getters, `ret_count` 1/2/4/5/6, forms 4-7). The first argument is the management
+/// number; the form is then chosen by the return count and the remaining argument count.
+/// The sprite must be `SPSET` (errnum 4); mgmt ∉ 0..511 is errnum 10.
+///
+/// `OUT` getters return their fields in declaration order; intermediate-slot skipping
+/// (`SPCOL m OUT ,mask`) is not yet supported (the read-back values are oracle-pending —
+/// see `HARVEST_QUEUE.md`).
+pub fn spcol(
+    sp: &mut SpriteState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if args.is_empty() {
+        return Err(illegal());
+    }
+    let slot = mgmt(&args[0])?;
+    if !sp.is_used(slot) {
+        return Err(illegal());
+    }
+    if ret_count == 0 {
+        match &args[1..] {
+            [] => sp.set_col(slot, None, false, 0xFFFF_FFFF),
+            [scale] => sp.set_col(slot, None, scale_arg(scale)?, 0xFFFF_FFFF),
+            [scale, mask] => sp.set_col(slot, None, scale_arg(scale)?, mask_arg(mask)?),
+            [sx, sy, w, h] => sp.set_col(slot, Some(rect_arg(sx, sy, w, h)?), false, 0xFFFF_FFFF),
+            [sx, sy, w, h, scale] => sp.set_col(
+                slot,
+                Some(rect_arg(sx, sy, w, h)?),
+                scale_arg(scale)?,
+                0xFFFF_FFFF,
+            ),
+            [sx, sy, w, h, scale, mask] => sp.set_col(
+                slot,
+                Some(rect_arg(sx, sy, w, h)?),
+                scale_arg(scale)?,
+                mask_arg(mask)?,
+            ),
+            _ => return Err(illegal()),
+        }
+        Ok(vec![])
+    } else {
+        let s = &sp.sprites[slot];
+        let scale = Value::Int(s.col_scale_adjust as i32);
+        let mask = Value::Int(s.col_mask as i32);
+        let (sx, sy, w, h) = (
+            Value::Int(s.col_sx),
+            Value::Int(s.col_sy),
+            Value::Int(s.col_w),
+            Value::Int(s.col_h),
+        );
+        let out = match ret_count {
+            1 => vec![scale],
+            2 => vec![scale, mask],
+            4 => vec![sx, sy, w, h],
+            5 => vec![sx, sy, w, h, scale],
+            6 => vec![sx, sy, w, h, scale, mask],
+            _ => return Err(illegal()),
+        };
+        Ok(out)
+    }
+}
+
+/// `SPCOLVEC mgmt [,mvx,mvy]` — set the per-frame collision movement vector (auto-calc when
+/// omitted). 1 or 3 args, no return value (else errnum 4); the sprite must be `SPSET`
+/// (errnum 4); mgmt ∉ 0..511 is errnum 10.
+pub fn spcolvec(
+    sp: &mut SpriteState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 || args.is_empty() {
+        return Err(illegal());
+    }
+    let slot = mgmt(&args[0])?;
+    if !sp.is_used(slot) {
+        return Err(illegal());
+    }
+    match &args[1..] {
+        [] => sp.set_colvec(slot, None),
+        [vx, vy] => sp.set_colvec(slot, Some((vx.to_real()?, vy.to_real()?))),
+        _ => return Err(illegal()),
+    }
+    Ok(vec![])
+}
+
+/// `SPCHK(mgmt)` — the sprite's 8-bit animation-status bitmask (which `SPANIM` channels are
+/// running; 0 when stopped). Requires (1 arg, 1 result) — else errnum 4; the sprite must be
+/// `SPSET` (errnum 4); mgmt ∉ 0..511 is errnum 10.
+pub fn spchk(
+    sp: &SpriteState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 1 {
+        return Err(illegal());
+    }
+    let slot = match args {
+        [m] => mgmt(m)?,
+        _ => return Err(illegal()),
+    };
+    if !sp.is_used(slot) {
+        return Err(illegal());
+    }
+    Ok(vec![Value::Int(sp.anim_status(slot))])
+}
+
+/// `SPHITSP(mgmt[,first,last])` / `SPHITSP(mgmt,opponent)` — sprite-sprite collision. The
+/// form is chosen by argument count: 1 → vs all sprites (returns the first colliding
+/// management number, or -1); 2 → vs one opponent (returns TRUE/FALSE); 3 → vs a range
+/// (first colliding number, or -1). Requires a return value (errnum 4); a management number
+/// ∉ 0..511 is errnum 10. A sprite that is not `SPSET`/`SPCOL`'d simply does not collide.
+pub fn sphitsp(
+    sp: &mut SpriteState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 1 {
+        return Err(illegal());
+    }
+    let result = match args {
+        [m] => {
+            let s = mgmt(m)?;
+            sp.hit_sp_range(s, 0, SPRITE_COUNT - 1)
+        }
+        [m, opp] => {
+            let s = mgmt(m)?;
+            let o = mgmt(opp)?;
+            sp.hit_sp_pair(s, o) as i32
+        }
+        [m, first, last] => {
+            let s = mgmt(m)?;
+            let f = mgmt(first)?;
+            let l = mgmt(last)?;
+            sp.hit_sp_range(s, f, l)
+        }
+        _ => return Err(illegal()),
+    };
+    Ok(vec![Value::Int(result)])
+}
+
+/// A parsed `SPHITRC` quadrangle: the rectangle `(sx,sy,w,h)`, the 32-bit mask, and the
+/// per-frame movement vector `(mvx,mvy)`.
+type RcQuad = ((f64, f64, f64, f64), u32, (f64, f64));
+
+/// Parse a `SPHITRC` rectangle tail: `[sx,sy,w,h]` (mask default, no movement) or
+/// `[sx,sy,w,h,mask,mvx,mvy]` (mask skippable with `,,`).
+fn rc_tail(t: &[Value]) -> Result<RcQuad, RuntimeError> {
+    let rect = (
+        t[0].to_real()?,
+        t[1].to_real()?,
+        t[2].to_real()?,
+        t[3].to_real()?,
+    );
+    if t.len() >= 7 {
+        Ok((rect, mask_arg(&t[4])?, (t[5].to_real()?, t[6].to_real()?)))
+    } else {
+        Ok((rect, 0xFFFF_FFFF, (0.0, 0.0)))
+    }
+}
+
+/// `SPHITRC` — (moving) rectangle vs sprites. The form is chosen by argument count:
+/// 4/7 → vs all sprites (first colliding management number, or -1); 5/8 → vs one sprite
+/// (TRUE/FALSE); 6/9 → vs a range (first colliding number, or -1). The 7/8/9 counts add the
+/// optional `mask,mvx,mvy`. Requires a return value (errnum 4); a referenced management
+/// number ∉ 0..511 is errnum 10.
+pub fn sphitrc(
+    sp: &mut SpriteState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 1 {
+        return Err(illegal());
+    }
+    let result = match args.len() {
+        4 | 7 => {
+            let (rect, mask, mv) = rc_tail(args)?;
+            sp.hit_rc_range(rect, mask, mv, 0, SPRITE_COUNT - 1)
+        }
+        5 | 8 => {
+            let opp = mgmt(&args[0])?;
+            let (rect, mask, mv) = rc_tail(&args[1..])?;
+            sp.hit_rc_one(rect, mask, mv, opp) as i32
+        }
+        6 | 9 => {
+            let first = mgmt(&args[0])?;
+            let last = mgmt(&args[1])?;
+            let (rect, mask, mv) = rc_tail(&args[2..])?;
+            sp.hit_rc_range(rect, mask, mv, first, last)
+        }
+        _ => return Err(illegal()),
+    };
+    Ok(vec![Value::Int(result)])
+}
+
+/// `SPHITINFO OUT …` — read back the most recent `SPHIT*` collision (time, then the
+/// collision coordinates/velocities of the two objects). Takes NO input arguments (else
+/// errnum 4); the form is the number of `OUT` variables (1/3/5/9 — any other count is
+/// errnum 4). Intermediate-slot skipping (`OUT ,X1,…`) is not yet supported.
+pub fn sphitinfo(
+    sp: &SpriteState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if !args.is_empty() {
+        return Err(illegal());
+    }
+    let h = &sp.hit;
+    let r = Value::Real;
+    let out = match ret_count {
+        1 => vec![r(h.time)],
+        3 => vec![r(h.time), r(h.x1), r(h.y1)],
+        5 => vec![r(h.time), r(h.x1), r(h.y1), r(h.x2), r(h.y2)],
+        9 => vec![
+            r(h.time),
+            r(h.x1),
+            r(h.y1),
+            r(h.vx1),
+            r(h.vy1),
+            r(h.x2),
+            r(h.y2),
+            r(h.vx2),
+            r(h.vy2),
+        ],
+        _ => return Err(illegal()),
+    };
+    Ok(out)
+}
+
+// -- SPDEF definition templates (M3-T3) ---------------------------------------
+
+/// Validate a definition template's fields against the documented ranges (errnum 10 on any
+/// violation): `U,V` 0..512, `U+W`/`V+H` ≤ 512, `W,H` ≥ 0, attribute 0..&H3F, origin
+/// -32768..32767.
+pub(crate) fn validate_spdef(e: &SpdefEntry) -> Result<(), RuntimeError> {
+    let ok = (0..=512).contains(&e.u)
+        && (0..=512).contains(&e.v)
+        && e.w >= 0
+        && e.h >= 0
+        && i64::from(e.u) + i64::from(e.w) <= 512
+        && i64::from(e.v) + i64::from(e.h) <= 512
+        && (0..=0x3f).contains(&e.attr)
+        && (-32768..=32767).contains(&e.origin_x)
+        && (-32768..=32767).contains(&e.origin_y);
+    if ok {
+        Ok(())
+    } else {
+        Err(out_of_range())
+    }
+}
+
+/// Build a definition template from the `SPDEF defnum,U,V…` (form 2) argument tail. Omitted
+/// `W,H` default to 16×16, origin to 0,0, attribute to &H01 (the documented defaults).
+fn parse_define(rest: &[Value]) -> Result<SpdefEntry, RuntimeError> {
+    let g = |i: usize| rest[i].to_int();
+    let e = match rest.len() {
+        2 => SpdefEntry {
+            u: g(0)?,
+            v: g(1)?,
+            ..SpdefEntry::default()
+        },
+        3 => SpdefEntry {
+            u: g(0)?,
+            v: g(1)?,
+            attr: g(2)?,
+            ..SpdefEntry::default()
+        },
+        4 => SpdefEntry {
+            u: g(0)?,
+            v: g(1)?,
+            w: g(2)?,
+            h: g(3)?,
+            ..SpdefEntry::default()
+        },
+        5 => SpdefEntry {
+            u: g(0)?,
+            v: g(1)?,
+            w: g(2)?,
+            h: g(3)?,
+            attr: g(4)?,
+            ..SpdefEntry::default()
+        },
+        6 => SpdefEntry {
+            u: g(0)?,
+            v: g(1)?,
+            w: g(2)?,
+            h: g(3)?,
+            origin_x: g(4)?,
+            origin_y: g(5)?,
+            ..SpdefEntry::default()
+        },
+        7 => SpdefEntry {
+            u: g(0)?,
+            v: g(1)?,
+            w: g(2)?,
+            h: g(3)?,
+            origin_x: g(4)?,
+            origin_y: g(5)?,
+            attr: g(6)?,
+        },
+        _ => return Err(illegal()),
+    };
+    Ok(e)
+}
+
+/// Apply one optional `SPDEF` copy-form (form 6) override: a present value replaces the
+/// field, a Void (`,`-skipped) or missing slot keeps the source template's value.
+fn override_field(field: &mut i32, v: Option<&Value>) -> Result<(), RuntimeError> {
+    match v {
+        None | Some(Value::Void) => Ok(()),
+        Some(val) => {
+            *field = val.to_int()?;
+            Ok(())
+        }
+    }
+}
+
+/// `SPDEF` with a numeric scalar first argument: the single-template define (form 2) or the
+/// copy-with-adjust (form 6). Copy is selected when the second argument is the only one
+/// (`SPDEF dst,src`) or when any override field is skipped (a `,,` Void) — otherwise it is a
+/// define. The defined template is range-validated (errnum 10); `defnum`/`srcnum` ∉ 0..4095
+/// is errnum 10.
+pub(crate) fn spdef_scalar(sp: &mut SpriteState, args: &[Value]) -> Result<(), RuntimeError> {
+    let defnum = defn(&args[0])? as usize;
+    let rest = &args[1..];
+    let is_copy = rest.len() == 1 || rest.iter().any(|v| matches!(v, Value::Void));
+    let entry = if is_copy {
+        let src = defn(&rest[0])? as usize;
+        let mut e = sp.spdef_get(src);
+        let ov = &rest[1..];
+        override_field(&mut e.u, ov.first())?;
+        override_field(&mut e.v, ov.get(1))?;
+        override_field(&mut e.w, ov.get(2))?;
+        override_field(&mut e.h, ov.get(3))?;
+        override_field(&mut e.origin_x, ov.get(4))?;
+        override_field(&mut e.origin_y, ov.get(5))?;
+        override_field(&mut e.attr, ov.get(6))?;
+        e
+    } else {
+        parse_define(rest)?
+    };
+    validate_spdef(&entry)?;
+    sp.spdef_set(defnum, entry);
+    Ok(())
+}
+
+/// Build a definition template from a flat 7-element `[U,V,W,H,OX,OY,Attr]` slice (the bulk
+/// array / DATA forms 3/4). The caller has range-checked the element count.
+pub(crate) fn spdef_entry_from_slice(vals: &[f64]) -> SpdefEntry {
+    SpdefEntry {
+        u: vals[0] as i32,
+        v: vals[1] as i32,
+        w: vals[2] as i32,
+        h: vals[3] as i32,
+        origin_x: vals[4] as i32,
+        origin_y: vals[5] as i32,
+        attr: vals[6] as i32,
+    }
 }

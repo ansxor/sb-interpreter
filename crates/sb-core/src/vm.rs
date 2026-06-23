@@ -65,6 +65,7 @@ const ERR_OUT_OF_DATA: u32 = 13;
 const ERR_UNDEFINED_LABEL: u32 = 14;
 const ERR_UNDEFINED_FUNCTION: u32 = 16;
 const ERR_RETURN_WITHOUT_GOSUB: u32 = 30;
+const ERR_SUBSCRIPT: u32 = 31;
 
 /// How a run ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1064,6 +1065,12 @@ impl Vm {
             self.do_spfunc(&args, ret_count)?;
             return Ok(true);
         }
+        // SPDEF's bulk forms read a numeric array / DATA `@label`, so the VM orchestrates it
+        // (the scalar define/copy/reset/getter forms stay pure over the template table).
+        if name == "SPDEF" {
+            self.do_spdef(&args, ret_count)?;
+            return Ok(true);
+        }
         let results = match name {
             "SPSET" => spr::spset(&mut self.sprites, &args, ret_count),
             "SPCLR" => spr::spclr(&mut self.sprites, &args, ret_count),
@@ -1075,6 +1082,13 @@ impl Vm {
             "SPSTOP" => spr::spstop(&mut self.sprites, &args, ret_count),
             "SPLINK" => spr::splink(&mut self.sprites, &args, ret_count),
             "SPUNLINK" => spr::spunlink(&mut self.sprites, &args, ret_count),
+            "SPOFS" => spr::spofs(&mut self.sprites, &args, ret_count),
+            "SPCOL" => spr::spcol(&mut self.sprites, &args, ret_count),
+            "SPCOLVEC" => spr::spcolvec(&mut self.sprites, &args, ret_count),
+            "SPCHK" => spr::spchk(&self.sprites, &args, ret_count),
+            "SPHITSP" => spr::sphitsp(&mut self.sprites, &args, ret_count),
+            "SPHITRC" => spr::sphitrc(&mut self.sprites, &args, ret_count),
+            "SPHITINFO" => spr::sphitinfo(&self.sprites, &args, ret_count),
             _ => return Ok(false),
         };
         for v in results.map_err(sb)? {
@@ -1209,6 +1223,93 @@ impl Vm {
             return Err(sb(crate::builtins::illegal()));
         }
         self.sprites.set_func(slot, Some(name));
+        Ok(())
+    }
+
+    /// `SPDEF` — manage the sprite definition-template table. The VM owns this (rather than
+    /// the stateless dispatch) because the bulk forms read a numeric array (form 3) or a
+    /// DATA `@label` sequence (form 4). Forms:
+    /// - `ret_count > 0` (an `OUT` getter, form 5): read a template's fields into the OUT
+    ///   variables (U,V then W,H then OX,OY then attr, in order — no intermediate skipping).
+    /// - `ret_count == 0`, no args: reset the whole table (form 1).
+    /// - first arg a numeric **array**: bulk-define from 7-element groups (form 3).
+    /// - first arg a **string** `@label`: bulk-define from DATA (count, then 7 per template;
+    ///   form 4).
+    /// - first arg a numeric **scalar**: define (form 2) or copy-with-adjust (form 6).
+    ///
+    /// errnum 4 for a bad call shape, 10 for an out-of-range def/field, 31 for a bulk array
+    /// whose element count is not a multiple of 7.
+    fn do_spdef(&mut self, args: &[Value], ret_count: usize) -> Result<(), VmError> {
+        use crate::builtins::data::{elem_count, read_values};
+        use crate::builtins::sprite as spr;
+
+        // Getter form (form 5): SPDEF defnum OUT U,V[,…].
+        if ret_count > 0 {
+            if args.len() != 1 || ret_count > 7 {
+                return Err(sb(crate::builtins::illegal()));
+            }
+            let defnum = {
+                let i = args[0].to_int().map_err(sb)?;
+                if !(0..=sb_render::sprite::SPDEF_MAX).contains(&i) {
+                    return Err(sb(crate::builtins::out_of_range()));
+                }
+                i as usize
+            };
+            let e = self.sprites.spdef_get(defnum);
+            let fields = [e.u, e.v, e.w, e.h, e.origin_x, e.origin_y, e.attr];
+            for &f in &fields[..ret_count] {
+                self.stack.push(Value::Int(f));
+            }
+            return Ok(());
+        }
+
+        match args {
+            // Form 1 — reset the whole table.
+            [] => self.sprites.spdef_reset(),
+            // Forms 3/4/2/6, dispatched on the first argument's type.
+            [first, ..] => match first {
+                // Form 3 — bulk define from a numeric array (7 elements per template).
+                Value::IntArray(_) | Value::RealArray(_) => {
+                    if args.len() != 1 {
+                        return Err(sb(crate::builtins::illegal()));
+                    }
+                    let len = elem_count(first).map_err(sb)?;
+                    if len % 7 != 0 {
+                        return Err(VmError::Sb {
+                            errnum: ERR_SUBSCRIPT,
+                            line: 0,
+                        });
+                    }
+                    let vals = read_values(first, 0, len).map_err(sb)?;
+                    let data = values_to_f64(&vals).map_err(sb)?;
+                    self.spdef_bulk(&data)?;
+                }
+                // Form 4 — bulk define from DATA named by "@label".
+                Value::Str(label) => {
+                    if args.len() != 1 {
+                        return Err(sb(crate::builtins::illegal()));
+                    }
+                    let data = self.read_anim_data(label, 7)?;
+                    self.spdef_bulk(&data)?;
+                }
+                // Forms 2/6 — single-template define or copy-with-adjust.
+                _ => spr::spdef_scalar(&mut self.sprites, args).map_err(sb)?,
+            },
+        }
+        Ok(())
+    }
+
+    /// Define templates 0,1,2,… from a flat list of 7-field groups (`SPDEF` bulk forms 3/4).
+    /// The template count is clamped to the table size (4096); each group is range-validated
+    /// (errnum 10).
+    fn spdef_bulk(&mut self, data: &[f64]) -> Result<(), VmError> {
+        use crate::builtins::sprite as spr;
+        let count = (data.len() / 7).min(sb_render::sprite::SPDEF_TEMPLATE_COUNT);
+        for i in 0..count {
+            let entry = spr::spdef_entry_from_slice(&data[i * 7..i * 7 + 7]);
+            spr::validate_spdef(&entry).map_err(sb)?;
+            self.sprites.spdef_set(i, entry);
+        }
         Ok(())
     }
 

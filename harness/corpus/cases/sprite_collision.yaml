@@ -1,0 +1,109 @@
+# M3-T3 — sprite collision + definition templates end-to-end (parse→compile→VM).
+# Collision uses each sprite's SPCOL detection rectangle/mask over its SPOFS position; the
+# hit/miss results and mask filtering follow the hw_verified semantics in
+# spec/instructions/{sphitsp,sphitrc,spcol,spdef}.yaml (sb-oracle 2026-06-22 s_t8d/s_t8e:
+# overlapping SPCOL'd sprites collide, separated ones return -1, the AND-mask filters). The
+# collision math is static AABB (velocities default 0); the SWEPT-collision time and the
+# SPHITINFO coordinate/velocity read-back for moving objects are oracle-pending
+# (HARVEST_QUEUE.md) — the cases here use stationary objects, so SPHITINFO's time is the
+# documented 0 and its coordinates are the (hw_verified) SPOFS positions. SPDEF round-trips
+# (define/read/reset/copy/array) and SPSET's use of a template's rectangle are deterministic.
+# Statements are joined with `:` so each case stays a single source line.
+cases:
+  # -- SPHITSP: sprite-vs-sprite -----------------------------------------------------------
+  - name: hit_overlap_vs_all
+    code: 'SPCLR:SPSET 0,0:SPOFS 0,100,100:SPCOL 0:SPSET 1,0:SPOFS 1,100,100:SPCOL 1:PRINT SPHITSP(0)'
+    expect: { stdout: "1" }
+  - name: miss_separated_vs_all
+    code: 'SPCLR:SPSET 0,0:SPOFS 0,0,0:SPCOL 0:SPSET 1,0:SPOFS 1,200,200:SPCOL 1:PRINT SPHITSP(0)'
+    expect: { stdout: "-1" }
+  - name: pair_overlap_true
+    code: 'SPCLR:SPSET 0,0:SPOFS 0,40,40:SPCOL 0:SPSET 1,0:SPOFS 1,48,48:SPCOL 1:PRINT SPHITSP(0,1)'
+    expect: { stdout: "1" }
+  - name: pair_separated_false
+    code: 'SPCLR:SPSET 0,0:SPOFS 0,40,40:SPCOL 0:SPSET 1,0:SPOFS 1,80,80:SPCOL 1:PRINT SPHITSP(0,1)'
+    expect: { stdout: "0" }
+  # A SPCOL'd sprite only collides with another SPCOL'd sprite (the opponent here never is).
+  - name: opponent_without_spcol_misses
+    code: 'SPCLR:SPSET 0,0:SPOFS 0,10,10:SPCOL 0:SPSET 1,0:SPOFS 1,10,10:PRINT SPHITSP(0)'
+    expect: { stdout: "-1" }
+
+  # -- SPHITSP: 32-bit AND mask filtering --------------------------------------------------
+  - name: mask_disjoint_blocks
+    code: 'SPCLR:SPSET 0,0:SPOFS 0,0,0:SPCOL 0,0,&B01:SPSET 1,0:SPOFS 1,0,0:SPCOL 1,0,&B10:PRINT SPHITSP(0,1)'
+    expect: { stdout: "0" }
+  - name: mask_shared_bit_allows
+    code: 'SPCLR:SPSET 0,0:SPOFS 0,0,0:SPCOL 0,0,&B01:SPSET 1,0:SPOFS 1,0,0:SPCOL 1,0,&B11:PRINT SPHITSP(0,1)'
+    expect: { stdout: "1" }
+
+  # -- SPHITSP: range form returns the first colliding number in [first,last] --------------
+  - name: range_skips_below_first
+    code: 'SPCLR:SPSET 0,0:SPOFS 0,0,0:SPCOL 0:SPSET 5,0:SPOFS 5,0,0:SPCOL 5:SPSET 8,0:SPOFS 8,0,0:SPCOL 8:PRINT SPHITSP(0,6,10)'
+    expect: { stdout: "8" }
+
+  # -- SPHITRC: (stationary) rectangle vs sprites ------------------------------------------
+  - name: rc_vs_all_hit
+    code: 'SPCLR:SPSET 0,0:SPOFS 0,8,8:SPCOL 0:PRINT SPHITRC(0,0,16,16)'
+    expect: { stdout: "0" }
+  - name: rc_vs_one_true
+    code: 'SPCLR:SPSET 0,0:SPOFS 0,8,8:SPCOL 0:PRINT SPHITRC(0,0,0,16,16)'
+    expect: { stdout: "1" }
+  - name: rc_vs_range_hit
+    code: 'SPCLR:SPSET 3,0:SPOFS 3,8,8:SPCOL 3:PRINT SPHITRC(0,5,0,0,16,16)'
+    expect: { stdout: "3" }
+  - name: rc_miss
+    code: 'SPCLR:SPSET 0,0:SPOFS 0,8,8:SPCOL 0:PRINT SPHITRC(200,200,4,4)'
+    expect: { stdout: "-1" }
+  # An explicit SPCOL detection rect shifts/sizes the collision box away from the sprite art.
+  - name: rc_explicit_detection_rect
+    code: 'SPCLR:SPSET 0,0:SPOFS 0,0,0:SPCOL 0,12,12,4,4:PRINT SPHITRC(0,0,4,4);SPHITRC(12,12,4,4)'
+    expect: { stdout: "-10" }
+
+  # -- SPCHK: animation-status bitmask -----------------------------------------------------
+  - name: spchk_zero_when_idle
+    code: 'SPCLR:SPSET 0,0:PRINT SPCHK(0)'
+    expect: { stdout: "0" }
+  - name: spchk_running_channel_bit
+    code: 'SPCLR:SPSET 0,0:SPANIM 0,"V",10,5:PRINT SPCHK(0)'
+    expect: { stdout: "128" }
+  - name: spchk_zero_when_stopped
+    code: 'SPCLR:SPSET 0,0:SPANIM 0,"V",10,5:SPSTOP 0:PRINT SPCHK(0)'
+    expect: { stdout: "0" }
+
+  # -- SPHITINFO: read the hit record (stationary -> time 0, coords = SPOFS positions) -----
+  - name: hitinfo_default_zero
+    code: 'SPCLR:SPSET 0,0:SPHITINFO OUT TM:PRINT TM'
+    expect: { stdout: "0" }
+  - name: hitinfo_after_hit_positions
+    code: 'SPCLR:SPSET 0,0:SPOFS 0,50,60:SPCOL 0:SPSET 1,0:SPOFS 1,55,65:SPCOL 1:V=SPHITSP(0,1):SPHITINFO OUT T,X1,Y1,X2,Y2:PRINT T;",";X1;",";Y1;",";X2;",";Y2'
+    expect: { stdout: "0,50,60,55,65" }
+
+  # -- SPCOL OUT round-trip (read-back of what was set; exact oracle format is pending) ----
+  - name: spcol_out_reads_back_mask
+    code: 'SPCLR:SPSET 0,0:SPCOL 0,1,&H7F:SPCOL 0 OUT SC,MK:PRINT SC;",";MK'
+    expect: { stdout: "1,127" }
+  - name: spcol_out_reads_back_range
+    code: 'SPCLR:SPSET 0,0:SPCOL 0,2,3,8,9:SPCOL 0 OUT SX,SY,W,H:PRINT SX;",";SY;",";W;",";H'
+    expect: { stdout: "2,3,8,9" }
+
+  # -- SPDEF: definition templates ---------------------------------------------------------
+  - name: spdef_define_then_read_all
+    code: 'SPDEF 0,32,48,24,24,8,8,1:SPDEF 0 OUT U,V,W,H,OX,OY,A:PRINT U;",";V;",";W;",";H;",";OX;",";OY;",";A'
+    expect: { stdout: "32,48,24,24,8,8,1" }
+  - name: spdef_copy_with_override
+    code: 'SPDEF 0,10,20,30,30:SPDEF 1,0,,,16,16:SPDEF 1 OUT U,V,W,H:PRINT U;",";V;",";W;",";H'
+    expect: { stdout: "10,20,16,16" }
+  - name: spdef_reset_restores_defaults
+    code: 'SPDEF 0,5,5,8,8:SPDEF:SPDEF 0 OUT U,V,W,H:PRINT U;",";V;",";W;",";H'
+    expect: { stdout: "0,0,16,16" }
+  - name: spdef_bulk_from_array
+    code: 'DIM A[7]:A[0]=4:A[1]=4:A[2]=20:A[3]=20:A[4]=2:A[5]=2:A[6]=1:SPDEF A:SPDEF 0 OUT U,V,W,H:PRINT U;",";V;",";W;",";H'
+    expect: { stdout: "4,4,20,20" }
+  - name: spdef_bulk_bad_count
+    code: 'DIM B[5]:SPDEF B'
+    expect: { error: { errnum: 31 } }
+  # SPSET form 1 copies the template's source rectangle: a 24x24 template makes the sprite's
+  # collision box 24x24 (a default 16x16 sprite would miss a quad at 20,20).
+  - name: spset_uses_template_rect
+    code: 'SPDEF 3,0,0,24,24:SPSET 0,3:SPOFS 0,0,0:SPCOL 0:PRINT SPHITRC(0,20,20,2,2)'
+    expect: { stdout: "1" }

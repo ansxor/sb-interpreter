@@ -174,6 +174,21 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "SPVAR",
     "SPLINK",
     "SPUNLINK",
+    // Sprite positioning (M3-T3 glue): SPOFS sets/reads a sprite's screen position — the
+    // minimum transform needed to place sprites for collision; the rest of the transform
+    // setters land in a later increment.
+    "SPOFS",
+    // Sprite collision + definition templates (M3-T3): SPCOL/SPCOLVEC configure a sprite's
+    // collision rect/mask/velocity; SPHITSP/SPHITRC test for collisions; SPHITINFO reads the
+    // result; SPCHK reads the animation-status bitmask; SPDEF manages the definition-template
+    // table SPSET copies from. All route over the VM-owned `SpriteState`.
+    "SPCOL",
+    "SPCOLVEC",
+    "SPCHK",
+    "SPHITSP",
+    "SPHITRC",
+    "SPHITINFO",
+    "SPDEF",
     // Array data-ops (M1-T14): SORT/RSORT mutate their array arguments in place, so the
     // VM routes them to `data::sort` rather than the value-returning `dispatch`.
     "SORT",
@@ -373,6 +388,9 @@ mod tests {
         assert!(b.is_builtin("RND")); // M1-T9
         assert!(b.is_builtin("RANDOMIZE")); // M1-T9
         assert!(b.is_builtin("SPSET")); // M3-T1
-        assert!(!b.is_builtin("SPOFS")); // later milestone (M3-T2)
+        assert!(b.is_builtin("SPOFS")); // M3-T3 (positioning glue for collision)
+        assert!(b.is_builtin("SPHITSP")); // M3-T3
+        assert!(b.is_builtin("SPDEF")); // M3-T3
+        assert!(!b.is_builtin("SPROT")); // later increment (transform setters)
     }
 }
