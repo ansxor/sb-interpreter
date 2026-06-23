@@ -894,6 +894,7 @@ impl Vm {
                 Ok(Some(Value::Void))
             }
             "INKEY$" => Ok(Some(cons::inkey(&args)?)),
+            "CHKCHR" => Ok(Some(cons::chkchr(&self.console, &args, wants_value)?)),
             "BACKCOLOR" => Ok(Some(self.backcolor(&args, wants_value)?)),
             _ => Ok(None),
         }
@@ -2436,6 +2437,22 @@ H$=HEX$(255)"#);
         // No live keyboard buffer headless → "".
         assert_eq!(out("C$=INKEY$():PRINT LEN(C$)"), "0");
         assert_eq!(run_err("C$=INKEY$(1)").errnum(), Some(4));
+    }
+
+    // ---- CHKCHR (M1-T14) ----
+
+    #[test]
+    fn chkchr_reads_console_grid() {
+        // Round-trip: print a glyph, read its UTF-16 code back, then CLS so the scrape is the
+        // read-back value alone (ASC("A") == 65).
+        assert_eq!(out(r#"LOCATE 0,0:?"A";:C=CHKCHR(0,0):CLS:?C"#), "65");
+        // Empty / out-of-bounds cells read as 0 (no error).
+        assert_eq!(out("?CHKCHR(10,10)"), "0");
+        assert_eq!(out("?CHKCHR(-1,0)"), "0");
+        assert_eq!(out("?CHKCHR(0,100)"), "0");
+        // Wrong arg count (function) and statement use both → errnum 4.
+        assert_eq!(run_err("C=CHKCHR(0)").errnum(), Some(4));
+        assert_eq!(run_err("CHKCHR 0,0").errnum(), Some(4));
     }
 
     // ---- INPUT / LINPUT (M1-T8) ----

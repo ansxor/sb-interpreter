@@ -1,0 +1,19 @@
+# CHKCHR(x,y) — read the UTF-16 code of the glyph at console cell (x,y) (M1-T14 increment).
+# The spec's `read_printed_char` case can't fold into the console-text conformance runner
+# because its setup `PRINT "A";` leaves the glyph on the grid (scrape would be "A65"). These
+# cases CLS the grid AFTER reading, so `console_text()` is exactly the read-back value — a
+# deterministic round-trip of the hw_verified behavior (CHKCHR returns the cell's UTF-16 code;
+# chkchr.yaml, sb-oracle 2026-06-22: after PRINT "A" at (0,0), CHKCHR(0,0) -> 65).
+cases:
+  - name: chkchr_reads_printed_char
+    code: 'ACLS:LOCATE 0,0:?"A";:C=CHKCHR(0,0):CLS:?C'
+    expect: { stdout: "65" }
+  - name: chkchr_reads_offset_cell
+    code: 'ACLS:LOCATE 3,2:?"Q";:C=CHKCHR(3,2):CLS:?C'
+    expect: { stdout: "81" }   # ASC("Q") == 0x51 == 81
+  - name: chkchr_empty_cell_is_zero
+    code: 'ACLS:?CHKCHR(7,7)'
+    expect: { stdout: "0" }
+  - name: chkchr_compare_against_asc
+    code: 'ACLS:LOCATE 0,0:?"Z";:R=(CHKCHR(0,0)==ASC("Z")):CLS:?R'
+    expect: { stdout: "1" }    # CHKCHR result is comparable to ASC(...) (UTF-16 code unit)

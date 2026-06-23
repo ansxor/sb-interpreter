@@ -81,10 +81,15 @@ const IN_SCOPE_DATA_ARRAY_CONSOLE: &[&str] = &[
 /// `IN_SCOPE_PARTIAL` — its range (→ 10) / arg-shape (→ 4) error guards replay green now;
 /// only its *positioned*-output cases (`LOCATE 20,15:PRINT "X"` etc.) stay excluded, scraping
 /// to leading-whitespace/`\n`-prefixed text the value-oracle never captured (oracle-pending,
-/// see S-T5a / `HARVEST_QUEUE.md`); `ATTR`/`CHKCHR`/
-/// `FONTDEF`/`SCROLL`/`WIDTH` builtins are not implemented yet (S-T5c). Those fold in with
-/// their own increments. Listed by id.
-const IN_SCOPE_CONSOLE: &[&str] = &["PRINT", "COLOR", "CLS", "INKEY$"];
+/// see S-T5a / `HARVEST_QUEUE.md`); `ATTR`/`FONTDEF`/`SCROLL`/`WIDTH` builtins are not
+/// implemented yet (S-T5c). `CHKCHR` (read a grid cell's UTF-16 code; function only) is in
+/// scope (M1-T14 increment 2026-06-23): its empty-cell / out-of-bounds → 0 value cases and
+/// its arg-count / statement-use → 4 error cases replay green. Only its `read_printed_char`
+/// case is folded PARTIALLY via `IN_SCOPE_PARTIAL` — its setup `PRINT "A";` leaves the glyph
+/// on the grid, so the scraped `console_text()` is `"A65"`, not the value-oracle's `"65"`
+/// (the CHKCHR read itself is covered by `cases/chkchr.yaml`'s CLS-cleaned round-trip + the
+/// console-builtin unit test). Those fold in with their own increments. Listed by id.
+const IN_SCOPE_CONSOLE: &[&str] = &["PRINT", "COLOR", "CLS", "INKEY$", "CHKCHR"];
 /// `Data operations and others` instructions whose semantics `sb-core` implements in M1 and
 /// whose inline `tests:` are deterministic + `console_text()`-comparable (M1-T14 increment
 /// 2026-06-23): `READ` (walks the DATA cursor — sequential, across-line, float, array-element
@@ -126,10 +131,14 @@ const IN_SCOPE_SCREEN: &[&str] = &["ACLS", "BACKCOLOR"];
 /// oracle-pending (S-T5a, `HARVEST_QUEUE.md`); its range (51,0 / 0,30 / 0,0,2000 → 10) and
 /// arg-shape (single-arg / as-function → 4) cases fold in now. `GSPOIT`: its three
 /// `GPSET`-then-read round-trip cases need the drawing primitives (`GPSET`, M2-T2); its
-/// OOB-returns-0 and arg-count → 4 cases fold in now. Tuples are `(spec id, &[excluded
-/// case names])`.
+/// OOB-returns-0 and arg-count → 4 cases fold in now. `CHKCHR`: its one `read_printed_char`
+/// case prints a setup glyph (`PRINT "A";`) that stays on the grid, so the scraped
+/// `console_text()` is `"A65"` not the value-oracle's `"65"` — excluded here, covered by
+/// `cases/chkchr.yaml`'s CLS-cleaned round-trip; its empty-cell/OOB/arg-count cases fold in
+/// now. Tuples are `(spec id, &[excluded case names])`.
 const IN_SCOPE_PARTIAL: &[(&str, &[&str])] = &[
     ("LOCATE", &["basic_xy", "x_edge_50_ok"]),
+    ("CHKCHR", &["read_printed_char"]),
     (
         "GSPOIT",
         &[

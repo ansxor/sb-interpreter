@@ -115,6 +115,9 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "ACLS",
     "BACKCOLOR",
     "INKEY$",
+    // CHKCHR(x,y) reads the VM-owned console grid (function only), so the VM routes it
+    // directly like the other console builtins (M1-T14 increment).
+    "CHKCHR",
     // Graphics — GRP page model + color helpers (M2-T1). The page-state commands mutate
     // the VM-owned `GrpState`, so the VM routes them directly (like the console builtins);
     // they are registered here so the compiler treats them as builtins, not variables.

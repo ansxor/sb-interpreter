@@ -1,10 +1,11 @@
 //! Console builtins (M1-T8) — the SmileBASIC text-console commands the VM drives over
 //! the [`Console`](sb_render::console::Console) model it owns (M1-T10).
 //!
-//! These are the **console I/O** commands `LOCATE`/`COLOR`/`CLS`/`ACLS` and the
-//! non-blocking `INKEY$` function. Unlike the math/string builtins, they mutate console
-//! state, so the VM routes them here with a `&mut Console` rather than through the
-//! stateless [`dispatch`](super::dispatch). `PRINT` (its own opcodes), `BACKCOLOR` and
+//! These are the **console I/O** commands `LOCATE`/`COLOR`/`CLS`/`ACLS`, the non-blocking
+//! `INKEY$` function, and the grid-reader `CHKCHR`. Unlike the math/string builtins, they
+//! touch console state, so the VM routes them here with a `Console` (mutable for the
+//! commands, shared for the readers) rather than through the stateless
+//! [`dispatch`](super::dispatch). `PRINT` (its own opcodes), `BACKCOLOR` and
 //! `INPUT`/`LINPUT` (which also need VM-level screen/input state) are handled in the VM.
 //!
 //! Argument-count / range contracts come straight from the disassembled handlers
@@ -19,6 +20,8 @@
 //! - `ACLS` — 0 or 3 arguments (else errnum 4); resets the console draw state.
 //! - `INKEY$()` — no arguments (else errnum 4); returns one buffered key or `""` (always
 //!   `""` headless: there is no live keyboard buffer here).
+//! - `CHKCHR(x,y)` — function only, exactly 2 args (else errnum 4); returns the cell's
+//!   UTF-16 code, or 0 for an empty / out-of-bounds coordinate (no error).
 //!
 //! Using `LOCATE`/`COLOR`/`CLS`/`ACLS` as a function (requesting a return value) is the
 //! errnum-4 misuse the handlers guard with their return-count check.
@@ -118,6 +121,25 @@ pub fn inkey(args: &[Value]) -> Result<Value, RuntimeError> {
         return Err(illegal());
     }
     Ok(Value::Str(SbStr::new()))
+}
+
+/// `CHKCHR(x,y)` — read the UTF-16 code of the glyph currently displayed at console cell
+/// (x,y). Function only: exactly 2 arguments AND a return value requested, else errnum 4
+/// (a wrong arg count or statement use; `chkchr.yaml`, hw_verified). An out-of-bounds
+/// coordinate — negative, or at/past the grid edge — returns 0 with **no error**, the same
+/// value an empty (cleared) cell reads as.
+pub fn chkchr(console: &Console, args: &[Value], wants_value: bool) -> Result<Value, RuntimeError> {
+    if !wants_value || args.len() != 2 {
+        return Err(illegal());
+    }
+    let x = args[0].to_int()?;
+    let y = args[1].to_int()?;
+    if x < 0 || y < 0 {
+        return Ok(Value::Int(0));
+    }
+    // `cell()` already returns a cleared cell (ch == 0) for coordinates past the grid edge,
+    // matching the handler's "out-of-bounds returns 0" path.
+    Ok(Value::Int(console.cell(x as usize, y as usize).ch as i32))
 }
 
 /// Format one `PRINT` item to the UTF-16 code units it puts on the console: a number via
@@ -271,6 +293,45 @@ mod tests {
         assert_eq!(acls(&mut c, &[Value::Int(1)], false).unwrap_err().errnum, 4);
         assert_eq!(
             acls(&mut c, &[Value::Int(1), Value::Int(1)], false)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+    }
+
+    #[test]
+    fn chkchr_reads_grid_and_guards() {
+        let mut c = Console::top();
+        c.locate(0, 0);
+        c.print_str("A");
+        // Reading the printed cell returns its UTF-16 code (ASC("A") == 65).
+        assert_eq!(
+            chkchr(&c, &[Value::Int(0), Value::Int(0)], true).unwrap(),
+            Value::Int(65)
+        );
+        // An empty cell reads as 0.
+        assert_eq!(
+            chkchr(&c, &[Value::Int(10), Value::Int(10)], true).unwrap(),
+            Value::Int(0)
+        );
+        // Out-of-bounds (negative or past the edge) returns 0, no error.
+        assert_eq!(
+            chkchr(&c, &[Value::Int(-1), Value::Int(0)], true).unwrap(),
+            Value::Int(0)
+        );
+        assert_eq!(
+            chkchr(&c, &[Value::Int(0), Value::Int(100)], true).unwrap(),
+            Value::Int(0)
+        );
+        assert_eq!(
+            chkchr(&c, &[Value::Int(60), Value::Int(0)], true).unwrap(),
+            Value::Int(0)
+        );
+        // Wrong arg count → errnum 4.
+        assert_eq!(chkchr(&c, &[Value::Int(0)], true).unwrap_err().errnum, 4);
+        // Used as a statement (no return requested) → errnum 4.
+        assert_eq!(
+            chkchr(&c, &[Value::Int(0), Value::Int(0)], false)
                 .unwrap_err()
                 .errnum,
             4
