@@ -16,7 +16,7 @@ under `prd/` (start at `prd/README.md`). Task IDs here match those docs.
 | M0 | Scaffolding & spec pipeline | `prd/M0.md` | ✅ done |
 | **S** | **Spec build-out (all sources)** | `prd/specs.md` | 🔥 active |
 | **O** | **Oracle engine — `sb-oracle` skill** | `prd/oracle.md` | 🔥 value/errnum/graphics harvest work; audio = MML-event specs (no emulator golden) + ref capture |
-| M1 | Core VM + a real window | `prd/M1.md` | ⬜ gated on S (pre-pivot lexer/AST exist — redo) |
+| M1 | Core VM + a real window | `prd/M1.md` | ✅ done (T1–T14; conformance gate green, native + wasm) |
 | M2 | Graphics (GRP + compositor) | `prd/M2.md` | ⬜ gated on S |
 | M3 | Sprites & BG | `prd/M3.md` | ⬜ gated on S |
 | M4 | Input & timing | `prd/M4.md` | ⬜ gated on S |
@@ -166,7 +166,7 @@ and name the instructions they cover inline.
 - [x] M1-T11 Headless runner `sb-run` — new `sb-platform-native` crate (`src/bin/sb-run.rs`): loads a `.sb3` (plain UTF-8 source), runs it through sb-core (`parse → compile_with(StdBuiltins) → Vm::run`) headless, dumps `console_text()` to stdout; on a SmileBASIC error prints `ERRNUM`/`ERRLINE` to stderr. Exit codes: 0 success/STOP, 1 SB error (parse errnum 3 / compile / runtime e.g. SQR(-1)→10), 2 usage/unreadable-file. This is the `target/debug/sb-run` that `harness/diff/replay.py` shells out to. 4 bin tests (fizzbuzz fixture, console text, runtime/parse errnum). → M1-T8
 - [x] M1-T12 Window (native winit + wasm canvas) — `crates/sb-platform-native/src/bin/sb.rs` (new `sb` bin): runs a `.sb3` through the same `parse→compile_with(StdBuiltins)→Vm::run` pipeline as `sb-run`, renders `vm.console()` into an `sb_render::Framebuffer` (opaque-black backdrop so transparent-bg console cells blit), and blits it to a winit 0.30 + softbuffer 0.4 window (nearest-neighbour scale-to-fit, 2× default, redraw-on-resize; partial console still shown on a halt). winit/softbuffer are target-gated `not(wasm32)` and the whole bin is an empty `main` on wasm32, so `--target wasm32-unknown-unknown` stays clean. New `sb-platform-wasm` crate (cdylib+rlib): `render_program(src)→Framebuffer` (shared, native-testable) + wasm-only `#[wasm_bindgen] run_program(canvas_id, src)` that blits the RGBA8888 framebuffer to a `<canvas>` via `put_image_data` (web-sys gated to wasm32). 3 new tests (native `sb`: lit-pixels + error-still-renders; wasm: lit-pixels). → M1-T10
 - [x] M1-T13 Error model + ERRNUM/ERRLINE — new `crates/sb-core/src/sysvars.rs` (`ErrSysvar` enum: the three read-only error-state sysvars). VM tracks `errnum`/`errline`/`errprg` (boot/fresh-run = 0); a halting `VmError::Sb` stamps them in `run()` so they're readable post-halt as the DIRECT-mode residue (accessors `errnum()`/`errline()`/`errprg()`; `ERRPRG`=0 in single-slot M1, multi-slot → M6). Compiler resolves a bare-name read of `ERRNUM`/`ERRLINE`/`ERRPRG` to new `Op::PushSysvar` (reserved — resolves before user vars/builtins); assigning to one is a compile-time Syntax error (errnum 3) per `sysvars.yaml writable=false`. 6 new tests (errnum 8/7/31/4/10 cases, ERRLINE/ERRPRG persistence, clean-run reads 0, read-only rejection) + 2 sysvars unit tests; 3,329-program corpus sweep still 0 panics. → M1-T6, S-T14
-- [ ] M1-T14 Conformance wiring (run spec/tests + corpus; ASSERT__; otya_test) → M1-T11
+- [x] M1-T14 Conformance wiring (run spec/tests + corpus; ASSERT__; otya_test) → M1-T11
 
 ## M2 — Graphics  (gated on S-T7)
 - [x] M2-T1 GRP page model → S-T7

@@ -30,13 +30,18 @@
 //! Self-checking `ASSERT__` programs are replayed by [`assert_programs_pass`] below —
 //! `m1_conformance.sb3` (hand-written) and `otya_m1.sb3` (the real `otya_test.sb3` golden
 //! sliced to the M1 feature set; the full file folds in once CALL/DATE$/DTREAD land).
+//!
+//! [`every_implemented_builtin_spec_is_in_scope`] keeps the wiring honest: it fails if any
+//! registered builtin grows a spec with inline tests that isn't folded into a `IN_SCOPE_*`
+//! list — so a future milestone can't implement an instruction and silently skip its
+//! documented cases.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use sb_core::builtins::StdBuiltins;
+use sb_core::builtins::{StdBuiltins, BUILTIN_NAMES};
 use sb_core::compiler::compile_with;
 use sb_core::parser::parse;
 use sb_core::vm::{Vm, VmError};
@@ -284,17 +289,28 @@ fn corpus_and_overlay_cases_pass() {
     );
 }
 
+/// The single source of truth for "does the M1 `sb-core` implement this spec well enough to
+/// replay its inline `tests:` in the hermetic gate?" — used by both
+/// [`in_scope_instruction_specs_pass`] (which runs them) and
+/// [`every_implemented_builtin_spec_is_in_scope`] (which proves nothing implemented falls
+/// through the cracks). A spec is in scope if its category is wholly implemented, its id is
+/// one of the individually-listed control/data/console/graphics/screen instructions, or it is
+/// a PARTIAL spec (in scope save for a named subset of cases).
+fn spec_in_scope(id: &str, category: Option<&str>) -> bool {
+    category.is_some_and(|c| IN_SCOPE_CATEGORIES.contains(&c))
+        || IN_SCOPE_OPERATORS.contains(&id)
+        || IN_SCOPE_CONTROL.contains(&id)
+        || IN_SCOPE_DATA_ARRAY_CONSOLE.contains(&id)
+        || IN_SCOPE_CONSOLE.contains(&id)
+        || IN_SCOPE_DATA_OPS.contains(&id)
+        || IN_SCOPE_GRAPHICS.contains(&id)
+        || IN_SCOPE_SCREEN.contains(&id)
+        || IN_SCOPE_PARTIAL.iter().any(|(pid, _)| *pid == id)
+}
+
 #[test]
 fn in_scope_instruction_specs_pass() {
     let dir = root().join("spec/instructions");
-    let in_scope_cats: BTreeSet<&str> = IN_SCOPE_CATEGORIES.iter().copied().collect();
-    let in_scope_ops: BTreeSet<&str> = IN_SCOPE_OPERATORS.iter().copied().collect();
-    let in_scope_control: BTreeSet<&str> = IN_SCOPE_CONTROL.iter().copied().collect();
-    let in_scope_dac: BTreeSet<&str> = IN_SCOPE_DATA_ARRAY_CONSOLE.iter().copied().collect();
-    let in_scope_console: BTreeSet<&str> = IN_SCOPE_CONSOLE.iter().copied().collect();
-    let in_scope_data_ops: BTreeSet<&str> = IN_SCOPE_DATA_OPS.iter().copied().collect();
-    let in_scope_graphics: BTreeSet<&str> = IN_SCOPE_GRAPHICS.iter().copied().collect();
-    let in_scope_screen: BTreeSet<&str> = IN_SCOPE_SCREEN.iter().copied().collect();
 
     let mut fails = Vec::new();
     let mut count = 0usize;
@@ -311,21 +327,7 @@ fn in_scope_instruction_specs_pass() {
             .find(|(id, _)| *id == spec.id.as_str())
             .map(|(_, cases)| *cases)
             .unwrap_or(&[]);
-        let in_scope = spec
-            .category
-            .as_deref()
-            .is_some_and(|c| in_scope_cats.contains(c))
-            || in_scope_ops.contains(spec.id.as_str())
-            || in_scope_control.contains(spec.id.as_str())
-            || in_scope_dac.contains(spec.id.as_str())
-            || in_scope_console.contains(spec.id.as_str())
-            || in_scope_data_ops.contains(spec.id.as_str())
-            || in_scope_graphics.contains(spec.id.as_str())
-            || in_scope_screen.contains(spec.id.as_str())
-            || IN_SCOPE_PARTIAL
-                .iter()
-                .any(|(id, _)| *id == spec.id.as_str());
-        if !in_scope {
+        if !spec_in_scope(&spec.id, spec.category.as_deref()) {
             continue;
         }
         files += 1;
@@ -389,4 +391,53 @@ fn assert_programs_pass() {
             Err(e) => panic!("{}: unexpected VM error: {e:?}", path.display()),
         }
     }
+}
+
+/// Wiring guard (M1-T14): every registered builtin that has a spec carrying inline `tests:`
+/// MUST be folded into the conformance gate (i.e. [`spec_in_scope`] returns true for it).
+/// This makes the runner self-policing — when a later milestone implements a new builtin
+/// (say M2's `GLINE`) and adds it to [`BUILTIN_NAMES`] but forgets to add its spec id to an
+/// `IN_SCOPE_*` list, this test fails, forcing the fold so the new instruction's documented
+/// cases actually run. Builtins with no spec, or a spec with no inline tests, are skipped
+/// (nothing to replay); `ASSERT__` is a test-only builtin with no spec. The set is empty
+/// today — every M1-implemented builtin's spec tests already replay green — so the guard's
+/// job is to keep it empty as the surface grows.
+#[test]
+fn every_implemented_builtin_spec_is_in_scope() {
+    let dir = root().join("spec/instructions");
+    // Spec id -> (category, has inline tests).
+    let mut specs: BTreeMap<String, (Option<String>, bool)> = BTreeMap::new();
+    for path in yaml_files(&dir) {
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let spec: SpecFile =
+            serde_yaml::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+        specs.insert(
+            spec.id.clone(),
+            (spec.category.clone(), !spec.tests.is_empty()),
+        );
+    }
+
+    let mut gaps: Vec<&str> = Vec::new();
+    for &name in BUILTIN_NAMES {
+        if name == "ASSERT__" {
+            continue; // test-only builtin, no spec
+        }
+        let Some((category, has_tests)) = specs.get(name) else {
+            continue; // no spec for this builtin (yet) — nothing to fold
+        };
+        if !has_tests {
+            continue; // spec exists but has no inline cases to replay
+        }
+        if !spec_in_scope(name, category.as_deref()) {
+            gaps.push(name);
+        }
+    }
+
+    assert!(
+        gaps.is_empty(),
+        "registered builtin(s) whose spec carries inline tests but is NOT folded into the \
+         conformance gate — add each id to an IN_SCOPE_* list (or IN_SCOPE_PARTIAL) in \
+         conformance.rs so its documented cases actually run: {gaps:?}"
+    );
 }
