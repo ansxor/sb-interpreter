@@ -189,6 +189,68 @@ fn disassembled_sources_show_evidence_of_a_body_read() {
     );
 }
 
+// ── Error-table conformance (S-T14a) ────────────────────────────────────────────────
+//
+// `spec/reference/errors.yaml` is the errnum→message table, verified against the binary's
+// errnum→string pointer array @0x3054f8 (.data, 56 entries, errnum 0..55) feeding the
+// formatter FUN_001e94a8. These are frozen goldens: the `.bin` is gitignored/absent in CI,
+// so the cross-check against the disassembly happened once (S-T14a) and is replayed here as
+// a deterministic fixture. If real SmileBASIC ever disagrees, fix the YAML, not the test.
+
+#[derive(serde::Deserialize)]
+struct ErrTable {
+    errors: Vec<ErrRow>,
+}
+
+#[derive(serde::Deserialize)]
+struct ErrRow {
+    num: i32,
+    name: String,
+}
+
+#[test]
+fn error_table_matches_disassembly() {
+    let path = spec_dir().join("reference/errors.yaml");
+    let text = std::fs::read_to_string(&path).expect("errors.yaml readable");
+    let table: ErrTable = serde_yaml::from_str(&text).expect("errors.yaml parses");
+
+    // Contiguous errnum 0..=55, in order, no gaps/dupes, every name non-empty.
+    assert_eq!(table.errors.len(), 56, "error table must hold errnum 0..55");
+    for (i, row) in table.errors.iter().enumerate() {
+        assert_eq!(
+            row.num, i as i32,
+            "error rows must be contiguous and in order"
+        );
+        assert!(!row.name.is_empty(), "errnum {} has empty name", row.num);
+    }
+
+    // Spot-check the frozen errnum→name mapping read from the @0x3054f8 pointer table.
+    // Includes the boundaries (0, 55), the oracle-confirmed 10, the two binary-vs-docs
+    // wording differences (41, 43), and a binary-only entry the docs omit (48).
+    let by_num: std::collections::HashMap<i32, &str> = table
+        .errors
+        .iter()
+        .map(|r| (r.num, r.name.as_str()))
+        .collect();
+    for (num, name) in [
+        (0, "No Error"),
+        (2, "Illegal Instruction"),
+        (3, "Syntax error"),
+        (10, "Out of range"),
+        (12, "Out of code memory"),
+        (41, "String is too long"),         // docs say "String too long"
+        (43, "Can't use from direct mode"), // docs say "...DIRECT mode"
+        (4, "Illegal function call"),       // oracle: X=ABS() → errnum 4
+        (7, "Divide by zero"),              // oracle: A=1/0   → errnum 7
+        (8, "Type mismatch"),               // oracle: S$=5    → errnum 8
+        (47, "Illegal MML"),
+        (48, "Uninitialized variable used"), // binary-only, not in docs
+        (55, "Too many arguments"),
+    ] {
+        assert_eq!(by_num.get(&num), Some(&name), "errnum {num} message");
+    }
+}
+
 #[test]
 fn reverted_refs_are_caught() {
     // The exact ref shapes from commit df691b1 (the 14 reverted slices) must be flagged.

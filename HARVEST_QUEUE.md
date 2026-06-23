@@ -550,3 +550,12 @@ oracle to confirm exact output and promote to `hw_verified`.
   - PROJECT OUT PJ$ returned "" on this install (default project); the real current-project
     name and the set-form project-name validation (errnum 4 length>15 / bad chars; errnum 8
     char-class) are not separable as scalar goldens in a warm program-mode session.
+
+- S-T14a · errnum table — most entries cross-checked vs the binary errnum→string pointer
+  table @0x3054f8 (errnum 0..55). Oracle (S-T14a) confirmed errnum 4 (X=ABS()), 7 (A=1/0),
+  8 (S$=5), 10 (X=SQR(-1)). REMAINING to harvest a clean trigger for (table value is the
+  assumption): 31 Subscript out of range — `DIM ZZ(3):X=ZZ(9)` surprisingly returned
+  errnum 3 (Syntax error) via the batch wrapper, so find a standalone trigger; and the
+  binary-only 48..55 (Uninitialized variable used / Protected resource / Protected file /
+  DLC not found / Incompatible statement / END without call / Array is too large / Too many
+  arguments) whose `desc` text is inferred, not from docs.

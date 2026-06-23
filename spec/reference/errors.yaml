@@ -1,47 +1,97 @@
-# AUTO-GENERATED from sb-docs/.../reference/error-table.md — do not edit.
+# Error table — errnum → message, verified against the SmileBASIC 3.6.0 binary.
+#
+# Source of truth is the binary, NOT the docs: the errnum→string pointer array lives
+# at @0x3054f8 in .data (56 word-pointers, errnum 0..55), each pointing into the ASCII
+# error-string pool @0x2e965c..0x2e9ac0 in .rodata. Read out of
+# SmileBASIC_3.6.0_CIA.bin (runtime addr = file offset + 0x100000).
+#
+# The error-message formatter FUN_001e94a8 indexes this table: it does
+# `sub r0,r0,#0x1; cmp r0,#0x37` (range-guard errnum against 55), `ldrcc r0,[0x1e9584]`
+# (load table base 0x3054f8), `ldrcc r9,[r0,r5,lsl #0x2]` (table[errnum]); out-of-range
+# falls back to `adrcs r9,0x1e9588` = "Internal Error".
+#
+# The official docs (sb-docs/.../reference/error-table.md) list only the user-facing
+# errnum 3..47. The binary additionally defines 0,1,2 (internal) and 48..55, and uses
+# slightly different wording for two entries (see `docs_name`). Where the binary and the
+# docs disagree, `name` carries the BINARY string (what SB actually displays / ERR$ would
+# return); `docs_name` records the docs wording for traceability.
+#
+# `desc` for the doc-listed errnums (3..47, plus 11/12) is the docs text. For the
+# binary-only errnums (0,1,2,48..55) `desc` is an inferred summary — name is
+# disassembled, description is community/inferred and queued for oracle confirmation.
+confidence: disassembled
+sources:
+  - type: disassembled
+    reference: >-
+      errnum→string ptr table @0x3054f8 (.data, 56 ptrs, errnum 0..55) → ASCII pool
+      @0x2e965c..0x2e9ac0 (.rodata): e.g. errnum 3 → @0x2e9a00 "Syntax error",
+      errnum 10 → @0x2e97e4 "Out of range", errnum 55 → @0x2e9a10 "Too many arguments".
+      Lookup in FUN_001e94a8: `sub r0,r0,#0x1; cmp r0,#0x37` range-guards errnum≤55,
+      `ldrcc r0,[0x1e9584]`→0x3054f8, `ldrcc r9,[r0,r5,lsl #0x2]` indexes table[errnum],
+      out-of-range `adrcs r9,0x1e9588`="Internal Error". word @0x3054f8+56*4 is 0 (table end).
+  - type: documented
+    reference: sb-docs/smilebasic-3/reference/error-table.md (errnum 3..47)
+
+# ERRNUM/ERRLINE confirmed to persist into DIRECT mode post-halt (oracle, O-T5).
+# hw_verified errnums (sb-oracle, S-T14a), each matching the disassembled table:
+#   X=ABS()    → ERRNUM=4  (Illegal function call)
+#   A=1/0      → ERRNUM=7  (Divide by zero)
+#   S$=5       → ERRNUM=8  (Type mismatch)
+#   X=SQR(-1)  → ERRNUM=10 (Out of range)
 errors:
-  - { num: 3, name: "Syntax error", desc: "syntax does not follow the grammar rules" }
-  - { num: 4, name: "Illegal function call", desc: "the number of arguments specified in an instruction or function is wrong" }
-  - { num: 5, name: "Stack overflow", desc: "an overflow has occurred in the stack" }
-  - { num: 6, name: "Stack underflow", desc: "an underflow has occurred in the stack" }
-  - { num: 7, name: "Divide by zero", desc: "division by zero was attempted" }
-  - { num: 8, name: "Type mismatch", desc: "an inconsistent variable type is specified" }
-  - { num: 9, name: "Overflow", desc: "the calculation result exceeded the allowed range" }
-  - { num: 10, name: "Out of range", desc: "a value outside the allowed range was specified" }
-  - { num: 11, name: "Out of memory", desc: "sufficient memory area is not available" }
-  - { num: 12, name: "Out of code memory", desc: "sufficient code memory area is not available" }
-  - { num: 13, name: "Out of DATA", desc: "DATA that can be READ is insufficient" }
-  - { num: 14, name: "Undefined label", desc: "the specified label could not be found" }
-  - { num: 15, name: "Undefined variable", desc: "the specified variable could not be found" }
-  - { num: 16, name: "Undefined function", desc: "the specified instruction/function could not be found" }
-  - { num: 17, name: "Duplicate label", desc: "the same label has been defined twice" }
-  - { num: 18, name: "Duplicate variable", desc: "the same variable has been defined twice" }
-  - { num: 19, name: "Duplicate function", desc: "the same instruction/function has been defined twice" }
-  - { num: 20, name: "FOR without NEXT", desc: "a FOR has no NEXT" }
-  - { num: 21, name: "NEXT without FOR", desc: "a NEXT has no FOR" }
-  - { num: 22, name: "REPEAT without UNTIL", desc: "a REPEAT has no UNTIL" }
-  - { num: 23, name: "UNTIL without REPEAT", desc: "an UNTIL has no REPEAT" }
-  - { num: 24, name: "WHILE without WEND", desc: "a WHILE has no WEND" }
-  - { num: 25, name: "WEND without WHILE", desc: "a WEND has no WHILE" }
-  - { num: 26, name: "THEN without ENDIF", desc: "a THEN has no ENDIF" }
-  - { num: 27, name: "ELSE without ENDIF", desc: "an ELSE has no ENDIF" }
-  - { num: 28, name: "ENDIF without IF", desc: "an ENDIF has no IF" }
-  - { num: 29, name: "DEF without END", desc: "a DEF has no END" }
-  - { num: 30, name: "RETURN without GOSUB", desc: "a RETURN has no GOSUB" }
-  - { num: 31, name: "Subscript out of range", desc: "array subscripts are not within the allowed range" }
-  - { num: 32, name: "Nested DEF", desc: "a DEF has been defined within another DEF" }
-  - { num: 33, name: "Can't continue", desc: "the program cannot resume with CONT" }
-  - { num: 34, name: "Illegal symbol string", desc: "a label string has been incorrectly described" }
-  - { num: 35, name: "Illegal file format", desc: "the file is in a format that SmileBASIC cannot support" }
-  - { num: 36, name: "Mic is not available", desc: "a microphone instruction was used without using XON MIC" }
-  - { num: 37, name: "Motion sensor is not available", desc: "a motion instruction was used without using XON MOTION" }
+  - { num: 0,  name: "No Error",                          desc: "no error has occurred (ERRNUM cleared)", in_docs: false }
+  - { num: 1,  name: "Internal Error",                    desc: "an internal interpreter error occurred; also the formatter's out-of-range fallback message", in_docs: false }
+  - { num: 2,  name: "Illegal Instruction",               desc: "an illegal or unknown instruction was encountered", in_docs: false }
+  - { num: 3,  name: "Syntax error",                      desc: "syntax does not follow the grammar rules" }
+  - { num: 4,  name: "Illegal function call",             desc: "the number of arguments specified in an instruction or function is wrong", verified: hw_verified }
+  - { num: 5,  name: "Stack overflow",                    desc: "an overflow has occurred in the stack" }
+  - { num: 6,  name: "Stack underflow",                   desc: "an underflow has occurred in the stack" }
+  - { num: 7,  name: "Divide by zero",                    desc: "division by zero was attempted", verified: hw_verified }
+  - { num: 8,  name: "Type mismatch",                     desc: "an inconsistent variable type is specified", verified: hw_verified }
+  - { num: 9,  name: "Overflow",                          desc: "the calculation result exceeded the allowed range" }
+  - { num: 10, name: "Out of range",                      desc: "a value outside the allowed range was specified", verified: hw_verified }
+  - { num: 11, name: "Out of memory",                     desc: "sufficient memory area is not available" }
+  - { num: 12, name: "Out of code memory",               desc: "sufficient code memory area is not available" }
+  - { num: 13, name: "Out of DATA",                       desc: "DATA that can be READ is insufficient" }
+  - { num: 14, name: "Undefined label",                   desc: "the specified label could not be found" }
+  - { num: 15, name: "Undefined variable",                desc: "the specified variable could not be found" }
+  - { num: 16, name: "Undefined function",                desc: "the specified instruction/function could not be found" }
+  - { num: 17, name: "Duplicate label",                   desc: "the same label has been defined twice" }
+  - { num: 18, name: "Duplicate variable",                desc: "the same variable has been defined twice" }
+  - { num: 19, name: "Duplicate function",                desc: "the same instruction/function has been defined twice" }
+  - { num: 20, name: "FOR without NEXT",                  desc: "a FOR has no NEXT" }
+  - { num: 21, name: "NEXT without FOR",                  desc: "a NEXT has no FOR" }
+  - { num: 22, name: "REPEAT without UNTIL",              desc: "a REPEAT has no UNTIL" }
+  - { num: 23, name: "UNTIL without REPEAT",              desc: "an UNTIL has no REPEAT" }
+  - { num: 24, name: "WHILE without WEND",                desc: "a WHILE has no WEND" }
+  - { num: 25, name: "WEND without WHILE",                desc: "a WEND has no WHILE" }
+  - { num: 26, name: "THEN without ENDIF",                desc: "a THEN has no ENDIF" }
+  - { num: 27, name: "ELSE without ENDIF",                desc: "an ELSE has no ENDIF" }
+  - { num: 28, name: "ENDIF without IF",                  desc: "an ENDIF has no IF" }
+  - { num: 29, name: "DEF without END",                   desc: "a DEF has no END" }
+  - { num: 30, name: "RETURN without GOSUB",              desc: "a RETURN has no GOSUB" }
+  - { num: 31, name: "Subscript out of range",            desc: "array subscripts are not within the allowed range" }
+  - { num: 32, name: "Nested DEF",                        desc: "a DEF has been defined within another DEF" }
+  - { num: 33, name: "Can't continue",                    desc: "the program cannot resume with CONT" }
+  - { num: 34, name: "Illegal symbol string",             desc: "a label string has been incorrectly described" }
+  - { num: 35, name: "Illegal file format",               desc: "the file is in a format that SmileBASIC cannot support" }
+  - { num: 36, name: "Mic is not available",              desc: "a microphone instruction was used without using XON MIC" }
+  - { num: 37, name: "Motion sensor is not available",    desc: "a motion instruction was used without using XON MOTION" }
   - { num: 38, name: "Use PRGEDIT before any PRG function", desc: "one of the PRG instructions was used without using PRGEDIT" }
-  - { num: 39, name: "Animation is too long", desc: "animation definition is too long" }
-  - { num: 40, name: "Illegal animation data", desc: "animation data is incorrect" }
-  - { num: 41, name: "String too long", desc: "string is too long" }
-  - { num: 42, name: "Communication buffer overflow", desc: "an overflow has occurred in the buffer for sending MPSEND" }
-  - { num: 43, name: "Can't use from DIRECT mode", desc: "an instruction that does not work in DIRECT mode was used" }
-  - { num: 44, name: "Can't use in program", desc: "an instruction that cannot be used in a program was used" }
-  - { num: 45, name: "Can't use in tool program", desc: "an instruction that cannot be used from a tool program was used" }
-  - { num: 46, name: "Load failed", desc: "failed to read the file" }
-  - { num: 47, name: "Illegal MML", desc: "the MML [Music Macro Language] is incorrect" }
+  - { num: 39, name: "Animation is too long",             desc: "animation definition is too long" }
+  - { num: 40, name: "Illegal animation data",            desc: "animation data is incorrect" }
+  - { num: 41, name: "String is too long",                desc: "string is too long", docs_name: "String too long" }
+  - { num: 42, name: "Communication buffer overflow",     desc: "an overflow has occurred in the buffer for sending MPSEND" }
+  - { num: 43, name: "Can't use from direct mode",        desc: "an instruction that does not work in DIRECT mode was used", docs_name: "Can't use from DIRECT mode" }
+  - { num: 44, name: "Can't use in program",              desc: "an instruction that cannot be used in a program was used" }
+  - { num: 45, name: "Can't use in tool program",         desc: "an instruction that cannot be used from a tool program was used" }
+  - { num: 46, name: "Load failed",                       desc: "failed to read the file" }
+  - { num: 47, name: "Illegal MML",                       desc: "the MML [Music Macro Language] is incorrect" }
+  - { num: 48, name: "Uninitialized variable used",       desc: "a variable was used before being assigned a value", in_docs: false }
+  - { num: 49, name: "Protected resource",                desc: "attempted to access a protected (DRM/copy-guarded) resource", in_docs: false }
+  - { num: 50, name: "Protected file",                    desc: "attempted to access a protected (DRM/copy-guarded) file", in_docs: false }
+  - { num: 51, name: "DLC not found",                     desc: "required downloadable content was not found", in_docs: false }
+  - { num: 52, name: "Incompatible statement",            desc: "the statement is incompatible in this context", in_docs: false }
+  - { num: 53, name: "END without call",                  desc: "an END was reached without a corresponding call/DEF entry", in_docs: false }
+  - { num: 54, name: "Array is too large",                desc: "array dimensions exceed the allowed size", in_docs: false }
+  - { num: 55, name: "Too many arguments",                desc: "too many arguments were specified", in_docs: false }
