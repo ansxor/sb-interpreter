@@ -154,7 +154,7 @@ and name the instructions they cover inline.
 
 ## M1 — Core VM + a real window  (gated on S; the existing lexer/AST predate the spec-first pivot — rewrite/validate, don't trust)
 - [x] M1-T1 Lexer (token.rs + lexer.rs) — spec-first rewrite in fresh `crates/sb-core` (`token.rs`+`lexer.rs`); Unicode-letter identifiers (full-width/kana, NOT osb's ASCII-only), case-folded; `$`/`%`/`#` suffixes; `@label`/`#const`; `&H`/`&B` i32-wrap; `.`-leading/trailing reals + i32→Double promotion; tolerant strings; `'`/`REM` comments; two-char ops; TRUE/FALSE→1/0; SourceLoc across `:`/newlines/CRLF; 17 unit tests. Exact identifier class + leading-digit rule queued for oracle (HARVEST_QUEUE).
-- [ ] M1-T2 AST (ast.rs) — exists from the pre-pivot attempt; revalidate against the parser + specs → M1-T1
+- [x] M1-T2 AST (ast.rs) — fresh, self-contained node types in `crates/sb-core/src/ast.rs` aligned to the M1-T1 lexer (`SourceLoc`/`TokenKind`/`Suffix`); pre-pivot ast.rs was bound to a non-existent `value.rs`/`SbString`/`TokenType` so rewritten spec-first. Expr/Stmt `{kind, loc}` nodes; typed `BinOp`/`UnOp` with `from_token` (symbolic) + `from_word` (AND/OR/XOR/MOD/DIV/NOT idents) + `rank` (getOPRank); AST-local `Lit` (decoupled from M1-T4 Value); `Name {ident, suffix}` identity; `is_lvalue`; full statement set (IF/FOR/WHILE/REPEAT/GOTO/GOSUB/ON/DEF/DIM/PRINT/INPUT/DATA/READ/RESTORE/…). 7 unit tests; Debug/Clone/PartialEq round-trip. `^` power op left out (lexer has no caret; rank queued). → M1-T1
 - [ ] M1-T3 Parser — recursive descent + precedence + const folding → M1-T2, S-T6
 - [ ] M1-T4 Value/Array completion (1–4D, refs, coercion)
 - [ ] M1-T5 Bytecode + Compiler → M1-T3, M1-T4

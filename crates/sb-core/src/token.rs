@@ -13,7 +13,7 @@
 /// The suffix is part of the variable's identity. No suffix means a
 /// dynamically-typed numeric (Integer or Double depending on the assigned
 /// value), per `execution-model.md`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Suffix {
     /// no suffix — dynamically-typed numeric
     None,
