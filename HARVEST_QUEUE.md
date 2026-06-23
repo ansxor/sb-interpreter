@@ -638,3 +638,19 @@ oracle to confirm exact output and promote to `hw_verified`.
     whether SB validates it on load.
   - errnum 35 (illegal format) vs 46 (load failed): which corruption modes raise which on
     real hardware (bad footer, wrong PCBN magic, truncated body).
+
+- S-C7 · error-model concept spec — model authored from docs (error-table, stop/cont/end/break,
+  system-variables) + the disassembled errnum->string formatter (FUN_001e94a8 @0x1e94a8: range
+  guard (errnum-1)<=55, table base @0x3054f8 -> pool @0x2e965c..0x2e9ac0, "Internal Error"
+  fallback @0x1e9588, "(detail)" append, store errnum -> *[0x315d6c]) + spec/reference/errors.yaml
+  + sysvars.yaml (ERRNUM/ERRLINE/ERRPRG read-only) + hw_verified persistence (O-T5/S-T14a).
+  CONT/RUN resume/launch handlers are index-dispatched DIRECT-mode keywords, not body-pinned
+  (hypothesis). Open items oracle-pending:
+  - Exact "resumable error" set: which errnums leave a CONT-able state vs force errnum 33
+    "Can't continue" (docs only say "depending on the error type").
+  - ERRPRG after a cross-slot halt: confirm = slot the halting line lives in, not the RUN slot.
+  - ERRNUM clear points: exactly which ops zero ERRNUM (ACLS, CLEAR, RUN, NEW, clean END?).
+  - The formatted "(detail)" text per errnum (display-only, not a value golden).
+  - STOP/START suspend display: confirm literal "SLOT:line" format and whether it matches the
+    error-halt display.
+  - errnum 1 vs out-of-range both render "Internal Error" — confirm no other visible distinction.
