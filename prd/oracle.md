@@ -65,9 +65,19 @@ against real SB-saved files and by load+run of our written programs.
   **⚠ Audio output accuracy is NOT end-to-end verifiable here** — there's no audio e2e test
   setup, so the capture orchestration and any fidelity claim are practical-only/unverified.
   Full verification is a **deferred refining layer**, not a gate for now.
-- [ ] **O-T8 harvest end-to-end** — wire `run_case` into `harness/harvest/harvest.py`: batch a
+- [x] **O-T8 harvest end-to-end** — wire `run_case` into `harness/harvest/harvest.py`: batch a
   category's spec/corpus cases, capture, write `spec/tests/<id>.yaml` (`hw_verified`) + golden
   media, open a PR. The deterministic gate then replays them without the emulator. → O-T5
+  Done: `harvest.py <stems>|--category C|--all` walks `spec/instructions/<stem>.yaml` inline
+  `tests:`, derives a batch case-line per test (`name|expr` / `name|expr|str` / `name|stmt|err`,
+  mode from code+expect+signature return type), drives the oracle via
+  `run_case.py batch CASEFILE OUTFILE` (resumable), parses the TSV, and folds results into
+  machine-owned `spec/tests/<stem>.yaml` overlays (merged by the sb-spec loader — inline specs
+  are never rewritten), reporting CONFIRMED/MISMATCH/NEW + the manual git/PR steps (no auto-push,
+  per repo guardrails). `--from-tsv` folds an existing capture offline; `test_harvest.py` unit-
+  tests the pure collect/parse/fold logic (no Azahar). Gfx/audio goldens remain on
+  `run_case.py grp`/`screenshot` (O-T6/O-T7); the per-spec `confidence: hw_verified` bump stays a
+  reviewed manual edit so hand-authored YAML isn't reflowed.
 
 ## Risks / open questions
 - Emulator fidelity ≠ hardware in rare cases; cross-check suspicious results vs real-HW logs.

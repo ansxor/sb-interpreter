@@ -1,34 +1,58 @@
 #!/usr/bin/env python3
-"""PHASE A — harvest committed fixtures from the oracle + fuzzer (offline only).
+"""PHASE A — harvest committed fixtures from the real SB 3.6.0 oracle (offline only).
 
-Pipeline:
-  1. For every spec test case (spec/tests/*.yaml) and corpus case, run it on the
-     oracle (harness/oracle/extdata) and record the real stdout/error/value.
-  2. Write the captured result back into the spec/tests overlay's `expect:` block and
-     bump the matching source to confidence: hw_verified.
-  3. For graphics/audio cases, save golden PNG/WAV under harness/corpus/golden/.
-  4. Run the fuzzer (seeded), diff vs oracle, minimize divergences, and promote them
-     into harness/corpus/ as permanent seeded regression cases.
-  5. Open a PR with the refreshed fixtures.
+This is the ONE place that talks to the emulator for ground truth. It must NEVER run in
+PR CI — it is slow, stateful, and needs Azahar. Its *output* (committed `spec/tests/*.yaml`
+overlays) is what the deterministic Phase-B gate replays without any emulator.
 
-This is the ONLY place that talks to the emulator for ground truth. It must never run
-in PR CI — it's slow, stateful, and needs the emulator. Run it by hand or on a
-schedule. The fixtures it produces are what the deterministic Phase-B gate replays.
+Pipeline (end to end, `harvest.py <stems...>`):
+  1. COLLECT  — read every inline `tests:` case from `spec/instructions/<stem>.yaml`, turn each
+                into an oracle batch case-line (`name|expr`, `name|expr|str`, or `name|stmt|err`),
+                deriving the mode from the test's code + expect + the signature return type.
+  2. CAPTURE  — drive the oracle with `.../sb-oracle/tools/run_case.py batch CASEFILE OUTFILE`
+                (one mega-program for value cases; error cases run alone). The OUTFILE is
+                INCREMENTAL + RESUMABLE: a killed run keeps every result so far and a re-run
+                skips the cases already harvested.
+  3. FOLD     — parse the OUTFILE TSV, diff each captured result against the spec's existing
+                inline `expect:` (CONFIRMED / MISMATCH / NEW), and write the harvested values into
+                a machine-owned overlay `spec/tests/<stem>.yaml` (hw_verified fixtures). The
+                overlay is merged by the sb-spec loader, so inline hand-authored specs are never
+                rewritten — the oracle values live beside them.
+  4. REPORT   — print the CONFIRMED/MISMATCH/NEW summary + the manual `git`/PR steps. Bumping a
+                spec's top-level `confidence:` to hw_verified stays a reviewed manual edit (we do
+                not reflow the hand-authored YAML); the report lists the stems that earned it.
 
-Overlay YAML is emitted via json.dumps (a subset of YAML) so no pyyaml dependency is
-needed and output is deterministic.
+Graphics/audio goldens are captured separately by `run_case.py grp` / `screenshot` into
+`harness/corpus/golden/` (see O-T6); this driver harvests the VALUE/ERROR fixtures that the
+deterministic gate can replay.
 
-M0: scaffold. Real capture depends on the oracle spikes (harness/oracle/extdata.py).
+Offline use (no emulator): `harvest.py <stems...> --from-tsv FILE` folds an already-captured
+TSV — used by `test_harvest.py` so the pure collect/parse/fold logic is testable in CI without
+Azahar. Overlay YAML is emitted via a json.dumps subset so output is deterministic and needs no
+pyyaml at write time.
 """
-import json
+import argparse
+import re
+import subprocess
 import sys
 from pathlib import Path
 
+import yaml  # only for READING the hand-authored specs; writes stay json-subset + deterministic
+
 ROOT = Path(__file__).resolve().parents[2]
+SPEC_INSTR = ROOT / "spec" / "instructions"
 SPEC_TESTS = ROOT / "spec" / "tests"
+OUT_DIR = Path(__file__).resolve().parent / "out"
+RUN_CASE = ROOT / ".claude" / "skills" / "sb-oracle" / "tools" / "run_case.py"
+
+PRINT_RE = re.compile(r"^\s*PRINT\s+(.+)$", re.IGNORECASE | re.DOTALL)
+ERRNUM_RE = re.compile(r"errnum=(\d+)")
 
 
+# ── overlay writer (deterministic; a json.dumps subset of YAML, no pyyaml needed) ─────────
 def yscalar(v):
+    import json
+
     if v is None:
         return "null"
     if isinstance(v, bool):
@@ -38,12 +62,16 @@ def yscalar(v):
     return json.dumps(v, ensure_ascii=False)
 
 
-def write_overlay(stem: str, cases: list) -> Path:
-    """Deterministically (re)write spec/tests/<stem>.yaml from harvested cases.
+def render_overlay(stem: str, cases: list) -> str:
+    """Render a `spec/tests/<stem>.yaml` overlay string from harvested cases.
 
-    `cases` is a list of dicts: {name, code, expect:{stdout?|error:{errnum}?}}.
-    """
-    lines = [f"# Oracle-harvested fixtures for {stem.upper()} — do not edit by hand.", "tests:"]
+    `cases` is a list of dicts: {name, code, expect:{stdout?|error:{errnum}?}}. Pure + ordered
+    so the same input always renders byte-identical output (testable, diff-friendly)."""
+    lines = [
+        f"# Oracle-harvested fixtures for {stem.upper()} (hw_verified) — generated by",
+        "# harness/harvest/harvest.py from real SmileBASIC 3.6.0. Do not edit by hand.",
+        "tests:",
+    ]
     for c in cases:
         lines.append(f"  - name: {yscalar(c['name'])}")
         lines.append(f"    code: {yscalar(c['code'])}")
@@ -52,15 +80,224 @@ def write_overlay(stem: str, cases: list) -> Path:
             lines.append(f"    expect: {{ error: {{ errnum: {int(exp['error']['errnum'])} }} }}")
         else:
             lines.append(f"    expect: {{ stdout: {yscalar(exp.get('stdout', ''))} }}")
+    return "\n".join(lines) + "\n"
+
+
+def write_overlay(stem: str, cases: list) -> Path:
     SPEC_TESTS.mkdir(parents=True, exist_ok=True)
     path = SPEC_TESTS / f"{stem}.yaml"
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.write_text(render_overlay(stem, cases), encoding="utf-8")
     return path
 
 
-def main():
-    print("harvest (Phase A) — pending oracle spikes; no emulator contact in M0.")
-    print(f"would write overlays into: {SPEC_TESTS}")
+# ── case extraction (spec inline tests → oracle batch case-lines) ─────────────────────────
+def returns_string(spec: dict) -> bool:
+    """True when the instruction yields a string value (so its value cases need `|str`)."""
+    if str(spec.get("id", "")).endswith("$"):
+        return True
+    for sig in spec.get("signatures", []) or []:
+        ret = (sig or {}).get("returns") or {}
+        if ret.get("type") == "string":
+            return True
+    return False
+
+
+def case_name(stem: str, test_name: str) -> str:
+    """Batch-unique case name. The oracle requires `[\\w.\\-]+`; `<stem>.<test>` round-trips
+    back to the stem by splitting on the first dot."""
+    safe = re.sub(r"[^\w.\-]", "_", str(test_name))
+    return f"{stem}.{safe}"
+
+
+def test_to_caseline(spec: dict, test: dict):
+    """Turn one inline test into `(name, line, mode, reason_if_skipped)`.
+
+    Returns line=None with a reason when the case can't be batch-harvested as a value/error
+    (e.g. multi-statement programs that aren't a bare `PRINT expr`)."""
+    stem = str(spec["id"]).lower().rstrip("$")
+    name = case_name(stem, test["name"])
+    code = str(test.get("code", "")).strip()
+    expect = test.get("expect") or {}
+
+    if "error" in expect:
+        return (name, f"{name}|{code}|err", "err", None)
+
+    m = PRINT_RE.match(code)
+    if not m:
+        return (name, None, None, f"not a `PRINT expr` value case: {code!r}")
+    expr = m.group(1).strip()
+    if returns_string(spec):
+        return (name, f"{name}|{expr}|str", "str", None)
+    return (name, f"{name}|{expr}", "num", None)
+
+
+def collect(stems: list):
+    """Collect every harvestable case across `stems`. Returns (cases, skipped, specs_by_stem)
+    where cases is a list of {stem, name, line, mode, test} and skipped is [(name, reason)]."""
+    cases, skipped, specs = [], [], {}
+    for stem in stems:
+        path = SPEC_INSTR / f"{stem}.yaml"
+        if not path.exists():
+            skipped.append((stem, f"no spec file {path}"))
+            continue
+        spec = yaml.safe_load(path.read_text(encoding="utf-8"))
+        specs[stem] = spec
+        for test in spec.get("tests", []) or []:
+            name, line, mode, reason = test_to_caseline(spec, test)
+            if line is None:
+                skipped.append((name, reason))
+                continue
+            cases.append({"stem": stem, "name": name, "line": line, "mode": mode, "test": test})
+    return cases, skipped, specs
+
+
+def stems_for(args) -> list:
+    """Resolve the stems to harvest from CLI args (--all / --category / explicit list)."""
+    all_stems = sorted(p.stem for p in SPEC_INSTR.glob("*.yaml"))
+    if args.all:
+        return all_stems
+    if args.category:
+        wanted = []
+        for stem in all_stems:
+            spec = yaml.safe_load((SPEC_INSTR / f"{stem}.yaml").read_text(encoding="utf-8"))
+            if str(spec.get("category", "")).lower() == args.category.lower():
+                wanted.append(stem)
+        return wanted
+    return list(args.stems)
+
+
+# ── oracle capture + TSV parse ────────────────────────────────────────────────────────────
+def parse_tsv(text: str) -> dict:
+    """Parse run_case `batch` output: `name<TAB>value` per line (a trailing `\\t(cached)` from a
+    resumed run is ignored; `#` lines are progress notes). Returns {name: raw_value}."""
+    out = {}
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        name, value = parts[0].strip(), parts[1]
+        out[name] = value.rstrip()
+    return out
+
+
+def raw_to_expect(raw: str):
+    """Map a captured raw result to an `expect` dict, or None if the capture itself failed."""
+    if raw is None:
+        return None
+    m = ERRNUM_RE.search(raw)
+    if m:
+        return {"error": {"errnum": int(m.group(1))}}
+    if raw.startswith("ERROR") or raw.startswith("NOERR"):
+        return None  # harvest machinery failed / statement didn't raise — not a fixture
+    return {"stdout": raw}
+
+
+def run_oracle(cases: list, out_tsv: Path) -> str:
+    """Write a casefile, drive the oracle via run_case.py batch (resumable into out_tsv), and
+    return the OUTFILE text. Raises on a non-zero run_case exit (e.g. ORACLE NOT READY)."""
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    casefile = out_tsv.with_suffix(".cases")
+    casefile.write_text("\n".join(c["line"] for c in cases) + "\n", encoding="utf-8")
+    print(f"[harvest] {len(cases)} case(s) -> {casefile}")
+    print(f"[harvest] driving oracle: run_case.py batch {casefile.name} {out_tsv.name}")
+    subprocess.run(
+        [sys.executable, str(RUN_CASE), "batch", str(casefile), str(out_tsv)],
+        cwd=str(RUN_CASE.parent),
+        check=True,
+    )
+    return out_tsv.read_text(encoding="utf-8")
+
+
+# ── fold: diff captured results vs inline expects, write overlays ─────────────────────────
+def expects_equal(a: dict, b: dict) -> bool:
+    a, b = a or {}, b or {}
+    if "error" in a or "error" in b:
+        return (a.get("error") or {}).get("errnum") == (b.get("error") or {}).get("errnum")
+    return str(a.get("stdout", "")) == str(b.get("stdout", ""))
+
+
+def fold(cases: list, results: dict, specs: dict):
+    """Diff captured results against inline expects and write per-stem overlays.
+
+    Returns a report dict: {confirmed, mismatch, new, failed, written:[paths]}."""
+    report = {"confirmed": [], "mismatch": [], "new": [], "failed": [], "written": []}
+    by_stem = {}
+    for c in cases:
+        raw = results.get(c["name"])
+        expect = raw_to_expect(raw)
+        if expect is None:
+            report["failed"].append((c["name"], raw))
+            continue
+        inline = c["test"].get("expect")
+        if inline is None:
+            report["new"].append(c["name"])
+        elif expects_equal(expect, inline):
+            report["confirmed"].append(c["name"])
+        else:
+            report["mismatch"].append((c["name"], inline, expect))
+        by_stem.setdefault(c["stem"], []).append(
+            {"name": c["test"]["name"], "code": c["test"]["code"], "expect": expect}
+        )
+
+    for stem, overlay_cases in sorted(by_stem.items()):
+        report["written"].append(str(write_overlay(stem, overlay_cases)))
+    return report
+
+
+def print_report(report: dict, stems: list):
+    print("\n── harvest report ───────────────────────────────────────")
+    print(f"  confirmed (oracle == inline expect): {len(report['confirmed'])}")
+    print(f"  new       (no inline expect):        {len(report['new'])}")
+    print(f"  failed    (capture failed/no raise): {len(report['failed'])}")
+    for name, raw in report["failed"]:
+        print(f"      ! {name}: {raw!r}")
+    if report["mismatch"]:
+        print(f"  MISMATCH  (oracle != inline — spec is WRONG): {len(report['mismatch'])}")
+        for name, inline, got in report["mismatch"]:
+            print(f"      ✗ {name}: inline={inline} oracle={got}")
+    print(f"  overlays written: {len(report['written'])}")
+    for p in report["written"]:
+        print(f"      → {p}")
+    print("\n  Next (manual, reviewed — never auto-run here):")
+    print("    1. eyeball the overlay diffs + resolve any MISMATCH (the spec, not the oracle).")
+    print("    2. bump `confidence: hw_verified` on the confirmed stems' spec source(s):")
+    print(f"       {', '.join(stems)}")
+    print("    3. git checkout -b harvest/refresh-<date>")
+    print("       git add spec/tests && git commit && open a PR (CI replays them deterministically).")
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Phase-A oracle fixture harvest (maintainer-run).")
+    ap.add_argument("stems", nargs="*", help="spec instruction stems (e.g. abs floor mid)")
+    ap.add_argument("--all", action="store_true", help="harvest every spec/instructions/*.yaml")
+    ap.add_argument("--category", help="harvest a whole category (e.g. Mathematics)")
+    ap.add_argument("--from-tsv", help="fold an EXISTING captured TSV instead of running the oracle")
+    ap.add_argument("--out-tsv", help="OUTFILE for the oracle capture (default: out/<tag>.tsv)")
+    args = ap.parse_args(argv)
+
+    stems = stems_for(args)
+    if not stems:
+        print("nothing to harvest — pass stems, --category, or --all", file=sys.stderr)
+        return 2
+
+    cases, skipped, specs = collect(stems)
+    for name, reason in skipped:
+        print(f"[skip] {name}: {reason}")
+    if not cases:
+        print("no harvestable value/error cases found.", file=sys.stderr)
+        return 1
+
+    if args.from_tsv:
+        results = parse_tsv(Path(args.from_tsv).read_text(encoding="utf-8"))
+    else:
+        tag = stems[0] if len(stems) == 1 else f"batch-{len(stems)}"
+        out_tsv = Path(args.out_tsv) if args.out_tsv else OUT_DIR / f"{tag}.tsv"
+        results = parse_tsv(run_oracle(cases, out_tsv))
+
+    report = fold(cases, results, specs)
+    print_report(report, stems)
     return 0
 
 
