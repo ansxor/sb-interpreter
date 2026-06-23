@@ -810,3 +810,18 @@ oracle to confirm exact output and promote to `hw_verified`.
   domain (does `1000000*1000000` const → `1e+12` Double? oracle said yes) and whether `+`/`-`
   const overflow promote too, then fix the folder (arithmetic/M7). Does NOT affect otya_test
   (uses the runtime `MAX(…)*…` form). e.g. `?2*&H7FFFFFFF` → 4.29497e+09.
+
+## M1-T5 / execution-model — DEF-local variable scoping
+- **`DIM`/plain vars inside a `DEF` must be DEF-LOCAL, not global.** Surfaced by the
+  M1-T14 PUSH increment: `otya_test.sb3` uses `A`/`B` as DEF-local arrays
+  (`DIM A[…]` inside SORTTEST/STABLESORTTEST/SORTTEST2) AND as top-level/`VAR` scalars
+  (`A=0` line 285, `VAR A=1` line 113). sb-core's compiler resolves all `A` to ONE global
+  slot, so the scalar use flips the slot's `is_array=false` and `PUSH A`/`DIM A[…]` inside
+  the DEFs then raise Type mismatch (8) at otya line 77/64. Repro: the STABLESORTTEST
+  subtree passes alone, but prepending a top-level `A=0`/`B=0` reproduces errnum 8.
+  assumption (needs oracle/disasm confirmation): real SB gives each DEF its own variable
+  scope for plain assignment + `DIM` (not just `VAR`), with globals reachable via `COMMON`.
+  Pin the exact scoping rule (is plain assignment in a DEF local or global? does `DIM`
+  create a local? interaction with `COMMON`/`OUT`), then fix the compiler's per-DEF var
+  resolution (execution-model / M1-T5). Blocks otya_test (with sprite `CALL`, `DTREAD`,
+  `DATE$`/`TIME$`).

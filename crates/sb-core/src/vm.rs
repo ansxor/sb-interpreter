@@ -647,6 +647,20 @@ impl Vm {
             crate::builtins::data::sort(&args, name == "RSORT").map_err(sb)?;
             return Ok(());
         }
+        // Stack/queue ops (PUSH/UNSHIFT grow, POP/SHIFT shrink, M1-T14). The operand is a
+        // shared `ArrayRef` (array form) or a `Value::Ref` to a string scalar, so they
+        // mutate the caller's variable; POP/SHIFT also yield the removed element.
+        if matches!(name, "PUSH" | "UNSHIFT") {
+            crate::builtins::data::push(&args, name == "UNSHIFT").map_err(sb)?;
+            return Ok(());
+        }
+        if matches!(name, "POP" | "SHIFT") {
+            let ret = crate::builtins::data::pop(&args, name == "SHIFT").map_err(sb)?;
+            if wants_value {
+                self.stack.push(ret);
+            }
+            return Ok(());
+        }
         // Console builtins (LOCATE/COLOR/CLS/ACLS/BACKCOLOR/INKEY$, M1-T8) mutate the
         // VM-owned console / screen state, so they too sidestep the stateless dispatch.
         if let Some(ret) = self.call_console(name, &args, wants_value).map_err(sb)? {
@@ -1398,6 +1412,74 @@ mod tests {
     fn sort_without_a_key_array_is_illegal_function_call() {
         // A lone numeric and no array operand → Illegal function call (4).
         assert_eq!(run_b_err("VAR A=3\nSORT A").errnum(), Some(4));
+    }
+
+    // ---- PUSH / POP / SHIFT / UNSHIFT (stack/queue ops, M1-T14) ----
+    // hw_verified expects from spec/instructions/{push,pop,shift,unshift}.yaml.
+
+    #[test]
+    fn push_grows_and_pop_is_lifo() {
+        let vm = run_b("DIM A[0]\nPUSH A,1\nPUSH A,2\nX=POP(A)\nY=POP(A)\nPRINT X;Y;LEN(A)");
+        assert_eq!(vm.console_text(), "210");
+    }
+
+    #[test]
+    fn push_appends_at_end() {
+        let vm = run_b("DIM A[2]\nPUSH A,7\nPRINT A[2];LEN(A)");
+        assert_eq!(vm.console_text(), "73");
+    }
+
+    #[test]
+    fn shift_is_fifo_and_compacts() {
+        let vm = run_b("DIM A[0]\nPUSH A,1\nPUSH A,2\nX=SHIFT(A)\nY=SHIFT(A)\nPRINT X;Y");
+        assert_eq!(vm.console_text(), "12");
+    }
+
+    #[test]
+    fn unshift_inserts_at_front() {
+        let vm = run_b("DIM A[0]\nPUSH A,1\nUNSHIFT A,2\nPRINT A[0];A[1]");
+        assert_eq!(vm.console_text(), "21");
+    }
+
+    #[test]
+    fn push_pop_on_string_variable_is_char_array() {
+        // The character-array form: PUSH appends to the string, POP/SHIFT remove a char.
+        let vm = run_b("S$=\"AB\"\nPUSH S$,\"CD\"\nPRINT S$");
+        assert_eq!(vm.console_text(), "ABCD");
+        let vm = run_b("S$=\"ABC\"\nX$=POP(S$)\nPRINT X$;\",\";S$");
+        assert_eq!(vm.console_text(), "C,AB");
+        let vm = run_b("S$=\"ABC\"\nX$=SHIFT(S$)\nPRINT X$;\",\";S$");
+        assert_eq!(vm.console_text(), "A,BC");
+        let vm = run_b("S$=\"C\"\nUNSHIFT S$,\"TXT:\"\nPRINT S$");
+        assert_eq!(vm.console_text(), "TXT:C");
+    }
+
+    #[test]
+    fn pop_real_array_keeps_double() {
+        // POP returns the array element type — a Double array yields a Double.
+        let vm = run_b("DIM A#[0]\nPUSH A#,1.5\nPRINT POP(A#)");
+        assert_eq!(vm.console_text(), "1.5");
+    }
+
+    #[test]
+    fn push_string_onto_numeric_array_is_type_mismatch() {
+        assert_eq!(run_b_err("DIM A[1]\nPUSH A,\"x\"").errnum(), Some(8));
+    }
+
+    #[test]
+    fn push_onto_numeric_scalar_is_type_mismatch() {
+        assert_eq!(run_b_err("X=5\nPUSH X,1").errnum(), Some(8));
+    }
+
+    #[test]
+    fn pop_on_numeric_scalar_is_type_mismatch() {
+        assert_eq!(run_b_err("X=5\nY=POP(X)").errnum(), Some(8));
+    }
+
+    #[test]
+    fn pop_empty_array_is_subscript_out_of_range() {
+        assert_eq!(run_b_err("DIM A[0]\nX=POP(A)").errnum(), Some(31));
+        assert_eq!(run_b_err("DIM A[0]\nX=SHIFT(A)").errnum(), Some(31));
     }
 
     /// Read a string global (`A$`) as a Rust `String`.

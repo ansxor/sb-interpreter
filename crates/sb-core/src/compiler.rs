@@ -111,6 +111,12 @@ fn canonical(name: &Name) -> String {
     format!("{}{}", name.ident, s)
 }
 
+/// The stack/queue ops (M1-T14) whose first operand is taken by reference so the op
+/// can grow/shrink the caller's array or write a modified string scalar back.
+fn is_stack_op(cname: &str) -> bool {
+    matches!(cname, "PUSH" | "POP" | "SHIFT" | "UNSHIFT")
+}
+
 fn const_from_lit(lit: &Lit) -> Const {
     match lit {
         Lit::Int(i) => Const::Int(*i),
@@ -983,10 +989,17 @@ impl<'a> Compiler<'a> {
     // -- calls -----------------------------------------------------------------
 
     fn compile_call_stmt(&mut self, name: &Name, args: &[Expr], out_args: &[Expr]) -> CResult<()> {
-        for a in args {
-            self.compile_expr(a)?;
-        }
         let cname = canonical(name);
+        // The stack/queue ops (M1-T14) take their first operand by reference so they can
+        // grow/shrink the caller's array or write a modified string scalar back.
+        let leading_ref = is_stack_op(&cname);
+        for (i, a) in args.iter().enumerate() {
+            if leading_ref && i == 0 {
+                self.compile_stack_operand(a)?;
+            } else {
+                self.compile_expr(a)?;
+            }
+        }
         if cname == "CALL" {
             self.emit(Op::CallDynamic {
                 argc: args.len().saturating_sub(1) as u8,
@@ -1028,10 +1041,17 @@ impl<'a> Compiler<'a> {
             return Ok(());
         }
 
-        for a in args {
-            self.compile_expr(a)?;
-        }
         let cname = canonical(name);
+        // POP/SHIFT (M1-T14) take their operand by reference, like the statement-form
+        // stack ops, so a string-scalar operand is written back after the removal.
+        let leading_ref = is_stack_op(&cname);
+        for (i, a) in args.iter().enumerate() {
+            if leading_ref && i == 0 {
+                self.compile_stack_operand(a)?;
+            } else {
+                self.compile_expr(a)?;
+            }
+        }
         if cname == "CALL" {
             self.emit(Op::CallDynamic {
                 argc: args.len().saturating_sub(1) as u8,
@@ -1129,6 +1149,34 @@ impl<'a> Compiler<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Compile the leading array/string operand of a stack/queue op (PUSH/POP/SHIFT/
+    /// UNSHIFT, M1-T14). A declared array shares its `Rc` via [`Op::PushVar`] (in-place
+    /// growth/shrink is visible to the caller); a scalar (string) variable is passed by
+    /// reference ([`Op::PushRef`]) so the op can write the modified string back. Any
+    /// other operand is compiled normally and raises Type mismatch (8) at runtime.
+    fn compile_stack_operand(&mut self, expr: &Expr) -> CResult<()> {
+        if let ExprKind::Var(name) = &expr.kind {
+            match self.lookup(name) {
+                Some((vref, true)) => {
+                    self.emit(Op::PushVar(vref));
+                    return Ok(());
+                }
+                Some((vref, false)) => {
+                    self.emit(Op::PushRef(vref));
+                    return Ok(());
+                }
+                None => {
+                    // An as-yet-undeclared name: auto-declare a scalar (string) and pass
+                    // it by reference, matching the character-array form.
+                    let v = self.resolve_scalar(name)?;
+                    self.emit(Op::PushRef(v));
+                    return Ok(());
+                }
+            }
+        }
+        self.compile_expr(expr)
     }
 
     /// Compile a reference to an lvalue (for `SWAP`/`INC`/`AssignRef` targets).

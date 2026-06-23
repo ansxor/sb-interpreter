@@ -1,0 +1,90 @@
+# PUSH / POP / SHIFT / UNSHIFT array stack/queue ops (M1-T14). These are the
+# hw_verified expects from spec/instructions/{push,pop,shift,unshift}.yaml
+# (sb-oracle batch 2026-06-22, s_t4b). Numeric- and string-array forms plus the
+# string-variable (character-array) form, and the documented error cases.
+cases:
+  # --- PUSH (append), spec hw_verified ---
+  - name: push_grows_len
+    code: "DIM A[3]\nPUSH A,9\nPRINT LEN(A)"
+    expect: { stdout: "4" }
+  - name: push_value_at_end
+    code: "DIM A[2]\nPUSH A,7\nPRINT A[2]"
+    expect: { stdout: "7" }
+  - name: push_onto_empty
+    code: "DIM A[0]\nPUSH A,5\nPRINT A[0];LEN(A)"
+    expect: { stdout: "51" }
+  - name: push_string_array
+    code: "DIM S$[1]\nPUSH S$,\"hi\"\nPRINT S$[1]"
+    expect: { stdout: "hi" }
+  - name: push_string_chars
+    code: "S$=\"AB\"\nPUSH S$,\"CD\"\nPRINT S$"
+    expect: { stdout: "ABCD" }
+  - name: push_type_mismatch
+    code: "DIM A[1]\nPUSH A,\"x\""
+    expect: { error: { errnum: 8 } }
+  - name: push_scalar_mismatch
+    code: "X=5\nPUSH X,1"
+    expect: { error: { errnum: 8 } }
+  # --- POP (remove last), spec hw_verified ---
+  - name: pop_returns_last
+    code: "DIM A[3]\nA[2]=42\nPRINT POP(A)"
+    expect: { stdout: "42" }
+  - name: pop_shrinks_len
+    code: "DIM A[3]\nX=POP(A)\nPRINT LEN(A)"
+    expect: { stdout: "2" }
+  - name: push_pop_lifo
+    code: "DIM A[0]\nPUSH A,1\nPUSH A,2\nX=POP(A)\nY=POP(A)\nPRINT X;Y"
+    expect: { stdout: "21" }
+  - name: pop_string_array
+    code: "DIM S$[0]\nPUSH S$,\"hi\"\nPRINT POP(S$)"
+    expect: { stdout: "hi" }
+  - name: pop_string_char
+    code: "S$=\"ABC\"\nX$=POP(S$)\nPRINT X$;\",\";S$"
+    expect: { stdout: "C,AB" }
+  - name: pop_empty_error
+    code: "DIM A[0]\nX=POP(A)"
+    expect: { error: { errnum: 31 } }
+  - name: pop_scalar_mismatch
+    code: "X=5\nY=POP(X)"
+    expect: { error: { errnum: 8 } }
+  # --- SHIFT (remove first), spec hw_verified ---
+  - name: shift_returns_first
+    code: "DIM A[3]\nA[0]=11\nPRINT SHIFT(A)"
+    expect: { stdout: "11" }
+  - name: shift_shrinks_len
+    code: "DIM A[3]\nX=SHIFT(A)\nPRINT LEN(A)"
+    expect: { stdout: "2" }
+  - name: shift_compacts
+    code: "DIM A[0]\nPUSH A,1\nPUSH A,2\nX=SHIFT(A)\nPRINT A[0]"
+    expect: { stdout: "2" }
+  - name: push_shift_fifo
+    code: "DIM A[0]\nPUSH A,1\nPUSH A,2\nX=SHIFT(A)\nY=SHIFT(A)\nPRINT X;Y"
+    expect: { stdout: "12" }
+  - name: shift_string_array
+    code: "DIM S$[0]\nPUSH S$,\"hi\"\nPRINT SHIFT(S$)"
+    expect: { stdout: "hi" }
+  - name: shift_string_char
+    code: "S$=\"ABC\"\nX$=SHIFT(S$)\nPRINT X$;\",\";S$"
+    expect: { stdout: "A,BC" }
+  - name: shift_empty_error
+    code: "DIM A[0]\nX=SHIFT(A)"
+    expect: { error: { errnum: 31 } }
+  # --- UNSHIFT (prepend), spec hw_verified ---
+  - name: unshift_grows_len
+    code: "DIM A[2]\nUNSHIFT A,9\nPRINT LEN(A)"
+    expect: { stdout: "3" }
+  - name: unshift_value_at_front
+    code: "DIM A[0]\nUNSHIFT A,7\nPRINT A[0]"
+    expect: { stdout: "7" }
+  - name: unshift_pushes_up
+    code: "DIM A[0]\nPUSH A,1\nUNSHIFT A,2\nPRINT A[0];A[1]"
+    expect: { stdout: "21" }
+  - name: unshift_string_array
+    code: "DIM S$[0]\nUNSHIFT S$,\"hi\"\nPRINT S$[0]"
+    expect: { stdout: "hi" }
+  - name: unshift_string_chars
+    code: "S$=\"C\"\nUNSHIFT S$,\"TXT:\"\nPRINT S$"
+    expect: { stdout: "TXT:C" }
+  - name: unshift_type_mismatch
+    code: "DIM A[1]\nUNSHIFT A,\"x\""
+    expect: { error: { errnum: 8 } }

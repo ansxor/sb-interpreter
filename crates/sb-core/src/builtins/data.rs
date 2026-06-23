@@ -1,10 +1,24 @@
-//! Array data-ops builtins (M1-T14) — `SORT` / `RSORT`.
+//! Array data-ops builtins (M1-T14) — `SORT` / `RSORT` + the stack/queue ops
+//! `PUSH` / `POP` / `SHIFT` / `UNSHIFT`.
 //!
 //! Unlike the pure math/string builtins, these mutate their array arguments **in
 //! place**: each array reaches us as a shared [`ArrayRef`](crate::array::ArrayRef)
 //! handle (the compiler pushes a bare array name as its cloned `Rc`), so reordering
 //! the backing store is visible through the caller's variable. They take the raw
 //! argument values and return no result.
+//!
+//! ## Stack/queue ops (`spec/instructions/{push,pop,shift,unshift}.yaml`, hw_verified)
+//!
+//! `PUSH array,value` appends; `value=POP(array)` removes+returns the last element;
+//! `value=SHIFT(array)` removes+returns the first; `UNSHIFT array,value` prepends.
+//! Each grows/shrinks `LEN(array)` by one. They also accept a **string variable** as
+//! the operand (the "character-array" form): `PUSH S$,"CD"` appends to the string,
+//! `POP(S$)` removes+returns its last character, etc. So the compiler passes the
+//! operand by reference (`Value::Ref` for a string scalar) and by shared `Rc` for an
+//! array, letting these write the mutated string/array back to the caller. Errors:
+//! wrong argument count → Illegal function call (4); a numeric scalar operand, or a
+//! value whose type does not match a numeric array's element type → Type mismatch (8);
+//! `POP`/`SHIFT` of an empty array → Subscript out of range (31).
 //!
 //! ## Contract (`spec/instructions/{sort,rsort}.yaml`, hw_verified)
 //!
@@ -22,9 +36,9 @@
 //! or parallel → Type mismatch (8); an out-of-range `start`/`count` or a parallel
 //! array shorter than the sorted range → Out of range (10).
 
-use super::{illegal, out_of_range, type_mismatch};
+use super::{illegal, out_of_range, subscript_out_of_range, type_mismatch};
 use crate::array::SbArray;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, SbStr, Value};
 use std::cmp::Ordering;
 
 /// Dispatch `SORT` (`descending = false`) / `RSORT` (`descending = true`).
@@ -154,4 +168,119 @@ fn reorder<T: Clone + Default + PartialEq>(
     let reordered: Vec<T> = perm.iter().map(|&k| slice[start + k].clone()).collect();
     slice[start..end].clone_from_slice(&reordered);
     Ok(())
+}
+
+// ---- PUSH / POP / SHIFT / UNSHIFT (stack/queue ops) -----------------------------
+
+/// `PUSH array,value` (`front == false`) / `UNSHIFT array,value` (`front == true`):
+/// append/prepend `value` to a 1D array (or a string variable). Mutates in place,
+/// returns no result.
+pub(crate) fn push(args: &[Value], front: bool) -> Result<(), RuntimeError> {
+    let [operand, value] = args else {
+        return Err(illegal());
+    };
+    // `value` may arrive by reference (e.g. another variable); read through it.
+    let value = value.deref();
+    match operand {
+        // Numeric/string array form: append/prepend, coercing the value to the element
+        // type (a non-matching value type → Type mismatch via `to_int`/`to_real`/`as_str`).
+        Value::IntArray(a) => {
+            let v = value.to_int()?;
+            let mut b = a.borrow_mut();
+            if front {
+                b.unshift(v)
+            } else {
+                b.push(v)
+            }
+        }
+        Value::RealArray(a) => {
+            let v = value.to_real()?;
+            let mut b = a.borrow_mut();
+            if front {
+                b.unshift(v)
+            } else {
+                b.push(v)
+            }
+        }
+        Value::StrArray(a) => {
+            let v = value.as_str()?.clone();
+            let mut b = a.borrow_mut();
+            if front {
+                b.unshift(v)
+            } else {
+                b.push(v)
+            }
+        }
+        // String-variable (character-array) form: the operand is a reference to a Str
+        // scalar; append/prepend the value's string to it.
+        Value::Ref(_) => {
+            let cur = operand.deref();
+            let s = cur.as_str()?; // a numeric scalar operand → Type mismatch (8)
+            let add = value.as_str()?; // the value must be a string
+            let mut new = SbStr::with_capacity(s.len() + add.len());
+            if front {
+                new.extend_from_slice(add);
+                new.extend_from_slice(s);
+            } else {
+                new.extend_from_slice(s);
+                new.extend_from_slice(add);
+            }
+            operand.assign_through(Value::Str(new))
+        }
+        // A bare numeric scalar / literal operand is not a valid target.
+        _ => Err(type_mismatch()),
+    }
+}
+
+/// `value=POP(array)` (`front == false`) / `value=SHIFT(array)` (`front == true`):
+/// remove and return the last/first element of a 1D array (or character of a string
+/// variable), shrinking it by one.
+pub(crate) fn pop(args: &[Value], front: bool) -> Result<Value, RuntimeError> {
+    let [operand] = args else {
+        return Err(illegal());
+    };
+    match operand {
+        Value::IntArray(a) => {
+            let mut b = a.borrow_mut();
+            if b.is_empty() {
+                return Err(subscript_out_of_range());
+            }
+            let v = if front { b.shift()? } else { b.pop()? };
+            Ok(Value::Int(v))
+        }
+        Value::RealArray(a) => {
+            let mut b = a.borrow_mut();
+            if b.is_empty() {
+                return Err(subscript_out_of_range());
+            }
+            let v = if front { b.shift()? } else { b.pop()? };
+            Ok(Value::Real(v))
+        }
+        Value::StrArray(a) => {
+            let mut b = a.borrow_mut();
+            if b.is_empty() {
+                return Err(subscript_out_of_range());
+            }
+            let v = if front { b.shift()? } else { b.pop()? };
+            Ok(Value::Str(v))
+        }
+        // String-variable (character-array) form: remove and return the first/last
+        // UTF-16 code unit, writing the shortened string back.
+        Value::Ref(_) => {
+            let cur = operand.deref();
+            let s = cur.as_str()?; // a numeric scalar operand → Type mismatch (8)
+            if s.is_empty() {
+                return Err(subscript_out_of_range());
+            }
+            let mut new = s.clone();
+            let ch = if front {
+                new.remove(0)
+            } else {
+                new.pop().unwrap()
+            };
+            operand.assign_through(Value::Str(new))?;
+            Ok(Value::Str(vec![ch]))
+        }
+        _ => Err(type_mismatch()),
+    }
 }

@@ -41,6 +41,7 @@ pub(crate) const ERR_TYPE_MISMATCH: u32 = 8;
 pub(crate) const ERR_OVERFLOW: u32 = 9;
 pub(crate) const ERR_OUT_OF_RANGE: u32 = 10;
 const ERR_UNDEFINED_FUNCTION: u32 = 16;
+pub(crate) const ERR_SUBSCRIPT_OUT_OF_RANGE: u32 = 31;
 
 /// Build an `Illegal function call` (errnum 4) — a wrong argument count.
 pub(crate) fn illegal() -> RuntimeError {
@@ -53,6 +54,10 @@ pub(crate) fn type_mismatch() -> RuntimeError {
 /// Build an `Out of range` (errnum 10).
 pub(crate) fn out_of_range() -> RuntimeError {
     RuntimeError::new(ERR_OUT_OF_RANGE)
+}
+/// Build a `Subscript out of range` (errnum 31) — e.g. POP/SHIFT of an empty array.
+pub(crate) fn subscript_out_of_range() -> RuntimeError {
+    RuntimeError::new(ERR_SUBSCRIPT_OUT_OF_RANGE)
 }
 
 /// Canonical names of every builtin implemented in this slice (Mathematics + Strings).
@@ -125,6 +130,13 @@ pub const BUILTIN_NAMES: &[&str] = &[
     // VM routes them to `data::sort` rather than the value-returning `dispatch`.
     "SORT",
     "RSORT",
+    // Array stack/queue ops (M1-T14): PUSH/UNSHIFT grow and POP/SHIFT shrink their
+    // first operand (a 1D array shared by Rc, or a string variable by reference), so the
+    // VM routes them to `data::{push,pop,shift,unshift}` rather than the stateless dispatch.
+    "PUSH",
+    "POP",
+    "SHIFT",
+    "UNSHIFT",
     // Test-mode assertion (M1-T14): the VM handles it directly (a false condition halts
     // with `VmError::Assert`), so it is not in the stateless `dispatch`.
     "ASSERT__",
