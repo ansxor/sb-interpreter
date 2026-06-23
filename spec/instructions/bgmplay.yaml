@@ -1,0 +1,62 @@
+id: BGMPLAY
+kind: statement
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — play a registered tune (preset 0..42 or user-defined 128..255) on track 0.
+  - args:
+      - { name: tune, type: integer, range: "0..42 | 128..255", desc: "Tune number: preset 0-42 or user-defined 128-255. Plays on track 0." }
+    note: "BGMPLAY tune — play a registered tune on track 0 (1 numeric arg)."
+  # Form 2 — play raw MML text (compiled into user tune 255, played on track 0).
+  - args:
+      - { name: mml, type: string, desc: "MML string to compile and play. Overwrites user-defined tune 255; plays on track 0." }
+    note: 'BGMPLAY "MML" — compile + play an MML string (1 string arg).'
+  # Form 3 — play a registered tune on an explicit track.
+  - args:
+      - { name: track, type: integer, range: "0..7", desc: "Track number to play on." }
+      - { name: tune, type: integer, range: "0..42 | 128..255", desc: "Tune number." }
+    note: "BGMPLAY track, tune — play a registered tune on a chosen track (2 args)."
+  # Form 4 — play a registered tune on an explicit track at a given volume.
+  - args:
+      - { name: track, type: integer, range: "0..7", desc: "Track number to play on." }
+      - { name: tune, type: integer, range: "0..42 | 128..255", desc: "Tune number." }
+      - { name: volume, type: integer, range: "0..127", desc: "Playback volume." }
+    note: "BGMPLAY track, tune, volume — play with an explicit volume (3 args)."
+
+summary: "Plays back-ground music. With a single numeric argument it plays a registered tune (preset 0-42 or user-defined 128-255) on track 0; with a single string argument it compiles and plays MML text (which overwrites user-defined tune 255 and plays on track 0); the 2- and 3-argument forms select an explicit track (0-7) and optional volume (0-127). Up to 8 tracks may play simultaneously. Returns nothing (statement)."
+
+semantics:
+  - "Return-count gate: the result count [r0,#0xc] must be 0 (cmp r0,#0 / bne -> errnum 4); BGMPLAY is a statement and is never used as a function (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / bl 0x1fffdc @0x1a2d6c-0x1a2d78, errline -1)."
+  - "Argument-count gate: argcount [r5,#0x4] minus 1 must be < 3 unsigned (sub r0,r6,#0x1 / cmp r0,#0x3 / bcc @0x1a2da4), i.e. 1, 2 or 3 arguments. Any other count raises errnum 4 (Illegal function call) with errline -1."
+  - "Single-argument form (argcount == 1, beq @0x1a2dd8) dispatches on the argument's value type byte [r2,#0x2]: a numeric value (== 0, beq @0x1a2e5c) is treated as a TUNE NUMBER played on track 0; a string value takes the MML-compile path. A wrong/empty value type in the MML path raises errnum 8 (Type mismatch) (mov r0,#0x8 / bl 0x1fffdc @0x1a2e48)."
+  - "Tune-number range check (both the 1-arg numeric path @0x1a2e78 and the multi-arg path @0x1a2f04): tune-0x80 <= 0x7f selects the user-defined band 128..255 (sub r1,r0,#0x80 / cmp r1,#0x7f / addls), otherwise tune <= 0x2a (=42) selects the preset band 0..42 (cmp r0,#0x2a / addls / bhi). A value outside BOTH bands raises errnum 10 (Out of range) (mov r0,#0xa / b @0x1a2eac at @0x1a2f30)."
+  - "Multi-argument forms (argcount 2 or 3, @0x1a2eb8) evaluate the TRACK as arg index 0 via the shared range-checked integer-arg helper FUN_001eec7c (bl 0x1eec7c, max value sp[0]=#0x7) -> track must be 0..7 else errnum 10; arg index 1 is the tune (validated as above). The 3-argument form (cmp r6,#0x3 @0x1a2f38) additionally evaluates arg index 2 as the VOLUME with max sp[0]=#0x7f (=127), so volume is 0..127 else errnum 10. When the volume arg is omitted the play call uses the per-track default."
+  - "MML text is compiled then played; the docs note MML always plays on track 0 and overwrites user-defined tune 255, and that issuing BGMPLAY immediately after a prior BGMPLAY incurs an ~2-frame delay. The note-event / synth realization of the MML is the audio output (no deterministic emulator golden — O-T7); this spec pins the call shape, argument ranges and error conditions, with the MML grammar itself covered by S-C5. See [[bgmstop]] (stop), [[bgmchk]] (status), [[bgmvol]] (volume)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "used in a return context, or argument count is not 1, 2 or 3" }
+  - { errnum: 8, name: "Type mismatch", when: "the single-argument MML/string path receives a value of the wrong type" }
+  - { errnum: 10, name: "Out of range", when: "the tune number is not in 0..42 or 128..255, the track is not in 0..7, or the volume is not in 0..127" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgmplay.md (`BGMPLAY [Track number,] Tune number [,Volume]` — track 0-7 (default 0); preset tune 0-42, user-defined 128-255; volume 0-127; up to 8 tunes simultaneously. Form 2 `BGMPLAY \"MML string\"` plays on track 0, overwrites user tune 255, ~2-frame delay)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGMPLAY handler @0x1a2d54: result-count [r0,#0xc] must be 0 cmp r0,#0 beq @0x1a2d84 else errnum 4 errline -1 mov r2,#0x0 mvn r1,#0x0 mov r0,#0x4 bl 0x1fffdc @0x1a2d6c; argcount [r5,#0x4] sub r0,r6,#0x1 cmp r0,#0x3 bcc @0x1a2da4 (1..3) else errnum 4; 1-arg @0x1a2dd8 dispatches on value-type byte ldrb r1,[r2,#0x2] numeric->@0x1a2e5c string->MML, type mismatch mov r0,#0x8 bl 0x1fffdc @0x1a2e48; tune range sub r1,r0,#0x80 cmp r1,#0x7f addls (128..255) / cmp r0,#0x2a addls bhi (0..42), else errnum 10 mov r0,#0xa @0x1a2f30; multi-arg track via bl 0x1eec7c max sp[0]=#0x7 @0x1a2eb8, 3-arg volume max sp[0]=#0x7f cmp r6,#0x3 @0x1a2f38. Literals [0x1a2f88]=0x00305628, [0x1a2f90]=0x01D08280 (audio state)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst shared integer-arg range helper FUN_001eec7c @0x1eec7c: evaluates arg (blx [r2,#0x40]), then bounds-checks value [r4,#0x0] against min r3 and max stack-arg [sp,#0x18] (cmp r1,r6 / cmpge r7,r1 / bge ok), raising errnum 10 on out-of-range (mov r2,#0x0 / mov r0,#0xa / b 0x1fffdc @0x1eeccc-0x1eecd4) — this is how the track (max 7) and volume (max 127) bounds are enforced" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d BGM playback (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGMPLAY\\b'): 1125 files — all four forms appear: 1-arg numeric `BGMPLAY 27` (BLOCKDUDE), 2-arg `BGMPLAY 0,27` (BLOCKDUDE), 3-arg with volume `BGMPLAY 0,128,80` (KENTEI), MML string literal `BGMPLAY \":15@255 V50 >C+33\"` (5KXNXXNX/TXT/.MAIN) incl. computed MML `BGMPLAY \"@\"+STR$(P1)+\"C\"` (4D2X3KQV/TXT/PP3_D_RACE) and a long T511 MML string (XR847ENV/TXT/1-THE_QUEST); tune number is often a variable/expression e.g. `BGMPLAY 0,27-10*(LVL MOD 2)` (BLOCKDUDE) — proving the forms are LEGAL syntax. Runtime audio output unproven (no oracle, O-T7)." }
+
+confidence: disassembled
+
+tests:
+  # Call shape, argument ranges, and error conditions from the disassembly. Audio output is
+  # not deterministically harvestable (O-T7); these pin the statement contract.
+  - { name: tune_track0, code: "BGMPLAY 0", expect: { stdout: "" } }
+  - { name: tune_explicit_track, code: "BGMPLAY 0,27", expect: { stdout: "" } }
+  - { name: tune_track_volume, code: "BGMPLAY 0,128,80", expect: { stdout: "" } }
+  - { name: mml_string, code: 'BGMPLAY "T120O4L4CDE"', expect: { stdout: "" } }
+  - { name: tune_out_of_range, code: "BGMPLAY 50", expect: { error: { errnum: 10 } } }
+  - { name: tune_gap_127, code: "BGMPLAY 127", expect: { error: { errnum: 10 } } }
+  - { name: track_out_of_range, code: "BGMPLAY 8,0", expect: { error: { errnum: 10 } } }
+  - { name: volume_out_of_range, code: "BGMPLAY 0,0,128", expect: { error: { errnum: 10 } } }
+  - { name: used_as_function, code: "A=BGMPLAY(0)", expect: { error: { errnum: 4 } } }

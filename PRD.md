@@ -97,7 +97,7 @@ and name the instructions they cover inline.
 - [x] S-T9e Load/save/color — BGLOAD · BGSAVE · BGCOLOR
 
 #### S-T10 Sound (18) → S-T0  (MML grammar = S-C5; no audio harvest yet → O-T7)
-- [ ] S-T10a BGM playback — BGMPLAY · BGMSTOP · BGMCHK · BGMVOL · BGMVAR
+- [x] S-T10a BGM playback — BGMPLAY · BGMSTOP · BGMCHK · BGMVOL · BGMVAR
 - [ ] S-T10b BGM setup — BGMSET · BGMSETD · BGMCLEAR · BEEP
 - [ ] S-T10c Effects — EFCON · EFCOFF · EFCSET · EFCWET
 - [ ] S-T10d Voice & wave — TALK · TALKCHK · TALKSTOP · WAVSET · WAVSETA

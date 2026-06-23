@@ -1,0 +1,37 @@
+id: BGMCHK
+kind: function
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — explicit track.
+  - args:
+      - { name: track, type: integer, range: "0..7", optional: true, default: 0, desc: "Track number to check (omitted = 0)." }
+    returns: { type: integer, desc: "TRUE (1) if the track is playing, FALSE (0) if stopped." }
+    note: "status = BGMCHK(track) — query whether a track is currently playing."
+
+summary: "Returns the playback status of a BGM track: TRUE (non-zero) while the track is playing, FALSE (0) when it is stopped. The track number (0-7) is optional and defaults to 0, so the bare `BGMCHK()` form checks track 0. Used as a function (one return value)."
+
+semantics:
+  - "Call-shape gate: the result count [r0,#0xc] must be 1 (cmp r0,#0x1 / bne @0x1a1de4 -> errnum 4); BGMCHK is a function. The argument count [r4,#0x4] must be 0 or 1: 0 -> track defaults to 0 (streq r0,[sp,#0x4] / beq @0x1a1e24), 1 -> evaluate the track argument (cmp r0,#0x1 / beq @0x1a1dfc). Any other arg count raises errnum 4 (Illegal function call) errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / bl 0x1fffdc @0x1a1de4-0x1a1df0)."
+  - "When a track argument is given (@0x1a1dfc) it is evaluated and range-checked via the shared integer-arg helper FUN_001eec7c (bl 0x1eec7c with max sp[0]=#0x7): the track must be 0..7, else errnum 10 (Out of range). The 0-argument form skips the check (track is the constant 0)."
+  - "Status read (@0x1a1e24): the handler loads the audio state [0x1a1e4c]=0x01D08280 and the resolved track and calls the playing-status query (bl 0x1a4be8); the boolean result is returned through the result vtable [r4,#0x10]->[+0x14] (blx). Docs: FALSE = stopped, TRUE = playing. SmileBASIC TRUE is 1 and FALSE is 0."
+  - "BGMCHK reports the live transport state set by [[bgmplay]] / cleared by [[bgmstop]]; the exact non-zero value while playing (whether it is always 1 or a richer flag) is audio-runtime state with no deterministic emulator golden (O-T7) — the call shape, track range and 0/1 boolean semantics are pinned here."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the call shape is not (0 or 1 args, exactly 1 result)" }
+  - { errnum: 10, name: "Out of range", when: "an explicit track argument is not in 0..7" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgmchk.md (`Variable=BGMCHK([Track number])` — 'Checks music playback status'; track 0-7, omitted = 0; return FALSE = Stopped, TRUE = Playing; example RET=BGMCHK(0))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGMCHK handler @0x1a1db4: result-count [r0,#0xc] cmp r0,#0x1 bne @0x1a1de4 (function) else errnum 4 errline -1 mov r2,#0x0 mvn r1,#0x0 mov r0,#0x4 bl 0x1fffdc @0x1a1de4; argcount [r4,#0x4] 0->track=0 streq r0,[sp,#0x4] beq @0x1a1e24, 1->eval track cmp r0,#0x1 beq @0x1a1dfc; track via bl 0x1eec7c max sp[0]=#0x7 @0x1a1e14 (errnum 10 in helper); status query ldr r0,[0x1a1e4c]=0x01D08280 bl 0x1a4be8 @0x1a1e2c, result via [r4,#0x10]->[+0x14] blx @0x1a1e40" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d BGM status (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGMCHK\\b'): 175 files — the function form read into conditions, including the no-argument `BGMCHK()` form: `IF !BGMCHK() THEN BGMPLAY RND(43)` (43AE1XG3/TXT/AXE) — confirming the omitted-track form (= track 0) is LEGAL. Boolean playing value unproven (no oracle, O-T7)." }
+
+confidence: disassembled
+
+tests:
+  # Call shape + error conditions from the disassembly. Boolean playing value is oracle-pending (O-T7).
+  - { name: check_track0, code: "PRINT BGMCHK(0)", expect: { stdout: "0\n" } }
+  - { name: check_omitted_track, code: "PRINT BGMCHK()", expect: { stdout: "0\n" } }
+  - { name: track_out_of_range, code: "A=BGMCHK(8)", expect: { error: { errnum: 10 } } }

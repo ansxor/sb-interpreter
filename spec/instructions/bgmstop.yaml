@@ -1,0 +1,48 @@
+id: BGMSTOP
+kind: statement
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — stop all tracks immediately.
+  - args: []
+    note: "BGMSTOP — stop playback on ALL tracks immediately (0 args)."
+  # Form 2 — stop one track, optionally over a fade time.
+  - args:
+      - { name: track, type: integer, range: "0..7", desc: "Target track number." }
+      - { name: fade, type: number, range: "any >= 0", optional: true, default: 0, desc: "Fade-out time in seconds (decimals allowed; 0 = stop immediately; omitted = 0)." }
+    note: "BGMSTOP track [,fade] — stop one track, optionally fading over `fade` seconds (1-2 args)."
+  # Form 3 — force-stop everything (the special -1 value).
+  - args:
+      - { name: force, type: integer, range: "-1", desc: "The value -1: forcibly stop all sound, including release tails." }
+    note: "BGMSTOP -1 — force-stop all sound (overwrites user tune 255)."
+
+summary: "Stops background-music playback. With no argument it stops every track immediately. With a track number (0-7) it stops that track, optionally fading out over a given number of seconds (decimals allowed; 0 or omitted = stop immediately). The special value -1 forcibly stops all ongoing sound — including release tails — and overwrites user-defined tune 255. Returns nothing (statement)."
+
+semantics:
+  - "Shape gate: the result count [r0,#0xc] must be 0 AND the argument count [r4,#0x4] must be <= 2 (cmp r0,#0 / bne @0x1a35a4 ; ldr r5,[r4,#0x4] / cmp r5,#0x2 / ble @0x1a35c0). A non-zero result count or 3+ arguments raises errnum 4 (Illegal function call) with errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / b 0x1fffdc @0x1a35a8-0x1a35bc)."
+  - "Zero arguments (cmp r5,#0 / beq @0x1a3628) takes the stop-all path: it calls the audio stop-all routine (bl 0x1a4a98) on the audio state [0x1a36f4] and returns 0 — no range checks, no error."
+  - "One or more arguments: arg index 0 is evaluated (default fade 0.0 preloaded via vldr.32 s16,[pc,#0x118] / vstr.32 s16,[sp]). If the value == -1 (cmn r0,#0x1 / beq @0x1a363c) it takes the FORCE-stop path: stop-all (bl 0x1a4a98) plus a follow-up call (bl 0x1d44d8 with r3=#0x32) that forces release tails to stop and overwrites user tune 255, then returns 0."
+  - "Otherwise the value is a TRACK number and must be < 8 (cmp r0,#0x8 / bcc @0x1a3668); any value >= 8 (and any negative other than -1, which is huge unsigned) raises errnum 10 (Out of range) (mov r0,#0xa / bl 0x1fffdc @0x1a3614-0x1a3618, errline -1)."
+  - "The 2-argument form (cmp r5,#0x2 / bne ... @0x1a3668-0x1a366c) reads arg index 1 as the FADE time (a float — the default-0.0 path and float register s16 confirm a numeric/decimal value), so `BGMSTOP track, seconds` fades that track out over `seconds`; 0 stops immediately. See [[bgmplay]] (start) and [[bgmchk]] (status reads stopped after this)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "used in a return context, or more than two arguments are given" }
+  - { errnum: 10, name: "Out of range", when: "the track number is not -1 and not in 0..7" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgmstop.md (`BGMSTOP [Track number [,Fading time]]` — track 0-7, omitted = all tracks stopped; fading time in seconds, decimals allowed, 0 / omitted = stop immediately. Form 2 `BGMSTOP -1` forcibly stops ongoing sounds incl. release tails and overwrites user-defined BGM 255)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGMSTOP handler @0x1a357c: shape gate result [r0,#0xc] cmp r0,#0 bne @0x1a35a4, argcount [r4,#0x4] cmp r5,#0x2 ble @0x1a35c0 else errnum 4 errline -1 mov r2,#0x0 mvn r1,#0x0 mov r0,#0x4 b 0x1fffdc @0x1a35a8; 0-arg stop-all bl 0x1a4a98 @0x1a3628 (no error); arg==-1 force path cmn r0,#0x1 beq @0x1a363c bl 0x1a4a98 + bl 0x1d44d8 r3=#0x32; else track range cmp r0,#0x8 bcc @0x1a3668 else errnum 10 mov r0,#0xa @0x1a3614; 2-arg fade cmp r5,#0x2 @0x1a3668, default fade 0.0 vldr.32 s16,[pc,#0x118] vstr.32 s16,[sp] @0x1a35cc. Audio-state literal [0x1a36f4]" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d BGM stop (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGMSTOP\\b'): all forms appear: bare all-stop `BGMSTOP` (GRAPE, AMOEBA), 1-arg `BGMSTOP 0` (BLOCKDUDE), 2-arg fade `BGMSTOP 0,0.5` (BATTLESHIP) / `BGMSTOP 1,.5` (QRNJE3KD/TXT/PICTOBLITZ) / `BGMSTOP 0,30` (43AE1XG3/TXT/AXE), and force `BGMSTOP -1` (4KX3PX7D/TXT/BLOCKDUDE, 53383XCF/TXT/EXECUTE) — proving every documented form is LEGAL syntax. Runtime/fade audio output unproven (no oracle, O-T7)." }
+
+confidence: disassembled
+
+tests:
+  # Call shape + error conditions from the disassembly; audio/fade output is oracle-pending (O-T7).
+  - { name: stop_all_no_arg, code: "BGMSTOP", expect: { stdout: "" } }
+  - { name: stop_one_track, code: "BGMSTOP 0", expect: { stdout: "" } }
+  - { name: stop_track_fade, code: "BGMSTOP 0,0.5", expect: { stdout: "" } }
+  - { name: force_stop_all, code: "BGMSTOP -1", expect: { stdout: "" } }
+  - { name: track_out_of_range, code: "BGMSTOP 8", expect: { error: { errnum: 10 } } }
+  - { name: used_as_function, code: "A=BGMSTOP(0)", expect: { error: { errnum: 4 } } }

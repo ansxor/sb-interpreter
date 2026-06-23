@@ -1,0 +1,49 @@
+id: BGMVAR
+kind: statement
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — WRITE an MML internal variable (statement, 3 args, no result).
+  - args:
+      - { name: track, type: integer, range: "0..7", desc: "Target MML track number." }
+      - { name: varnum, type: integer, range: "0..7", desc: "Internal variable index ($0-$7 in MML)." }
+      - { name: value, type: number, desc: "Value to write into the variable." }
+    note: "BGMVAR track, varnum, value — write an MML internal variable (statement, 3 args)."
+  # Form 2 — READ an MML internal variable (function, 2 args, 1 result).
+  - args:
+      - { name: track, type: integer, range: "0..7", desc: "Target MML track number." }
+      - { name: varnum, type: integer, range: "0..7", desc: "Internal variable index ($0-$7 in MML)." }
+    returns: { type: integer, desc: "Current value of the variable during playback; -1 when the music is stopped." }
+    note: "v = BGMVAR(track, varnum) — read an MML internal variable (function, 2 args)."
+
+summary: "Accesses an MML internal variable ($0-$7) of an MML track (0-7). The 3-argument statement form `BGMVAR track, varnum, value` WRITES a value into the variable; the 2-argument function form `v = BGMVAR(track, varnum)` READS it, returning the current value during playback or -1 when the track is stopped. The form is chosen by call shape: a statement with 3 args writes, a function call with 2 args reads."
+
+semantics:
+  - "Form selection by call shape (result count [r0,#0xc] = r1, argcount [r0,#0x4] = r0): result == 0 AND argcount == 3 (cmp r1,#0 / beq @0x1a25a4 ; cmp r0,#0x3 / beq @0x1a25c4) takes the WRITE path; result == 1 AND argcount == 2 (cmp r1,#0x1 / cmpeq r0,#0x2 / beq @0x1a2650) takes the READ path. Any other shape raises errnum 4 (Illegal function call) errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / bl 0x1fffdc @0x1a25ac-0x1a25b8)."
+  - "Both paths range-check the TRACK and VARIABLE indices via the shared integer-arg helper FUN_001eec7c with max sp[0]=#0x7 (mov r5,#0x7): arg index 0 (track) must be 0..7 and arg index 1 (varnum) must be 0..7, else errnum 10 (Out of range). The documented bound matches the MML aliases $0-$7."
+  - "Write path (@0x1a25c4): track -> sp[4], varnum -> sp[8] (both via bl 0x1eec7c max 7), then the third argument (the value) is evaluated via the arg vtable and the write routine is called (bl 0x1a4ef4); the handler returns 0."
+  - "Read path (@0x1a2650): track -> sp[0x10], varnum -> sp[0x14] (both via bl 0x1eec7c max 7), then the read routine (bl 0x1a4ea8) returns the current value, delivered through the result vtable [r4,#0x10]->[+0x14]. Docs: the value during playback, or -1 when the music is stopped."
+  - "BGMVAR bridges program variables and the MML `$0-$7` registers of a tune started by [[bgmplay]]; the stored/returned value while playing is audio-runtime state with no deterministic emulator golden (O-T7). The call-shape selection (3-arg write / 2-arg read), the 0..7 index ranges, and the stopped -> -1 read are pinned here."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the call shape is neither (statement, 3 args) nor (function, 2 args)" }
+  - { errnum: 10, name: "Out of range", when: "the track or the variable index is not in 0..7" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgmvar.md (Form 1 `BGMVAR Track number, Variable number, Value` writes; track 0-7, variable 0-7 ($0-$7 in MML). Form 2 `Variable=BGMVAR(Track number, Variable number)` reads; returns content during playback, -1 when stopped; examples BGMVAR 0,5,10 / MC=BGMVAR(0,5))" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGMVAR handler @0x1a2574: result [r0,#0xc]=r1, argcount [r0,#0x4]=r0, max index mov r5,#0x7; write path result==0 & argcount==3 cmp r1,#0 beq @0x1a25a4 / cmp r0,#0x3 beq @0x1a25c4; read path result==1 & argcount==2 cmp r1,#0x1 cmpeq r0,#0x2 beq @0x1a2650; else errnum 4 errline -1 mov r2,#0x0 mvn r1,#0x0 mov r0,#0x4 bl 0x1fffdc @0x1a25ac; track+varnum via bl 0x1eec7c max sp[0]=#0x7 (errnum 10 in helper); write bl 0x1a4ef4 @0x1a2640, read bl 0x1a4ea8 @0x1a26a4 result via [r4,#0x10]->[+0x14]. Literals [0x1a26c8], [0x1a26c4]" }
+  - { type: disassembled, ref: "cia_3.6.0.lst shared integer-arg range helper FUN_001eec7c @0x1eec7c: bounds-checks value [r4,#0x0] against min r3 (=0) and max stack-arg [sp,#0x18] (cmp r1,r6 / cmpge r7,r1 / bge ok), raising errnum 10 on out-of-range (mov r2,#0x0 / mov r0,#0xa / b 0x1fffdc @0x1eeccc) — enforces the 0..7 track and variable-index bounds" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d MML variable access (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGMVAR\\b'): 26 files — BOTH forms in one program: read `IF BGMVAR(0,0)!=TEMPN THEN ...` and write `BGMVAR 0,0,TEMPN` (43AE1XG3/TXT/AXE) — proving the 2-arg function read and 3-arg statement write forms are LEGAL syntax. Stored/returned value while playing unproven (no oracle, O-T7)." }
+
+confidence: disassembled
+
+tests:
+  # Call-shape selection + error conditions from the disassembly. Stored/returned value is
+  # oracle-pending (O-T7); the stopped-read of -1 is the documented value.
+  - { name: write_variable, code: "BGMVAR 0,5,10", expect: { stdout: "" } }
+  - { name: read_stopped_returns_neg1, code: "PRINT BGMVAR(0,5)", expect: { stdout: "-1\n" } }
+  - { name: write_track_out_of_range, code: "BGMVAR 8,0,1", expect: { error: { errnum: 10 } } }
+  - { name: write_varnum_out_of_range, code: "BGMVAR 0,8,1", expect: { error: { errnum: 10 } } }
+  - { name: read_varnum_out_of_range, code: "A=BGMVAR(0,8)", expect: { error: { errnum: 10 } } }

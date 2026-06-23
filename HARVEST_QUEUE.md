@@ -355,3 +355,15 @@ oracle to confirm exact output and promote to `hw_verified`.
     source array?) and its valid range (handler range-checks against r6=[0x165e3c], r7=r6>>20).
   - BGCOLOR set-then-get round trip: BGCOLOR 0,RGB(255,0,0) then C=BGCOLOR(0) -> expect the stored
     32-bit code (and whether the ignored alpha byte is masked off or returned verbatim).
+
+- [ ] S-T10a BGM playback — audio output has NO deterministic emulator golden (O-T7: SB can't
+  render audio to disk; emulator audio is real-time/timing-dependent). Specs pin call shape +
+  arg ranges + errnum from disasm (confidence: disassembled). Deferred to O-T7 / real-hardware
+  observation only (NOT a `batch` value harvest):
+  - BGMCHK return value while a track is actually playing (is it always 1, or a richer flag?);
+    confirm FALSE=0 / TRUE!=0 boolean on real SB.
+  - BGMVAR read value while a tune with $0-$7 writes is mid-playback (handler reads live MML
+    register state); confirm stopped-read == -1 and a written value round-trips during playback.
+  - BGMSTOP fade-time semantics (does `BGMSTOP track,sec` audibly ramp down over `sec`?) and the
+    -1 force-stop overwriting user tune 255.
+  - BGMPLAY 2-frame post-trigger delay + the MML->note-event realization (MML grammar = S-C5).
