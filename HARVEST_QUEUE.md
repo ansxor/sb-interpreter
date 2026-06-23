@@ -718,3 +718,22 @@ oracle to confirm exact output and promote to `hw_verified`.
   element array (matches M1-T4 `default_for_suffix(None)=Int`). But `OPTION DEFINT` "makes the
   default Integer" implies the *non-DEFINT* default is Double. Confirm `DIM A[1]:A[0]=2.7:
   PRINT A[0]` (→2 if Int, →2.7 if Real). assumption: Int element (cross-ref M1-T4 queue).
+
+## M1-T6 — VM (runtime semantics to confirm)
+- **Stack-overflow depth (errnum 5)**: the VM caps combined GOSUB + DEF-call depth at
+  `CALL_STACK_LIMIT = 8192` (vm.rs) — a hypothesis bound. Confirm the real SB 3.6.0 limit
+  (and whether GOSUB and DEF recursion share one stack or have separate limits) via the
+  oracle (deeply-nested GOSUB / self-recursive DEF that counts frames before halting).
+  Cross-ref the existing execution-model queue line ("recursion depth that trips Stack
+  overflow").
+- **Shift operators `<<`/`>>`**: vm.rs truncates both operands to i32 then uses Rust
+  `wrapping_shl`/`wrapping_shr` (shift count masked to 0..31; `>>` is arithmetic for the
+  signed i32). Confirm vs oracle: SB's behavior for shift counts >= 32 and for negative
+  shift counts (e.g. `1 << 32`, `1 << -1`, `-8 >> 1`), and whether `>>` is arithmetic or
+  logical. assumption: count masked to low 5 bits, arithmetic `>>`.
+- **String vs number comparison**: vm.rs raises Type mismatch (errnum 8) for a mixed
+  string/number comparison (`"a" == 1`). Confirm vs oracle (SB may instead return false / 0).
+- **`&&`/`||` non-normalized result**: short-circuit `LogicalAnd`/`LogicalOr` keep the last
+  evaluated operand value (per the compiler lowering), but `Operate(LAnd/LOr)` — emitted only
+  if the compiler ever bypasses short-circuit — normalizes to 0/1. Confirm SB's `X=A&&B`
+  result value (cross-ref the M1-T5 `&&`/`||` queue entry).

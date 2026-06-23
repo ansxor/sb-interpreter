@@ -18,6 +18,7 @@ pub mod lexer;
 pub mod parser;
 pub mod token;
 pub mod value;
+pub mod vm;
 
 pub use array::{ArrayRef, SbArray};
 pub use bytecode::{Const, Function, Op, OptionFlags, Program, VarInfo, VarRef, VarType};
@@ -26,3 +27,4 @@ pub use lexer::Lexer;
 pub use parser::{parse, parse_expression, ParseError, Parser};
 pub use token::{SourceLoc, Suffix, Token, TokenKind};
 pub use value::{swap_cells, Cell, RuntimeError, SbStr, Value, ValueType};
+pub use vm::{Halt, Vm, VmError, CALL_STACK_LIMIT};
