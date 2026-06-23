@@ -1,0 +1,52 @@
+id: BGOFS
+kind: statement
+category: BG
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+      - { name: x, type: integer, desc: "Display offset (scroll) X in pixels." }
+      - { name: y, type: integer, desc: "Display offset (scroll) Y in pixels." }
+      - { name: z, type: integer, optional: true, range: "-256..1024", desc: "Depth coordinate. Rear 1024 < screen surface 0 < front -256." }
+    note: "BGOFS layer, x, y[, z] — set a layer's display offset (scroll), optionally its depth (3 or 4 args, no return value)."
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+    out:
+      - { name: x, type: integer, desc: "Receives the layer's X offset (pixels)." }
+      - { name: y, type: integer, desc: "Receives the layer's Y offset (pixels)." }
+      - { name: z, type: integer, optional: true, desc: "Receives the layer's depth." }
+    note: "BGOFS layer OUT x, y[, z] — read a layer's display offset (1 arg + 2 or 3 OUT variables)."
+
+summary: "Sets or reads the display offset (scroll position) of one BG layer in pixels, plus an optional depth (Z) coordinate. The set form takes Layer,X,Y and an optional Z; the OUT form returns the current X,Y and optionally Z. Depth runs rear (1024) < screen surface (0) < front (-256)."
+
+semantics:
+  - "Two forms, selected by whether a return (OUT) is requested. The handler reads the requested return count [r4,#0xc] and the argument count [r4,#0x4]. Return count 0 selects the SET form; a non-zero return count selects the OUT/get form (cmp [r4,#0xc],#0 beq @0x1642d0, else cmp argcount,#1 @0x1642c4)."
+  - "SET form requires exactly 3 or 4 arguments (Layer,X,Y with an optional Z): the count is checked as (argcount-3) unsigned < 2 — sub r0,argcount,#3 / cmp r0,#2 / bcs error @0x1642d0-0x1642d8. Any other count raises errnum 4 (Illegal function call, mov r0,#0x4 @0x164540 via bl 0x1fffdc)."
+  - "GET (OUT) form requires exactly 1 argument (the layer); the X,Y[,Z] results are written to 2 or 3 OUT variables. Z is the optional third OUT variable (the handler checks argcount==3 to decide whether to emit Z — cmp r7,#3 @0x1643d4). OUT variables may be selectively omitted, e.g. `BGOFS I% OUT ,,Z%` reads only the depth."
+  - "LAYER must be in 0..3 in both forms: the layer is evaluated and range-checked by the shared BG-layer getter FUN_001e2504 (bl @0x1642ec / @0x1644f8). A value < 0 or >= the live BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560."
+  - "X and Y are pixel offsets evaluated as integers (integer getter method, blx [obj,#0x40] @0x164358); they are stored into the layer record and applied to scrolling. The per-layer record stride is 0xe3*8 bytes (mov r1,#0xe3 / mul / add r5,r5,r1,lsl #3 @0x164304-0x164324)."
+  - "Z (4th argument / 3rd OUT) is the depth coordinate: rear 1024 < screen surface 0 < front -256 (documented). When omitted in the SET form the layer's existing depth is left unchanged; when omitted in the OUT form the depth is simply not returned."
+  - "BGOFS only changes scroll/depth; it does not change the layer size (BGSCREEN), visibility (BGSHOW/BGHIDE), rotation (BGROT), scale (BGSCALE) or origin (BGHOME)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "SET form argument count is not 3 or 4, or the GET form is not called with exactly 1 argument and OUT variables" }
+  - { errnum: 10, name: "Out of range", when: "layer is negative or > 3 (not in 0..3)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgofs.md (BGOFS Layer,X,Y,[Z] — 'Changes the display offset of the BG screen'; Layer 0-3; X,Y display offset in pixels; Z depth Rear:1024 < Screen surface:0 < Front:-256; form 2 BGOFS Layer OUT X,Y[,Z] — 'Gets BG coordinates'; e.g. BGOFS 0,-100,-100 and BGOFS 0 OUT X,Y,Z)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGOFS handler @0x16429c: form select via return-count [r4,#0xc] (beq @0x1642d0 set, else cmp argcount [r4,#0x4],#1 @0x1642c4 get); SET arg-count guard sub r0,r7,#3 / cmp #2 / bcs @0x164540 (errnum 4 via bl 0x1fffdc); layer eval+range bl 0x1e2504 @0x1642ec/@0x1644f8 (errnum 10 @0x1e2560 when layer<0 or layer>=[[0x315d60]+0x60]); X eval via integer getter blx [r3,#0x40] @0x164358, per-layer stride mov r1,#0xe3 / mul / add r5,r5,r1,lsl #3 @0x164304-0x164324; Z handled only when argcount!=3 (cmp r7,#3 @0x1643d4); state ptr 0x315d60." }
+  - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer scroll/offset (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: ~2045 calls — 3-arg 'BGOFS 0,16,0' (~530x, e.g. 1233728E/TXT/MG_DOG), 4-arg with Z 'BGOFS 0,16,0,3' (~1120x), array/expression operands ('BGOFS 0,MPX[ID]-CX[ID],MPY[ID]-CY[ID]' 227YK34J/TXT/JINTRI102), variable layer ('BGOFS I%,...' 25XS34J/TXT/_WORLD). OUT form 'BGOFS 2 OUT X,Y' (1DVK34J/TXT/HNZTL) and selective-omit OUT 'BGOFS I% OUT ,,Z%' (25XS34J/TXT/_WORLD) confirm 2-or-3 OUT vars with skippable slots. No 2-arg or 5+-arg form. (oracle-pending: exact stored offset + Z clamping, queued)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9c): BGOFS 4,0,0 -> errnum 10; BGOFS -1,0,0 -> errnum 10; BGOFS 0,5 (2 args) -> errnum 4; BGSCREEN 0,32,32:BGOFS 0,-100,-100 and :BGOFS 0,16,0,3 raise nothing. All errline 1." }
+
+confidence: disassembled
+
+tests:
+  # Set/get offset side effects need the BG framebuffer oracle (O-T6, queued). Error and
+  # no-error expects below are derived from the disassembly arg-count/layer guards.
+  - { name: set_ok_xy, code: "BGSCREEN 0,32,32\nBGOFS 0,-100,-100", expect: { stdout: "" } }
+  - { name: set_ok_xyz, code: "BGSCREEN 0,32,32\nBGOFS 0,16,0,3", expect: { stdout: "" } }
+  - { name: layer_out_of_range, code: "BGOFS 4,0,0", expect: { error: { errnum: 10 } } }
+  - { name: layer_negative, code: "BGOFS -1,0,0", expect: { error: { errnum: 10 } } }
+  - { name: too_few_args, code: "BGOFS 0,5", expect: { error: { errnum: 4 } } }

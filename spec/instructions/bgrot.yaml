@@ -1,0 +1,46 @@
+id: BGROT
+kind: statement
+category: BG
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+      - { name: angle, type: integer, range: "0..360", desc: "Rotation angle in degrees, clockwise. Normalized modulo 360." }
+    note: "BGROT layer, angle — set a layer's rotation angle (2 args, no return value)."
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+    out:
+      - { name: r, type: integer, desc: "Receives the layer's current rotation angle (0..359)." }
+    note: "BGROT layer OUT r — read a layer's rotation angle (1 arg + 1 OUT variable)."
+
+summary: "Sets or reads the rotation angle of one BG layer, in degrees clockwise. The angle is normalized modulo 360 (negative angles wrap into 0..359). Rotation pivots around the layer's display origin (set by BGHOME)."
+
+semantics:
+  - "Two forms, selected by the requested return count [r4,#0xc]. Return count 0 selects the SET form, which requires exactly 2 arguments (Layer,Angle) — cmp argcount,#2 @0x1648cc. A return count of 1 with exactly 1 argument selects the OUT/get form — cmp [r4,#0xc],#1 / cmpeq argcount,#1 @0x1648bc-0x1648c0 (beq @0x1649a8). Any other shape raises errnum 4 (Illegal function call, mov r0,#0x4 / bl 0x1fffdc @0x1648d4-0x1648e0)."
+  - "LAYER must be in 0..3 in both forms: evaluated and range-checked by the shared BG-layer getter FUN_001e2504 (bl @0x1648fc set / @0x1649b8 get). A value < 0 or >= the BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560."
+  - "ANGLE is normalized modulo 360 before being stored. The handler computes angle mod 360 with a reciprocal-multiply (smlal/asr by a magic constant @0x164938-0x16495c) and corrects a negative remainder by adding 360 (#0x168) — adds r0,r0,... / addmi r0,r0,#0x168 @0x16495c-0x164968. So -90 stores as 270 and 450 stores as 90; the stored/returned angle is always in 0..359."
+  - "Setting the angle clears bit 2 of the layer's transform flag word (bic r1,r1,#4 @0x164988) and then applies the rotation via the layer's set-rotation helper (bl 0x001163ac @0x164998). Rotation pivots around the layer origin (BGHOME); BGROT 0,0 is no rotation."
+  - "BGROT changes only rotation; it does not change scroll (BGOFS), scale (BGSCALE), origin (BGHOME) or visibility. The OUT form returns the normalized angle as an Integer."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the SET form is not called with exactly 2 arguments, or the OUT form is not called with exactly 1 argument and one OUT variable" }
+  - { errnum: 10, name: "Out of range", when: "layer is negative or > 3 (not in 0..3)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgrot.md (BGROT Layer,Angle — 'Rotates the BG screen'; Layer 0-3; Angle rotation angle (clockwise) 0-360; form 2 BGROT Layer OUT R — 'Gets rotation information'; R 0-360; e.g. BGROT 0,180 and BGROT 0 OUT R)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGROT handler @0x164898: form select via return-count [r4,#0xc] — SET requires argcount==2 (cmp r0,#2 @0x1648cc), OUT requires retcount==1 && argcount==1 (cmp r1,#1 / cmpeq r0,#1 @0x1648bc); else mov r0,#0x4 errnum 4 via bl 0x1fffdc @0x1648d4-0x1648e0; layer eval+range bl 0x1e2504 @0x1648fc (errnum 10 @0x1e2560); angle mod 360 via smlal/asr magic const @0x164938-0x16495c with negative correction addmi r0,r0,#0x168 @0x164968; clear transform bit bic r1,r1,#4 @0x164988 then set-rotation bl 0x001163ac @0x164998; per-layer stride mov r1,#0xe3 @0x164970; state ptr 0x315d60." }
+  - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer rotation (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: ~46 calls — set 'BGROT 0,180', variable/expression angle 'BGROT 0,ANG', 'BGROT BGN,I MOD 360' (L1NV3344/TXT/EX8TECHDEMO), 'BGROT 0,DEG(BGR+MYA)' (4D2X3KQV/TXT/PP3_D_RACE), negated 'BGROT 0,-DEG(ANGLE)+90' (B2337N4E/TXT/COLOR_MAZE) — confirming any numeric expression and angles outside 0..360 (normalized). OUT form 'BGROT 0 OUT ANG' (1DVK34J/TXT/HNZHS). (oracle-pending: exact mod-360 result for negative/over-360 angles, queued)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9c): BGROT 4,90 -> errnum 10; BGROT -1,90 -> errnum 10; BGROT 0 (1 arg) -> errnum 4; BGSCREEN 0,32,32:BGROT 0,180 raises nothing. All errline 1." }
+
+confidence: disassembled
+
+tests:
+  # Rotation side effects need the BG framebuffer oracle (O-T6, queued). The mod-360
+  # normalization is read from the disassembly (queued for oracle confirmation).
+  - { name: set_ok, code: "BGSCREEN 0,32,32\nBGROT 0,180", expect: { stdout: "" } }
+  - { name: set_ok_zero, code: "BGSCREEN 0,32,32\nBGROT 0,0", expect: { stdout: "" } }
+  - { name: layer_out_of_range, code: "BGROT 4,90", expect: { error: { errnum: 10 } } }
+  - { name: layer_negative, code: "BGROT -1,90", expect: { error: { errnum: 10 } } }
+  - { name: missing_angle, code: "BGROT 0", expect: { error: { errnum: 4 } } }

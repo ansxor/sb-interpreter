@@ -1,0 +1,49 @@
+id: BGSCALE
+kind: statement
+category: BG
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+      - { name: scale_x, type: number, range: "0.5..2.0 (typical)", desc: "Horizontal enlargement scale (1.0 = 100%). Values outside the documented 0.5-2.0 are accepted." }
+      - { name: scale_y, type: number, range: "0.5..2.0 (typical)", desc: "Vertical enlargement scale (1.0 = 100%)." }
+    note: "BGSCALE layer, scaleX, scaleY — set a layer's enlargement scale (3 args, no return value)."
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+    out:
+      - { name: sx, type: number, desc: "Receives the layer's current X scale." }
+      - { name: sy, type: number, desc: "Receives the layer's current Y scale." }
+    note: "BGSCALE layer OUT sx, sy — read a layer's scale (1 arg + 2 OUT variables)."
+
+summary: "Sets or reads the enlargement scale of one BG layer, independently for X and Y (1.0 = 100%). Scaling pivots around the layer's display origin (BGHOME). When scaled down so the total displayed BG exceeds 3600, BGs over that limit are not shown and the screen may distort (documented)."
+
+semantics:
+  - "Two forms, selected by the requested return count [r4,#0xc]. Return count 0 selects the SET form, which requires exactly 3 arguments (Layer,ScaleX,ScaleY) — cmp argcount,#3 @0x1666f8. A return count of 2 with exactly 1 argument selects the OUT/get form (two results SX,SY) — cmp [r4,#0xc],#2 / cmpeq argcount,#1 @0x1666e8-0x1666ec (beq @0x1667cc). Any other shape raises errnum 4 (Illegal function call, mov r0,#0x4 / bl 0x1fffdc @0x166700-0x16670c)."
+  - "LAYER must be in 0..3 in both forms: evaluated and range-checked by the shared BG-layer getter FUN_001e2504 (bl @0x166728 set / @0x1667dc get). A value < 0 or >= the BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560."
+  - "SCALE X and SCALE Y are evaluated as floating-point values (float getter method, blx [obj,#0x60] @0x16674c/@0x166770) and stored directly into the layer record; there is NO clamping to the documented 0.5-2.0 range — any value (e.g. 0.1, 4.0, 7.0, or unequal X/Y) is accepted. Setting the scale clears bit 3 of the layer's transform flag word (bic r1,r1,#8 @0x1667a8) and applies the scale via the layer set-scale helper (bl 0x001163e4 @0x1667bc)."
+  - "The OUT form reads the stored X scale from the layer record ([r0,#0x20], widened vcvt.f64.f32 d0,s0 @0x166814) and returns SX,SY as Doubles."
+  - "Display limit (documented, not a hard error): when downscaled so the total visible BG exceeds 3600 cells the excess is not displayed and the BG screen may distort — this is a rendering limit, not an errnum."
+  - "BGSCALE changes only scale; it does not change scroll (BGOFS), rotation (BGROT), origin (BGHOME) or visibility."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the SET form is not called with exactly 3 arguments, or the OUT form is not called with exactly 1 argument and two OUT variables" }
+  - { errnum: 10, name: "Out of range", when: "layer is negative or > 3 (not in 0..3)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgscale.md (BGSCALE Layer,ScaleX,ScaleY — 'Scales the BG screen'; Layer 0-3; scale 0.5 (50%) - 1.0 (100%) - 2.0 (200%) -; 'When scaled down, BGs exceeding 3600 in total will not be displayed'; form 2 BGSCALE Layer OUT SX,SY; e.g. BGSCALE 0,1.5,2.0 and BGSCALE 0 OUT SX,SY)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGSCALE handler @0x1666c4: form select via return-count [r4,#0xc] — SET requires argcount==3 (cmp r0,#3 @0x1666f8), OUT requires retcount==2 && argcount==1 (cmp r1,#2 / cmpeq r0,#1 @0x1666e8); else mov r0,#0x4 errnum 4 via bl 0x1fffdc @0x166700-0x16670c; layer eval+range bl 0x1e2504 @0x166728 (errnum 10 @0x1e2560); scales evaluated as float via blx [r2,#0x60] @0x16674c/@0x166770 with NO range guard; clear transform bit bic r1,r1,#8 @0x1667a8 then set-scale bl 0x001163e4 @0x1667bc; OUT reads [r0,#0x20] vcvt.f64.f32 @0x166814; per-layer stride mov r2,#0xe3 @0x166790; state ptr 0x315d60." }
+  - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer scale (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus: ~540 calls — fractional scales below 0.5 ('BGSCALE 0,0.4,0.4', 0.1, 0.255; 7Z5QA334/TXT/HNZLNDA), large scales above 2.0 ('BGSCALE I,7,7' JEEF3L4/TXT/-THE_MAZE-, 'BGSCALE 0,4,4'), unequal X/Y ('BGSCALE 0,1,0.6' A2D45ENV/TXT/BOX-CRAFT0.0.5), and variable scales ('BGSCALE 0,N,N'), confirming no enforced 0.5-2.0 clamp. OUT form 'BGSCALE BGL OUT SX#,BGCH#' (5KSKXX8X/TXT/RNDLIBFULL). (oracle-pending: exact stored/returned scale + display-distortion behavior, queued)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9c): BGSCALE 4,1,1 -> errnum 10; BGSCALE 0,1 (2 args) -> errnum 4; BGSCREEN 0,32,32:BGSCALE 0,1.5,2.0 raises nothing; :BGSCALE 0,4,4 (above documented 2.0 max) ALSO raises nothing, confirming no enforced scale clamp. All errline 1." }
+
+confidence: disassembled
+
+tests:
+  # Scale side effects need the BG framebuffer oracle (O-T6, queued). No-clamp behavior is
+  # read from the disassembly (no range guard); errors derive from arg-count/layer guards.
+  - { name: set_ok, code: "BGSCREEN 0,32,32\nBGSCALE 0,1.5,2.0", expect: { stdout: "" } }
+  - { name: set_ok_large, code: "BGSCREEN 0,32,32\nBGSCALE 0,4,4", expect: { stdout: "" } }
+  - { name: set_ok_fractional, code: "BGSCREEN 0,32,32\nBGSCALE 0,0.4,0.4", expect: { stdout: "" } }
+  - { name: layer_out_of_range, code: "BGSCALE 4,1,1", expect: { error: { errnum: 10 } } }
+  - { name: too_few_args, code: "BGSCALE 0,1", expect: { error: { errnum: 4 } } }

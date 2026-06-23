@@ -92,7 +92,7 @@ and name the instructions they cover inline.
 #### S-T9 BG (24) → S-T0
 - [x] S-T9a Setup — BGSCREEN · BGPAGE · BGCLR · BGSHOW · BGHIDE
 - [x] S-T9b Tiles — BGPUT · BGFILL · BGGET · BGCOPY · BGCLIP
-- [ ] S-T9c Transform — BGOFS · BGROT · BGSCALE · BGHOME · BGCOORD
+- [x] S-T9c Transform — BGOFS · BGROT · BGSCALE · BGHOME · BGCOORD
 - [ ] S-T9d Animation & state — BGANIM · BGSTART · BGSTOP · BGVAR · BGFUNC · BGCHK
 - [ ] S-T9e Load/save/color — BGLOAD · BGSAVE · BGCOLOR
 
