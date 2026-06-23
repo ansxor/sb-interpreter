@@ -1,0 +1,73 @@
+id: LOAD
+kind: function          # statement forms (program/graphic/array) + a function form (TX$=LOAD("TXT:..."))
+category: Files
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — statement: load a file into a resource (program slot / graphic page / font page).
+  - args:
+      - { name: name, type: string, range: '"[Resource:]Filename" — Resource omitted = current program SLOT; PRG0-PRG3 (PRG=PRG0); GRP0-GRP5; GRPF font image page' }
+      - { name: dialog, type: integer, range: "optional; FALSE/0 suppresses the confirmation dialog (default = show dialog)", optional: true }
+    returns: { type: void }
+    note: "LOAD \"[Resource:]Filename\"[,dialog] — load a file into a program slot, graphic page or font page."
+  # Form 1b — UNDOCUMENTED: graphic-page load with a destination X,Y offset (corpus-verified).
+  - args:
+      - { name: name, type: string, range: '"GRPn:Filename" (graphic page)' }
+      - { name: x, type: integer, range: "destination X offset on the graphic page" }
+      - { name: y, type: integer, range: "destination Y offset on the graphic page" }
+      - { name: dialog, type: integer, range: "optional; FALSE/0 suppresses the dialog", optional: true }
+    returns: { type: void }
+    note: "LOAD \"GRPn:Filename\",x,y[,dialog] — load a graphic into the page at offset (x,y). Undocumented; verified in the sbsave corpus, oracle-pending."
+  # Form 2 — statement with OUT: load a text file into a string variable.
+  - args:
+      - { name: name, type: string, range: '"TXT:Filename"' }
+      - { name: dialog, type: integer, range: "optional; FALSE/0 suppresses the dialog", optional: true }
+    out: [{ name: text, type: string }]
+    returns: { type: void }
+    note: "LOAD \"TXT:Filename\"[,dialog] OUT TX$ — load a text file into the string variable TX$."
+  # Form 3 — function: load a text file, returning the contents as a string.
+  - args:
+      - { name: name, type: string, range: '"TXT:Filename"' }
+      - { name: dialog, type: integer, range: "optional; FALSE/0 suppresses the dialog", optional: true }
+    returns: { type: string }
+    note: "TX$=LOAD(\"TXT:Filename\"[,dialog]) — return the text file contents as a string."
+  # Form 4 — statement: load a binary file into a numeric array.
+  - args:
+      - { name: name, type: string, range: '"DAT:Filename"' }
+      - { name: array, type: number_array, range: "numeric array that receives the binary contents" }
+      - { name: dialog, type: integer, range: "optional; FALSE/0 suppresses the dialog", optional: true }
+    returns: { type: void }
+    note: "LOAD \"DAT:Filename\",array[,dialog] — load a binary (DAT) file into a numeric array."
+
+summary: "Loads a file. The first operand is a `\"[Resource:]Filename\"` string: with no resource prefix it loads into the current program SLOT; `PRG0`-`PRG3` load a program slot, `GRP0`-`GRP5` a graphic page, `GRPF` the font image page, `TXT:` a text file (into a string, via `OUT` or the function form), and `DAT:` a binary file into a numeric array. An optional trailing `dialog` flag (FALSE/0) suppresses the confirmation dialog. A program cannot be loaded into the same slot as the running program. Filename and resource may be any string expression (literal, variable, or concatenation)."
+
+semantics:
+  - "Handler @0x18d93c. Requires at least one argument: ldr r4,[r0,#0x4] (arg count); cmp r4,#0x1; blt 0x18da6c, and @0x18da6c raises errnum 4 (Illegal function call: mov r0,#0x4 @0x18da74 -> bl 0x1fffdc) — so a bare `LOAD` with no operands is errnum 4."
+  - "The first operand must be a string: it is read via the arg vtable (ldr r2,[r2,#0x50]; blx r2 @0x18d978) only after a string-type check (ldrb r12,[r2,#0x2]; cmp r12,#0x0; beq 0x18da0c); the non-string branch @0x18da0c raises errnum 8 (Type mismatch: mov r0,#0x8 @0x18da14 -> bl 0x1fffdc). The name string is parsed into a resource code + filename by FUN_001d6d6c (bl 0x1d6d6c @0x18d9b4)."
+  - "After parsing, the resource code is dispatched at @0x18d9d8 (ldrb r0,[sp,#0x10]): code 0 -> @0x18da2c, 1 -> @0x18da94, 2 -> @0x18dae4, 3 -> @0x18db58, else @0x18dc14. Each resource branch then sub-dispatches on the remaining argument count (e.g. @0x18da2c: cmp r4,#0x2 / cmp r4,#0x1), so the accepted extra-argument shape (dialog flag, array, X/Y offset) depends on the resource kind."
+  - "Resource selection (documented): no prefix = current program SLOT; PRG0-PRG3 = program slot (PRG = PRG0); GRP0-GRP5 = graphic page; GRPF = font image page; TXT: = text file; DAT: = binary file. A program cannot be loaded into the slot of the running program (documented)."
+  - "Form 2/3 — TXT: text load. As a statement with `OUT TX$` the text is stored into the string variable; as a function `TX$=LOAD(\"TXT:...\")` the contents are returned as a string. Both accept an optional dialog flag before the OUT clause."
+  - "Form 4 — DAT: binary load reads the file into the supplied numeric array; the array receives the raw binary contents (documented `DIM MARRAY[100]:LOAD \"DAT:MDATA\",MARRAY`)."
+  - "Optional trailing `dialog` flag: FALSE/0 suppresses the confirmation dialog; omitted or non-zero shows it (documented). Real programs pass it as 0, FALSE, #FALSE, or #NO (all integer/boolean expressions)."
+  - "UNDOCUMENTED graphic-page offset form: `LOAD \"GRPn:Filename\",x,y[,dialog]` loads the image into the graphic page at destination offset (x,y). The per-resource sub-dispatch on argument count (@0x18da2c etc.) accommodates these extra operands. Corpus-verified (e.g. `LOAD \"GRP4:SP_MANIA\",0,0,#FALSE`); runtime effect oracle-pending."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "LOAD is called with no arguments, or with an argument count the resource kind does not accept" }
+  - { errnum: 8, name: "Type mismatch", when: "the filename operand is not a string" }
+  - { errnum: 46, name: "Load failed", when: "the file could not be read (missing/unreadable) — hypothesis, oracle-pending" }
+  - { errnum: 35, name: "Illegal file format", when: "the file is not in a format SmileBASIC can load into the target resource — hypothesis, oracle-pending" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/load.md (4 forms: `LOAD \"[Resource:]File name\"[,Dialog display flag]`; `LOAD \"TXT:File\"[,flag] OUT TX$`; `String=LOAD(\"TXT:File\"[,flag])`; `LOAD \"DAT:File\",array[,flag]`. Resource: omitted=current program SLOT, PRG0-PRG3 (PRG=PRG0), GRP0-GRP5, GRPF font image page. 'It is impossible to load a program into the same program SLOT as a running program.' Dialog flag FALSE suppresses the confirmation dialog. Examples `LOAD \"PROGNAME\"`, `LOAD \"GRP0:GRPDATA\"`, `LOAD \"TXT:MEMOFILE\" OUT TX$`, `TX$=LOAD(\"TXT:MEMOFILE\")`, `DIM MARRAY[100]:LOAD \"DAT:MDATA\",MARRAY`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst LOAD handler @0x18d93c: ldr r4,[r0,#0x4] (arg count); cmp r4,#0x1; blt 0x18da6c (no-args -> errnum 4: mov r0,#0x4 @0x18da74 -> bl 0x1fffdc); first arg string-type check ldrb r12,[r2,#0x2]/cmp r12,#0x0/beq 0x18da0c (non-string -> errnum 8: mov r0,#0x8 @0x18da14 -> bl 0x1fffdc); name parsed by bl 0x1d6d6c (@0x18d9b4); resource-code dispatch ldrb r0,[sp,#0x10] @0x18d9d8 -> code 0=@0x18da2c, 1=@0x18da94, 2=@0x18dae4, 3=@0x18db58, else @0x18dc14; each branch sub-dispatches on arg count (cmp r4,#0x2 / cmp r4,#0x1 @0x18da2c)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bLOAD\\b', excludes RELOAD/DOWNLOAD/PRELOAD): the undocumented graphic-page offset form `LOAD \"GRPn:Filename\",x,y[,dialog]` is real — `LOAD \"GRP4:SP_MANIA\",0,0,#FALSE` (93X3QDAX/TXT/GAME), `LOAD \"GRP5:\"+VAR(\"0:WALL$\"),16,16,0` (EK3E9F/TXT/PAINT), `LOAD \"GRP4:SPRITESHT.GRP\",0,0,FALSE` (KE3VJCY/TXT/INTO_THE_SKY); ~6+ programs. Also confirms the filename is any string expression: a bare string variable carrying the whole resource spec (`LOAD RESOURCE_GRP$,FALSE` 1DVENVAE/TXT/PICS_R1_1V; `LOAD LOADFILE$,0,0,FALSE` 2BC4738V/TXT/MOH_JUHSY237D) and concatenation (`LOAD \"DAT:\"+VARNAME$,ARRAY,0`), and that the dialog flag is passed as 0/FALSE/#FALSE/#NO. Syntax legal (shipped programs); runtime output oracle-pending." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d LOAD (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t12a): bare `LOAD` (0 args) raises errnum 4 errline 1 (Illegal function call); `LOAD 5` (non-string name) raises errnum 8 errline 1 (Type mismatch). Confirms the arg-count guard and the string-type guard. Actual file-load results (success, Load-failed errnum 46, GRPn offset form) are filesystem/dialog state with no scalar golden (queued)." }
+
+# Top-level kept `disassembled`: the arg-count/type-mismatch guards are hw_verified, but the
+# load-failure errnums (46/35) and the file-load/GRPn-offset behavior remain hypothesis/documented (queued).
+confidence: disassembled
+
+tests:
+  - { name: no_args_illegal, code: "LOAD", expect: { error: { errnum: 4 } } }
+  - { name: nonstring_name_type_mismatch, code: "LOAD 5", expect: { error: { errnum: 8 } } }

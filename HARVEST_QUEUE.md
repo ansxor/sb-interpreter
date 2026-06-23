@@ -450,3 +450,16 @@ oracle to confirm exact output and promote to `hw_verified`.
     *during* a live timed fade (would need frame-timed sampling mid-animation). Error guards
     (negative time -> errnum 10; arg/result-count -> errnum 4) and the idle FADECHK()==0 ARE
     hw_verified (batch 2026-06-22, s_t11e).
+
+- S-T12a File I/O (LOAD/SAVE/FILES/DELETE): the error guards ARE hw_verified (batch 2026-06-22,
+    s_t12a): LOAD no-args -> errnum 4, LOAD/SAVE/DELETE/FILES non-string or wrong-type operand ->
+    errnum 8, SAVE/DELETE read-for-value or SAVE no-args -> errnum 3. UNHARVESTED (all filesystem/
+    dialog state, no scalar oracle golden — and writing files on the real SD card mutates state):
+    LOAD success into program slot / GRP page / font page; the undocumented GRPn offset form
+    `LOAD "GRPn:name",x,y[,dialog]` (corpus-verified syntax, runtime effect unknown); LOAD-failed
+    errnum 46 (missing file) and Illegal-file-format errnum 35 (both hypothesis from docs, not
+    body-pinned); TXT round-trip (SAVE "TXT:" then LOAD("TXT:") returns the same UTF-8 string);
+    DAT array round-trip; FILES console listing + the auto-extended string-array output contents;
+    DELETE actually removing a file. Also unresolved: `A=FILES` returns NOERR via the runtime
+    harness (parser rejects it before the result-count -> errnum 3 guard) — needs a compile-error
+    capture path to confirm the parse-time error class.

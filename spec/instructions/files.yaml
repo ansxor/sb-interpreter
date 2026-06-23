@@ -1,0 +1,50 @@
+id: FILES
+kind: statement
+category: Files
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 0 — bare: list all files to the console.
+  - args: []
+    returns: { type: void }
+    note: "FILES — list all files on the console."
+  # Form 1 — list a filtered file type to the console.
+  - args:
+      - { name: filetype, type: string, range: '"TXT:" texts & programs | "DAT:" binary data (incl. graphics) | "//" project list | "PROJECT/" within a project' }
+    returns: { type: void }
+    note: "FILES \"Filetype\" — list files of the given type on the console."
+  # Form 2 — store a (optionally filtered) file list into a string array.
+  - args:
+      - { name: filetype, type: string, range: 'optional filter ("TXT:"/"DAT:"/"//"/"PROJECT/"); omit to list all', optional: true }
+      - { name: out_array, type: string_array, range: "1-D string array; auto-extended to the number of files found" }
+    returns: { type: void }
+    note: "FILES [\"Filetype\",] StringArray$ — store the file list into a string array (1-D arrays auto-extend)."
+
+summary: "Displays or retrieves a file list. As a bare statement `FILES` lists every file on the console; with a `\"Filetype\"` string it filters by type (`\"TXT:\"` texts & programs, `\"DAT:\"` binary data including graphics, `\"//\"` the project list, `\"PROJECT/\"` within a project). Given a trailing string array, the file names are stored into it instead of (or in addition to) being shown — a 1-D array is automatically extended to the number of files found. The filetype may be any string expression."
+
+semantics:
+  - "Handler @0x18b228. Result count must be 0 (ldr r0,[r0,#0xc]; cmp r0,#0x0; bne 0x18b264) — FILES is statement-only, no function form; a nonzero result count raises errnum 3 (Syntax error: mov r0,#0x3 @0x18b26c -> b 0x18b30c -> bl 0x1fffdc)."
+  - "Argument count (ldr r0,[r4,#0x4] @0x18b248) dispatches the form: 0 -> @0x18b354 (list all to console), 1 -> @0x18b274, 2 -> @0x18b2cc; any other count (>2) falls to @0x18b264 and raises errnum 3 (Syntax error)."
+  - "1-arg form @0x18b274: the operand may be either a filetype string OR an output string array. It reads the arg descriptor (ldrb r2,[r1,#0x2] string flag @0x18b27c; ldrb r1,[r1,#0x1] array flag @0x18b28c) to decide; a wrong-typed operand raises errnum 8 (Type mismatch: mov r0,#0x8 @0x18b308 -> bl 0x1fffdc)."
+  - "2-arg form @0x18b2cc: filetype string + output string array — the first operand is the filter, the second is the destination array. The array operand is validated as an array (ldrb r0,[r5,#0x10]+0x1 @0x18b2e0); a non-array second operand raises errnum 8."
+  - "When an output array is given, the file names are written into it; a 1-D array is automatically extended to the number of files obtained (documented `DIM NAMETBL$[100]:FILES NAMETBL$`)."
+  - "Filetype filters (documented): \"TXT:\" texts and programs; \"DAT:\" binary data (including graphics); \"//\" project list; \"PROJECT/\" a specified project name."
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "FILES is given more than 2 arguments, or a nonzero result count reaches the runtime guard. (The disassembly raises errnum 3 on result-count != 0, but `A=FILES` is rejected by the parser before that guard — oracle: NOERR via the runtime harness.)" }
+  - { errnum: 8, name: "Type mismatch", when: "an operand is neither a valid filetype string nor a string array as the form requires" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/files.md (2 forms: `FILES [\"File type\"]` lists on the console; `FILES [\"File type\",] String array` stores names into an array. File type: \"TXT:\" texts and programs, \"DAT:\" binary data (incl. graphics), \"//\" project list, \"PROJECT/\" project name. 'For one-dimensional arrays, the array will be automatically extended according to the number of files obtained.' Examples `FILES`, `DIM NAMETBL$[100]:FILES NAMETBL$`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst FILES handler @0x18b228: result-count guard ldr r0,[r0,#0xc]/cmp r0,#0x0/bne 0x18b264 (nonzero -> errnum 3: mov r0,#0x3 @0x18b26c -> bl 0x1fffdc); arg-count dispatch ldr r0,[r4,#0x4] @0x18b248 -> 0=@0x18b354 (list all), 1=@0x18b274, 2=@0x18b2cc, else errnum 3 (@0x18b264); 1-arg reads string flag ldrb r2,[r1,#0x2] @0x18b27c and array flag ldrb r1,[r1,#0x1] @0x18b28c; bad-type operand -> errnum 8 (mov r0,#0x8 @0x18b308 -> bl 0x1fffdc)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bFILES\\b'): heavy real use of all documented forms — bare `FILES` (4DAXEXWD/TXT/---ATOMIC---), filtered console `FILES \"TXT:\"` / `FILES \"DAT:\"` / `FILES \"//\"`, and array output `FILES \"DAT:\",F$` (1BWX7ENV/TXT/AND-OS), plus the filetype/array passed as a string variable (`FILES TYPE$,FLES$` 43AE1XG3/TXT/MMLIBRARY.LIB) and concatenated path filters (`FILES \"DAT:\"+FOLDER$,FL$`). Confirms the filetype is any string expression. Syntax legal (shipped programs); listing contents oracle-pending." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d FILES (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t12a): `FILES 5` (number where a filetype string or array is required) raises errnum 8 errline 1 (Type mismatch); `FILES \"TXT:\",5` (non-array second operand) raises errnum 8 errline 1. Confirms the operand-type guards. Note: `A=FILES` (read for a value) reported NOERR via the harness — the result-count -> errnum 3 guard is in the disassembly but the parser rejects `A=FILES` before the runtime guard is reached, so it has no harvestable runtime errnum (queued). The console listing / array contents are filesystem state with no scalar golden (queued)." }
+
+# Top-level hw_verified: the operand-type error guards (errnum 8) are oracle-confirmed; the
+# file listing/array output is filesystem state with no scalar golden (queued).
+confidence: hw_verified
+
+tests:
+  - { name: number_operand_type_mismatch, code: "FILES 5", expect: { error: { errnum: 8 } } }
+  - { name: nonarray_second_operand_type_mismatch, code: 'FILES "TXT:",5', expect: { error: { errnum: 8 } } }

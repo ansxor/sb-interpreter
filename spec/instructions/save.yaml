@@ -1,0 +1,53 @@
+id: SAVE
+kind: statement
+category: Files
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — save a resource (program slot / graphic page / font page) to a file.
+  - args:
+      - { name: name, type: string, range: '"[Resource:]Filename" — Resource omitted = current program SLOT; PRG0-PRG3 (PRG=PRG0); GRP0-GRP5; GRPF font image page' }
+    returns: { type: void }
+    note: "SAVE \"[Resource:]Filename\" — save a program slot, graphic page or font page. A confirmation dialog is always shown (cannot be hidden)."
+  # Form 2 — save a string variable to a text file.
+  - args:
+      - { name: name, type: string, range: '"TXT:Filename"' }
+      - { name: text, type: string, range: "string data to write (saved as UTF-8)" }
+    returns: { type: void }
+    note: "SAVE \"TXT:Filename\",TX$ — save a string to a text file (UTF-8)."
+  # Form 3 — save a numeric array to a binary file.
+  - args:
+      - { name: name, type: string, range: '"DAT:Filename"' }
+      - { name: array, type: number_array, range: "numeric array to write as binary data" }
+    returns: { type: void }
+    note: "SAVE \"DAT:Filename\",array — save a numeric array to a binary (DAT) file."
+
+summary: "Saves a file. The first operand is a `\"[Resource:]Filename\"` string: with no resource prefix it saves the current program SLOT; `PRG0`-`PRG3` save a program slot, `GRP0`-`GRP5` a graphic page, `GRPF` the font image page; `TXT:` saves a string variable (second operand) to a text file as UTF-8; `DAT:` saves a numeric array (second operand) to a binary file. A confirmation dialog is always shown and cannot be suppressed. The filename/resource may be any string expression (literal, variable, or concatenation)."
+
+semantics:
+  - "Handler @0x18e7d4. Requires arg count >= 1 AND result count 0: cmp r0,#0x1 (arg count) / ldrge r0,[r8,#0xc] (result count) / cmpge r0,#0x0 / beq 0x18e804; otherwise (no args, or used as a value) it falls to @0x18e7f4 which raises errnum 3 (Syntax error: mov r0,#0x3 @0x18e7fc -> b 0x18e8c0 -> bl 0x1fffdc). SAVE has no function form."
+  - "The first operand must be a string: read via the arg vtable (ldr r2,[r2,#0x50]; blx r2 @0x18e830) only after a string-type check (ldrb r12,[r2,#0x2]; cmp r12,#0x0; beq 0x18e8a0); the non-string branch @0x18e8a0 raises errnum 8 (Type mismatch: mov r0,#0x8 @0x18e8a8 -> bl 0x1fffdc). The name is parsed into a resource code + filename by FUN_001d6d6c (bl 0x1d6d6c @0x18e874)."
+  - "After parsing, the resource code (ldrb r1,[sp,#0x10] @0x18e8cc) sub-dispatches the save: cmp r1,#0x0 / cmp r1,#0x3 etc. select the program-slot / graphic / TXT / DAT path, which determines whether a second data operand (string for TXT, array for DAT) is consumed."
+  - "Resource selection (documented): no prefix = current program SLOT; PRG0-PRG3 = program slot (PRG = PRG0); GRP0-GRP5 = graphic page; GRPF = font image page; TXT: + a string = text file (UTF-8); DAT: + a numeric array = binary file."
+  - "The SAVE confirmation dialog is always displayed and cannot be hidden (documented) — unlike LOAD, there is no dialog-suppression flag."
+  - "Form 2 writes the string operand to a `TXT:` file as UTF-8 (documented). Form 3 writes the numeric array to a `DAT:` file as binary (documented)."
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "SAVE is given no arguments, or is read for a value (used as a function)" }
+  - { errnum: 8, name: "Type mismatch", when: "the filename operand is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/save.md (3 forms: `SAVE \"[Resource:]File name\"`; `SAVE \"TXT:File\",String variable`; `SAVE \"DAT:File\",Numerical value array`. Resource: omitted=current program SLOT, PRG0-PRG3 (PRG=PRG0), GRP0-GRP5, GRPF font image page. 'When run, a confirmation dialog will be displayed' and 'The confirmation dialog for SAVE cannot be hidden.' TXT string is saved as UTF-8. Examples `SAVE \"PRG0:TEST\"`, `SAVE \"TXT:MEMOFILE\",TX$`, `SAVE \"DAT:TEST\",MARRAY`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst SAVE handler @0x18e7d4: cmp r0,#0x1 (arg count) / ldrge r0,[r8,#0xc] (result count) / cmpge r0,#0x0 / beq 0x18e804, else errnum 3 (mov r0,#0x3 @0x18e7fc -> b 0x18e8c0 -> bl 0x1fffdc); first arg string-type check ldrb r12,[r2,#0x2]/cmp r12,#0x0/beq 0x18e8a0 (non-string -> errnum 8: mov r0,#0x8 @0x18e8a8 -> bl 0x1fffdc); name parsed by bl 0x1d6d6c (@0x18e874); resource-code sub-dispatch ldrb r1,[sp,#0x10] @0x18e8cc (cmp r1,#0x0 / cmp r1,#0x3) selecting the program/graphic/TXT/DAT path" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bSAVE\\b', excludes GSAVE/MICSAVE/BGSAVE): confirms the filename is any string expression — a bare string variable carrying the whole resource spec (`SAVE SAVEFILE$,SAVE_DATA` 43N3K3ED/TXT/FIFTEEN) and concatenation (`SAVE \"GRP1:\"+MEMO_SAVE$` 1BWX7ENV/TXT/AND-OS). All real uses match the documented 1-arg (resource), 2-arg TXT (+string) and 2-arg DAT (+array) forms. Syntax legal (shipped programs); runtime output oracle-pending." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d SAVE (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t12a): bare `SAVE` (0 args) raises errnum 3 errline 1 (Syntax error); `SAVE 5` (non-string name) raises errnum 8 errline 1 (Type mismatch); `A=SAVE(\"PRG0:T\")` (read for a value) raises errnum 3 errline 1. Confirms the arg-count/result-count guard and the string-type guard. The actual file write is filesystem/dialog state with no scalar golden (queued)." }
+
+# Top-level hw_verified: the error model (errnum 3 arg/result-count, errnum 8 type) is fully
+# oracle-confirmed; the file-write effect itself is filesystem state with no scalar golden (queued).
+confidence: hw_verified
+
+tests:
+  - { name: no_args_syntax_error, code: "SAVE", expect: { error: { errnum: 3 } } }
+  - { name: nonstring_name_type_mismatch, code: "SAVE 5", expect: { error: { errnum: 8 } } }
+  - { name: read_as_value_syntax_error, code: 'A=SAVE("PRG0:T")', expect: { error: { errnum: 3 } } }
