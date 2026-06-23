@@ -128,7 +128,7 @@ and name the instructions they cover inline.
 ### S-C — Concept specs (architecture/models; Markdown in `spec/concepts/`, see prd/specs.md)
 - [x] S-C1 execution-model — lexer/parser/compiler/VM, 4 slots + COMMON, frame layout · governs M1 (`spec/concepts/execution-model.md`; docs + osb structural; frame layout/identifier-class/`^`-rank queued for disasm+oracle)
 - [~] S-C2 screen-and-color-model — layers/Z/RGBA5551 (exemplar drafted; confirm vs oracle) · governs M2, O-T6
-- [ ] S-C3 sprite-bg-model — attributes/animation/collision/tilemaps · governs M3
+- [x] S-C3 sprite-bg-model — attributes/animation/collision/tilemaps · governs M3 (`spec/concepts/sprite-bg-model.md`; docs + disassembled instruction specs + hw_verified constant bits; mid-anim bits/SPVAR OOR/Z-tiebreak queued)
 - [ ] S-C4 frame-and-timing-model — VSYNC/WAIT/MAINCNT, 60 fps · governs M4
 - [ ] S-C5 mml-grammar — the full MML language · governs M5
 - [ ] S-C6 file-and-extdata-format — projects/resources/extdata layout · governs M6, O-T3

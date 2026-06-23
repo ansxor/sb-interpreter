@@ -583,3 +583,15 @@ oracle to confirm exact output and promote to `hw_verified`.
   - Exact 3.6.0 call-frame cell order (currentFunction, old bp, return addr), args-vs-locals
     overlap, and `RETURN` OUT-copy offsets — read handler from disassembly, diff vs oracle.
   - Operand-stack size / recursion depth that trips Stack overflow (errnum 5).
+
+- S-C3 · sprite-bg-model concept spec — model authored from docs + the disassembled
+  sprite/BG instruction specs (which carry handler-body reads) + hw_verified constant bits.
+  Open items the model marks oracle-pending:
+  - Exact per-channel mid-animation bit values reported by SPCHK (`(flags>>17)&0xFF`) and
+    BGCHK (low byte) while a given SPANIM/BGANIM channel runs (see also lines for S-T8/S-T9
+    above — same probe). The `#CHK*` target→bit mapping is documented; the live running bit is not.
+  - Sprite SPVAR out-of-range variable number (outside 0–7): does it error (which errnum) or
+    wrap/no-op? No visible guard at the SPVAR store site (BGVAR DOES guard 0–7).
+  - SPHITINFO 3-variable OUT form (TM,X1,Y1) — accepted by the handler, undocumented; confirm legal + values.
+  - Compositing exactness for M3 goldens (O-T6): sprite/BG draw+pivot order (scale vs rotate
+    vs scroll origin), rounding, and Z tie-breaking across sprites/BG/GRP/console layers.
