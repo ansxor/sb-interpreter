@@ -7,6 +7,9 @@
 //!   ([`effects::UserInstrument`]) models for the M5-T4 SFX/voice commands.
 //! - [`synth`] — the **synth engine** (M5-T2): renders a [`mml::Song`] to interleaved stereo
 //!   PCM16 through a 3DS-DSP-style voice/resampler/mixer ([`synth::Synth`]).
+//! - [`stream`] — device-independent PCM streaming primitives (M5-T5): a ring buffer
+//!   ([`stream::PcmRing`]) + a stateful resampler ([`stream::StereoResampler`]) that the live
+//!   cpal/WebAudio backends sit between the 60 fps synth and the host output device.
 //!
 //! Everything here is I/O- and device-free (pure integer/`f32` math, no threads) so it builds
 //! for wasm32; the live audio backends (cpal / WebAudio) live in the `sb-platform-*` crates.
@@ -20,4 +23,5 @@
 pub mod effects;
 pub mod instruments;
 pub mod mml;
+pub mod stream;
 pub mod synth;

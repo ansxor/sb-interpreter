@@ -17,6 +17,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 sb-core = { path = "../sb-core" }
 sb-render = { path = "../sb-render" }
+sb-audio = { path = "../sb-audio" }
 
 # Browser bindings are only meaningful (and only link) on wasm32. Target-gating them keeps
 # the workspace's native `cargo build`/`cargo test` from pulling web-sys onto the desktop.
@@ -35,4 +36,12 @@ features = [
     "ImageData",
     "KeyboardEvent",
     "MouseEvent",
+    # WebAudio output (M5-T5 audio backend).
+    "AudioContext",
+    "BaseAudioContext",
+    "AudioBuffer",
+    "AudioBufferSourceNode",
+    "AudioNode",
+    "AudioDestinationNode",
+    "AudioContextState",
 ]

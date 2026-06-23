@@ -283,6 +283,77 @@ mod web {
         request_frame(g.borrow().as_ref().unwrap());
         Ok(())
     }
+
+    // ----- Audio backend (M5-T5): WebAudio output -------------------------------------------
+
+    use sb_audio::mml;
+    use sb_audio::synth::{Pcm, Synth};
+    use web_sys::{AudioBuffer, AudioBufferSourceNode, AudioContext};
+
+    /// A WebAudio output sink: an [`AudioContext`] kept alive for the page, into which synth
+    /// PCM is scheduled. The browser counterpart of the native cpal backend.
+    ///
+    /// The synth renders interleaved stereo PCM16 at
+    /// [`SAMPLE_RATE`](sb_audio::synth::SAMPLE_RATE); we hand WebAudio an `AudioBuffer` *at that
+    /// rate* and let the browser resample to the device — the WebAudio graph does the rate
+    /// conversion the native backend does with `StereoResampler`.
+    pub struct WebAudio {
+        ctx: AudioContext,
+    }
+
+    impl WebAudio {
+        /// Create the audio context. (It may start suspended until a user gesture; calling
+        /// from a click handler — as `play_mml` is meant to be — resumes it.)
+        pub fn new() -> Result<Self, JsValue> {
+            Ok(WebAudio {
+                ctx: AudioContext::new()?,
+            })
+        }
+
+        /// Schedule a finite PCM clip to play immediately. De-interleaves to per-channel f32
+        /// (WebAudio's planar `AudioBuffer` layout) and resamples via the WebAudio graph.
+        pub fn play_pcm(&self, pcm: &Pcm) -> Result<(), JsValue> {
+            let frames = pcm.frames();
+            if frames == 0 {
+                return Ok(());
+            }
+            let buffer: AudioBuffer =
+                self.ctx
+                    .create_buffer(2, frames as u32, pcm.sample_rate as f32)?;
+            let mut left = vec![0.0f32; frames];
+            let mut right = vec![0.0f32; frames];
+            for (f, frame) in pcm.samples.chunks_exact(2).enumerate() {
+                left[f] = frame[0] as f32 / 32768.0;
+                right[f] = frame[1] as f32 / 32768.0;
+            }
+            buffer.copy_to_channel(&left, 0)?;
+            buffer.copy_to_channel(&right, 1)?;
+
+            let source: AudioBufferSourceNode = self.ctx.create_buffer_source()?;
+            source.set_buffer(Some(&buffer));
+            source.connect_with_audio_node(&self.ctx.destination())?;
+            source.start()?;
+            Ok(())
+        }
+    }
+
+    /// Render an MML string with the synth and play it through WebAudio (M5-T5). Call from a
+    /// user-gesture handler (e.g. a button click) so the browser lets audio start. `frames`,
+    /// when > 0, renders a fixed number of 1/60 s frames (expanding endless loops); 0 renders
+    /// the tune once.
+    #[wasm_bindgen]
+    pub fn play_mml(src: &str, frames: u32) -> Result<(), JsValue> {
+        let song = mml::parse(src).map_err(|e| {
+            JsValue::from_str(&format!("MML error (errnum {}): {}", e.errnum, e.message))
+        })?;
+        let synth = Synth::new();
+        let pcm = if frames > 0 {
+            synth.render_frames(&song, frames)
+        } else {
+            synth.render(&song)
+        };
+        WebAudio::new()?.play_pcm(&pcm)
+    }
 }
 
 #[cfg(test)]

@@ -10,9 +10,20 @@ repository.workspace = true
 [lints]
 workspace = true
 
+# The live cpal audio backend (M5-T5) is OFF by default. cpal links a native audio device
+# library (ALSA on Linux), which the hermetic CI runner (headless ubuntu, no `libasound2-dev`)
+# does not have — gating it behind a feature keeps the default `cargo build --workspace` green
+# there. Enable locally / on a desktop host with `--features audio` to build the `sb-play`
+# demo and the `audio` module. The deterministic streaming core it drives lives in `sb-audio`
+# (pure, always built + tested).
+[features]
+default = []
+audio = ["dep:cpal"]
+
 [dependencies]
 sb-core = { path = "../sb-core" }
 sb-render = { path = "../sb-render" }
+sb-audio = { path = "../sb-audio" }
 
 # The windowed host (`sb`) blits the rendered framebuffer to a real OS window. winit +
 # softbuffer are heavy, desktop-only deps — target-gate them off wasm32 so the workspace's
@@ -21,6 +32,8 @@ sb-render = { path = "../sb-render" }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 winit = "0.30"
 softbuffer = "0.4"
+# cpal is the native audio output device (the `audio` feature). Desktop-only + optional.
+cpal = { version = "0.15", optional = true }
 
 # The headless runner the deterministic replay gate (harness/diff/replay.py) shells out to.
 [[bin]]
@@ -31,3 +44,10 @@ path = "src/bin/sb-run.rs"
 [[bin]]
 name = "sb"
 path = "src/bin/sb.rs"
+
+# The audio demo: render an MML string with the synth and play it through cpal. Needs the
+# `audio` feature (and a real output device), so it is excluded from the default build.
+[[bin]]
+name = "sb-play"
+path = "src/bin/sb-play.rs"
+required-features = ["audio"]
