@@ -39,6 +39,7 @@
 //! Malformed input raises [`ParseError`] with `errnum: 3` (Syntax error).
 
 use crate::ast::*;
+use crate::consts;
 use crate::lexer::Lexer;
 use crate::token::{SourceLoc, Suffix, Token, TokenKind};
 
@@ -1020,8 +1021,9 @@ impl Parser {
     /// `DATA` is common, so items go through the expression parser + folder.
     ///
     /// (Two cases the token stream can't fully recover are left for the oracle —
-    /// queued: spaces inside an unquoted `DATA` string up to the comma, and a
-    /// `#const` item, which needs the constant table the compiler resolves.)
+    /// A `#NAME` item (`DATA #L` → 256) folds via the constant table in `parse_primary`
+    /// before reaching here, so it arrives as a plain `Const` (hw_verified, S-T4d/S-T14c).
+    /// (Still queued: spaces inside an unquoted `DATA` string up to the comma.)
     fn parse_data_item(&mut self) -> PResult<Lit> {
         // Quoted string.
         if let TokenKind::Str(s) = self.cur_kind() {
@@ -1374,14 +1376,19 @@ impl Parser {
                 self.advance();
                 Ok(Expr::constant(Lit::Str(format!("@{name}")), loc))
             }
-            // A built-in `#NAME` constant: represented as a `Var` whose ident keeps
-            // the `#` (variable names can never contain `#`, so this is an
-            // unambiguous marker the compiler — M1-T5 — resolves against
-            // `spec/reference/constants.yaml`). Keeping resolution out of the parser
-            // mirrors how variable slots are resolved later, not here.
+            // A built-in `#NAME` constant (`#WHITE`, `#UP`, `#L`, …). SmileBASIC folds these
+            // to an inline Integer literal wherever they appear — they are not runtime
+            // variables (see `crate::consts` / `spec/reference/constants.yaml`). Resolving
+            // here means the value participates in constant-folding and is a legal `DATA`
+            // item. An UNKNOWN `#NAME` keeps the `#`-prefixed `Var` marker (variable names
+            // can never contain `#`); the compiler resolves/rejects it later. (Exact errnum
+            // for an undefined `#const` is oracle-pending — see HARVEST_QUEUE.md.)
             TokenKind::Const(name) => {
                 self.advance();
-                Ok(Expr::var(Name::new(format!("#{name}"), Suffix::None), loc))
+                match consts::lookup(&name) {
+                    Some(v) => Ok(Expr::constant(Lit::Int(v), loc)),
+                    None => Ok(Expr::var(Name::new(format!("#{name}"), Suffix::None), loc)),
+                }
             }
             TokenKind::LParen => {
                 self.advance();
@@ -1716,12 +1723,21 @@ mod tests {
     }
 
     #[test]
-    fn const_reference_keeps_hash_marker() {
-        let e = expr("#WHITE");
-        let ExprKind::Var(name) = &e.kind else {
-            panic!("expected var marker");
+    fn known_const_folds_to_its_value() {
+        // A built-in `#NAME` constant folds to an inline Integer (hw_verified S-T14c).
+        assert_eq!(expr("#WHITE").kind, ExprKind::Const(Lit::Int(-460552)));
+        assert_eq!(expr("#L").kind, ExprKind::Const(Lit::Int(256)));
+        // Participates in constant folding.
+        assert_eq!(expr("#L+1").kind, ExprKind::Const(Lit::Int(257)));
+    }
+
+    #[test]
+    fn unknown_const_keeps_hash_marker() {
+        // An undefined `#NAME` keeps the `#`-prefixed marker for the compiler to resolve/reject.
+        let ExprKind::Var(name) = &expr("#NOTACONST").kind else {
+            panic!("expected var marker for unknown const");
         };
-        assert_eq!(name.ident, "#WHITE");
+        assert_eq!(name.ident, "#NOTACONST");
     }
 
     // ----- statements: assignment forms -----

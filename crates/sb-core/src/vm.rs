@@ -2132,6 +2132,20 @@ H$=HEX$(255)"#);
     }
 
     #[test]
+    fn named_constants_resolve_to_their_values() {
+        // `#NAME` constants fold to inline Integer literals (hw_verified S-T14c).
+        assert_eq!(out("PRINT #UP"), "1");
+        assert_eq!(out("PRINT #L"), "256");
+        assert_eq!(out("PRINT #R"), "512");
+        // A color word is the signed i32 of its ARGB value (&HFFF8F8F8 -> -460552).
+        assert_eq!(out("PRINT #WHITE"), "-460552");
+        assert_eq!(out("PRINT #RED"), "-524288");
+        // In an expression and as a DATA item.
+        assert_eq!(out("PRINT #L+1"), "257");
+        assert_eq!(out("READ A\nDATA #L\nPRINT A"), "256");
+    }
+
+    #[test]
     fn print_negative_number_has_no_leading_space() {
         // SmileBASIC does NOT pad positive numbers with a leading space (unlike MS BASIC).
         assert_eq!(out("PRINT -5"), "-5");

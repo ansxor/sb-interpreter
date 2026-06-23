@@ -10,6 +10,13 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] M1-T14 / S-T14c (undefined `#const`) · What does real SB 3.6.0 do with an UNDEFINED
+  `#NAME` (one not among the 79 built-ins) — e.g. `PRINT #NOTACONST` / `DATA #FOO`? Syntax
+  error 3 at parse, an undefined-variable error, or silently 0? · assumption: the 79 known
+  `#NAME` constants now fold to their hw_verified value (`sb_core::consts`); an unknown
+  `#NAME` falls through to the undeclared-variable path → 0 (likely wrong — probe a bare
+  `#ZZZ`).
+
 - [ ] M1-T1 (lexer identifier class) · What is the exact SmileBASIC 3.6.0 identifier
   character class — which non-ASCII chars are legal in a name (kana/kanji/full-width latin/
   full-width digits?), and the leading-char rule (can a name start with a digit, `_`, or a
@@ -870,9 +877,17 @@ oracle to confirm exact output and promote to `hw_verified`.
   - **LINPUT used as a function** (`A=LINPUT("X")`): linput.yaml hw_verified expects Syntax
     error (3); sb-core raises 16 (the compiler treats it as an undefined call). Fix: parser
     should reject LINPUT in expression position → 3, like INPUT already does.
-  - **DATA named-constant items** (`DATA #L` → 256): data.yaml hw_verified (`#L`=256, `#UP`=1,
-    etc. are valid DATA items); sb-core raises Syntax error 3. Fix: DATA item parsing must
-    accept `#NAME` button/system constants (fold to their constant value).
+  - **DATA named-constant items** (`DATA #L` → 256) — RESOLVED 2026-06-23. Implemented
+    `#NAME` named-constant resolution: the parser now folds every built-in `#NAME` to its
+    inline Integer value via a new baked table `sb_core::consts` (all 79 values from the
+    hw_verified `spec/reference/constants.yaml`, S-T14c). This fixes `DATA #L`→256 AND bare
+    `#UP`/`#WHITE`/… (which previously resolved to 0 as undeclared vars). An UNKNOWN `#NAME`
+    keeps the `#`-marker for the compiler. `DATA` is now in `IN_SCOPE_DATA_ARRAY_CONSOLE`;
+    data.yaml's `data_named_const` + all DATA inline tests replay green. New
+    `harness/corpus/cases/named_const.yaml` (13 cases) + `tests/constants_table.rs` drift
+    guard (baked table == constants.yaml) + VM/parser unit tests. (Exact errnum for an
+    UNDEFINED `#const` — e.g. `#NOTACONST` — is still oracle-pending; currently it falls
+    through to the undeclared-variable path → 0.)
   - **LOCATE stdout cases** (`LOCATE 20,15:PRINT "X"`): the inline `basic_xy`/`x_edge_50_ok`
     cases `expect.stdout: "X"`, but `console_text()` scrapes the full grid, so the cursor
     position prepends newlines/spaces. These are smoke cases (NOT hw_verified — the hw_verified

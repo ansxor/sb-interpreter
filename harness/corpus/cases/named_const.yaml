@@ -1,0 +1,49 @@
+# Built-in `#NAME` named constants (M1-T14 increment). Every value is hw_verified
+# (sb-oracle S-T14c, frozen in spec/reference/constants.yaml). `#NAME` is folded to an
+# inline Integer literal wherever it appears — an expression, a DATA item, an argument.
+# SmileBASIC Integer is i32, so a color word (&HFFF8F8F8) PRINTs as its signed value.
+cases:
+  - name: button_up
+    code: 'PRINT #UP'
+    expect: { stdout: "1" }
+  - name: button_l
+    code: 'PRINT #L'
+    expect: { stdout: "256" }
+  - name: button_r
+    code: 'PRINT #R'
+    expect: { stdout: "512" }
+  - name: button_a
+    code: 'PRINT #A'
+    expect: { stdout: "16" }
+  # Color words: the unsigned ARGB value reinterpreted as a signed i32.
+  - name: color_white
+    code: 'PRINT #WHITE'
+    expect: { stdout: "-460552" }      # &HFFF8F8F8
+  - name: color_red
+    code: 'PRINT #RED'
+    expect: { stdout: "-524288" }      # &HFFF80000
+  # Oracle-corrected vs docs (constants.yaml header): #BLUE / #CYAN==#AQUA.
+  - name: color_blue
+    code: 'PRINT #BLUE'
+    expect: { stdout: "-16776968" }    # &HFF0000F8
+  # Text-color / flag constants are small positive ints.
+  - name: text_white
+    code: 'PRINT #TWHITE'
+    expect: { stdout: "15" }
+  - name: bgrot_180
+    code: 'PRINT #BGROT180'
+    expect: { stdout: "8192" }         # &H2000 (oracle-corrected)
+  # In an expression (folds with arithmetic).
+  - name: const_in_expr
+    code: 'PRINT #L+1'
+    expect: { stdout: "257" }
+  - name: const_bitor
+    code: 'PRINT #L OR #R'
+    expect: { stdout: "768" }          # 256 | 512
+  # As DATA items, read back by READ (hw_verified data.yaml data_named_const).
+  - name: data_named_const
+    code: "READ A\nDATA #L\nPRINT A"
+    expect: { stdout: "256" }
+  - name: data_two_named_consts
+    code: "READ A,B\nDATA #UP,#DOWN\nPRINT A;\",\";B"
+    expect: { stdout: "1,2" }

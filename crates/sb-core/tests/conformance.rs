@@ -50,12 +50,14 @@ const IN_SCOPE_CONTROL: &[&str] = &[
 /// inline `tests:` are deterministic + `console_text()`-comparable. NOT taken wholesale: the
 /// not-yet-built `COPY`/`FILL` (M7) are excluded by omission. `VAR` is now in scope: its
 /// duplicate-declaration errnum (18) landed (M1-T14 increment 2026-06-23), so its inline
-/// `tests:` (incl. the `duplicate_error` 18 case) replay green. The `Data operations` (DATA
-/// named-const items) and `Console` (LOCATE cursor-positioned scrape, LINPUT function-form
-/// errnum) categories fold in with their own increments — queued in `HARVEST_QUEUE.md`.
-/// Listed by id.
+/// `tests:` (incl. the `duplicate_error` 18 case) replay green. `DATA` is now in scope: its
+/// items (numbers, strings, const-exprs, `&H` hex, and `#NAME` named constants — the
+/// `data_named_const` case `DATA #L` → 256) all parse/fold (M1-T14 increment, `#NAME`
+/// resolution via `sb_core::consts`). Still folding in with their own increments: the
+/// `Console` LOCATE cursor-positioned scrape + LINPUT function-form errnum — queued in
+/// `HARVEST_QUEUE.md`. Listed by id.
 const IN_SCOPE_DATA_ARRAY_CONSOLE: &[&str] = &[
-    "DIM", "VAR", "SORT", "RSORT", "PUSH", "POP", "SHIFT", "UNSHIFT", "SWAP", "INC", "DEC",
+    "DIM", "VAR", "DATA", "SORT", "RSORT", "PUSH", "POP", "SHIFT", "UNSHIFT", "SWAP", "INC", "DEC",
 ];
 
 #[derive(Debug, Deserialize)]
