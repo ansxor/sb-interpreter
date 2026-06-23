@@ -193,7 +193,8 @@ const IN_SCOPE_SPRITES: &[&str] = &[
 /// M3-T5. Listed by id.
 const IN_SCOPE_BG: &[&str] = &[
     "BGSCREEN", "BGPAGE", "BGPUT", "BGGET", "BGFILL", "BGCLR", "BGOFS", "BGROT", "BGSCALE",
-    "BGCOLOR", "BGSHOW", "BGHIDE", "BGHOME", "BGCLIP",
+    "BGCOLOR", "BGSHOW", "BGHIDE", "BGHOME", "BGCLIP", "BGANIM", "BGSTART", "BGSTOP", "BGCHK",
+    "BGVAR", "BGFUNC", "BGCOPY", "BGCOORD", "BGLOAD", "BGSAVE",
 ];
 /// Specs `sb-core` implements only **partially** in M1: each is in scope, but the named
 /// cases listed here are EXCLUDED because they block on a later milestone or the

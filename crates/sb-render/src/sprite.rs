@@ -28,9 +28,6 @@ pub const ANIM_CHANNELS: usize = 8;
 /// Items per keyframe for each channel: XY/UV/S take 2, the rest take 1
 /// (`spec/instructions/spanim.yaml`).
 pub const ANIM_ITEMS: [usize; ANIM_CHANNELS] = [2, 1, 2, 1, 1, 2, 1, 1];
-/// Maximum keyframes accepted per animation target (`cmp r0,#0x20` @0x163a48 →
-/// errnum 39 "Animation is too long" past 32).
-pub const ANIM_MAX_KEYFRAMES: usize = 32;
 /// Highest `SPDEF` template number accepted by `SPSET` form 1 (`&H0FFF`).
 pub const SPDEF_MAX: i32 = 4095;
 /// Default sheet page a sprite samples from (`SPPAGE` default = GRP4).
@@ -98,128 +95,16 @@ pub struct HitInfo {
     pub vy2: f64,
 }
 
-/// Why an `SPANIM` keyframe list was rejected. The lifecycle/argument errnums (4/8/10)
-/// are decided by the builtin; these are the data-build errnums raised by the keyframe
-/// helpers (`FUN_001ee360`/`0x163a00`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AnimError {
-    /// Fewer than one keyframe's worth of data for the channel — errnum 4 ("Illegal
-    /// function call", `cmp r6,#0x3 / bge` @0x163a10 / `mov r0,#0x4` @0x163a34).
-    TooFew,
-    /// More than 32 keyframes — errnum 39 ("Animation is too long", `cmp r4,#0x20` /
-    /// `mov r0,#0x27` @0x163a68 / @0x163d54).
-    TooLong,
-    /// A keyframe time/item is outside the ±32768 fixed-point range — errnum 10 ("Out of
-    /// range", `mov r0,#0xa` @0x163960; the items are `sxth`-truncated to 16 bits).
-    OutOfRange,
-    /// A keyframe has a zero duration — errnum 40 ("Illegal animation data", `cmp r1,#0 /
-    /// beq → mov r0,#0x28` @0x1639e4).
-    ZeroTime,
-}
+/// The keyframe-animation engine sprites share with BG layers (`SPANIM`/`BGANIM`). The
+/// `AnimError`/`AnimKeyframe`/[`ANIM_MAX_KEYFRAMES`] data-build pieces and the
+/// hold/interpolate/loop/relative advancement live in [`crate::anim`]; a sprite animation is
+/// one of those engines (`SpriteAnim`), with the sprite's [`Sprite::read_channel`]/
+/// [`Sprite::write_channel`] supplying the per-channel base/write-back. Exact interpolation
+/// rounding is oracle-pending (no framebuffer harvest yet — see `HARVEST_QUEUE.md`).
+pub use crate::anim::{AnimError, AnimKeyframe, KeyframeAnim, ANIM_MAX_KEYFRAMES};
 
-/// One `SPANIM` keyframe: a `time` (frames) and 1-2 `items`. A positive time HOLDS the
-/// item value for that many frames; a negative time LINEARLY INTERPOLATES toward it over
-/// `|time|` frames (the smooth form).
-#[derive(Debug, Clone, PartialEq)]
-pub struct AnimKeyframe {
-    /// Per-keyframe duration in frames; sign selects hold (≥0) vs interpolate (<0).
-    pub time: i32,
-    /// 1 or 2 target values (per the channel's [`ANIM_ITEMS`]).
-    pub items: Vec<f64>,
-}
-
-/// A running per-channel animation set up by `SPANIM`. Drives one target channel of one
-/// sprite across frames; [`SpriteState::tick`] advances it and writes the value back into
-/// the slot. Exact interpolation rounding is oracle-pending (no framebuffer harvest yet —
-/// see `HARVEST_QUEUE.md`); the structural advancement (hold/interpolate/loop/relative) is
-/// deterministic and unit-tested.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SpriteAnim {
-    /// Target channel 0..7 (`target & 7`).
-    pub channel: usize,
-    /// Relative flag (`+8` / trailing `"+"`): items are offsets from `base`.
-    pub relative: bool,
-    /// The sprite's channel value captured at `SPANIM` time (the relative base / the start
-    /// of the first interpolation segment).
-    pub base: Vec<f64>,
-    /// The keyframe sequence (1..=32).
-    pub keyframes: Vec<AnimKeyframe>,
-    /// Loop count: run the sequence this many times, or endlessly when 0.
-    pub loop_count: i32,
-    /// Current keyframe index.
-    pub kf: usize,
-    /// Frames already applied within the current keyframe.
-    pub frame: i32,
-    /// Value at the start of the current segment (the interpolation source).
-    pub seg_start: Vec<f64>,
-    /// The current applied channel value.
-    pub cur: Vec<f64>,
-    /// Completed loops.
-    pub loops_done: i32,
-    /// Whether the animation has finished (a non-endless loop ran out).
-    pub done: bool,
-}
-
-impl SpriteAnim {
-    /// Absolute target value of keyframe `i` (adding `base` when relative).
-    fn target(&self, i: usize) -> Vec<f64> {
-        let items = &self.keyframes[i].items;
-        if self.relative {
-            items
-                .iter()
-                .enumerate()
-                .map(|(k, v)| self.base.get(k).copied().unwrap_or(0.0) + v)
-                .collect()
-        } else {
-            items.clone()
-        }
-    }
-
-    /// Advance one frame, updating `cur` (and the keyframe/loop state).
-    fn step(&mut self) {
-        if self.done || self.keyframes.is_empty() {
-            return;
-        }
-        let i = self.kf;
-        let kf_time = self.keyframes[i].time;
-        let dur = kf_time.abs();
-        let target = self.target(i);
-        self.frame += 1;
-        if self.frame >= dur {
-            // Segment complete: snap to the keyframe target and advance.
-            self.cur = target;
-            self.advance_keyframe();
-        } else if kf_time < 0 {
-            // Mid-interpolation: linear from the segment start toward the target.
-            let t = self.frame as f64 / dur as f64;
-            self.cur = self
-                .seg_start
-                .iter()
-                .zip(target.iter())
-                .map(|(s, e)| s + (e - s) * t)
-                .collect();
-        } else {
-            // Hold: the value is the keyframe target for the whole segment.
-            self.cur = target;
-        }
-    }
-
-    /// Move to the next keyframe, wrapping + counting loops at the end of the sequence.
-    fn advance_keyframe(&mut self) {
-        self.frame = 0;
-        self.seg_start = self.cur.clone();
-        self.kf += 1;
-        if self.kf >= self.keyframes.len() {
-            self.kf = 0;
-            if self.loop_count != 0 {
-                self.loops_done += 1;
-                if self.loops_done >= self.loop_count {
-                    self.done = true;
-                }
-            }
-        }
-    }
-}
+/// A running per-channel `SPANIM` animation: a [`KeyframeAnim`] driving one sprite channel.
+pub type SpriteAnim = KeyframeAnim;
 
 /// One sprite slot. `active` distinguishes a live sprite (created by `SPSET`, not yet
 /// `SPCLR`'d) from a free slot; every other field is meaningful only while `active`.
@@ -571,47 +456,16 @@ impl SpriteState {
         data: &[f64],
         loop_count: i32,
     ) -> Result<(), AnimError> {
-        let stride = 1 + ANIM_ITEMS[channel]; // Time + items
-                                              // The handler floors the keyframe count to whole keyframes; fewer than one is
-                                              // errnum 4.
-        let frames = data.len() / stride;
-        if frames == 0 {
-            return Err(AnimError::TooFew);
-        }
-        if frames > ANIM_MAX_KEYFRAMES {
-            return Err(AnimError::TooLong);
-        }
-        let used = &data[..frames * stride];
-        // Every time/item is a 16-bit fixed-point value (±32768) in the handler.
-        if used.iter().any(|&v| !(-32768.0..32768.0).contains(&v)) {
-            return Err(AnimError::OutOfRange);
-        }
-        let mut keyframes = Vec::with_capacity(frames);
-        for chunk in used.chunks_exact(stride) {
-            let time = chunk[0] as i32;
-            // A zero-duration keyframe is illegal animation data (errnum 40).
-            if time == 0 {
-                return Err(AnimError::ZeroTime);
-            }
-            keyframes.push(AnimKeyframe {
-                time,
-                items: chunk[1..].to_vec(),
-            });
-        }
         let base = self.sprites[mgmt].read_channel(channel);
-        self.sprites[mgmt].anims[channel] = Some(SpriteAnim {
+        let anim = KeyframeAnim::build(
             channel,
             relative,
-            base: base.clone(),
-            keyframes,
+            ANIM_ITEMS[channel],
+            base,
+            data,
             loop_count,
-            kf: 0,
-            frame: 0,
-            seg_start: base.clone(),
-            cur: base,
-            loops_done: 0,
-            done: false,
-        });
+        )?;
+        self.sprites[mgmt].anims[channel] = Some(anim);
         // A fresh animation runs immediately (the stop bit is per-sprite; SPANIM does not
         // touch it). Leave anim_stopped as-is.
         Ok(())

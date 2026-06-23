@@ -957,8 +957,10 @@ impl Vm {
             }
             _ => {}
         }
-        // Sprite animations advance one step per displayed frame (M3-T2).
-        self.sprites.tick(self.frame_count - before);
+        // Sprite (M3-T2) and BG (M3-T5) animations advance one step per displayed frame.
+        let elapsed = self.frame_count - before;
+        self.sprites.tick(elapsed);
+        self.bg.tick(elapsed);
         Ok(Some(Value::Void))
     }
 
@@ -1132,6 +1134,16 @@ impl Vm {
         use crate::builtins::bg as b;
         let ret_count = if wants_value { 1 } else { out_argc as usize };
         let args: Vec<Value> = args.iter().map(|v| v.deref()).collect();
+        // BGANIM and BGFUNC need the program (DATA pool / @label resolution), so the VM
+        // orchestrates them; the rest are pure over the BG state.
+        if name == "BGANIM" {
+            self.do_bganim(&args, ret_count)?;
+            return Ok(true);
+        }
+        if name == "BGFUNC" {
+            self.do_bgfunc(&args, ret_count)?;
+            return Ok(true);
+        }
         let results = match name {
             "BGSCREEN" => b::bgscreen(&mut self.bg, &args, ret_count),
             "BGPAGE" => b::bgpage(&mut self.bg, &args, ret_count),
@@ -1147,12 +1159,120 @@ impl Vm {
             "BGHIDE" => b::bghide(&mut self.bg, &args, ret_count),
             "BGHOME" => b::bghome(&mut self.bg, &args, ret_count),
             "BGCLIP" => b::bgclip(&mut self.bg, &args, ret_count),
+            "BGVAR" => b::bgvar(&mut self.bg, &args, ret_count),
+            "BGCHK" => b::bgchk(&self.bg, &args, ret_count),
+            "BGSTART" => b::bgstart(&mut self.bg, &args, ret_count),
+            "BGSTOP" => b::bgstop(&mut self.bg, &args, ret_count),
+            "BGCOPY" => b::bgcopy(&mut self.bg, &args, ret_count),
+            "BGCOORD" => b::bgcoord(&self.bg, &args, ret_count),
+            "BGSAVE" => b::bgsave(&self.bg, &args, ret_count),
+            "BGLOAD" => b::bgload(&mut self.bg, &args, ret_count),
             _ => return Ok(false),
         };
         for v in results.map_err(sb)? {
             self.stack.push(v);
         }
         Ok(true)
+    }
+
+    /// `BGANIM layer, target, data[, loop]` — define and start a BG-layer animation. Mirrors
+    /// [`Vm::do_spanim`]: the third operand selects the form — a numeric **array** (form 1),
+    /// an `"@label"` **string** pointing at DATA (form 2), or an inline numeric **argument
+    /// list** (form 3). After the shared argcount>=3 / return-count==0 gate (errnum 4), the
+    /// data is flattened to a `Time,Item[,Item],…` list and handed to [`BgState::set_anim`].
+    /// BG has no UV/I channel (errnum 4 via [`bg::parse_bg_target`]).
+    fn do_bganim(&mut self, args: &[Value], ret_count: usize) -> Result<(), VmError> {
+        use crate::builtins::bg;
+        use crate::builtins::data::read_values;
+        use crate::builtins::sprite as spr;
+        // Gate: a return value, or fewer than 3 arguments, is Illegal function call (4).
+        if ret_count != 0 || args.len() < 3 {
+            return Err(sb(crate::builtins::illegal()));
+        }
+        let layer = {
+            let i = args[0].to_int().map_err(sb)?;
+            if !sb_render::bg::BgState::in_range(i) {
+                return Err(sb(crate::builtins::out_of_range()));
+            }
+            i as usize
+        };
+        let (channel, relative) = bg::parse_bg_target(&args[1]).map_err(sb)?;
+        let stride = 1 + spr::anim_items(channel);
+
+        let (data, loop_count): (Vec<f64>, i32) = match &args[2] {
+            // Form 1 — keyframes in a numeric array; an explicit trailing loop arg.
+            Value::IntArray(_) | Value::RealArray(_) => {
+                let len = crate::builtins::data::elem_count(&args[2]).map_err(sb)?;
+                let vals = read_values(&args[2], 0, len).map_err(sb)?;
+                let data = values_to_f64(&vals).map_err(sb)?;
+                let loop_count = match args.get(3) {
+                    Some(v) => v.to_int().map_err(sb)?,
+                    None => 1,
+                };
+                if args.len() > 4 {
+                    return Err(sb(crate::builtins::illegal()));
+                }
+                (data, loop_count)
+            }
+            // Form 2 — keyframes from DATA via "@label"; first DATA value is the count.
+            Value::Str(label) => {
+                let data = self.read_anim_data(label, stride)?;
+                let loop_count = match args.get(3) {
+                    Some(v) => v.to_int().map_err(sb)?,
+                    None => 1,
+                };
+                if args.len() > 4 {
+                    return Err(sb(crate::builtins::illegal()));
+                }
+                (data, loop_count)
+            }
+            // Form 3 — inline keyframes; a leftover trailing value (after whole keyframes) is
+            // the loop count.
+            _ => {
+                let vals = values_to_f64(&args[2..]).map_err(sb)?;
+                if vals.len() % stride == 1 {
+                    let (kf, last) = vals.split_at(vals.len() - 1);
+                    (kf.to_vec(), last[0] as i32)
+                } else {
+                    (vals, 1)
+                }
+            }
+        };
+        self.bg
+            .set_anim(layer, channel, relative, &data, loop_count)
+            .map_err(|e| sb(spr::anim_err(e)))
+    }
+
+    /// `BGFUNC layer, @label` — bind a callback process name to a BG layer. Requires exactly
+    /// 2 arguments (errnum 4); the layer ∉ 0..3 is errnum 10; a non-string label operand is
+    /// errnum 8; an unresolvable label/process is errnum 4. The bound process runs later via
+    /// `CALL BG` (with `CALLIDX` = the layer number) — dispatch is oracle-pending (M3-T6).
+    fn do_bgfunc(&mut self, args: &[Value], ret_count: usize) -> Result<(), VmError> {
+        if ret_count != 0 || args.len() != 2 {
+            return Err(sb(crate::builtins::illegal()));
+        }
+        let layer = {
+            let i = args[0].to_int().map_err(sb)?;
+            if !sb_render::bg::BgState::in_range(i) {
+                return Err(sb(crate::builtins::out_of_range()));
+            }
+            i as usize
+        };
+        let label = match &args[1] {
+            Value::Str(s) => s.clone(),
+            _ => return Err(sb(crate::builtins::type_mismatch())),
+        };
+        let name = String::from_utf16_lossy(&label)
+            .trim_start_matches('@')
+            .to_ascii_uppercase();
+        // The name must resolve to a code @label or a DEF-defined process; else errnum 4.
+        let resolves = self.program.code_labels.iter().any(|(n, _)| *n == name)
+            || self.program.functions.iter().any(|f| f.name.ident == name);
+        if !resolves {
+            return Err(sb(crate::builtins::illegal()));
+        }
+        self.bg.set_func(layer, Some(name));
+        Ok(())
     }
 
     /// `SPANIM mgmt, target, data[, loop]` — define and start a sprite animation. The form
@@ -2982,5 +3102,92 @@ H$=HEX$(255)"#);
         let vm = run_with_input(r#"INPUT "NAME";A$"#, &["bob"]);
         assert_eq!(string(&vm, "A"), "bob");
         assert!(vm.console_text().starts_with("NAME?"));
+    }
+
+    // -- M3-T5 BG extras (VM orchestration) ------------------------------------
+
+    #[test]
+    fn bganim_inline_advances_scroll_on_vsync() {
+        // Inline XY keyframe: hold (16,8). VSYNC advances the BG frame clock one step.
+        let vm = run_b("BGSCREEN 0,32,32\nBGANIM 0,\"XY\",2,16,8\nVSYNC 1");
+        assert_eq!((vm.bg().layers[0].ofs_x, vm.bg().layers[0].ofs_y), (16, 8));
+    }
+
+    #[test]
+    fn bganim_array_form_drives_rotation() {
+        // Numeric target 4 (R), array data [1,90] = one hold keyframe of 90 degrees.
+        let vm = run_b("DIM A[2]\nA[0]=1\nA[1]=90\nBGANIM 0,4,A\nVSYNC 1");
+        assert_eq!(vm.bg().layers[0].rot, 90);
+    }
+
+    #[test]
+    fn bganim_data_label_form() {
+        // "@label" form: first DATA value is the keyframe count, then Time,Item for Z.
+        let vm = run_b("BGANIM 0,\"Z\",\"@AD\"\nVSYNC 1\nEND\n@AD\nDATA 1\nDATA 1,5");
+        assert_eq!(vm.bg().layers[0].ofs_z, 5);
+    }
+
+    #[test]
+    fn bganim_too_few_args_errors() {
+        // Fewer than 3 arguments -> Illegal function call (4).
+        assert!(matches!(
+            run_b_err("BGANIM 0,\"XY\""),
+            VmError::Sb { errnum: 4, .. }
+        ));
+        // Layer out of range -> 10.
+        assert!(matches!(
+            run_b_err("BGANIM 4,\"XY\",10,0,0"),
+            VmError::Sb { errnum: 10, .. }
+        ));
+    }
+
+    #[test]
+    fn bgchk_reflects_running_animation() {
+        // After BGANIM on Z (channel 1), BGCHK has bit 1 set (#CHKZ = 2).
+        let vm = run_b("BGANIM 0,\"Z\",10,5\nST=BGCHK(0)\nPRINT ST");
+        assert_eq!(vm.console_text(), "2");
+        // After BGSTOP the layer reads 0.
+        let vm = run_b("BGANIM 0,\"Z\",10,5\nBGSTOP 0\nPRINT BGCHK(0)");
+        assert_eq!(vm.console_text(), "0");
+    }
+
+    #[test]
+    fn bgfunc_binds_callback_name() {
+        let vm = run_b("BGSCREEN 0,32,32\nBGFUNC 0,@CB\nEND\n@CB");
+        assert_eq!(vm.bg().layers[0].func.as_deref(), Some("CB"));
+    }
+
+    #[test]
+    fn bgfunc_errors() {
+        // Unresolvable label -> Illegal function call (4).
+        assert!(matches!(
+            run_b_err("BGFUNC 0,\"@NOPE\""),
+            VmError::Sb { errnum: 4, .. }
+        ));
+        // Layer out of range -> 10.
+        assert!(matches!(
+            run_b_err("BGFUNC 4,@P\nEND\n@P"),
+            VmError::Sb { errnum: 10, .. }
+        ));
+        // Non-string label -> Type mismatch (8).
+        assert!(matches!(
+            run_b_err("BGFUNC 0,5"),
+            VmError::Sb { errnum: 8, .. }
+        ));
+    }
+
+    #[test]
+    fn bgvar_round_trip_through_vm() {
+        let vm = run_b("BGSCREEN 0,32,32\nBGVAR 0,3,7\nPRINT BGVAR(0,3)");
+        assert_eq!(vm.console_text(), "7");
+    }
+
+    #[test]
+    fn bgsave_load_round_trip_through_vm() {
+        // Write a couple of cells, save the whole screen, reload into another layer.
+        let vm = run_b(
+            "BGSCREEN 0,8,8\nBGSCREEN 1,8,8\nBGPUT 0,1,1,&H1234\nDIM A[64]\nBGSAVE 0,A\nBGLOAD 1,A\nPRINT BGGET(1,1,1)",
+        );
+        assert_eq!(vm.console_text(), "4660"); // &H1234
     }
 }

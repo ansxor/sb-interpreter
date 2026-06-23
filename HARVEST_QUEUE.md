@@ -1046,3 +1046,26 @@ oracle to confirm exact output and promote to `hw_verified`.
     - **ATTR/CHKCHR/FONTDEF/SCROLL/WIDTH builtins** (S-T5c) are not implemented in sb-core yet;
       their inline `tests:` (incl. hw_verified errnum 4/10/31 + `CHKCHR`/`WIDTH` value cases)
       fold into `IN_SCOPE_CONSOLE` once those builtins land.
+
+## M3-T5 — BG extras (implemented 2026-06-23; runtime side-effects oracle-pending)
+The error gates + form selection are hw_verified (sb-oracle 2026-06-22 s_t9*) and replay in
+the conformance gate; the following runtime OUTPUTS need the BG framebuffer/transform oracle
+(O-T6) and are implemented to the documented/disassembled behavior pending a harvest:
+- **BGANIM interpolation output** — the exact per-frame hold/interpolate values written back
+  to a layer's scroll/Z/rot/scale/color/var channel (incl. rounding of the integer channels).
+  Implemented via the shared `KeyframeAnim` engine; structural advance is unit-tested.
+- **BGANIM channel 2/3 (UV/I) errnum** — BG has no UV/definition-I channel; a numeric target
+  2/3 or string "UV"/"I" is currently rejected as Illegal function call (4). The real errnum
+  is unverified (the disassembled per-channel switch has no case for them).
+- **BGCHK mid-animation bit values** — which `#CHK*` bit is set while a given channel runs
+  (need a running BGANIM + the layer flags-word read).
+- **BGCOORD converted values** — the exact mode 0/1/2 affine transform output (scroll/rot/
+  scale/home). A structural affine is implemented (round-trips with the transforms); the
+  pixel-exact values, rotation pivot convention, and char-unit rounding are unverified.
+- **BGCOPY out-of-bounds behavior** — cells whose source/destination falls off the map are
+  currently skipped (source captured first so overlap is safe); the real clamp/wrap is
+  unverified.
+- **BGSAVE/BGLOAD cell packing + auto-grow length + trailing-arg** — the packed tile/palette/
+  flip cell word format (modeled as the raw 16-bit cell, round-trips within sb-core), the
+  auto-grown 1-D array length, and the meaning of the undocumented 3/7-arg trailing operand
+  (currently evaluated then ignored) are unverified.

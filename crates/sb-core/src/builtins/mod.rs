@@ -210,6 +210,21 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "BGHIDE",
     "BGHOME",
     "BGCLIP",
+    // BG extras (M3-T5): BGANIM defines+starts a keyframe animation; BGSTART/BGSTOP
+    // resume/pause it; BGCHK reads the animation-status bitmask; BGVAR reads/writes the 8
+    // internal variables; BGFUNC binds a CALL BG callback; BGCOPY block-copies tilemap
+    // cells; BGCOORD converts between BG-screen and display coordinates; BGLOAD/BGSAVE copy
+    // tile data to/from a numeric array. All route over the VM-owned `BgState`.
+    "BGANIM",
+    "BGSTART",
+    "BGSTOP",
+    "BGCHK",
+    "BGVAR",
+    "BGFUNC",
+    "BGCOPY",
+    "BGCOORD",
+    "BGLOAD",
+    "BGSAVE",
     // Array data-ops (M1-T14): SORT/RSORT mutate their array arguments in place, so the
     // VM routes them to `data::sort` rather than the value-returning `dispatch`.
     "SORT",

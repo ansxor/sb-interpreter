@@ -33,9 +33,9 @@ sources:
 confidence: hw_verified
 
 tests:
-  # No-animation=0 + error cases hw_verified (sb-oracle s_t9d). Stopped=0 follows from the disassembly (BGSTOP sets bit 0x40 -> BGCHK forces 0). Mid-animation bit values oracle-pending (need a running BGANIM, see HARVEST_QUEUE.md).
-  - { name: no_anim_returns_zero, code: "PRINT BGCHK(0)", expect: { stdout: "0\n" } }
-  - { name: layer3_no_anim_zero, code: "PRINT BGCHK(3)", expect: { stdout: "0\n" } }
-  - { name: stopped_returns_zero, code: "BGSCREEN 0,32,32\nBGSTOP 0\nPRINT BGCHK(0)", expect: { stdout: "0\n" } }
+  # No-animation=0 + error cases hw_verified (sb-oracle s_t9d). Stopped=0 follows from the disassembly (BGSTOP sets bit 0x40 -> BGCHK forces 0). Mid-animation bit values oracle-pending (need a running BGANIM, see HARVEST_QUEUE.md). `stdout` is the console scrape (`console_text()`, trailing newline trimmed), so `PRINT BGCHK(0)` reads back "0", not "0\n".
+  - { name: no_anim_returns_zero, code: "PRINT BGCHK(0)", expect: { stdout: "0" } }
+  - { name: layer3_no_anim_zero, code: "PRINT BGCHK(3)", expect: { stdout: "0" } }
+  - { name: stopped_returns_zero, code: "BGSCREEN 0,32,32\nBGSTOP 0\nPRINT BGCHK(0)", expect: { stdout: "0" } }
   - { name: layer_out_of_range, code: "PRINT BGCHK(4)", expect: { error: { errnum: 10 } } }
   - { name: layer_negative, code: "PRINT BGCHK(-1)", expect: { error: { errnum: 10 } } }

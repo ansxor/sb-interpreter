@@ -30,7 +30,7 @@
 
 use sb_render::bg::{BgState, BG_DEFAULT_TILE_SIZE, BG_MAX_CELLS};
 
-use super::{illegal, out_of_range, type_mismatch};
+use super::{illegal, out_of_range, subscript_out_of_range, type_mismatch};
 use crate::value::{RuntimeError, Value};
 
 /// errnum 41 — "String too long" (`spec/reference/errors.yaml`).
@@ -472,6 +472,303 @@ pub fn bgclip(
     Ok(vec![])
 }
 
+// -- BG extras (M3-T5) --------------------------------------------------------
+
+/// Validate a BG internal-variable number in 0..7 (`BGVAR`). Out of range → errnum 10 (the
+/// disassembly's explicit `cmp #0 / cmp #7` guard, unlike sprite `SPVAR`).
+fn bg_varnum(v: &Value) -> Result<usize, RuntimeError> {
+    let i = v.to_int()?;
+    if (0..8).contains(&i) {
+        Ok(i as usize)
+    } else {
+        Err(out_of_range())
+    }
+}
+
+/// Resolve a `BGANIM` `target` operand to a `(channel, relative)` pair, restricted to BG's
+/// channels: 0 XY, 1 Z, 4 R, 5 S, 6 C, 7 V. BG has NO UV(2) or definition-I(3) channel, so
+/// a target resolving to channel 2/3 is rejected (errnum 4 — the exact errnum is
+/// oracle-pending, see `HARVEST_QUEUE.md`). A non-number / non-string is errnum 8; a negative
+/// numeric or unknown string is errnum 4 (shared with the sprite target parser).
+pub(crate) fn parse_bg_target(v: &Value) -> Result<(usize, bool), RuntimeError> {
+    let (channel, relative) = super::sprite::parse_target(v)?;
+    if channel == 2 || channel == 3 {
+        return Err(illegal());
+    }
+    Ok((channel, relative))
+}
+
+/// `BGVAR layer, n, value` (set, ret 0, 3 args) / `value = BGVAR(layer, n)` /
+/// `BGVAR layer, n OUT value` (read, ret 1, 2 args) — read/write one of a layer's eight
+/// internal variables. A bad call shape is errnum 4; the layer ∉ 0..3 or the variable number
+/// ∉ 0..7 is errnum 10. Works with no `BGSCREEN` setup (every layer exists, default 0).
+pub fn bgvar(
+    bg: &mut BgState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    match ret_count {
+        0 => {
+            let (l, n, val) = match args {
+                [l, n, val] => (l, n, val),
+                _ => return Err(illegal()),
+            };
+            let layer = layer(l)?;
+            let n = bg_varnum(n)?;
+            bg.set_var(layer, n, val.to_real()?);
+            Ok(vec![])
+        }
+        1 => {
+            let (l, n) = match args {
+                [l, n] => (l, n),
+                _ => return Err(illegal()),
+            };
+            let layer = layer(l)?;
+            let n = bg_varnum(n)?;
+            Ok(vec![Value::Real(bg.get_var(layer, n))])
+        }
+        _ => Err(illegal()),
+    }
+}
+
+/// `status = BGCHK(layer)` / `BGCHK layer OUT status` — the layer's animation-status bitmask
+/// (which `BGANIM` channels are running; 0 when stopped). Requires (1 arg, 1 result) — else
+/// errnum 4; the layer ∉ 0..3 is errnum 10. No `BGSCREEN` setup is required.
+pub fn bgchk(bg: &BgState, args: &[Value], ret_count: usize) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 1 {
+        return Err(illegal());
+    }
+    let l = match args {
+        [l] => l,
+        _ => return Err(illegal()),
+    };
+    let layer = layer(l)?;
+    Ok(vec![Value::Int(bg.anim_status(layer))])
+}
+
+/// Shared body of `BGSTART` (resume, `stop`=false) and `BGSTOP` (pause, `stop`=true). The
+/// no-argument form toggles every layer (no error); the one-argument form requires the layer
+/// ∈ 0..3 (errnum 10). A return value or > 1 argument is errnum 4. Unlike sprites there is no
+/// active-bit guard — every BG layer always exists.
+fn set_anim_run(
+    bg: &mut BgState,
+    args: &[Value],
+    ret_count: usize,
+    stop: bool,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    match args {
+        [] => bg.set_anim_stopped_all(stop),
+        [l] => bg.set_anim_stopped(layer(l)?, stop),
+        _ => return Err(illegal()),
+    }
+    Ok(vec![])
+}
+
+/// `BGSTART [layer]` — resume animation (clear the stop flag) for one layer or all.
+pub fn bgstart(
+    bg: &mut BgState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    set_anim_run(bg, args, ret_count, false)
+}
+
+/// `BGSTOP [layer]` — pause animation (set the stop flag) for one layer or all.
+pub fn bgstop(
+    bg: &mut BgState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    set_anim_run(bg, args, ret_count, true)
+}
+
+/// `BGCOPY layer, startX, startY, endX, endY, destX, destY` — copy a rectangular block of
+/// the layer's tilemap (inclusive corners, char units) to a destination top-left within the
+/// same layer (7 args, no return value). A return value or a non-7 argument count is
+/// errnum 4; the layer ∉ 0..3 is errnum 10.
+pub fn bgcopy(
+    bg: &mut BgState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    let (l, sx, sy, ex, ey, dx, dy) = match args {
+        [l, sx, sy, ex, ey, dx, dy] => (l, sx, sy, ex, ey, dx, dy),
+        _ => return Err(illegal()),
+    };
+    let layer = layer(l)?;
+    bg.copy(
+        layer,
+        (sx.to_int()?, sy.to_int()?, ex.to_int()?, ey.to_int()?),
+        (dx.to_int()?, dy.to_int()?),
+    );
+    Ok(vec![])
+}
+
+/// `BGCOORD layer, srcX, srcY [,mode] OUT dx, dy` — convert between a layer's BG-screen and
+/// display coordinates. Requires exactly 2 OUT variables (ret_count 2) and 3 or 4 input
+/// arguments (else errnum 4); mode defaults to 0, must be 0/1/2 (else errnum 10); the layer
+/// ∉ 0..3 is errnum 10. Returns the converted (dx, dy). Exact converted values are
+/// oracle-pending (O-T6).
+pub fn bgcoord(bg: &BgState, args: &[Value], ret_count: usize) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 2 {
+        return Err(illegal());
+    }
+    let (l, sx, sy, mode) = match args {
+        [l, sx, sy] => (l, sx, sy, 0),
+        [l, sx, sy, m] => (l, sx, sy, m.to_int()?),
+        _ => return Err(illegal()),
+    };
+    let layer = layer(l)?;
+    if !(0..=2).contains(&mode) {
+        return Err(out_of_range());
+    }
+    let (dx, dy) = bg.coord(layer, sx.to_real()?, sy.to_real()?, mode);
+    Ok(vec![Value::Real(dx), Value::Real(dy)])
+}
+
+/// Store a list of 16-bit cell values into a numeric `dest` array (`BGSAVE`), auto-expanding
+/// a 1-D array to `cells.len()` elements. An Integer array stores each cell as a signed
+/// `i32`; a Real array as an `f64`. A non-numeric array is errnum 8; a too-small
+/// multi-dimensional array is errnum 31.
+fn store_cells(dest: &Value, cells: &[u16]) -> Result<(), RuntimeError> {
+    let needed = cells.len();
+    match dest {
+        Value::IntArray(a) => {
+            let mut b = a.borrow_mut();
+            grow_or_31(b.dim_count() == 1, b.len(), needed).and_then(|grow| {
+                if grow {
+                    b.resize(needed)
+                } else {
+                    Ok(())
+                }
+            })?;
+            for (slot, &c) in b.as_mut_slice().iter_mut().zip(cells) {
+                *slot = c as i32;
+            }
+        }
+        Value::RealArray(a) => {
+            let mut b = a.borrow_mut();
+            grow_or_31(b.dim_count() == 1, b.len(), needed).and_then(|grow| {
+                if grow {
+                    b.resize(needed)
+                } else {
+                    Ok(())
+                }
+            })?;
+            for (slot, &c) in b.as_mut_slice().iter_mut().zip(cells) {
+                *slot = c as f64;
+            }
+        }
+        _ => return Err(type_mismatch()),
+    }
+    Ok(())
+}
+
+/// Decide whether a destination array needs growing: returns `Ok(true)` to grow a 1-D array,
+/// `Ok(false)` when it already fits, or errnum 31 for a too-small non-growable
+/// (multi-dimensional) array.
+fn grow_or_31(one_d: bool, len: usize, needed: usize) -> Result<bool, RuntimeError> {
+    if needed <= len {
+        Ok(false)
+    } else if one_d {
+        Ok(true)
+    } else {
+        Err(subscript_out_of_range())
+    }
+}
+
+/// Read the first `count` 16-bit cell values from a numeric `src` array (`BGLOAD`). A
+/// non-numeric array is errnum 8; fewer than `count` elements is errnum 31. Integer elements
+/// are masked to 16 bits; Real elements are truncated toward zero then masked.
+fn read_cells(src: &Value, count: usize) -> Result<Vec<u16>, RuntimeError> {
+    match src {
+        Value::IntArray(a) => {
+            let b = a.borrow();
+            if b.len() < count {
+                return Err(subscript_out_of_range());
+            }
+            Ok(b.as_slice()[..count]
+                .iter()
+                .map(|&v| (v & 0xFFFF) as u16)
+                .collect())
+        }
+        Value::RealArray(a) => {
+            let b = a.borrow();
+            if b.len() < count {
+                return Err(subscript_out_of_range());
+            }
+            Ok(b.as_slice()[..count]
+                .iter()
+                .map(|&v| (v as i64 & 0xFFFF) as u16)
+                .collect())
+        }
+        _ => Err(type_mismatch()),
+    }
+}
+
+/// `BGSAVE layer, array` (whole screen) / `BGSAVE layer, startX, startY, width, height,
+/// array` (rectangle) — copy a layer's tilemap into a numeric array (the format `BGLOAD`
+/// reads back). A return value or an argument count that is neither 2 nor 6 is errnum 4; the
+/// layer ∉ 0..3 is errnum 10; a non-numeric array is errnum 8.
+pub fn bgsave(bg: &BgState, args: &[Value], ret_count: usize) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    let (l, region, array) = match args {
+        [l, array] => (l, None, array),
+        [l, sx, sy, w, h, array] => (
+            l,
+            Some((sx.to_int()?, sy.to_int()?, w.to_int()?, h.to_int()?)),
+            array,
+        ),
+        _ => return Err(illegal()),
+    };
+    let layer = layer(l)?;
+    let (sx, sy, w, h) = region.unwrap_or((0, 0, bg.layers[layer].width, bg.layers[layer].height));
+    let cells = bg.save_cells(layer, sx, sy, w, h);
+    store_cells(array, &cells)?;
+    Ok(vec![])
+}
+
+/// `BGLOAD layer, array` (whole screen) / `BGLOAD layer, startX, startY, width, height,
+/// array` (rectangle) — copy tile data from a numeric array (as written by `BGSAVE`) into a
+/// layer's tilemap. The undocumented 3-arg (`layer, array, trailing`) and 7-arg (`…, array,
+/// trailing`) forms are accepted (the trailing operand's meaning is oracle-pending and
+/// ignored). A return value or an argument count outside {2,3,6,7} is errnum 4; the layer ∉
+/// 0..3 is errnum 10; a non-numeric array is errnum 8.
+pub fn bgload(
+    bg: &mut BgState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    // The array operand is arg[1] for the whole-screen forms (2/3 args) and arg[5] for the
+    // ranged forms (6/7 args); any extra trailing operand is ignored (oracle-pending).
+    let (l, region, array) = match args {
+        [l, array] | [l, array, _] => (l, None, array),
+        [l, sx, sy, w, h, array] | [l, sx, sy, w, h, array, _] => (
+            l,
+            Some((sx.to_int()?, sy.to_int()?, w.to_int()?, h.to_int()?)),
+            array,
+        ),
+        _ => return Err(illegal()),
+    };
+    let layer = layer(l)?;
+    let (sx, sy, w, h) = region.unwrap_or((0, 0, bg.layers[layer].width, bg.layers[layer].height));
+    let count = (w.max(0) as usize) * (h.max(0) as usize);
+    let cells = read_cells(array, count)?;
+    bg.load_cells(layer, sx, sy, w, h, &cells);
+    Ok(vec![])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -691,6 +988,200 @@ mod tests {
             vec![int(200), int(120)]
         );
         assert_eq!(bghome(&mut bg, &[int(0), int(5)], 0).unwrap_err().errnum, 4);
+    }
+
+    // -- M3-T5 BG extras -------------------------------------------------------
+
+    fn real(v: f64) -> Value {
+        Value::Real(v)
+    }
+
+    #[test]
+    fn bgvar_set_read_and_guards() {
+        let mut bg = BgState::new();
+        // Default zero, readable with no setup.
+        assert_eq!(
+            bgvar(&mut bg, &[int(0), int(0)], 1).unwrap(),
+            vec![real(0.0)]
+        );
+        // Write then read back.
+        bgvar(&mut bg, &[int(0), int(3), int(7)], 0).unwrap();
+        assert_eq!(
+            bgvar(&mut bg, &[int(0), int(3)], 1).unwrap(),
+            vec![real(7.0)]
+        );
+        // Bad shapes -> errnum 4.
+        assert_eq!(bgvar(&mut bg, &[int(0)], 0).unwrap_err().errnum, 4);
+        assert_eq!(
+            bgvar(&mut bg, &[int(0), int(0), int(0)], 1)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+        // Layer / variable-number range -> errnum 10.
+        assert_eq!(
+            bgvar(&mut bg, &[int(4), int(0), int(1)], 0)
+                .unwrap_err()
+                .errnum,
+            10
+        );
+        assert_eq!(
+            bgvar(&mut bg, &[int(0), int(8), int(1)], 0)
+                .unwrap_err()
+                .errnum,
+            10
+        );
+        assert_eq!(
+            bgvar(&mut bg, &[int(0), int(-1)], 1).unwrap_err().errnum,
+            10
+        );
+    }
+
+    #[test]
+    fn bgchk_shape_and_range() {
+        let bg = BgState::new();
+        assert_eq!(bgchk(&bg, &[int(0)], 1).unwrap(), vec![int(0)]);
+        assert_eq!(bgchk(&bg, &[int(3)], 1).unwrap(), vec![int(0)]);
+        // Statement use (no result) -> errnum 4.
+        assert_eq!(bgchk(&bg, &[int(0)], 0).unwrap_err().errnum, 4);
+        // Layer range -> errnum 10.
+        assert_eq!(bgchk(&bg, &[int(4)], 1).unwrap_err().errnum, 10);
+        assert_eq!(bgchk(&bg, &[int(-1)], 1).unwrap_err().errnum, 10);
+    }
+
+    #[test]
+    fn bgstart_stop_forms() {
+        let mut bg = BgState::new();
+        bgstop(&mut bg, &[], 0).unwrap();
+        assert!(bg.layers.iter().all(|l| l.anim_stopped));
+        bgstart(&mut bg, &[int(0)], 0).unwrap();
+        assert!(!bg.layers[0].anim_stopped);
+        assert!(bg.layers[1].anim_stopped);
+        // A return value -> errnum 4; layer range -> errnum 10.
+        assert_eq!(bgstop(&mut bg, &[], 1).unwrap_err().errnum, 4);
+        assert_eq!(bgstart(&mut bg, &[int(4)], 0).unwrap_err().errnum, 10);
+        assert_eq!(bgstop(&mut bg, &[int(-1)], 0).unwrap_err().errnum, 10);
+    }
+
+    #[test]
+    fn bgcopy_argcount_and_range() {
+        let mut bg = BgState::new();
+        bgscreen(&mut bg, &[int(2), int(32), int(32)], 0).unwrap();
+        bg.layers[2].set_cell(0, 0, 99);
+        bgcopy(
+            &mut bg,
+            &[int(2), int(0), int(0), int(0), int(0), int(4), int(4)],
+            0,
+        )
+        .unwrap();
+        assert_eq!(bg.layers[2].cell(4, 4), 99);
+        // 5 args -> errnum 4; layer range -> errnum 10.
+        assert_eq!(
+            bgcopy(&mut bg, &[int(0), int(0), int(0), int(1), int(1)], 0)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+        assert_eq!(
+            bgcopy(
+                &mut bg,
+                &[int(4), int(0), int(0), int(1), int(1), int(2), int(2)],
+                0
+            )
+            .unwrap_err()
+            .errnum,
+            10
+        );
+    }
+
+    #[test]
+    fn bgcoord_shape_mode_and_range() {
+        let bg = BgState::new();
+        // 3-arg (default mode) and 4-arg both return 2 values.
+        assert_eq!(
+            bgcoord(&bg, &[int(0), int(16), int(16)], 2).unwrap().len(),
+            2
+        );
+        assert_eq!(
+            bgcoord(&bg, &[int(0), int(16), int(16), int(1)], 2)
+                .unwrap()
+                .len(),
+            2
+        );
+        // Not exactly 2 OUT vars -> errnum 4.
+        assert_eq!(
+            bgcoord(&bg, &[int(0), int(0), int(0)], 1)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+        // Layer / mode range -> errnum 10.
+        assert_eq!(
+            bgcoord(&bg, &[int(4), int(0), int(0), int(0)], 2)
+                .unwrap_err()
+                .errnum,
+            10
+        );
+        assert_eq!(
+            bgcoord(&bg, &[int(0), int(0), int(0), int(3)], 2)
+                .unwrap_err()
+                .errnum,
+            10
+        );
+    }
+
+    #[test]
+    fn bgsave_load_round_trip_and_errors() {
+        use crate::array::SbArray;
+        let mut bg = BgState::new();
+        bgscreen(&mut bg, &[int(0), int(8), int(8)], 0).unwrap();
+        for y in 0..8 {
+            for x in 0..8 {
+                bg.layers[0].set_cell(x, y, (y * 8 + x) as u16 | 0x4000);
+            }
+        }
+        // Save the whole 8x8 screen into a 1-D Int array (auto-grown from length 1).
+        let arr = Value::IntArray(SbArray::from_vec(vec![0i32]).into_ref());
+        bgsave(&bg, &[int(0), arr.clone()], 0).unwrap();
+        if let Value::IntArray(a) = &arr {
+            assert_eq!(a.borrow().len(), 64);
+        }
+        // Load it back into a cleared layer and compare.
+        bgscreen(&mut bg, &[int(1), int(8), int(8)], 0).unwrap();
+        bgload(&mut bg, &[int(1), arr.clone()], 0).unwrap();
+        assert_eq!(bg.layers[1].cells, bg.layers[0].cells);
+
+        // BGSAVE rejects the 3-arg count (errnum 4); BGLOAD accepts it (array = arg[1]).
+        assert_eq!(
+            bgsave(&bg, &[int(0), int(0), arr.clone()], 0)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+        // BGLOAD 3-arg with a non-array in the array slot -> errnum 8.
+        assert_eq!(
+            bgload(&mut bg, &[int(0), int(0), int(0)], 0)
+                .unwrap_err()
+                .errnum,
+            8
+        );
+        // Layer range -> errnum 10 (checked before the array type).
+        assert_eq!(
+            bgsave(&bg, &[int(4), arr.clone()], 0).unwrap_err().errnum,
+            10
+        );
+        assert_eq!(bgload(&mut bg, &[int(-1), arr], 0).unwrap_err().errnum, 10);
+    }
+
+    #[test]
+    fn parse_bg_target_rejects_uv_and_i() {
+        // BG has no UV(2)/I(3) channel.
+        assert_eq!(parse_bg_target(&int(2)).unwrap_err().errnum, 4);
+        assert_eq!(parse_bg_target(&s("UV")).unwrap_err().errnum, 4);
+        // Valid channels resolve (XY=0, V=7 relative).
+        assert_eq!(parse_bg_target(&s("XY")).unwrap(), (0, false));
+        assert_eq!(parse_bg_target(&s("V+")).unwrap(), (7, true));
+        assert_eq!(parse_bg_target(&int(4 + 8)).unwrap(), (4, true));
     }
 
     #[test]
