@@ -25,19 +25,27 @@ semantics:
   - "Using EXEC in DIRECT mode is expected to raise errnum 43 (Can't use from DIRECT mode); a missing program file is expected to raise errnum 46 (Load failed). Both error mappings are hypotheses (not body-pinned) and oracle-pending."
 
 errors:
+  - { errnum: 10, name: "Out of range", when: "the NUMERIC slot operand (form 2) is outside 0-3 (`EXEC -1`, `EXEC 4`) — hw_verified" }
+  - { errnum: 3, name: "Syntax error", when: "the NUMERIC slot operand names a valid non-running slot that holds NO program (`EXEC 1` on an empty slot) — hw_verified" }
+  - { errnum: 4, name: "Illegal function call", when: "the resource STRING (form 1) has an unknown resource type (`EXEC \"FOO:X\"`) — hw_verified; a PRG index past the family is expected to match (oracle-pending)" }
+  - { errnum: 46, name: "Load failed", when: "the resource STRING (form 1) names a program file that does not exist (`EXEC \"NOEXISTPROG\"`) — hw_verified" }
   - { errnum: 43, name: "Can't use from DIRECT mode", when: "EXEC is used in DIRECT mode (documented as not usable in DIRECT mode) — hypothesis, oracle-pending" }
-  - { errnum: 46, name: "Load failed", when: "the program file (form 1) could not be read — hypothesis, oracle-pending" }
-  - { errnum: 4, name: "Illegal function call", when: "the slot operand (form 2) is outside 0-3 — hypothesis, oracle-pending" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/exec.md (2 forms: `EXEC \"[Resource name:]File name\"` Resource=PRG0-PRG3 'Loads and executes a program'; `EXEC Program SLOT` 0-3 'Executes a program in a different SLOT'. Notes: 'It is impossible to return from a program started with EXEC to the previous program'; 'It is possible to return by using END in a program started with EXEC in another SLOT'; 'This cannot be used to run a program in DIRECT mode'. Examples `EXEC \"SAMPLE\"`, `EXEC \"PRG0:SBGED\"`, `EXEC 2`)" }
   - { type: hypothesis, ref: "cia_3.6.0.lst EXEC is a special-form keyword, NOT in the builtin dispatch table (disasm.py dispatch EXEC: 'not in dispatch table'); keyword-table entry @0x30689c -> name @0x2ed6c0 (UTF-16 'EXEC'), keyword id 0x14b (331). No standalone handler body was located (parser/VM-internal), so the load/transfer algorithm and errnums are NOT body-pinned." }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bEXEC\\b', excludes EXECUTE): both forms are widespread. Form 2 numeric: `EXEC 1` (2D7X32KV/TXT/-GAME-), `EXEC 0` (1DVK34J/TXT/HNZBUS). Form 1 string is any expression: bare variable `EXEC EXE$` (4RYEAXLD/TXT/LOADER), `EXEC FAV$[SELFAV]` (7S3EW3H4/TXT/EDSMILE), concatenation `EXEC \"PRG2:SYS/SBSMILE\"` (1BWX7ENV/TXT/AND-OS), `EXEC \"PRG1:\"+S$` (43SXXEJ3/TXT/-ALPHA_OS-), and computed-slot `EXEC \"PRG\"+STR$(SLOT())+\":MAZENTOMORI\"` (9KX8XDJ6/TXT/MAZENTOMORI). Syntax legal (shipped programs); runtime effect oracle-pending." }
   - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d EXEC (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle real SB 3.6.0 (2026-06-23): EXEC error model — `EXEC -1`→errnum 10, `EXEC 4`→10 (numeric slot out of range), `EXEC 1`→3 (Syntax error, slot 1 empty on a fresh boot). String form: `EXEC \"FOO:X\"`→4 (unknown resource), `EXEC \"NOEXISTPROG\"`→46 (Load failed, file absent). Captured via run_case.py batch `|err`. The error/validation model is hw_verified; the control transfer itself (load + run, the END-returns-across-slots rule, per-slot vs shared variable scoping) is NOT body-readable in the disassembly and remains oracle-pending — the deferred multi-program model." }
 
 # Top-level documented: EXEC is a parser-handled special form (keyword id 331) with no
 # body-readable handler; both documented forms are syntax-verified in the corpus but the
 # load/transfer semantics, DIRECT-mode/load-failed errnums, and runtime effect are oracle-pending.
 confidence: documented
 
-tests: []
+tests:
+  - { name: slot_negative, code: "EXEC -1", expect: { error: { errnum: 10 } } }
+  - { name: slot_too_high, code: "EXEC 4", expect: { error: { errnum: 10 } } }
+  - { name: empty_slot, code: "EXEC 1", expect: { error: { errnum: 3 } } }
+  - { name: str_unknown_family, code: 'EXEC "FOO:X"', expect: { error: { errnum: 4 } } }
+  - { name: str_missing_file, code: 'EXEC "NOEXISTPROG"', expect: { error: { errnum: 46 } } }

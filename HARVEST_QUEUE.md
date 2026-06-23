@@ -642,12 +642,18 @@ oracle to confirm exact output and promote to `hw_verified`.
     UNHARVESTED (all filesystem/slot/run state, no scalar oracle golden — and they mutate the SD
     card / running program): CHKFILE existence result (TRUE/FALSE) for TXT/DAT and the undocumented
     PRG/GRP resource prefixes; RENAME actually renaming a file + the undocumented cross-resource
-    retype `TXT:`->`PRG:`; USE marking a slot executable (numeric form + undocumented
-    `USE "PRGn:Filename"` string form) and its out-of-range-slot errnum; EXEC loading+running a
-    program (form 1 string) / executing an existing slot (form 2 numeric), the DIRECT-mode error
-    (hypothesis errnum 43) and load-failed (hypothesis errnum 46), and the no-return control
-    transfer. USE/EXEC are parser special forms (keyword ids 332/331) with no body-readable
-    handler, so their slot validation + errnums stay hypothesis until harvested.
+    retype `TXT:`->`PRG:`. (UPDATE 2026-06-23, M6-T6: the USE/EXEC slot-validation errnums are
+    now HARVESTED + hw_verified — see exec.yaml/use.yaml. USE: -1/4→10, 0→4 (running slot),
+    1→ok; string PRG0:X→4, PRG1:X→46, PRG4/PRG5/FOO→4, empty-name→4. EXEC: -1/4→10, empty
+    slot 1→3, FOO:X→4, missing file→46. The error model + a slot-executable flag are
+    implemented + tested. STILL UNHARVESTED — the multi-program control transfer itself,
+    which needs ≥2 programs loaded in a multi-slot oracle harness, NOT a single injected
+    program: EXEC loading+running a program (form 1 string) / executing an existing slot
+    (form 2 numeric) and its no-return-vs-END-returns-across-slots rule; per-slot vs shared
+    (COMMON) variable scoping; whether USE must precede EXEC; cross-slot DEF/label resolution
+    from a USE'd slot; EXEC DIRECT-mode error (hypothesis errnum 43). USE/EXEC are parser
+    special forms (keyword ids 332/331) with no body-readable handler, so the transfer
+    semantics stay oracle-pending until a multi-slot harness exists.)
 
 - S-T12c Source read (PRGGET$/PRGNAME$/PRGSIZE): the error guards ARE hw_verified (batch
     2026-06-22, s_t12c): PRGGET$ with no active PRGEDIT -> errnum 38 (the no-PRGEDIT check

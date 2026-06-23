@@ -232,9 +232,11 @@ pub enum Op {
     /// takes the value verbatim). `a`/`b` are the static suffixes of the two
     /// operands in push order.
     Swap { a: Suffix, b: Suffix },
-    /// `USE n`: pop a slot expression, make that slot executable.
+    /// `USE n`: pop a slot/resource expression, make that slot executable (M6-T6). The
+    /// operand validation is hw_verified; cross-slot resolution of the marked slot is queued.
     Use,
-    /// `EXEC target`: pop a slot/file expression, load+run it.
+    /// `EXEC target`: pop a slot/file expression, load+run it (M6-T6). The operand validation
+    /// is hw_verified; the actual control transfer is the deferred multi-program model.
     Exec,
     /// `END` — stop the program normally.
     End,

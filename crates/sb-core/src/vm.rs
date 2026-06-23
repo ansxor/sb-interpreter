@@ -21,8 +21,10 @@
 //! builtins, M1-T8) are wired: the VM owns an [`sb_render::console::Console`] that `PRINT`
 //! and the console commands drive, and a headless input queue ([`Vm::push_input`]) feeds
 //! `INPUT`/`LINPUT`. Array-element references ([`Op::PushArrayRef`]) are wired (`SWAP`/
-//! `INC`/`DEC`/`OUT` on `A[i]`); `USE`/`EXEC` (M6) and runtime-name references
-//! ([`Op::PushRefExpr`]/[`Op::PopRef`], `VAR()`) are not yet wired and raise
+//! `INC`/`DEC`/`OUT` on `A[i]`); `USE`/`EXEC` (M6-T6) validate their operands with the
+//! hw_verified slot/resource error model and `USE` marks a slot executable, but the actual
+//! multi-program control transfer is left [`VmError::Unsupported`]; runtime-name references
+//! ([`Op::PushRefExpr`]/[`Op::PopRef`], `VAR()`) are not yet wired and likewise raise
 //! [`VmError::Unsupported`] rather than panicking — their handlers land in the milestones
 //! above.
 //!
@@ -86,6 +88,7 @@ const ERR_UNDEFINED_FUNCTION: u32 = 16;
 const ERR_RETURN_WITHOUT_GOSUB: u32 = 30;
 const ERR_SUBSCRIPT: u32 = 31;
 const ERR_USE_PRGEDIT: u32 = 38;
+const ERR_LOAD_FAILED: u32 = 46;
 
 /// How a run ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -240,6 +243,11 @@ pub struct Vm {
     /// The four program SLOTs' editable source (M6-T4), edited by the `PRG*` family. Slot 0
     /// is the running program; a host/test can seed any slot via [`Vm::set_slot_source`].
     prg_slots: [crate::builtins::prg::PrgSlot; 4],
+    /// Which program SLOTs are marked *executable* by `USE` (M6-T6). Slot 0 (the running
+    /// program) is inherently usable; `USE 1`/`USE 2`/`USE 3` mark the others so a future
+    /// cross-slot CALL/GOSUB can resolve their DEFs/labels. The actual cross-slot dispatch
+    /// (and loading a compiled program into a USE'd slot) is the remaining multi-program work.
+    slot_used: [bool; 4],
     /// The active `PRGEDIT` edit target: `(slot, current line index)`. `None` is the *cold*
     /// state — no PRGEDIT has run, so `PRGGET$`/`PRGSET`/`PRGINS`/`PRGDEL` raise errnum 38.
     /// In real SB this state is session-persistent (a shared global, see the `prgset` spec).
@@ -291,6 +299,7 @@ impl Vm {
             current_project: DEFAULT_PROJECT.to_string(),
             current_slot: 0,
             prg_slots: Default::default(),
+            slot_used: [true, false, false, false],
             prg_edit: None,
             device: Default::default(),
         }
@@ -303,6 +312,12 @@ impl Vm {
             s.name = name.encode_utf16().collect();
             s.set_source(&source.encode_utf16().collect::<Vec<u16>>());
         }
+    }
+
+    /// Whether program SLOT `slot` (0..3) is currently marked executable by `USE` (M6-T6).
+    /// Slot 0 (the running program) is always usable; out-of-range slots read `false`.
+    pub fn slot_used(&self, slot: u8) -> bool {
+        self.slot_used.get(slot as usize).copied().unwrap_or(false)
     }
 
     /// Replace the file/project store (M6-T2). The native host injects a real-filesystem
@@ -718,9 +733,17 @@ impl Vm {
                 wants_value,
             } => self.call_dynamic(argc, out_argc, wants_value)?,
 
+            // `USE n` / `EXEC target` — program-slot multi-program control (M6-T6).
+            Op::Use => {
+                let v = self.pop()?;
+                self.do_use(v)?;
+            }
+            Op::Exec => {
+                let v = self.pop()?;
+                self.do_exec(v)?;
+            }
+
             // -- deferred to later milestones --------------------------------------
-            Op::Use => return Err(VmError::Unsupported("USE (M6)")),
-            Op::Exec => return Err(VmError::Unsupported("EXEC (M6)")),
             Op::PushRefExpr | Op::PopRef => {
                 return Err(VmError::Unsupported("runtime-name reference (VAR())"))
             }
@@ -925,6 +948,105 @@ impl Vm {
         });
         self.pc = self.program.functions[func].address;
         Ok(())
+    }
+
+    /// `USE` — mark a program SLOT executable (M6-T6). Two operand forms, both `hw_verified`
+    /// (sb-oracle 2026-06-23):
+    /// * **numeric slot** `USE n`: `n` outside 0..3 → Out of range (10); `n` == the *running*
+    ///   slot (you cannot `USE` the slot you are executing) → Illegal function call (4); a
+    ///   valid non-running slot is marked executable.
+    /// * **resource string** `USE "PRGn:file"`: an unknown resource type / a PRG index past the
+    ///   family (`PRG4`/`PRG5`) / an empty name → 4 (note: NOT 10 like the `SAVE` resolver — the
+    ///   slot machinery rejects an out-of-family PRG index as an unknown resource); the running
+    ///   slot (`PRG0`) → 4; a missing file → Load failed (46); an existing file marks the slot.
+    ///
+    /// Loading the compiled program into the slot — so its DEFs/labels resolve from a
+    /// cross-slot `CALL`/`GOSUB` — is the remaining multi-program model (queued, `HARVEST_QUEUE.md`).
+    fn do_use(&mut self, v: Value) -> Result<(), VmError> {
+        if let Value::Str(s) = &v {
+            let s = String::from_utf16_lossy(s);
+            let (slot_opt, name) =
+                parse_prg_operand(&s).map_err(|errnum| sb(RuntimeError::new(errnum)))?;
+            // A `PRGn:` slot resolves directly; a bare filename (no `PRGn:`) targets a default
+            // slot — its exact selection is part of the deferred loader, so only the file-missing
+            // guard is observable here.
+            if let Some(slot) = slot_opt {
+                if slot == self.current_slot {
+                    return Err(sb(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL)));
+                }
+            }
+            if !self
+                .storage
+                .exists(&self.current_project, Folder::Txt, name)
+            {
+                return Err(sb(RuntimeError::new(ERR_LOAD_FAILED)));
+            }
+            match slot_opt {
+                Some(slot) => {
+                    self.slot_used[slot as usize] = true;
+                    Ok(())
+                }
+                None => Err(VmError::Unsupported(
+                    "USE \"file\" without a PRGn: slot (default-slot load) — M6 multi-program model",
+                )),
+            }
+        } else {
+            let n = v.to_int().map_err(sb)?;
+            if !(0..=3).contains(&n) {
+                return Err(sb(RuntimeError::new(ERR_OUT_OF_RANGE)));
+            }
+            let slot = n as u8;
+            if slot == self.current_slot {
+                return Err(sb(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL)));
+            }
+            self.slot_used[slot as usize] = true;
+            Ok(())
+        }
+    }
+
+    /// `EXEC` — load and/or execute another program SLOT (M6-T6). The validation is
+    /// `hw_verified` (sb-oracle 2026-06-23); the actual control transfer is the deferred
+    /// multi-program model:
+    /// * **numeric slot** `EXEC n`: `n` outside 0..3 → Out of range (10); a valid *non-running*
+    ///   slot with no loaded program → Syntax error (3) (`EXEC 1` on a fresh, empty slot — and
+    ///   every slot is empty until a loader exists); the *running* slot would restart the
+    ///   current program (transfer, deferred).
+    /// * **resource string** `EXEC "[PRGn:]file"`: an unknown resource type / bad PRG index /
+    ///   empty name → 4; a missing file → Load failed (46); an existing file would load + run it
+    ///   (transfer, deferred).
+    ///
+    /// The transfer itself (switching the running program, the `END`-returns-across-slots
+    /// rule, per-slot vs shared variable scoping) is not body-readable in the disassembly and
+    /// is oracle-pending — left unsupported rather than faked (queued, `HARVEST_QUEUE.md`).
+    fn do_exec(&mut self, v: Value) -> Result<(), VmError> {
+        if let Value::Str(s) = &v {
+            let s = String::from_utf16_lossy(s);
+            let (_slot_opt, name) =
+                parse_prg_operand(&s).map_err(|errnum| sb(RuntimeError::new(errnum)))?;
+            if !self
+                .storage
+                .exists(&self.current_project, Folder::Txt, name)
+            {
+                return Err(sb(RuntimeError::new(ERR_LOAD_FAILED)));
+            }
+            Err(VmError::Unsupported(
+                "EXEC \"file\" (load + execute / control transfer) — M6 multi-program model",
+            ))
+        } else {
+            let n = v.to_int().map_err(sb)?;
+            if !(0..=3).contains(&n) {
+                return Err(sb(RuntimeError::new(ERR_OUT_OF_RANGE)));
+            }
+            if n as u8 == self.current_slot {
+                return Err(VmError::Unsupported(
+                    "EXEC <running slot> (program restart / control transfer) — M6 multi-program model",
+                ));
+            }
+            // A valid non-running slot. No program loader exists yet, so the slot is empty —
+            // real SB raises Syntax error (3) for `EXEC <empty slot>` (hw_verified). When the
+            // loader lands, a loaded slot transfers control here instead.
+            Err(sb(RuntimeError::new(crate::builtins::ERR_SYNTAX)))
+        }
     }
 
     /// Call a registered builtin (M1-T7 math/string set). Pops `argc` value args
@@ -2787,6 +2909,34 @@ fn parse_input_number(field: &[u16]) -> Value {
         Value::Real(r)
     } else {
         Value::Int(0)
+    }
+}
+
+/// Parse a `USE`/`EXEC` resource-string operand `"[PRGn:]filename"` into its
+/// `(slot, filename)` parts. The resource type (when a `TYPE:` prefix is present) must be a
+/// program slot — `PRG`/`PRG0`/`PRG1`/`PRG2`/`PRG3`. Any other prefix — an unknown family
+/// (`FOO`) or a PRG index past the family (`PRG4`/`PRG5`) — or an empty filename is an Illegal
+/// function call (errnum 4). (hw_verified, sb-oracle 2026-06-23: `USE "PRG4:X"` / `USE "FOO:X"`
+/// / `USE "PRG1:"` all raise 4 — note this differs from the `SAVE` resolver, where an
+/// out-of-family index raises Out of range 10.) A bare filename (no `:`) yields `slot = None`
+/// (the default slot, selected by the loader).
+fn parse_prg_operand(s: &str) -> Result<(Option<u8>, &str), u32> {
+    match s.split_once(':') {
+        Some((ty, name)) => {
+            let slot = match ty.to_ascii_uppercase().as_str() {
+                "PRG" | "PRG0" => 0u8,
+                "PRG1" => 1,
+                "PRG2" => 2,
+                "PRG3" => 3,
+                _ => return Err(ERR_ILLEGAL_FUNCTION_CALL),
+            };
+            if name.is_empty() {
+                return Err(ERR_ILLEGAL_FUNCTION_CALL);
+            }
+            Ok((Some(slot), name))
+        }
+        None if s.is_empty() => Err(ERR_ILLEGAL_FUNCTION_CALL),
+        None => Ok((None, s)),
     }
 }
 
@@ -4968,5 +5118,105 @@ PRGDEL -1"#,
         // MPSEND/MPEND validate and no-op offline.
         let vm = run_b("MPSEND \"HI\"\nMPEND\nPRINT \"OK\"");
         assert_eq!(vm.console_text(), "OK");
+    }
+
+    // ---- Multi-slot: USE / EXEC (M6-T6) ----
+
+    #[test]
+    fn use_numeric_marks_a_slot_executable() {
+        // hw_verified (use.yaml: USE 1 → ok): a valid non-running slot is marked usable.
+        // Boot state: only the running slot 0 is usable.
+        let vm = run_b("PRINT \"OK\"");
+        assert!(vm.slot_used(0));
+        assert!(!vm.slot_used(1));
+        let vm = run_b("USE 1:USE 3");
+        assert!(vm.slot_used(1));
+        assert!(vm.slot_used(3));
+        assert!(!vm.slot_used(2));
+    }
+
+    #[test]
+    fn use_running_slot_is_illegal_function_call() {
+        // hw_verified (USE 0 → errnum 4): you cannot USE the slot you are executing.
+        assert_eq!(run_b_err("USE 0").errnum(), Some(4));
+    }
+
+    #[test]
+    fn use_out_of_range_slot_is_out_of_range() {
+        // hw_verified (USE -1 / USE 4 → errnum 10).
+        assert_eq!(run_b_err("USE -1").errnum(), Some(10));
+        assert_eq!(run_b_err("USE 4").errnum(), Some(10));
+    }
+
+    #[test]
+    fn use_resource_string_running_slot_is_illegal_function_call() {
+        // hw_verified (USE "PRG0:X" → errnum 4): the resource form also rejects the running slot.
+        assert_eq!(run_b_err("USE \"PRG0:X\"").errnum(), Some(4));
+    }
+
+    #[test]
+    fn use_resource_string_bad_resource_is_illegal_function_call() {
+        // hw_verified: an unknown resource type, a PRG index past the family, or an empty name
+        // is Illegal function call (4) — NOT Out of range, unlike the SAVE resolver.
+        assert_eq!(run_b_err("USE \"FOO:X\"").errnum(), Some(4));
+        assert_eq!(run_b_err("USE \"PRG4:X\"").errnum(), Some(4));
+        assert_eq!(run_b_err("USE \"PRG5:X\"").errnum(), Some(4));
+        assert_eq!(run_b_err("USE \"PRG1:\"").errnum(), Some(4));
+    }
+
+    #[test]
+    fn use_resource_string_missing_file_is_load_failed() {
+        // hw_verified (USE "PRG1:X" → errnum 46): a valid slot + missing file is Load failed.
+        assert_eq!(run_b_err("USE \"PRG1:NOPE\"").errnum(), Some(46));
+    }
+
+    #[test]
+    fn use_resource_string_existing_file_marks_slot() {
+        // A valid slot whose program file exists is marked usable. Program files share the
+        // TXT folder, so a SAVE "TXT:" file is visible to the PRGn: resource form.
+        let vm = run_b("SAVE \"TXT:LIB\",\"PRINT 1\"\nUSE \"PRG2:LIB\"");
+        assert!(vm.slot_used(2));
+    }
+
+    #[test]
+    fn exec_out_of_range_slot_is_out_of_range() {
+        // hw_verified (EXEC -1 / EXEC 4 → errnum 10).
+        assert_eq!(run_b_err("EXEC -1").errnum(), Some(10));
+        assert_eq!(run_b_err("EXEC 4").errnum(), Some(10));
+    }
+
+    #[test]
+    fn exec_empty_slot_is_syntax_error() {
+        // hw_verified (EXEC 1 on a fresh, empty slot → errnum 3). No program loader exists
+        // yet, so every non-running slot is empty.
+        assert_eq!(run_b_err("EXEC 1").errnum(), Some(3));
+    }
+
+    #[test]
+    fn exec_resource_string_bad_resource_is_illegal_function_call() {
+        // hw_verified (EXEC "FOO:X" → errnum 4): an unknown resource type.
+        assert_eq!(run_b_err("EXEC \"FOO:X\"").errnum(), Some(4));
+    }
+
+    #[test]
+    fn exec_resource_string_missing_file_is_load_failed() {
+        // hw_verified (EXEC "NOEXISTPROG" → errnum 46): a missing program file is Load failed.
+        assert_eq!(run_b_err("EXEC \"NOEXISTPROG\"").errnum(), Some(46));
+    }
+
+    #[test]
+    fn exec_valid_target_is_unsupported_pending_multi_program_model() {
+        // The actual control transfer (load + run / running-slot restart) is the deferred
+        // multi-program model — left unsupported rather than faked. It is NOT a SmileBASIC
+        // runtime error, so it carries no errnum.
+        let vm = run_b("SAVE \"TXT:PROG\",\"PRINT 1\"");
+        // Re-run with the file present so EXEC reaches the transfer path.
+        assert!(matches!(
+            run_b_err("SAVE \"TXT:PROG\",\"PRINT 1\"\nEXEC \"PRG1:PROG\""),
+            VmError::Unsupported(_)
+        ));
+        let _ = vm;
+        // EXEC of the running slot would restart the current program → also deferred.
+        assert!(matches!(run_b_err("EXEC 0"), VmError::Unsupported(_)));
     }
 }

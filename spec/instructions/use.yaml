@@ -24,17 +24,28 @@ semantics:
   - "An out-of-range slot is expected to raise errnum 4 (Illegal function call); a string with a non-PRG resource is expected to error similarly. Both error mappings are hypotheses (not body-pinned) and oracle-pending."
 
 errors:
-  - { errnum: 4, name: "Illegal function call", when: "the slot operand is outside 0-3 — hypothesis, oracle-pending" }
+  - { errnum: 10, name: "Out of range", when: "the NUMERIC slot operand is outside 0-3 (`USE -1`, `USE 4`) — hw_verified" }
+  - { errnum: 4, name: "Illegal function call", when: "the slot is the *running* slot (`USE 0` / `USE \"PRG0:…\"` — you cannot USE the slot you are executing), OR the resource STRING has an unknown type / a PRG index past the family (`USE \"FOO:X\"`, `USE \"PRG4:X\"`, `USE \"PRG5:X\"`) / an empty name (`USE \"PRG1:\"`) — hw_verified. Note the index-past-family case is errnum 4 here, NOT the errnum 10 the SAVE resolver gives." }
+  - { errnum: 46, name: "Load failed", when: "the resource STRING names a valid non-running slot but the program file does not exist (`USE \"PRG1:NOPE\"`) — hw_verified" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/use.md (1 form: `USE Program SLOT`. 'Makes a program in the specified program SLOT executable.' Argument: Program SLOT 0-3. Example `USE 2`)" }
   - { type: hypothesis, ref: "cia_3.6.0.lst USE is a special-form keyword, NOT in the builtin dispatch table (disasm.py dispatch USE: 'not in dispatch table'); keyword-table entry @0x306724 -> name @0x2ed580 (UTF-16 'USE'), keyword id 0x14c (332). No standalone handler body was located (parser/VM-internal), so the slot-validation algorithm and errnum are NOT body-pinned." }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bUSE\\b', excludes MOUSE/PAUSE/BECAUSE/REUSE/USED/USER): the documented numeric form is common (`USE 1` 13D4DV3V/TXT/MAIN_PRG_V2; `USE 3` 2383C3HE/TXT/LOWERDASH_C) and accepts a variable slot (`USE C` 2BC4738V/TXT/MOH_JUHSY237D; `USE I` 43AE1XG3/TXT/MMLIBRARY.LIB). The UNDOCUMENTED string form `USE \"PRGn:Filename\"` is real (~26 occurrences): `USE \"PRG1:OS_SAVE\"`, `USE \"PRG2:CL_SAVE\"` (1BWX7ENV/TXT/AND-OS), `USE \"PRG1:THWFNT\"` (81NY839J/TXT/__GAME), and concatenation `USE \"PRG1:\"+NAME$` (Z3VV3JJ/TXT/GAME). Syntax legal (shipped programs); runtime effect oracle-pending." }
   - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d USE (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle real SB 3.6.0 (2026-06-23): USE error model — `USE -1`→errnum 10, `USE 4`→10, `USE 0`→4 (running slot), `USE 1`→NOERR (marks slot executable). String form: `USE \"PRG0:X\"`→4 (running slot), `USE \"PRG1:X\"`→46 (Load failed, file absent), `USE \"PRG4:X\"`→4, `USE \"PRG5:X\"`→4, `USE \"FOO:X\"`→4, `USE \"PRG1:\"`→4 (empty name). Captured via run_case.py batch `|err`. The error/validation model is hw_verified; the slot-executable runtime effect (cross-slot DEF/label resolution) + the string-form program LOAD are the deferred multi-program model." }
 
 # Top-level documented: USE is a parser-handled special form (keyword id 332) with no
 # body-readable handler; the documented numeric form and the corpus-only string form are both
 # syntax-verified but their slot validation / errnum / runtime effect are oracle-pending.
 confidence: documented
 
-tests: []
+tests:
+  - { name: slot_negative, code: "USE -1", expect: { error: { errnum: 10 } } }
+  - { name: slot_too_high, code: "USE 4", expect: { error: { errnum: 10 } } }
+  - { name: running_slot, code: "USE 0", expect: { error: { errnum: 4 } } }
+  - { name: str_running_slot, code: 'USE "PRG0:X"', expect: { error: { errnum: 4 } } }
+  - { name: str_unknown_family, code: 'USE "FOO:X"', expect: { error: { errnum: 4 } } }
+  - { name: str_index_past_family, code: 'USE "PRG4:X"', expect: { error: { errnum: 4 } } }
+  - { name: str_empty_name, code: 'USE "PRG1:"', expect: { error: { errnum: 4 } } }
+  - { name: str_missing_file, code: 'USE "PRG1:NOPE"', expect: { error: { errnum: 46 } } }

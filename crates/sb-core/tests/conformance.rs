@@ -56,8 +56,9 @@ const IN_SCOPE_OPERATORS: &[&str] = &["AND", "OR", "XOR", "DIV", "MOD"];
 /// milestones. `CALL` (dynamic dispatch) and `COMMON` (same-slot `COMMON DEF`) are now in
 /// scope (M6-T6): `CALL "name"` resolves a DEF by a runtime name string (`Op::CallDynamic`),
 /// so `calls_by_name` (→ stdout) and `undefined_instruction` (→ errnum 16) replay green, and a
-/// `COMMON DEF` is invoked just like a plain DEF in its own slot. (Cross-slot COMMON visibility
-/// and EXEC/USE program switching are the remaining M6-T6 multi-program work — queued.) Listed
+/// `COMMON DEF` is invoked just like a plain DEF in its own slot. `USE`/`EXEC` now fold in their
+/// hw_verified error/validation model (see `IN_SCOPE_MULTISLOT`); cross-slot COMMON visibility
+/// and the EXEC/USE program *transfer* are the remaining M6-T6 multi-program work — queued.) Listed
 /// by id.
 const IN_SCOPE_CONTROL: &[&str] = &[
     "IF", "THEN", "ELSE", "ELSEIF", "ENDIF", "FOR", "NEXT", "TO", "STEP", "WHILE", "WEND",
@@ -250,14 +251,23 @@ const IN_SCOPE_SOUND: &[&str] = &[
 ];
 /// The file commands (M6-T2): `SAVE`/`LOAD`/`FILES`/`DELETE`/`RENAME`/`CHKFILE` (category
 /// `Files`) + `PROJECT` (category `DIRECT mode`), over the VM-owned `Storage` (M6-T1). Listed
-/// by id rather than category because other `Files`/`DIRECT mode` specs (e.g. `USE`/`EXEC`/
-/// `PRG*`/`RUN`/`LIST`) are not yet implemented. Each spec's inline cases are the
+/// by id rather than category because other `Files`/`DIRECT mode` specs (e.g. `RUN`/`LIST`)
+/// are not yet implemented (`USE`/`EXEC` → `IN_SCOPE_MULTISLOT`, `PRG*` → `IN_SCOPE_PRG`). Each spec's inline cases are the
 /// hw_verified arg-shape (→ 3/4) / type (→ 8) / DIRECT-only (→ 44) guards plus the
 /// `PROJECT=v` variable form; the data-round-trip behaviour is exercised by
 /// `harness/corpus/cases/files.yaml`.
 const IN_SCOPE_FILES: &[&str] = &[
     "SAVE", "LOAD", "FILES", "DELETE", "RENAME", "CHKFILE", "PROJECT",
 ];
+/// Multi-slot program control (M6-T6): `USE` (mark a slot executable) + `EXEC` (load/run
+/// another slot). Each spec's inline cases are the hw_verified error/validation model
+/// (2026-06-23): numeric slot out of range → 10; the running slot / a bad resource string →
+/// 4; a missing program file → 46; `EXEC` of an empty slot → Syntax error 3. The actual
+/// control transfer (loading a compiled program into a slot, switching the running program,
+/// cross-slot DEF/label/variable scoping) is the remaining multi-program model — not
+/// body-readable in the disassembly, oracle-pending, exercised by `vm.rs` unit tests as
+/// `VmError::Unsupported` rather than faked.
+const IN_SCOPE_MULTISLOT: &[&str] = &["USE", "EXEC"];
 /// The source-code-manipulation family (M6-T4): `PRGEDIT` selects the edit target, the four
 /// current-line mutators (`PRGGET$`/`PRGSET`/`PRGINS`/`PRGDEL`) act on it, and `PRGNAME$`/
 /// `PRGSIZE` report a slot's file name / counts, over the VM-owned program-slot source. Each
@@ -458,6 +468,7 @@ fn spec_in_scope(id: &str, category: Option<&str>) -> bool {
         || IN_SCOPE_INPUT.contains(&id)
         || IN_SCOPE_SOUND.contains(&id)
         || IN_SCOPE_FILES.contains(&id)
+        || IN_SCOPE_MULTISLOT.contains(&id)
         || IN_SCOPE_PRG.contains(&id)
         || IN_SCOPE_DEVICE.contains(&id)
         || IN_SCOPE_PARTIAL.iter().any(|(pid, _)| *pid == id)
