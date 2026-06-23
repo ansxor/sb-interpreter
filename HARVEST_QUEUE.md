@@ -401,3 +401,13 @@ oracle to confirm exact output and promote to `hw_verified`.
     `[`/`]` repeat-marker semantics in the hex string.
   - WAVSETA 16384-sample cap + power-of-two sample-count rounding (observation only, audio).
   - TALK <S>/<P> speed/pitch realization; TALKCHK non-zero playing value mid-TALK (audio, O-T7).
+- S-T11a (BUTTON/BREPEAT/STICK/STICKEX) — input-state + wireless paths need hardware:
+  - Live button bitmask values per feature ID (held/pressed-repeat/pressed-no-repeat/released)
+    and BREPEAT's timing effect on BUTTON feature 1: require injected button input (headless
+    oracle has none). Error guards + no-input baseline (0) already hw_verified.
+  - Live STICK/STICKEX axis magnitudes (Doubles clamped -1.0..1.0, ~+/-0.86 physical; Y up=+),
+    and STICKEX's XON EXPAD gating: require Circle Pad / Circle Pad Pro analog input.
+  - Wireless terminal-ID range check (errnum 10 vs connected-terminal count) and the
+    undocumented errnum 52 (comms-not-active) path for BUTTON/STICK/STICKEX: need an active
+    wireless multiplayer session (assumption: errnum 10 out-of-range, errnum 52 when inactive,
+    from disasm `mov r0,#0xa`/`mov r0,#0x34`).

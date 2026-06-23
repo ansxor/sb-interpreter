@@ -1,0 +1,50 @@
+id: STICK
+kind: statement
+category: Various kinds of input
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — this terminal's Circle Pad.
+  - args: []
+    out:
+      - { name: x, type: double, range: "-1.0..1.0", desc: "Circle Pad horizontal magnitude (right positive). Actual extent around +/-0.86." }
+      - { name: y, type: double, range: "-1.0..1.0", desc: "Circle Pad vertical magnitude (up positive). Actual extent around +/-0.86." }
+    note: "STICK OUT X,Y — read this terminal's Circle Pad analog input."
+  # Form 2 — another terminal via wireless.
+  - args:
+      - { name: terminal, type: integer, range: "0..3", desc: "Terminal (machine) ID to read over wireless multiplayer. Range-checked against the number of connected terminals." }
+    out:
+      - { name: x, type: double, range: "-1.0..1.0", desc: "Circle Pad horizontal magnitude (right positive)." }
+      - { name: y, type: double, range: "-1.0..1.0", desc: "Circle Pad vertical magnitude (up positive)." }
+    note: "STICK terminal OUT X,Y — read another terminal's Circle Pad over wireless."
+
+summary: "Reads the analog Circle Pad and writes its horizontal/vertical magnitude into two OUT variables X,Y, each a Double in the range -1.0..1.0 (the physical pad reaches around +/-0.86, not the full +/-1.0). X is positive to the right; Y is positive upward (up = +, down = -). An optional terminal ID reads another machine's Circle Pad over wireless multiplayer. See [[stickex]] for the Circle Pad Pro right stick and [[button]] for the digital buttons."
+
+semantics:
+  - "STICK ALWAYS requires exactly 2 OUT variables (X,Y): the handler checks the requested result count [r0,#0xc]==2 (cmp r0,#0x2 / bne @0x15b814 @0x15b7f0-0x15b7f8) and raises errnum 4 (Illegal function call: mov r0,#0x4 @0x15b828 / b 0x1fffdc) otherwise."
+  - "Argument count must be 0 (this terminal) or 1 (terminal ID); the handler dispatches on [r4,#0x4] (cmp #0x0 @0x15b800 / cmp #0x1 @0x15b80c) and any other count falls through to errnum 4 (mov r0,#0x4 @0x15b828)."
+  - "The two outputs are computed as Doubles: the raw 16-bit signed axis value (sxth @0x15b8c8) is converted to f64 (vcvt.f64.s32 @0x15b8d0) and scaled by a fixed constant (vmul.f64 d0,d0,d2 @0x15b8d4), then clamped to the inclusive range -1.0..+1.0 (vcmpe against +max d8 -> vmovge @0x15b8e0, and against -max d1 -> vmovls @0x15b8f4). The Y axis is reported with up = positive."
+  - "Supplying a terminal ID (form 2) while wireless multiplayer communication is not active raises errnum 52 (an undocumented communication error not in the official 0..47 table): the 1-arg branch tests a comms-state flag [[0x305612... via 0x15b98c]] (ldrb @0x15b834 / cmp #0x0) and raises mov r0,#0x34(52) @0x15b848 -> bl 0x1fffdc when set. This path is gated on wireless and is not deterministically harvestable; the terminal ID is otherwise range-checked against the connected-terminal count (errnum 10 out of range)."
+  - "STICK only reads input; it does not modify the pad. In a non-interactive context with the pad centred both outputs are 0.0. The OUT targets may be array elements as well as scalars (the result is stored through the runtime's variable-store path)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "STICK is used without exactly 2 OUT variables, or the argument count is not 0 or 1" }
+  - { errnum: 10, name: "Out of range", when: "the terminal ID is outside 0..(connected terminal count - 1)" }
+  - { errnum: 52, name: "Communication error", when: "a terminal ID is given while wireless multiplayer is not active (undocumented; not in the official error table)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/stick.md (`STICK [TerminalID] OUT X,Y` — 'Gets information on the Circle Pad'; TerminalID 0-3 for another terminal via wireless; X,Y receive Circle Pad magnitude (X:+/-1.0, Y:+/-1.0); 'Actual return values will be around +/-0.86'; for Y up = positive, down = negative; examples `STICK OUT X,Y` and `STICK 3 OUT X,Y`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst STICK handler @0x15b7e0: result-count [r0,#0xc]==2 else mov r0,#0x4 errnum 4 (@0x15b814-0x15b828); argcount [r4,#0x4] cmp #0x0 (@0x15b800) / cmp #0x1 (@0x15b80c) else errnum 4; axis read sxth (@0x15b8c8) -> vcvt.f64.s32 (@0x15b8d0) -> vmul.f64 d0,d0,d2 scale (@0x15b8d4) -> clamp vcmpe d8/vmovge (@0x15b8d8-0x15b8e0) and vcmpe d1/vmovls (@0x15b8ec-0x15b8f4) to +/-1.0; wireless-inactive flag ldrb @0x15b834 cmp #0x0 -> mov r0,#0x34(52) errnum 52 (@0x15b848); axis source field [r0,#0x88] (@0x15b8bc)" }
+  - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d STICK(mp, out x, out y) -> p.stick(0) (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bSTICK\\b'): the no-terminal form `STICK OUT X,Y` dominates (~900 calls). The terminal form is real, with literal and expression terminal IDs: `STICK 1 OUT X,Y` / `STICK 2 OUT X2,Y2` / `STICK 3 OUT X3,Y3` (KP5EK33J/TXT/PETITSMASH2MK-), `STICK CH/4 OUT STX[CH],STY[CH]` (227YK34J/TXT/JINTRI102). OUT targets are frequently array elements: `STICK OUT STX[CH],STY[CH]`, `STICK OUT SPW[TANKNUM%,3],...`. Confirms the terminal-ID form, expression terminal args and array-element OUT targets; exact axis magnitudes need live input (not headless-harvestable)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11a): STICK OUT X (one OUT var) raises errnum 4 (Illegal function call) and STICK (no OUT vars) raises errnum 4 — confirming exactly 2 OUT variables are required. Both errline 1. Live axis magnitudes / wireless terminal-range + errnum-52 paths need hardware input (queued)." }
+
+confidence: disassembled
+
+tests:
+  # Live analog values need hardware input (not headless-harvestable); the centred baseline (0,0),
+  # the OUT-count and arg-count error guards are pinned from the handler body. Wireless terminal
+  # range / errnum-52 paths need active multiplayer (queued).
+  - { name: read_centered, code: "STICK OUT X,Y\nPRINT X;\",\";Y", expect: { stdout: "0,0" } }
+  - { name: missing_out_var, code: "STICK OUT X", expect: { error: { errnum: 4 } } }
+  - { name: no_out_vars, code: "STICK", expect: { error: { errnum: 4 } } }

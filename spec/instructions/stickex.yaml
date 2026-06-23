@@ -1,0 +1,49 @@
+id: STICKEX
+kind: statement
+category: Various kinds of input
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — this terminal's Circle Pad Pro (C-stick).
+  - args: []
+    out:
+      - { name: x, type: double, range: "-1.0..1.0", desc: "Circle Pad Pro (right stick) horizontal magnitude (right positive)." }
+      - { name: y, type: double, range: "-1.0..1.0", desc: "Circle Pad Pro (right stick) vertical magnitude (up positive)." }
+    note: "STICKEX OUT X,Y — read this terminal's Circle Pad Pro right stick. Enable it first with XON EXPAD."
+  # Form 2 — another terminal via wireless.
+  - args:
+      - { name: terminal, type: integer, range: "0..3", desc: "Terminal (machine) ID to read over wireless multiplayer. Range-checked against the number of connected terminals." }
+    out:
+      - { name: x, type: double, range: "-1.0..1.0", desc: "Circle Pad Pro horizontal magnitude (right positive)." }
+      - { name: y, type: double, range: "-1.0..1.0", desc: "Circle Pad Pro vertical magnitude (up positive)." }
+    note: "STICKEX terminal OUT X,Y — read another terminal's Circle Pad Pro over wireless."
+
+summary: "Reads the Circle Pad Pro's analog right stick and writes its horizontal/vertical magnitude into two OUT variables X,Y, each a Double in the range -1.0..1.0 (X positive right, Y positive up). The Circle Pad Pro must be enabled first with XON EXPAD. Structurally identical to [[stick]] but reading the second (right) stick. An optional terminal ID reads another machine's right stick over wireless multiplayer."
+
+semantics:
+  - "STICKEX ALWAYS requires exactly 2 OUT variables (X,Y): the handler checks the requested result count [r0,#0xc]==2 (cmp r0,#0x2 / bne @0x15bebc @0x15be98-0x15bea0) and raises errnum 4 (Illegal function call: mov r0,#0x4 @0x15bed0 / b 0x1fffdc) otherwise."
+  - "Argument count must be 0 (this terminal) or 1 (terminal ID); the handler dispatches on [r4,#0x4] (cmp #0x0 @0x15bea8 / cmp #0x1 @0x15beb4) and any other count falls through to errnum 4 (mov r0,#0x4 @0x15bed0)."
+  - "The two outputs are computed exactly as in STICK: the raw 16-bit signed axis (sxth @0x15bf70) is converted to f64 (vcvt.f64.s32 @0x15bf78), scaled by a fixed constant (vmul.f64 d0,d0,d2 @0x15bf7c), then clamped to -1.0..+1.0 (vcmpe d8 / vmovge @0x15bf88, vcmpe d1 / vmovls @0x15bf9c). The axis source field is offset 0x90 (ldr r0,[r0,#0x90] @0x15bf64) — the right stick — versus STICK's 0x88. Y is reported with up = positive."
+  - "The Circle Pad Pro must be enabled beforehand with `XON EXPAD`; without an attached/enabled Circle Pad Pro the right stick reads as centred (0.0, 0.0)."
+  - "Supplying a terminal ID (form 2) while wireless multiplayer communication is not active raises errnum 52 (an undocumented communication error not in the official 0..47 table): the 1-arg branch tests a comms-state flag (ldrb @0x15bedc / cmp #0x0) and raises mov r0,#0x34(52) @0x15bef0 -> bl 0x1fffdc when set. Gated on wireless; not deterministically harvestable. The terminal ID is otherwise range-checked against the connected-terminal count (errnum 10 out of range)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "STICKEX is used without exactly 2 OUT variables, or the argument count is not 0 or 1" }
+  - { errnum: 10, name: "Out of range", when: "the terminal ID is outside 0..(connected terminal count - 1)" }
+  - { errnum: 52, name: "Communication error", when: "a terminal ID is given while wireless multiplayer is not active (undocumented; not in the official error table)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/stickex.md (`STICKEX [TerminalID] OUT X,Y` — 'Gets information on the Circle Pad Pro stick'; 'Circle Pad Pro should be enabled beforehand with XON EXPAD'; TerminalID 0-3 for another terminal via wireless; X,Y receive Circle Pad Pro magnitude (X:+/-1.0, Y:+/-1.0); examples `XON EXPAD` then `STICKEX OUT X,Y`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst STICKEX handler @0x15be88: result-count [r0,#0xc]==2 else mov r0,#0x4 errnum 4 (@0x15bebc-0x15bed0); argcount [r4,#0x4] cmp #0x0 (@0x15bea8) / cmp #0x1 (@0x15beb4) else errnum 4; axis read sxth (@0x15bf70) -> vcvt.f64.s32 (@0x15bf78) -> vmul.f64 d0,d0,d2 scale (@0x15bf7c) -> clamp vcmpe d8/vmovge (@0x15bf80-0x15bf88) and vcmpe d1/vmovls (@0x15bf94-0x15bf9c) to +/-1.0; axis source field [r0,#0x90] right stick (@0x15bf64) vs STICK's 0x88; wireless-inactive flag ldrb @0x15bedc cmp #0x0 -> mov r0,#0x34(52) errnum 52 (@0x15bef0)" }
+  - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d STICKEX(mp, out x, out y) -> p.stick(1) (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bSTICKEX\\b'): used less than STICK (~101 vs ~1140) but real, almost always the no-terminal form `STICKEX OUT X,Y` reading the C-stick. The terminal form appears in multiplayer code: `STICKEX 1 OUT EX,EY` (KP5EK33J/TXT/PETITSMASH2MK-). Confirms the call shape and terminal-ID form; exact axis magnitudes and the XON EXPAD gating need live hardware (not headless-harvestable)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11a): STICKEX OUT X (one OUT var) raises errnum 4 (Illegal function call) and STICKEX (no OUT vars) raises errnum 4 — confirming exactly 2 OUT variables are required. Both errline 1. Live axis magnitudes / XON EXPAD gating / wireless terminal-range + errnum-52 paths need hardware (queued)." }
+
+confidence: disassembled
+
+tests:
+  # Live analog values need a Circle Pad Pro + input (not headless-harvestable). The centred
+  # baseline (0,0) and the OUT-count / arg-count error guards are pinned from the handler body.
+  - { name: read_centered, code: "STICKEX OUT X,Y\nPRINT X;\",\";Y", expect: { stdout: "0,0" } }
+  - { name: missing_out_var, code: "STICKEX OUT X", expect: { error: { errnum: 4 } } }
+  - { name: no_out_vars, code: "STICKEX", expect: { error: { errnum: 4 } } }

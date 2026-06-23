@@ -103,7 +103,7 @@ and name the instructions they cover inline.
 - [x] S-T10d Voice & wave — TALK · TALKCHK · TALKSTOP · WAVSET · WAVSETA
 
 #### S-T11 Various input + Screen control (20) → S-T0
-- [ ] S-T11a Buttons & sticks — BUTTON · BREPEAT · STICK · STICKEX
+- [x] S-T11a Buttons & sticks — BUTTON · BREPEAT · STICK · STICKEX
 - [ ] S-T11b Touch & motion — TOUCH · ACCEL · GYROA · GYROV · GYROSYNC
 - [ ] S-T11c Microphone — MICSTART · MICSTOP · MICDATA · MICSAVE
 - [ ] S-T11d Screen control — ACLS · BACKCOLOR · DISPLAY · VISIBLE · XSCREEN

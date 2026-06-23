@@ -1,0 +1,55 @@
+id: BUTTON
+kind: function
+category: Various kinds of input
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — no arguments: held-down state of this terminal's buttons (feature 0).
+  - args: []
+    returns: { type: integer }
+    note: "BUTTON() — bitmask of buttons currently held down on this terminal (feature ID defaults to 0)."
+  # Form 2 — feature ID only.
+  - args:
+      - { name: feature, type: integer, range: "0..3", default: 0, optional: true, desc: "0: held down. 1: moment pressed (key-repeat enabled). 2: moment pressed (key-repeat disabled). 3: moment released." }
+    returns: { type: integer }
+    note: "BUTTON(feature) — button state of this terminal under the selected feature ID."
+  # Form 3 — feature ID + terminal ID (wireless).
+  - args:
+      - { name: feature, type: integer, range: "0..3", default: 0, optional: true, desc: "0: held / 1: pressed (repeat) / 2: pressed (no repeat) / 3: released." }
+      - { name: terminal, type: integer, range: "0..3", optional: true, desc: "Terminal (machine) ID to read over wireless multiplayer. Range-checked against the number of connected terminals." }
+    returns: { type: integer }
+    note: "BUTTON(feature, terminal) — read another terminal's buttons via wireless communication."
+
+summary: "Returns a bitmask of the 3DS hardware button state. With no arguments (or feature ID 0) it reports the buttons currently held down; feature ID 1 reports the moment-pressed edge with key-repeat applied (see [[brepeat]]), 2 reports the raw moment-pressed edge (no repeat), and 3 reports the moment-released edge. Each button maps to a bit: b00 +up(1,#UP) b01 +down(2,#DOWN) b02 +left(4,#LEFT) b03 +right(8,#RIGHT) b04 A(16,#A) b05 B(32,#B) b06 X(64,#X) b07 Y(128,#Y) b08 L(256,#L) b09 R(512,#R) b11 (2048,#ZL) b12 (4096,#ZR) — b10 is unused; ZL/ZR require a Circle Pad Pro. A set bit means that button is in the queried state. An optional terminal ID reads another machine's buttons over wireless multiplayer."
+
+semantics:
+  - "BUTTON is a function and ALWAYS requires exactly 1 return value: the handler checks the requested result count [r0,#0xc]==1 (cmp r0,#0x1 / bne @0x15bb58) and raises errnum 4 (Illegal function call: mov r0,#0x4 @0x15bb60 / bl 0x1fffdc) otherwise."
+  - "Argument count must be 0, 1 or 2: the handler dispatches on [r4,#0x4] (cmp #0x0 @0x15bb3c -> feature defaults to 0, cmp #0x1 @0x15bb48 -> feature arg, cmp #0x2 @0x15bb50 -> feature+terminal); any other count falls through to errnum 4 (mov r0,#0x4 @0x15bb60). The default feature ID when no argument is given is 0 (mov r0,#0x0 @0x15bb68)."
+  - "Feature ID must be 0, 1, 2 or 3: after the buttons are read the handler switches on the feature value ([sp,#0x0]) reading held (cmp #0x0 @0x15bc50 -> [r1,#0x78]), pressed-with-repeat (cmp #0x1 @0x15bc5c -> [r1,#0x80]), pressed-no-repeat (cmp #0x2 @0x15bc68 -> ldrd [r1,#0x80] / bic) and released (cmp #0x3 @0x15bc78 -> [r1,#0x7c]). Any other feature value raises errnum 10 (Out of range: mov r0,#0xa @0x15bc8c / b 0x15bbbc -> bl 0x1fffdc)."
+  - "Terminal ID (form 3) is range-checked against the count of connected terminals: r7 = terminalcount-1 (sub r7,r0,#0x1 @0x15bc10 from [[0x316194]+0x3c4]); the supplied id [sp,#0x4] must satisfy 0 <= id <= r7 (cmp #0x0 / cmpge r7,id / bge @0x15bc38 @0x15bc94-0x15bca0) else errnum 10 (mov r0,#0xa @0x15bcac / bl 0x1fffdc). With the documented hardware the valid terminal range is 0..3."
+  - "Supplying a terminal ID while wireless multiplayer communication is not active raises errnum 52 (an undocumented communication error not in the official 0..47 error table): the arg-count-2 branch tests a comms-state flag [[0x305612]] and raises mov r0,#0x34(52) @0x15bbb8 -> bl 0x1fffdc when it is set. This path is gated on wireless and is not deterministically harvestable."
+  - "The result is a 13-bit mask (bit b10 unused). A set bit means the corresponding button is in the queried state; the named constants #UP/#DOWN/#LEFT/#RIGHT/#A/#B/#X/#Y/#L/#R/#ZL/#ZR give the bit weights (see [[brepeat]] for the differently-numbered key-repeat IDs). In a non-interactive context with no buttons pressed BUTTON() returns 0."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "BUTTON is used without exactly one result (e.g. as a statement), or the argument count is not 0, 1 or 2" }
+  - { errnum: 10, name: "Out of range", when: "feature ID is not 0..3, or terminal ID is outside 0..(connected terminal count - 1)" }
+  - { errnum: 52, name: "Communication error", when: "a terminal ID is given while wireless multiplayer is not active (undocumented; not in the official error table)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/button.md (`Variable=BUTTON([FeatureID[,TerminalID]])` — 'Gets the status of hardware buttons'; FeatureID 0=held / 1=moment pressed (repeat on) / 2=moment pressed (repeat off) / 3=moment released; TerminalID 0-3 for another terminal via wireless; return bits b00-b12: up1/down2/left4/right8/A16/B32/X64/Y128/L256/R512/b10 unused/ZR2048 #ZL/ZL4096 #ZR; ZR/ZL only with Circle Pad Pro; examples `B=BUTTON()` and `B=BUTTON(0,3)`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BUTTON handler @0x15bb20: result-count [r0,#0xc]==1 else mov r0,#0x4 errnum 4 (@0x15bb58-0x15bb64); argcount [r4,#0x4] dispatch cmp #0x0/#0x1/#0x2 (@0x15bb3c-0x15bb54) else errnum 4; feature default 0 (mov r0,#0x0 @0x15bb68); feature switch cmp #0/#1/#2/#3 (@0x15bc50-0x15bc78) reading [r1,#0x78]/[r1,#0x80]/ldrd [r1,#0x80]+bic/[r1,#0x7c], else mov r0,#0xa errnum 10 (@0x15bc8c); terminal range r7=count-1 (sub r7,r0,#0x1 @0x15bc10), check cmp #0x0/cmpge r7/bge (@0x15bc94-0x15bca0) else mov r0,#0xa errnum 10 (@0x15bcac); wireless-inactive flag [[0x305612]] -> mov r0,#0x34(52) errnum 52 (@0x15bba0-0x15bbb8)" }
+  - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d BUTTON(mode, mp) -> int (3.5.0 structural cross-check only; the (ID, MPID) terminal form is NOTIMPL there)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBUTTON\\s*\\('): the no-arg form `B=BUTTON()` (~5960 calls) and the single feature-ID forms `BUTTON(2)`/`BUTTON(0)`/`BUTTON(1)`/`BUTTON(3)` are by far the most common. The 2-arg terminal form is real and used in multiplayer games with both literal and expression terminal IDs: `BUTTON(2,0)`/`BUTTON(2,1)` (KP5EK33J/TXT/PETITSMASH2MK-), `BUTTON(0,CH/4)`/`BUTTON(2,CH/4)` (227YK34J/TXT/JINTRI102), `BUTTON(0,p%)` (B2DE33AV/TXT/V0.4). Feature ID is also commonly a variable in loops `FOR I=0 TO 3:BT[I]=BUTTON(I)` (43SXXEJ3/TXT/-ALPHA_OS-). Proves the 2-arg + computed-arg forms are legal; live button values are not deterministically harvestable (no input injection)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11a): with no input held, PRINT BUTTON() = 0, BUTTON(0) = 0 and BUTTON(3) = 0; A=BUTTON(4) raises errnum 10 (Out of range) and A=BUTTON(-1) raises errnum 10 (both errline 1), confirming the 0..3 feature-ID guard. Live button magnitudes / the wireless terminal-range + errnum-52 paths need hardware input and remain unharvested (queued)." }
+
+confidence: disassembled
+
+tests:
+  # Live button state requires hardware input (not harvestable in the headless oracle), but the
+  # no-input baseline (0), argument shape and the feature/result-count error guards are pinned
+  # from the handler body. Terminal-range and errnum-52 paths need active wireless (queued).
+  - { name: held_no_input, code: "PRINT BUTTON()", expect: { stdout: "0" } }
+  - { name: feature0_no_input, code: "PRINT BUTTON(0)", expect: { stdout: "0" } }
+  - { name: feature3_no_input, code: "PRINT BUTTON(3)", expect: { stdout: "0" } }
+  - { name: feature_out_of_range, code: "A=BUTTON(4)", expect: { error: { errnum: 10 } } }
+  - { name: feature_negative, code: "A=BUTTON(-1)", expect: { error: { errnum: 10 } } }
