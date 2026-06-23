@@ -200,6 +200,219 @@ pub fn gclip(
     }
 }
 
+/// `GPSET x,y[,color]` — plot one pixel on the draw page in the current or given color.
+/// 2 or 3 args, no return value; any other shape → errnum 4 (`gpset.yaml`, hw_verified).
+pub fn gpset(
+    grp: &mut GrpState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    let (x, y, color) = match args {
+        [x, y] => (floor_coord(x)?, floor_coord(y)?, grp.color),
+        [x, y, c] => (floor_coord(x)?, floor_coord(y)?, c.to_int()? as u32),
+        _ => return Err(illegal()),
+    };
+    grp.gpset(x, y, color);
+    Ok(vec![])
+}
+
+/// `GLINE x1,y1,x2,y2[,color]` — draw a line in the current or given color. 4 or 5 args,
+/// no return value; any other shape → errnum 4 (`gline.yaml`, hw_verified).
+pub fn gline(
+    grp: &mut GrpState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    let (x1, y1, x2, y2, color) = quad_color(grp, args)?;
+    grp.gline(x1, y1, x2, y2, color);
+    Ok(vec![])
+}
+
+/// `GBOX x1,y1,x2,y2[,color]` — draw a rectangle OUTLINE. 4 or 5 args, no return value;
+/// any other shape → errnum 4 (`gbox.yaml`, hw_verified).
+pub fn gbox(
+    grp: &mut GrpState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    let (x1, y1, x2, y2, color) = quad_color(grp, args)?;
+    grp.gbox(x1, y1, x2, y2, color);
+    Ok(vec![])
+}
+
+/// `GFILL x1,y1,x2,y2[,color]` — fill a solid rectangle. 4 or 5 args, no return value;
+/// any other shape → errnum 4 (`gfill.yaml`, hw_verified).
+pub fn gfill(
+    grp: &mut GrpState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    let (x1, y1, x2, y2, color) = quad_color(grp, args)?;
+    grp.gfill(x1, y1, x2, y2, color);
+    Ok(vec![])
+}
+
+/// `GCIRCLE x,y,r[,color]` (full circle) or `GCIRCLE x,y,r,start,end[,flag[,color]]`
+/// (arc/sector). Valid arg counts are 3,4,5,6,7; no return value; any other shape →
+/// errnum 4 (`gcircle.yaml`, hw_verified). `r <= 0` draws nothing.
+pub fn gcircle(
+    grp: &mut GrpState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    match args {
+        [x, y, r] => {
+            let c = grp.color;
+            grp.gcircle(floor_coord(x)?, floor_coord(y)?, r.to_int()?, c);
+        }
+        [x, y, r, c] => {
+            grp.gcircle(
+                floor_coord(x)?,
+                floor_coord(y)?,
+                r.to_int()?,
+                c.to_int()? as u32,
+            );
+        }
+        // Arc/sector: 5 args (flag=0, default color), 6 args (+flag), 7 args (+flag+color).
+        [x, y, r, s, e] => {
+            let c = grp.color;
+            grp.gcircle_arc(
+                floor_coord(x)?,
+                floor_coord(y)?,
+                r.to_int()?,
+                s.to_int()?,
+                e.to_int()?,
+                false,
+                c,
+            );
+        }
+        [x, y, r, s, e, flag] => {
+            let c = grp.color;
+            grp.gcircle_arc(
+                floor_coord(x)?,
+                floor_coord(y)?,
+                r.to_int()?,
+                s.to_int()?,
+                e.to_int()?,
+                flag.to_int()? == 1,
+                c,
+            );
+        }
+        [x, y, r, s, e, flag, c] => {
+            grp.gcircle_arc(
+                floor_coord(x)?,
+                floor_coord(y)?,
+                r.to_int()?,
+                s.to_int()?,
+                e.to_int()?,
+                flag.to_int()? == 1,
+                c.to_int()? as u32,
+            );
+        }
+        _ => return Err(illegal()),
+    }
+    Ok(vec![])
+}
+
+/// `GTRI x1,y1,x2,y2,x3,y3[,color]` — draw a filled triangle. 6 or 7 args, no return
+/// value; any other shape → errnum 4 (`gtri.yaml`, hw_verified).
+pub fn gtri(
+    grp: &mut GrpState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    let (x1, y1, x2, y2, x3, y3, color) = match args {
+        [x1, y1, x2, y2, x3, y3] => (
+            floor_coord(x1)?,
+            floor_coord(y1)?,
+            floor_coord(x2)?,
+            floor_coord(y2)?,
+            floor_coord(x3)?,
+            floor_coord(y3)?,
+            grp.color,
+        ),
+        [x1, y1, x2, y2, x3, y3, c] => (
+            floor_coord(x1)?,
+            floor_coord(y1)?,
+            floor_coord(x2)?,
+            floor_coord(y2)?,
+            floor_coord(x3)?,
+            floor_coord(y3)?,
+            c.to_int()? as u32,
+        ),
+        _ => return Err(illegal()),
+    };
+    grp.gtri(x1, y1, x2, y2, x3, y3, color);
+    Ok(vec![])
+}
+
+/// `GPAINT x,y[,fill[,border]]` — flood-fill from (x,y). 2 args default the fill to the
+/// current draw color; 3 args give the fill; 4 args add a border color. No return value;
+/// any other shape → errnum 4 (`gpaint.yaml`, hw_verified).
+pub fn gpaint(
+    grp: &mut GrpState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    let (x, y, fill, border) = match args {
+        [x, y] => (floor_coord(x)?, floor_coord(y)?, grp.color, None),
+        [x, y, f] => (floor_coord(x)?, floor_coord(y)?, f.to_int()? as u32, None),
+        [x, y, f, b] => (
+            floor_coord(x)?,
+            floor_coord(y)?,
+            f.to_int()? as u32,
+            Some(b.to_int()? as u32),
+        ),
+        _ => return Err(illegal()),
+    };
+    grp.gpaint(x, y, fill, border);
+    Ok(vec![])
+}
+
+/// Shared 4-coordinate (+ optional color) operand fetch for `GLINE`/`GBOX`/`GFILL`:
+/// 4 args default the color to the current GCOLOR draw color, 5 args take the explicit
+/// color. Any other count → errnum 4.
+fn quad_color(grp: &GrpState, args: &[Value]) -> Result<(i32, i32, i32, i32, u32), RuntimeError> {
+    match args {
+        [x1, y1, x2, y2] => Ok((
+            floor_coord(x1)?,
+            floor_coord(y1)?,
+            floor_coord(x2)?,
+            floor_coord(y2)?,
+            grp.color,
+        )),
+        [x1, y1, x2, y2, c] => Ok((
+            floor_coord(x1)?,
+            floor_coord(y1)?,
+            floor_coord(x2)?,
+            floor_coord(y2)?,
+            c.to_int()? as u32,
+        )),
+        _ => Err(illegal()),
+    }
+}
+
 /// One RGB(A) channel: integer-coerced (string → Type mismatch), clamped to 0..=255.
 fn chan(v: &Value) -> Result<u32, RuntimeError> {
     Ok(v.to_int()?.clamp(0, 255) as u32)
@@ -438,6 +651,60 @@ mod tests {
             4
         );
         assert_eq!(gclip(&mut g, &[Value::Int(0)], 1).unwrap_err().errnum, 4); // as function
+    }
+
+    #[test]
+    fn primitives_reject_bad_arg_counts_and_return_use() {
+        let mut g = GrpState::new();
+        // GPSET: 2/3 args ok, others → 4; used as a function (ret_count 1) → 4.
+        assert!(gpset(&mut g, &[Value::Int(1), Value::Int(2)], 0).is_ok());
+        assert_eq!(gpset(&mut g, &[Value::Int(1)], 0).unwrap_err().errnum, 4);
+        assert_eq!(
+            gpset(&mut g, &[Value::Int(1), Value::Int(2)], 1)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+        // GLINE/GBOX/GFILL: 4/5 args.
+        let four = [Value::Int(0), Value::Int(0), Value::Int(1), Value::Int(1)];
+        for f in [gline, gbox, gfill] {
+            assert!(f(&mut g, &four, 0).is_ok());
+            assert_eq!(f(&mut g, &four[..3], 0).unwrap_err().errnum, 4);
+            assert_eq!(f(&mut g, &four, 1).unwrap_err().errnum, 4);
+        }
+        // GTRI: 6/7 args.
+        let ints = |n: usize| -> Vec<Value> { (0..n).map(|_| Value::Int(1)).collect() };
+        assert!(gtri(&mut g, &ints(6), 0).is_ok());
+        assert_eq!(gtri(&mut g, &ints(5), 0).unwrap_err().errnum, 4);
+        // GPAINT: 2/3/4 args.
+        assert!(gpaint(&mut g, &four[..2], 0).is_ok());
+        assert!(gpaint(&mut g, &four, 0).is_ok());
+        assert_eq!(gpaint(&mut g, &four[..1], 0).unwrap_err().errnum, 4);
+        assert_eq!(gpaint(&mut g, &ints(5), 0).unwrap_err().errnum, 4);
+        // GCIRCLE: 3..=7 args ok, 2 and 8 → 4.
+        assert!(gcircle(&mut g, &ints(3), 0).is_ok());
+        assert!(gcircle(&mut g, &ints(7), 0).is_ok());
+        assert_eq!(gcircle(&mut g, &ints(2), 0).unwrap_err().errnum, 4);
+        assert_eq!(gcircle(&mut g, &ints(8), 0).unwrap_err().errnum, 4);
+    }
+
+    #[test]
+    fn gpset_uses_default_then_explicit_color() {
+        let mut g = GrpState::new();
+        gcolor(&mut g, &[Value::Int(0xFF00_FF00u32 as i32)], 0).unwrap(); // opaque green
+        gpset(&mut g, &[Value::Int(5), Value::Int(5)], 0).unwrap();
+        assert_eq!(g.gspoit(5, 5), 0xFF00_F800); // green, RGBA5551-truncated
+        gpset(
+            &mut g,
+            &[
+                Value::Int(6),
+                Value::Int(6),
+                Value::Int(0xFFFF_0000u32 as i32),
+            ],
+            0,
+        )
+        .unwrap();
+        assert_eq!(g.gspoit(6, 6), 0xFFF8_0000); // explicit red overrides the draw color
     }
 
     #[test]

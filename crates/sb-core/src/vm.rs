@@ -1000,6 +1000,13 @@ impl Vm {
             "GCOLOR" => gfx::gcolor(&mut self.grp, &args, ret_count),
             "GPRIO" => gfx::gprio(&mut self.grp, &args, ret_count),
             "GCLIP" => gfx::gclip(&mut self.grp, &args, ret_count),
+            "GPSET" => gfx::gpset(&mut self.grp, &args, ret_count),
+            "GLINE" => gfx::gline(&mut self.grp, &args, ret_count),
+            "GBOX" => gfx::gbox(&mut self.grp, &args, ret_count),
+            "GFILL" => gfx::gfill(&mut self.grp, &args, ret_count),
+            "GCIRCLE" => gfx::gcircle(&mut self.grp, &args, ret_count),
+            "GTRI" => gfx::gtri(&mut self.grp, &args, ret_count),
+            "GPAINT" => gfx::gpaint(&mut self.grp, &args, ret_count),
             _ => return Ok(false),
         };
         for v in results.map_err(sb)? {

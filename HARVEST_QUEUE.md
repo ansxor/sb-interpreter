@@ -10,6 +10,18 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] M2-T2 (drawing-primitive pixel coverage) · GPSET/GLINE/GBOX/GFILL/GCIRCLE/GTRI/GPAINT
+  are IMPLEMENTED in sb-core (`crates/sb-render/src/raster.rs`) with deterministic integer
+  rasterizers (Bresenham line/box, midpoint circle, edge-function triangle fill, stack flood
+  fill) writing the RGBA5551 manip page; their call-shape / arg-count / default-color behavior
+  is hw_verified and replays in the conformance gate. The EXACT pixel coverage (line endpoint
+  rule, the circle/arc midpoint vs hardware, GCIRCLE arc/sector angle convention, GPAINT
+  boundary test, triangle edge inclusivity, float→int coordinate rounding) is faithful-but-
+  unverified — it has no scalar golden and is the same work already queued under **S-T7b** /
+  **S-T7c** "visual side-effects (framebuffer path)" above. When O-T6 grows a framebuffer/PNG
+  golden path (M2-T5), harvest per-primitive goldens and pixel-diff the rasterizers against
+  real SB 3.6.0, correcting any algorithm that diverges.
+
 - [ ] M1-T14 (ENDIF leading-comment quirk) · A LEADING stray `ENDIF` raises errnum 28, but
   `REM X` + newline + `ENDIF` raises NO error at all (sb-oracle 2026-06-23) — a leading comment
   line suppresses the stray-ENDIF check. sb-core does NOT model this (it raises 28 for `REM

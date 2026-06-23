@@ -21,8 +21,7 @@
 //!    with their own increments). Specs `sb-core` implements only *partially* contribute
 //!    their deterministic cases via `IN_SCOPE_PARTIAL` (per-case exclusion): `LOCATE`'s
 //!    range/arg-shape error guards fold in now while its positioned-output cases stay
-//!    oracle-pending; `GSPOIT`'s OOB/arg-count guards fold in now while its `GPSET`
-//!    round-trip cases wait on M2-T2. These produce a comparable
+//!    oracle-pending. These produce a comparable
 //!    `console_text()` (or a checkable errnum). Graphics/sprite/BG/etc. instructions are
 //!    intentionally out of scope here (their behavior is page/layer state, exercised by the VM
 //!    unit tests + corpus cases) and are folded in as their milestones land.
@@ -111,13 +110,16 @@ const IN_SCOPE_DATA_OPS: &[&str] = &["READ", "RESTORE", "OPTION", "REM", "WAIT",
 /// comparable (M1-T14 increment 2026-06-23): `RGB` (channel pack → signed ARGB),
 /// `RGBREAD` (unpack via `OUT`), `GPAGE` (display/manip page set+`OUT` get, range errnums),
 /// `GCLS` (clear, arg errnums), `GCOLOR` (draw-color set+get), `GPRIO` (priority set, range
-/// errnums), and `GCLIP` (clip-rect set, arg errnums). The category is NOT taken wholesale:
-/// `GSPOIT` (read a pixel) is folded PARTIALLY via `IN_SCOPE_PARTIAL` — its OOB-returns-0
-/// and arg-count → 4 guards replay green now; only its `GPSET`-then-read round-trip cases
-/// wait on the drawing primitives (M2-T2). The rest of the Graphics category isn't
-/// implemented yet. Listed by id.
+/// errnums), and `GCLIP` (clip-rect set, arg errnums), plus the M2-T2 drawing primitives
+/// `GPSET`/`GLINE`/`GBOX`/`GFILL`/`GCIRCLE`/`GTRI`/`GPAINT` (whose call-shape / arg-count
+/// guards are hw_verified) and `GSPOIT` (read a pixel — now fully in scope, including its
+/// `GPSET`-then-read round-trip cases that the M2-T2 drawing primitives enabled). The
+/// primitives' *pixel coverage* still has no scalar golden (the framebuffer pixel-diff is
+/// O-T6 / M2-T5, queued), so only their shape/error behavior replays here. The rest of the
+/// Graphics category (bitmap ops, etc.) isn't implemented yet. Listed by id.
 const IN_SCOPE_GRAPHICS: &[&str] = &[
-    "RGB", "RGBREAD", "GPAGE", "GCLS", "GCOLOR", "GPRIO", "GCLIP",
+    "RGB", "RGBREAD", "GPAGE", "GCLS", "GCOLOR", "GPRIO", "GCLIP", "GSPOIT", "GPSET", "GLINE",
+    "GBOX", "GFILL", "GCIRCLE", "GTRI", "GPAINT",
 ];
 /// `Screen control` instructions whose builtins `sb-core` implements (M1-T8: the console
 /// draw-state reset + screen background-color round-trip) and whose inline `tests:` are
@@ -136,22 +138,12 @@ const IN_SCOPE_SCREEN: &[&str] = &["ACLS", "BACKCOLOR"];
 /// 2026-06-23). `LOCATE`: `basic_xy` now folds in with a `console_text()`-aware expect
 /// (15 leading empty rows + the positioned X); `x_edge_50_ok` stays excluded because
 /// column-50 is the off-screen right edge and the wrap/no-display behavior is
-/// oracle-pending (S-T5a, `HARVEST_QUEUE.md`). `GSPOIT`: its three `GPSET`-then-read
-/// round-trip cases need the drawing primitives (`GPSET`, M2-T2); its OOB-returns-0 and
-/// arg-count → 4 cases fold in now. `CHKCHR`: `read_printed_char` now folds in with the
+/// oracle-pending (S-T5a, `HARVEST_QUEUE.md`). (`GSPOIT` is now fully in scope — the M2-T2
+/// drawing primitives enabled its three `GPSET`-then-read round-trip cases, so it moved to
+/// `IN_SCOPE_GRAPHICS`.) `CHKCHR`: `read_printed_char` now folds in with the
 /// harness scrape `"A65"` (the setup glyph stays on the grid); its empty-cell/OOB/arg-count
 /// cases fold in now. Tuples are `(spec id, &[excluded case names])`.
-const IN_SCOPE_PARTIAL: &[(&str, &[&str])] = &[
-    ("LOCATE", &["x_edge_50_ok"]),
-    (
-        "GSPOIT",
-        &[
-            "roundtrip_red_truncates",
-            "roundtrip_white_equals_const",
-            "roundtrip_green_top5",
-        ],
-    ),
-];
+const IN_SCOPE_PARTIAL: &[(&str, &[&str])] = &[("LOCATE", &["x_edge_50_ok"])];
 
 #[derive(Debug, Deserialize)]
 struct CaseFile {

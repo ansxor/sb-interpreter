@@ -138,6 +138,15 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "RGB",
     "RGBREAD",
     "GSPOIT",
+    // Drawing primitives (M2-T2): plot/line/box/fill/circle/triangle/flood-fill write the
+    // VM-owned `GrpState` manipulation page, so the VM routes them like the page commands.
+    "GPSET",
+    "GLINE",
+    "GBOX",
+    "GFILL",
+    "GCIRCLE",
+    "GTRI",
+    "GPAINT",
     // Array data-ops (M1-T14): SORT/RSORT mutate their array arguments in place, so the
     // VM routes them to `data::sort` rather than the value-returning `dispatch`.
     "SORT",
