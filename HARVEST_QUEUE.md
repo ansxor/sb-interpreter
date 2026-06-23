@@ -367,3 +367,15 @@ oracle to confirm exact output and promote to `hw_verified`.
   - BGMSTOP fade-time semantics (does `BGMSTOP track,sec` audibly ramp down over `sec`?) and the
     -1 force-stop overwriting user tune 255.
   - BGMPLAY 2-frame post-trigger delay + the MML->note-event realization (MML grammar = S-C5).
+
+- [ ] S-T10b BGM setup (BGMSET · BGMSETD · BGMCLEAR · BEEP) — specs pinned from disasm
+  (confidence: disassembled); audio output has no deterministic golden (O-T7). The errnum
+  cases below ARE deterministic and oracle-confirmable via `batch ... |err` (ERRNUM/ERRLINE)
+  even though the audio is not — confirm and raise to hw_verified when the oracle is up:
+  - BGMSET/BGMSETD: tune number out of 128..255 -> errnum 10; non-string 2nd arg -> errnum 8;
+    wrong arg count (1 or 3) -> errnum 4; malformed MML -> errnum 47 (Illegal MML).
+  - BGMCLEAR: tune out of 128..255 -> errnum 10; >=2 args -> errnum 4 (0-arg clears all, no error).
+  - BEEP: sound number in the 134..223 gap or >383 -> errnum 10; freq outside -32768..32767,
+    volume outside 0..127, pan outside 0..127 -> errnum 10; >4 args -> errnum 4. ALSO verify the
+    disasm+corpus extended sound banks 224..255 and 256..383 play (no error) on real SB — docs
+    only mention 0..133 but corpus uses BEEP 224/293/303/354/382 (no oracle = legal-syntax only).

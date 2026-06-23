@@ -1,0 +1,42 @@
+id: BGMCLEAR
+kind: statement
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — no argument: clear ALL user-defined tunes.
+  - args: []
+    note: "BGMCLEAR — clear every user-defined tune (0 args)."
+  # Form 2 — one argument: clear a single user-defined tune.
+  - args:
+      - { name: tune, type: integer, range: "128..255", desc: "User-defined tune number to clear." }
+    note: "BGMCLEAR tune — clear one user-defined tune (1 arg)."
+
+summary: "Clears user-defined music. With no argument it clears every user-defined tune; with one argument (128-255) it clears just that tune. Returns nothing (statement)."
+
+semantics:
+  - "Return gate: the result count [r0,#0xc] must be 0 (ldr r1,[r0,#0xc] / cmp r1,#0x0 / bne @0x1a37bc); a return context raises errnum 4 (Illegal function call) errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 @0x1a37bc-0x1a37c4)."
+  - "Argument-count branch on argcount [r0,#0x4]: 0 args (cmp r1,#0x0 / beq @0x1a37d4) clears ALL tunes — it calls the clear routine bl 0x1a4920 with r1 = -1 (mvn r1,#0x0 @0x1a37d8) against audio state [0x1a3830]=0x01D08280. 1 arg (cmp r1,#0x1 / beq @0x1a37ec) clears a single tune. Any other count (>= 2) raises errnum 4 errline -1."
+  - "Single-tune path: the tune number is evaluated through FUN_001eec7c with min r3=#0x80 (128) and max [sp,#0x0]=#0xff (255) (mov r1,#0xff / mov r3,#0x80 / bl 0x1eec7c @0x1a37ec-0x1a3800); a value outside 128..255 raises errnum 10 (Out of range). The validated tune is tagged (add r1,r0,#0x1000000 / add r1,r1,#0xb1 @0x1a3814-0x1a381c) and passed to the same clear routine bl 0x1a4920 (@0x1a3820)."
+  - "Both paths return 0 (mov r0,#0x0). Clearing frees the slot registered by [[bgmset]] / [[bgmsetd]]; play with [[bgmplay]]. Audio realization has no deterministic emulator golden (O-T7)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "more than one argument is given, or BGMCLEAR is used in a return context" }
+  - { errnum: 10, name: "Out of range", when: "the tune number is not in 128..255" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgmclear.md (`BGMCLEAR [User-defined tune number]` — tune 128-255; if the number is omitted, all defined tunes are cleared; example `BGMCLEAR`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGMCLEAR handler @0x1a3794: result-count [r0,#0xc] cmp r1,#0x0 bne -> errnum 4 errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 @0x1a37bc); argcount [r0,#0x4] == 0 -> clear-all bl 0x1a4920 with r1=-1 (mvn r1,#0x0 @0x1a37d8) against [0x1a3830]=0x01D08280; == 1 -> tune via bl 0x1eec7c min r3=#0x80 max #0xff @0x1a37ec-0x1a3800 (errnum 10), tagged add r1,r0,#0x1000000 / add r1,r1,#0xb1, then bl 0x1a4920 @0x1a3820; >= 2 -> errnum 4" }
+  - { type: disassembled, ref: "cia_3.6.0.lst shared integer-arg range helper FUN_001eec7c @0x1eec7c: bounds-checks value against min r3 and max [sp,#0x18], raising errnum 10 (mov r0,#0xa / b 0x1fffdc @0x1eeccc) — enforces the 128..255 tune bound" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d BGM registration/clear (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGMCLEAR\\b'): 64 files — both documented forms appear: 0-arg `BGMCLEAR` (clears all, 37 occurrences) and 1-arg `BGMCLEAR 128`, including back-to-back single clears `BGMCLEAR 128:BGMCLEAR 129:BGMCLEAR 130`. Proves the syntax is legal." }
+
+confidence: disassembled
+
+tests:
+  # Call shape, argument range and error conditions read from the disassembly handler body.
+  - { name: clear_all, code: "BGMCLEAR", expect: { stdout: "" } }
+  - { name: clear_one, code: "BGMCLEAR 128", expect: { stdout: "" } }
+  - { name: tune_too_low, code: "BGMCLEAR 127", expect: { error: { errnum: 10 } } }
+  - { name: tune_too_high, code: "BGMCLEAR 256", expect: { error: { errnum: 10 } } }
+  - { name: two_args, code: "BGMCLEAR 128,129", expect: { error: { errnum: 4 } } }

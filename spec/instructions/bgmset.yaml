@@ -1,0 +1,45 @@
+id: BGMSET
+kind: statement
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Exactly two arguments: a user-defined tune number and an MML string to compile into it.
+  - args:
+      - { name: tune, type: integer, range: "128..255", desc: "User-defined tune number to register the compiled MML under." }
+      - { name: mml, type: string, desc: "MML string to compile and store as the tune. The Help button for \"MML\" lists MML commands." }
+    note: "BGMSET tune, \"MML\" — predefine a user-defined tune from an inline MML string (always 2 args)."
+
+summary: "Predefines a user-defined piece of music: compiles the MML string and registers it under a user-defined tune number (128-255) so it can later be played with BGMPLAY. Takes exactly two arguments (tune number, MML string). Returns nothing (statement). Executing immediately after BGMPLAY causes a delay of approx. 2 frames."
+
+semantics:
+  - "Argument-count / return gate: argcount [r5,#0x4] must be exactly 2 AND the result count [r5,#0xc] must be 0 (cmp r0,#0x2 / ldreq r0,[r5,#0xc] / cmpeq r0,#0x0 / beq @0x1a24b0); any other count, or use in a return context, raises errnum 4 (Illegal function call) with errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 @0x1a24a0-0x1a24a8)."
+  - "Arg index 0 = tune number, evaluated through the shared range-checked integer-arg helper FUN_001eec7c with min r3=#0x80 (128) and max [sp,#0x0]=#0xff (255) (mov r0,#0xff / str / mov r3,#0x80 / bl 0x1eec7c @0x1a24b0-0x1a24c8). A value outside 128..255 raises errnum 10 (Out of range) from inside the helper."
+  - "Arg index 1 = the MML value. Its value-type byte [r12,#0x2] is checked (ldrb r0,[r12,#0x2] / cmp r0,#0x0 / beq @0x1a254c): a non-string (numeric) value raises errnum 8 (Type mismatch) (mov r0,#0x8 / bl 0x1fffdc @0x1a254c-0x1a2558). A string value is fetched via its accessor (ldr r2,[r12,#0x50] / blx r2 @0x1a24fc-0x1a2500)."
+  - "The MML string is compiled into the user tune. The tune id is tagged (add r1,r0,#0x1000000 / add r1,r1,#0xb1 @0x1a2514-0x1a251c) and passed to the compiler bl 0x1d475c (@0x1a2520) against audio state [0x1a2570]=0x01D08280. If compilation fails (cmp r0,#0x0 / bne) the failing detail is fetched (bl 0x1d450c) and errnum 47 (Illegal MML) is raised (mov r0,#0x2f / bl 0x1fffdc @0x1a253c-0x1a2540)."
+  - "Does NOT play the tune — it only registers it; use [[bgmplay]] tune to play it afterwards. Clear a registered tune with [[bgmclear]]. To register from DATA-stored MML by label instead of an inline literal, see [[bgmsetd]]. MML grammar itself is covered by S-C5; audio realization has no deterministic emulator golden (O-T7)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not exactly 2, or BGMSET is used in a return context" }
+  - { errnum: 8, name: "Type mismatch", when: "the second argument is not a string" }
+  - { errnum: 10, name: "Out of range", when: "the tune number is not in 128..255" }
+  - { errnum: 47, name: "Illegal MML", when: "the MML string fails to compile" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgmset.md (`BGMSET User-defined tune number,\"MML string\"` — user-defined tune 128-255; predefines a user-defined piece of music; ~2-frame delay if executed right after BGMPLAY; example `BGMSET 128,\"CDEFG\"`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGMSET handler @0x1a2480: argcount [r5,#0x4] cmp r0,#0x2 / result-count [r5,#0xc] cmpeq r0,#0x0 beq @0x1a24b0 else errnum 4 errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 @0x1a24a0); tune via bl 0x1eec7c min r3=#0x80 max [sp,#0x0]=#0xff @0x1a24b0-0x1a24c8 (errnum 10); MML arg value-type byte ldrb r0,[r12,#0x2] cmp #0x0 beq @0x1a254c -> errnum 8 (mov r0,#0x8); MML id tagged add r1,r0,#0x1000000 / add r1,r1,#0xb1, compile bl 0x1d475c @0x1a2520, on failure errnum 47 mov r0,#0x2f @0x1a253c. Literal [0x1a2570]=0x01D08280 (audio state)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst shared integer-arg range helper FUN_001eec7c @0x1eec7c: evaluates the arg (blx [r2,#0x40]), bounds-checks value against min r3 and max [sp,#0x18], raising errnum 10 on out-of-range (mov r2,#0x0 / mov r0,#0xa / b 0x1fffdc @0x1eeccc) — enforces the 128..255 tune bound" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d BGM registration (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGMSET\\b'): 234 files — the documented 2-arg form dominates: literal MML `BGMSET 128,\"@52C\"` (1DVK34J/TXT/HNZMJG), string-var MML `BGMSET 128,ALM$` / `BGMSET BN,M$` (variable tune number), and computed MML `BGMSET I+128,MTMP$+A$`; tune number is routinely a variable/expression. Proves the syntax is legal; runtime audio output unproven (no oracle, O-T7)." }
+
+confidence: disassembled
+
+tests:
+  # Call shape, argument ranges and error conditions read from the disassembly handler body.
+  # Audio output is not deterministically harvestable (O-T7); these pin the statement contract.
+  - { name: basic, code: 'BGMSET 128,"CDEFG"', expect: { stdout: "" } }
+  - { name: var_mml, code: 'M$="CDE":BGMSET 200,M$', expect: { stdout: "" } }
+  - { name: tune_too_low, code: 'BGMSET 127,"C"', expect: { error: { errnum: 10 } } }
+  - { name: tune_too_high, code: 'BGMSET 256,"C"', expect: { error: { errnum: 10 } } }
+  - { name: numeric_mml_arg, code: "BGMSET 128,5", expect: { error: { errnum: 8 } } }
+  - { name: one_arg, code: "BGMSET 128", expect: { error: { errnum: 4 } } }

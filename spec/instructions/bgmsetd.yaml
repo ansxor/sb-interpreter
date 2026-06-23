@@ -1,0 +1,44 @@
+id: BGMSETD
+kind: statement
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Exactly two arguments: a user-defined tune number and a DATA label whose lines hold the MML.
+  - args:
+      - { name: tune, type: integer, range: "128..255", desc: "User-defined tune number to register the compiled MML under." }
+      - { name: label, type: string, desc: "An @Label string naming a DATA block where the MML has been registered (e.g. \"@MMLTOP\"); may be a literal or a string variable." }
+    note: "BGMSETD tune, \"@Label\" — predefine a user-defined tune from MML stored in DATA statements under a label (always 2 args)."
+
+summary: "Predefines a user-defined tune from MML stored in DATA statements. The label string names a DATA block (e.g. DATA \"CDEFGAB\") terminated by a numeric DATA value (e.g. DATA 0); the MML lines are read like RESTORE+READ, compiled, and registered under a user-defined tune number (128-255). Takes exactly two arguments (tune number, label). Returns nothing (statement). Internally handled the same way as RESTORE, so RESTORE must be re-issued to READ data after BGMSETD. Executing immediately after BGMPLAY causes a delay of approx. 2 frames."
+
+semantics:
+  - "Argument-count / return gate: argcount [r6,#0x4] must be exactly 2 AND the result count [r6,#0xc] must be 0 (cmp r0,#0x2 / ldreq r0,[r6,#0xc] / cmpeq r0,#0x0 / beq @0x1a33d4); any other count, or use in a return context, raises errnum 4 (Illegal function call) errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 @0x1a33bc)."
+  - "Arg index 0 = tune number, evaluated through FUN_001eec7c with min r3=#0x80 (128) and max [sp,#0x0]=#0xff (255) (mov r0,#0xff / mov r3,#0x80 / bl 0x1eec7c @0x1a33d4-0x1a33ec). A value outside 128..255 raises errnum 10 (Out of range)."
+  - "Arg index 1 = the label value. Its value-type byte [r12,#0x2] is checked (ldrb r0,[r12,#0x2] / cmp r0,#0x0 / beq @0x1a3458): a non-string (numeric) value raises errnum 8 (Type mismatch) (mov r0,#0x8 / bl 0x1fffdc @0x1a3458-0x1a3464). A string value is fetched via its accessor (ldr r2,[r12,#0x50] / blx r2 @0x1a3424-0x1a3428)."
+  - "The label is resolved against the DATA table like RESTORE (bl 0x1ee960 @0x1a3440 — the shared label-lookup used by RESTORE) and the gathered MML is fetched (bl 0x1a0fbc @0x1a3480). The tune id is tagged (add r1,r0,#0x1000000 / add r1,r1,#0xb1 @0x1a3494-0x1a349c) and compiled via bl 0x1d475c (@0x1a34c0). On compile failure (cmp r4,#0x0 / beq) the detail is fetched (bl 0x1d450c) and errnum 47 (Illegal MML) is raised (mov r0,#0x2f / bl 0x1fffdc @0x1a34ec). A temporary is freed via bl 0x1eac30 (@0x1a34cc)."
+  - "Because the read uses the shared RESTORE machinery, the program's DATA read pointer is moved; per the docs RESTORE must be re-issued before subsequent READ. Does NOT play the tune — register only; play with [[bgmplay]], clear with [[bgmclear]]. The inline-literal-MML variant is [[bgmset]]. MML grammar = S-C5; audio realization has no deterministic emulator golden (O-T7)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "argument count is not exactly 2, or BGMSETD is used in a return context" }
+  - { errnum: 8, name: "Type mismatch", when: "the second (label) argument is not a string" }
+  - { errnum: 10, name: "Out of range", when: "the tune number is not in 128..255" }
+  - { errnum: 47, name: "Illegal MML", when: "the MML gathered from the DATA block fails to compile" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgmsetd.md (`BGMSETD User-defined tune number,\"@Label string\"` — tune 128-255; MML registered via DATA \"...\", DATA block ended by a numeric DATA value; internally handled like RESTORE so RESTORE must be used to READ afterward; ~2-frame delay after BGMPLAY; example `BGMSETD 128,\"@MMLTOP\"`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGMSETD handler @0x1a339c: argcount [r6,#0x4] cmp r0,#0x2 / result-count [r6,#0xc] cmpeq r0,#0x0 beq @0x1a33d4 else errnum 4 errline -1 (mov r0,#0x4 @0x1a33bc); tune via bl 0x1eec7c min r3=#0x80 max #0xff @0x1a33d4-0x1a33ec (errnum 10); label value-type byte ldrb r0,[r12,#0x2] cmp #0x0 beq @0x1a3458 -> errnum 8 (mov r0,#0x8); label resolved via RESTORE-shared lookup bl 0x1ee960 @0x1a3440 + MML gather bl 0x1a0fbc @0x1a3480; id tagged add r1,r0,#0x1000000 / add r1,r1,#0xb1, compile bl 0x1d475c @0x1a34c0, on failure errnum 47 mov r0,#0x2f @0x1a34ec; temp freed bl 0x1eac30 @0x1a34cc" }
+  - { type: disassembled, ref: "cia_3.6.0.lst shared integer-arg range helper FUN_001eec7c @0x1eec7c: bounds-checks value against min r3 and max [sp,#0x18], raising errnum 10 (mov r0,#0xa / b 0x1fffdc @0x1eeccc) — enforces the 128..255 tune bound" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d BGM registration (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGMSETD\\b'): 376 files — the documented 2-arg label form dominates: literal label `BGMSETD 255,\"@MML\"`, string-var label `BGMSETD 255,@MML` and `BGMSETD 128,@BGM30`, computed label `BGMSETD 128+I,\"@SE\"+STR$(I)`, and labels with a leading channel prefix `BGMSETD 128,\"1:@MML\"` / `BGMSETD 217,\"1:@BGM96\"`; tune number is routinely a variable/expression. Proves the syntax is legal; runtime audio output unproven (no oracle, O-T7)." }
+
+confidence: disassembled
+
+tests:
+  # Call shape, argument ranges and error conditions read from the disassembly handler body.
+  # Audio output is not deterministically harvestable (O-T7); these pin the statement contract.
+  - { name: basic, code: 'BGMSETD 128,"@MMLTOP"', expect: { stdout: "" } }
+  - { name: tune_too_low, code: 'BGMSETD 127,"@L"', expect: { error: { errnum: 10 } } }
+  - { name: tune_too_high, code: 'BGMSETD 256,"@L"', expect: { error: { errnum: 10 } } }
+  - { name: numeric_label_arg, code: "BGMSETD 128,5", expect: { error: { errnum: 8 } } }
+  - { name: one_arg, code: "BGMSETD 128", expect: { error: { errnum: 4 } } }
