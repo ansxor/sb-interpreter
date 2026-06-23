@@ -595,3 +595,15 @@ oracle to confirm exact output and promote to `hw_verified`.
   - SPHITINFO 3-variable OUT form (TM,X1,Y1) — accepted by the handler, undocumented; confirm legal + values.
   - Compositing exactness for M3 goldens (O-T6): sprite/BG draw+pivot order (scale vs rotate
     vs scroll origin), rounding, and Z tie-breaking across sprites/BG/GRP/console layers.
+
+- S-C4 · frame-and-timing-model concept spec — model authored from docs + the disassembled
+  VSYNC/WAIT specs + MAINCNT getter read (`*[0x315ec0]`). Open items the model marks
+  oracle-pending:
+  - MAINCNT boot value / monotonicity across RUN/NEW/CLEAR and a halt+CONT — confirm it
+    never resets and never pauses (docs say "since launched"; i32 wrap point inferred).
+  - VSYNC resync after a long body (body overran the target): does VSYNC return immediately
+    and jump `lastVsync` to current (catch-up, dropping missed frames) or clamp? The
+    `add lastVsync,count` then `str current` path suggests catch-up — pin exact semantics.
+  - MAINCNT vs displayed-frame alignment under DISPLAY/XSCREEN changes and during FADE
+    (assumed: counts every VBlank regardless of what is shown).
+  - Confirm there is genuinely no sub-frame / high-resolution timer (none found in disasm).
