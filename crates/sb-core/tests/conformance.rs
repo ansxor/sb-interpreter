@@ -11,11 +11,13 @@
 //!    oracle (O-T8). None exist yet; the loader is ready for when they land.
 //! 3. **Inline `tests:` from `spec/instructions/*.yaml`** — but only for the categories
 //!    `sb-core` actually implements as pure value→`PRINT` builtins/operators in M1:
-//!    **Mathematics** and **Strings** (M1-T7) plus the bit/logic operators
-//!    `AND/OR/XOR/DIV/MOD` (M1-T6 / S-T6a). These produce a comparable `console_text()`.
-//!    Console/graphics/etc. instructions are intentionally out of scope here (their
-//!    behavior is grid/page state, exercised by the VM unit tests + corpus cases) and are
-//!    folded in as their milestones land.
+//!    **Mathematics** and **Strings** (M1-T7), the bit/logic operators `AND/OR/XOR/DIV/MOD`
+//!    (M1-T6 / S-T6a), and the implemented **Control** flow (M1-T8 + parser/compiler:
+//!    IF/FOR/WHILE/REPEAT/GOTO/GOSUB/ON/… — see `IN_SCOPE_CONTROL`; `CALL`/`COMMON`/`XON`/
+//!    `XOFF` are later-milestone and excluded). These produce a comparable `console_text()`
+//!    (or a checkable errnum). Console/graphics/etc. instructions are intentionally out of
+//!    scope here (their behavior is grid/page state, exercised by the VM unit tests + corpus
+//!    cases) and are folded in as their milestones land.
 //!
 //! Self-checking `ASSERT__` programs are replayed by [`assert_programs_pass`] below.
 
@@ -34,6 +36,14 @@ use sb_core::vm::{Vm, VmError};
 const IN_SCOPE_CATEGORIES: &[&str] = &["Mathematics", "Strings"];
 /// Operators (not categorised as Math/String) that are likewise implemented + comparable.
 const IN_SCOPE_OPERATORS: &[&str] = &["AND", "OR", "XOR", "DIV", "MOD"];
+/// Control-flow instructions (category `Control`) that `sb-core` implements in M1 (M1-T8 +
+/// parser/compiler lowering) and whose inline `tests:` are `PRINT`-comparable. The category
+/// is NOT taken wholesale: `CALL`/`COMMON` are dynamic-dispatch / multi-slot (M6), and
+/// `XON`/`XOFF` are input toggles (M4) — those fold in with their milestones. Listed by id.
+const IN_SCOPE_CONTROL: &[&str] = &[
+    "IF", "THEN", "ELSE", "ELSEIF", "ENDIF", "FOR", "NEXT", "TO", "STEP", "WHILE", "WEND",
+    "REPEAT", "UNTIL", "BREAK", "CONTINUE", "GOTO", "GOSUB", "RETURN", "ON", "END", "STOP", "DEF",
+];
 
 #[derive(Debug, Deserialize)]
 struct CaseFile {
@@ -176,6 +186,7 @@ fn in_scope_instruction_specs_pass() {
     let dir = root().join("spec/instructions");
     let in_scope_cats: BTreeSet<&str> = IN_SCOPE_CATEGORIES.iter().copied().collect();
     let in_scope_ops: BTreeSet<&str> = IN_SCOPE_OPERATORS.iter().copied().collect();
+    let in_scope_control: BTreeSet<&str> = IN_SCOPE_CONTROL.iter().copied().collect();
 
     let mut fails = Vec::new();
     let mut count = 0usize;
@@ -189,7 +200,8 @@ fn in_scope_instruction_specs_pass() {
             .category
             .as_deref()
             .is_some_and(|c| in_scope_cats.contains(c))
-            || in_scope_ops.contains(spec.id.as_str());
+            || in_scope_ops.contains(spec.id.as_str())
+            || in_scope_control.contains(spec.id.as_str());
         if !in_scope {
             continue;
         }

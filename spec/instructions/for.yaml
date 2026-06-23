@@ -22,7 +22,8 @@ semantics:
   - "Loops may be nested; each FOR pairs with one NEXT."
 
 errors:
-  - { errnum: 3, name: SyntaxError, when: "the FOR/TO/NEXT structure is malformed (e.g. NEXT missing, or NEXT J,I multi-variable form)" }
+  - { errnum: 20, name: "FOR without NEXT", when: "a FOR has no matching NEXT (the block ends first)" }
+  - { errnum: 3, name: SyntaxError, when: "the FOR/TO structure is otherwise malformed (e.g. TO missing)" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/for.md, to.md, step.md (FOR var=init TO end [STEP inc]; 'may not be executed at all'; STEP default 1)" }
@@ -37,3 +38,4 @@ tests:
   - { name: zero_iterations, code: "FOR I=5 TO 1\nPRINT \"X\"\nNEXT\nPRINT \"DONE\"", expect: { stdout: "DONE" } }
   - { name: negative_step, code: "FOR I=3 TO 1 STEP -1\nPRINT I;\nNEXT", expect: { stdout: "321" } }
   - { name: final_value,  code: "FOR I=1 TO 3\nNEXT\nPRINT I", expect: { stdout: "4" } }
+  - { name: for_without_next, code: "FOR I=0 TO 3\nPRINT I", expect: { error: { errnum: 20 } } }

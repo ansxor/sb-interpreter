@@ -42,8 +42,9 @@ use crate::ast::*;
 use crate::lexer::Lexer;
 use crate::token::{SourceLoc, Suffix, Token, TokenKind};
 
-/// A parse failure. `errnum` is the SmileBASIC error number — always `3`
-/// (Syntax error) for the parser (`spec/reference/errors.yaml`).
+/// A parse failure. `errnum` is the SmileBASIC error number — usually `3` (Syntax error),
+/// but block-structure mismatches carry their own errnum (e.g. "NEXT without FOR" = 21,
+/// "DEF without END" = 29; see [`Parser::structural_error`] and `spec/reference/errors.yaml`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
     pub loc: SourceLoc,
@@ -117,11 +118,18 @@ enum BlockKind {
 pub struct Parser {
     toks: Vec<Token>,
     pos: usize,
+    /// Open `FOR` blocks currently being parsed. A bare `NEXT` reached as a statement with
+    /// no open `FOR` is "NEXT without FOR" (errnum 21), not the loop-continue idiom.
+    for_depth: u32,
 }
 
 impl Parser {
     pub fn new(toks: Vec<Token>) -> Self {
-        Parser { toks, pos: 0 }
+        Parser {
+            toks,
+            pos: 0,
+            for_depth: 0,
+        }
     }
 
     // ----- cursor helpers -----
@@ -205,6 +213,17 @@ impl Parser {
         ParseError {
             loc: self.cur_loc(),
             errnum: 3,
+            msg: msg.to_string(),
+        }
+    }
+
+    /// A block-structure mismatch with its own SmileBASIC errnum (20..29 — e.g. "NEXT
+    /// without FOR" = 21, "DEF without END" = 29), distinct from the generic Syntax error
+    /// (3). errnums per `spec/reference/errors.yaml` (disassembled error table @0x3054f8).
+    fn structural_error(&self, errnum: u32, msg: &str) -> ParseError {
+        ParseError {
+            loc: self.cur_loc(),
+            errnum,
             msg: msg.to_string(),
         }
     }
@@ -350,8 +369,12 @@ impl Parser {
             // is a loop-continue, e.g. the `IF cond THEN NEXT` idiom — it jumps to
             // the enclosing FOR's increment (osb `statement()` Next → Continue). A
             // `NEXT` that closes a FOR is consumed by `parse_for` before reaching
-            // here. The optional variable list after it is ignored.
+            // here. The optional variable list after it is ignored. With no open FOR
+            // it is "NEXT without FOR" (errnum 21), not a Syntax error.
             "NEXT" => {
+                if self.for_depth == 0 {
+                    return Err(self.structural_error(21, "NEXT without FOR"));
+                }
                 self.advance();
                 self.skip_next_var_list();
                 Ok(Stmt::new(StmtKind::Continue, loc))
@@ -404,9 +427,13 @@ impl Parser {
                 let e = self.parse_expr()?;
                 Ok(Stmt::new(StmtKind::Exec(e), loc))
             }
-            // Stray block / clause keywords must not start a statement. (`NEXT` is
-            // handled above as a loop-continue.)
-            "THEN" | "ELSE" | "ELSEIF" | "ENDIF" | "WEND" | "UNTIL" | "TO" | "STEP" => {
+            // Stray loop-closing keywords get their own structural errnum (the matching
+            // opener was never seen), per the error table.
+            "WEND" => Err(self.structural_error(25, "WEND without WHILE")),
+            "UNTIL" => Err(self.structural_error(23, "UNTIL without REPEAT")),
+            // Other stray block / clause keywords must not start a statement. (`NEXT` is
+            // handled above as a loop-continue / "NEXT without FOR".)
+            "THEN" | "ELSE" | "ELSEIF" | "ENDIF" | "TO" | "STEP" => {
                 Err(self.syntax_error(&format!("unexpected `{kw}`")))
             }
             // Anything else is an assignment or a command call.
@@ -763,11 +790,14 @@ impl Parser {
         } else {
             None
         };
+        self.for_depth += 1;
         let body = self.parse_block(BlockKind::For)?;
+        self.for_depth -= 1;
         // Consume `NEXT [var[,var…]]` (the variable list is ignored, per osb /
-        // SmileBASIC 3 — NEXT does not have to name the loop variable).
+        // SmileBASIC 3 — NEXT does not have to name the loop variable). An unterminated
+        // FOR (block ended at EOF, not `NEXT`) is "FOR without NEXT" (errnum 20).
         if !self.eat_kw("NEXT") {
-            return Err(self.syntax_error("expected NEXT to close FOR"));
+            return Err(self.structural_error(20, "FOR without NEXT"));
         }
         self.skip_next_var_list();
         Ok(Stmt::new(
@@ -822,7 +852,7 @@ impl Parser {
         let cond = self.parse_expr()?;
         let body = self.parse_block(BlockKind::While)?;
         if !self.eat_kw("WEND") {
-            return Err(self.syntax_error("expected WEND to close WHILE"));
+            return Err(self.structural_error(24, "WHILE without WEND"));
         }
         Ok(Stmt::new(StmtKind::While { cond, body }, loc))
     }
@@ -831,7 +861,7 @@ impl Parser {
         self.advance(); // REPEAT
         let body = self.parse_block(BlockKind::Repeat)?;
         if !self.eat_kw("UNTIL") {
-            return Err(self.syntax_error("expected UNTIL to close REPEAT"));
+            return Err(self.structural_error(22, "REPEAT without UNTIL"));
         }
         let cond = self.parse_expr()?;
         Ok(Stmt::new(StmtKind::RepeatUntil { body, cond }, loc))
@@ -942,7 +972,7 @@ impl Parser {
         }
         let body = self.parse_block(BlockKind::Function)?;
         if !self.eat_kw("END") {
-            return Err(self.syntax_error("expected END to close DEF"));
+            return Err(self.structural_error(29, "DEF without END"));
         }
         Ok(Stmt::new(
             StmtKind::Def(DefineFunction {
@@ -2066,16 +2096,34 @@ mod tests {
     #[test]
     fn malformed_input_is_syntax_error() {
         for src in [
-            "FOR I=0 TO",          // missing limit expression
-            "IF X",                // missing THEN
-            "PRINT 1 2",           // missing separator between print expressions
-            "1=2",                 // literal target
-            "WHILE X\nWEND\nWEND", // stray WEND
-            "ENDIF",               // stray ENDIF
-            ")",                   // can't start a statement
+            "FOR I=0 TO", // missing limit expression
+            "IF X",       // missing THEN
+            "PRINT 1 2",  // missing separator between print expressions
+            "1=2",        // literal target
+            "ENDIF",      // stray ENDIF (no dedicated errnum specced → generic 3)
+            ")",          // can't start a statement
         ] {
             let err = parse(src).expect_err(&format!("`{src}` should fail"));
             assert_eq!(err.errnum, 3, "`{src}` should be Syntax error (3)");
+        }
+    }
+
+    /// Block-structure mismatches carry their own SmileBASIC errnum (not the generic
+    /// Syntax error 3) — `spec/reference/errors.yaml`, errnum 20..29.
+    #[test]
+    fn block_mismatch_has_structural_errnum() {
+        for (src, want) in [
+            ("NEXT", 21u32),               // NEXT without FOR
+            ("WEND", 25),                  // WEND without WHILE
+            ("UNTIL 1", 23),               // UNTIL without REPEAT
+            ("WHILE X\nWEND\nWEND", 25),   // stray WEND after a closed WHILE
+            ("FOR I=0 TO 3\nPRINT I", 20), // FOR without NEXT (EOF first)
+            ("WHILE 1\nPRINT 1", 24),      // WHILE without WEND
+            ("REPEAT\nPRINT 1", 22),       // REPEAT without UNTIL
+            ("DEF F\nA=1", 29),            // DEF without END
+        ] {
+            let err = parse(src).expect_err(&format!("`{src}` should fail"));
+            assert_eq!(err.errnum, want, "`{src}` errnum");
         }
     }
 

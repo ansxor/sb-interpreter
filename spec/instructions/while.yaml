@@ -30,3 +30,4 @@ tests:
   - { name: counts,     code: "C=0\nWHILE C<3\nC=C+1\nWEND\nPRINT C", expect: { stdout: "3" } }
   - { name: zero_iters, code: "WHILE 0\nPRINT \"X\"\nWEND\nPRINT \"DONE\"", expect: { stdout: "DONE" } }
   - { name: sum,        code: "S=0\nI=1\nWHILE I<=5\nS=S+I\nI=I+1\nWEND\nPRINT S", expect: { stdout: "15" } }
+  - { name: while_without_wend, code: "WHILE 1\nPRINT 1", expect: { error: { errnum: 24 } } }

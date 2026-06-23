@@ -832,3 +832,14 @@ oracle to confirm exact output and promote to `hw_verified`.
   untyped target takes it verbatim). hw_verified by sb-oracle 2026-06-23
   (`A%=1:B#=2.34567:SWAP A%,B# -> A%=2,B#=1`); folded into swap.yaml + harness/corpus/cases/
   swap.yaml. This advanced otya line 127 → 207 (`CALL "SPDEF"`, sprite — M3, the next blocker).
+
+## M1-T14 / block-structure mismatch errnums — queued 2026-06-23
+- Parser now raises dedicated structural errnums (was generic Syntax error 3) for unmatched
+  control-flow keywords, per the **disassembled** error table (`errors.yaml`, errnum→string
+  ptr table @0x3054f8): NEXT without FOR=21, WEND without WHILE=25, UNTIL without REPEAT=23,
+  FOR without NEXT=20, WHILE without WEND=24, REPEAT without UNTIL=22, DEF without END=29.
+  The errnum NAMES are disassembled; that real SB raises THESE (and not 3) for each
+  malformed form is **not yet oracle-confirmed** — grounded only in the error-table names.
+  Queue: oracle `|err` probes for each (`NEXT`, `WEND`, `UNTIL 1`, `FOR I=0 TO 3`+no NEXT,
+  `WHILE 1`+no WEND, `REPEAT`+no UNTIL, `DEF F`+no END). Assumption: errnum = table name.
+  ENDIF/ELSE/THEN stray (28/27/26) left as generic 3 — unspecced, also queue if probing.

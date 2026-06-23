@@ -27,3 +27,4 @@ confidence: hw_verified
 tests:
   - { name: runs_once_even_if_true, code: "REPEAT\nPRINT \"X\"\nUNTIL 1", expect: { stdout: "X" } }
   - { name: counts, code: "C=0\nREPEAT\nC=C+1\nUNTIL C>=3\nPRINT C", expect: { stdout: "3" } }
+  - { name: repeat_without_until, code: "REPEAT\nPRINT 1", expect: { error: { errnum: 22 } } }
