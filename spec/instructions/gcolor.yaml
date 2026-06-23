@@ -34,9 +34,9 @@ confidence: disassembled
 
 tests:
   # error expects are hw_verified (sb-oracle 2026-06-22 s_t7a); set/get round-trip is disassembled (store/load of the raw color int).
-  - { name: roundtrip_color, code: 'GCOLOR 100\nGCOLOR OUT C\nPRINT C', expect: { stdout: "100" } }
-  - { name: roundtrip_function_get, code: 'GCOLOR 100\nC=GCOLOR()\nPRINT C', expect: { stdout: "100" } }
-  - { name: roundtrip_zero, code: 'GCOLOR 0\nGCOLOR OUT C\nPRINT C', expect: { stdout: "0" } }
+  - { name: roundtrip_color, code: "GCOLOR 100\nGCOLOR OUT C\nPRINT C", expect: { stdout: "100" } }
+  - { name: roundtrip_function_get, code: "GCOLOR 100\nC=GCOLOR()\nPRINT C", expect: { stdout: "100" } }
+  - { name: roundtrip_zero, code: "GCOLOR 0\nGCOLOR OUT C\nPRINT C", expect: { stdout: "0" } }
   - { name: set_rgb_ok, code: "GCOLOR RGB(255,0,0)", expect: { stdout: "" } }
   - { name: no_arg_set_errors, code: "GCOLOR", expect: { error: { errnum: 4 } } }
   - { name: too_many_args_errors, code: "GCOLOR 1,2", expect: { error: { errnum: 4 } } }

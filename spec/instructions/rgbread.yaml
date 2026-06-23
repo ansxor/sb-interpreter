@@ -44,9 +44,9 @@ confidence: disassembled
 
 tests:
   # channel extraction is pure shift+mask (disassembled, unambiguous); the inverse-of-RGB() round-trip is covered.
-  - { name: split_rgb_3out, code: 'RGBREAD &HFF804020 OUT R,G,B\nPRINT R;",";G;",";B', expect: { stdout: "128,64,32" } }
-  - { name: split_argb_4out, code: 'RGBREAD &H80FF8040 OUT A,R,G,B\nPRINT A;",";R;",";G;",";B', expect: { stdout: "128,255,128,64" } }
-  - { name: split_negative_white, code: 'RGBREAD -1 OUT A,R,G,B\nPRINT A;",";R;",";G;",";B', expect: { stdout: "255,255,255,255" } }
-  - { name: roundtrip_rgb, code: 'RGBREAD RGB(160,128,96) OUT R,G,B\nPRINT R;",";G;",";B', expect: { stdout: "160,128,96" } }
+  - { name: split_rgb_3out, code: "RGBREAD &HFF804020 OUT R,G,B\nPRINT R;\",\";G;\",\";B", expect: { stdout: "128,64,32" } }
+  - { name: split_argb_4out, code: "RGBREAD &H80FF8040 OUT A,R,G,B\nPRINT A;\",\";R;\",\";G;\",\";B", expect: { stdout: "128,255,128,64" } }
+  - { name: split_negative_white, code: "RGBREAD -1 OUT A,R,G,B\nPRINT A;\",\";R;\",\";G;\",\";B", expect: { stdout: "255,255,255,255" } }
+  - { name: roundtrip_rgb, code: "RGBREAD RGB(160,128,96) OUT R,G,B\nPRINT R;\",\";G;\",\";B", expect: { stdout: "160,128,96" } }
   - { name: two_out_errors, code: "RGBREAD 0 OUT R,G", expect: { error: { errnum: 4 } } }
   - { name: five_out_errors, code: "RGBREAD 0 OUT A,R,G,B,X", expect: { error: { errnum: 4 } } }
