@@ -379,7 +379,14 @@ impl Parser {
             "READ" => self.parse_read(loc),
             "RESTORE" => {
                 self.advance();
-                let j = self.parse_jump()?;
+                // Bare `RESTORE` (no label) is accepted by the grammar but has no
+                // reset-to-first semantics on real SB 3.6.0 — it raises Type mismatch
+                // (8) at runtime (hw_verified). The compiler lowers `None` to that.
+                let j = if self.at_arg_end() {
+                    None
+                } else {
+                    Some(self.parse_jump()?)
+                };
                 Ok(Stmt::new(StmtKind::Restore(j), loc))
             }
             "INPUT" => self.parse_input(loc),
@@ -1984,7 +1991,16 @@ mod tests {
             ]
         );
         assert!(matches!(prog("READ A,B,C")[0].kind, StmtKind::Read(_)));
-        assert!(matches!(prog("RESTORE @TBL")[0].kind, StmtKind::Restore(_)));
+        assert!(matches!(
+            prog("RESTORE @TBL")[0].kind,
+            StmtKind::Restore(Some(_))
+        ));
+        // Bare RESTORE parses (no label); the compiler makes it a runtime Type mismatch.
+        assert!(matches!(prog("RESTORE")[0].kind, StmtKind::Restore(None)));
+        assert!(matches!(
+            prog("RESTORE:READ A")[0].kind,
+            StmtKind::Restore(None)
+        ));
     }
 
     #[test]

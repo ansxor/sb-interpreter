@@ -19,3 +19,8 @@ cases:
   - name: order_of_operations
     code: 'PRINT 2+3*4'
     expect: { stdout: "14" }
+  # Argument-less RESTORE has no reset-to-first form on real SB 3.6.0: it parses but
+  # raises Type mismatch (8) at runtime. hw_verified (sb-oracle 2026-06-23, restore.yaml).
+  - name: bare_restore_type_mismatch
+    code: "READ A:RESTORE:READ B:@D1:DATA 7"
+    expect: { error: { errnum: 8 } }

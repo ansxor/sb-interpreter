@@ -603,7 +603,15 @@ impl<'a> Compiler<'a> {
                     self.compile_pop_target(v)?;
                 }
             }
-            StmtKind::Restore(jump) => match jump {
+            StmtKind::Restore(None) => {
+                // Argument-less `RESTORE`: real SB 3.6.0 evaluates a (missing) label
+                // argument and fails its string-type check → Type mismatch (8) at
+                // runtime. Push a non-string placeholder and let `RestoreExpr`'s
+                // `as_str` raise 8 at the RESTORE line (hw_verified, restore.yaml).
+                self.emit(Op::Push(Const::Int(0)));
+                self.emit(Op::RestoreExpr);
+            }
+            StmtKind::Restore(Some(jump)) => match jump {
                 Jump::Label(l) => {
                     let idx = self
                         .data_labels

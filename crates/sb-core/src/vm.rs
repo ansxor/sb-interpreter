@@ -95,6 +95,14 @@ impl VmError {
             VmError::Unsupported(_) | VmError::Assert { .. } => None,
         }
     }
+
+    /// The `ERRLINE` (source line) if this is a SmileBASIC runtime error.
+    pub fn errline(&self) -> Option<u32> {
+        match self {
+            VmError::Sb { line, .. } => Some(*line),
+            VmError::Unsupported(_) | VmError::Assert { .. } => None,
+        }
+    }
 }
 
 /// One `DEF`/`COMMON DEF` activation record.
@@ -1510,6 +1518,16 @@ C$=A$+B$"#);
     #[test]
     fn out_of_data_is_errnum_13() {
         assert_eq!(run_err("READ A,B\nDATA 1").errnum(), Some(13));
+    }
+
+    #[test]
+    fn bare_restore_is_type_mismatch_8() {
+        // Argument-less RESTORE has no reset-to-first form on real SB 3.6.0; it
+        // raises Type mismatch (8) at runtime — hw_verified (restore.yaml, oracle
+        // 2026-06-23: bare `RESTORE` halts with errnum 8 where `RESTORE @D1` works).
+        let e = run_err("READ A:RESTORE:READ B:@D1:DATA 7");
+        assert_eq!(e.errnum(), Some(8));
+        assert_eq!(e.errline(), Some(1));
     }
 
     // ---- INC / SWAP ----

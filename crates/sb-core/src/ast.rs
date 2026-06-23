@@ -418,7 +418,9 @@ pub enum StmtKind {
     /// `READ var0, var1, ...` (`node.d:Read`).
     Read(Vec<Expr>),
     /// `RESTORE @label` — the label resolves at runtime (`node.d:Restore`).
-    Restore(Jump),
+    /// `None` is the argument-less `RESTORE`: real SB 3.6.0 parses it but raises
+    /// Type mismatch (8) at runtime (it has no reset-to-first form) — hw_verified.
+    Restore(Option<Jump>),
     /// `INPUT [prompt;] var0, var1, ...` (`node.d:Input`). `question` adds the `?`.
     Input {
         prompt: Option<Expr>,

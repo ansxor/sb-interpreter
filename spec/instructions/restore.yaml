@@ -16,15 +16,18 @@ semantics:
   - "The label may be a literal (RESTORE @TOP) or a string variable holding the label name (e.g. L$=\"@TOP\":RESTORE L$)."
   - "A label in another slot may be referenced as RESTORE \"n:@Label\" (the target slot must be enabled first with USE n; see [[use]])."
   - "If the label does not exist, errnum 14 (Undefined label) is raised."
+  - "The label argument is REQUIRED: SmileBASIC 3.6.0 has no reset-to-first-DATA form. Argument-less RESTORE parses but raises errnum 8 (Type mismatch) at runtime when it evaluates the missing label as a string — hw_verified (it is NOT the classic-BASIC bare-RESTORE rewind)."
 
 errors:
   - { errnum: 14, name: "Undefined label", when: "the specified @Label does not exist" }
+  - { errnum: 8, name: "Type mismatch", when: "RESTORE is used with no label argument (no reset-to-first form exists)" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/restore.md (RESTORE @Label; specifies first DATA to read; string-variable label allowed; cross-slot \"1:@Label\" with USE)" }
   - { type: disassembled, ref: "cia_3.6.0.lst: RESTORE keyword name @0x2ed5b8 (token-name table region shared with DATA/READ); a parser/compiler special form (not in the builtin dispatch table) compiled to a VM op that sets the DATA pointer to the labelled DATA entry; unknown label -> errnum 14 (spec/reference/errors.yaml)" }
   - { type: community, ref: "sbsave corpus: ~3.3k RESTORE; literal @Label dominant (~2.6k); string-variable labels (~238, RESTORE M$ in 227EVK4V/TXT/SBSMILE); computed/concatenated labels (~146, RESTORE \"@BGM\"+STR$(NUM+1) in 2D7X32KV/TXT/BGM); cross-slot \"n:@Label\" (~288, RESTORE \"1:@SAVE\" in 1BWX7ENV/TXT/AND-OS); array-element labels rare (RESTORE TOOL$[TOOL_MODE])" }
-  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4d): RESTORE @D2 selects the @D2 block (READ -> 22, not 11); RESTORE @D1 rewinds so a value is re-read (READ A;RESTORE;READ B -> 9,9); string-variable label L$=\"@D1\":RESTORE L$ -> 42; computed label RESTORE \"@D\"+STR$(2) targets @D2 -> 2" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4d): RESTORE @D2 selects the @D2 block (READ -> 22, not 11); RESTORE @D1 rewinds so a value is re-read (READ A:RESTORE @D1:READ B -> 9,9); string-variable label L$=\"@D1\":RESTORE L$ -> 42; computed label RESTORE \"@D\"+STR$(2) targets @D2 -> 2" }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-23 (M1-T14): argument-less RESTORE has NO reset-to-first form — `READ A:RESTORE:READ B:@D1:DATA 7` HALTS with errnum 8 (Type mismatch), errline 1, whereas the same program with `RESTORE @D1` returns 7. So bare RESTORE raises Type mismatch (8) at runtime; it does not rewind." }
 
 confidence: hw_verified
 
@@ -33,3 +36,4 @@ tests:
   - { name: restore_rewinds, code: "READ A\nRESTORE @D1\nREAD B\n@D1\nDATA 9\nPRINT A;B", expect: { stdout: "99" } }
   - { name: restore_string_var, code: "L$=\"@D1\"\nRESTORE L$\nREAD A\n@D1\nDATA 42\nPRINT A", expect: { stdout: "42" } }
   - { name: restore_computed_label, code: "RESTORE \"@D\"+STR$(2)\nREAD A\n@D1\nDATA 1\n@D2\nDATA 2\nPRINT A", expect: { stdout: "2" } }
+  - { name: bare_restore_type_mismatch, code: "READ A:RESTORE:READ B:@D1:DATA 7", expect: { error: { errnum: 8 } } }
