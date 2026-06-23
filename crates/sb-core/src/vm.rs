@@ -1007,6 +1007,9 @@ impl Vm {
             "GCIRCLE" => gfx::gcircle(&mut self.grp, &args, ret_count),
             "GTRI" => gfx::gtri(&mut self.grp, &args, ret_count),
             "GPAINT" => gfx::gpaint(&mut self.grp, &args, ret_count),
+            "GCOPY" => gfx::gcopy(&mut self.grp, &args, ret_count),
+            "GSAVE" => gfx::gsave(&mut self.grp, &args, ret_count),
+            "GLOAD" => gfx::gload(&mut self.grp, &args, ret_count),
             _ => return Ok(false),
         };
         for v in results.map_err(sb)? {

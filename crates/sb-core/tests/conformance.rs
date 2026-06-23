@@ -115,11 +115,14 @@ const IN_SCOPE_DATA_OPS: &[&str] = &["READ", "RESTORE", "OPTION", "REM", "WAIT",
 /// guards are hw_verified) and `GSPOIT` (read a pixel — now fully in scope, including its
 /// `GPSET`-then-read round-trip cases that the M2-T2 drawing primitives enabled). The
 /// primitives' *pixel coverage* still has no scalar golden (the framebuffer pixel-diff is
-/// O-T6 / M2-T5, queued), so only their shape/error behavior replays here. The rest of the
-/// Graphics category (bitmap ops, etc.) isn't implemented yet. Listed by id.
+/// O-T6 / M2-T5, queued), so only their shape/error behavior replays here, plus the M2-T3
+/// bitmap ops `GCOPY`/`GSAVE`/`GLOAD` (page↔page blit + page↔array transfer — their
+/// arg-count / page-range / size / type errnums AND their GSPOIT-readable round-trip pixels
+/// and saved element words are all hw_verified, sb-oracle s_t7d; the round-trips live in
+/// `harness/corpus/cases/graphics_bitmap.yaml`). Listed by id.
 const IN_SCOPE_GRAPHICS: &[&str] = &[
     "RGB", "RGBREAD", "GPAGE", "GCLS", "GCOLOR", "GPRIO", "GCLIP", "GSPOIT", "GPSET", "GLINE",
-    "GBOX", "GFILL", "GCIRCLE", "GTRI", "GPAINT",
+    "GBOX", "GFILL", "GCIRCLE", "GTRI", "GPAINT", "GCOPY", "GSAVE", "GLOAD",
 ];
 /// `Screen control` instructions whose builtins `sb-core` implements (M1-T8: the console
 /// draw-state reset + screen background-color round-trip) and whose inline `tests:` are

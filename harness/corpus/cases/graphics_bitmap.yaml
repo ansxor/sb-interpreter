@@ -1,0 +1,61 @@
+# GRP bitmap-op conformance cases (M2-T3: GCOPY / GSAVE / GLOAD). Every value here is
+# hw_verified on real SmileBASIC 3.6.0 (sb-oracle batch s_t7d, 2026-06-23): the GSPOIT
+# read-backs, the saved array element words, and the whole-area / sub-rect element counts.
+# Statements are joined with `:` so each case stays a single source line; a trailing
+# `PRINT` surfaces the value the framebuffer-free conformance gate compares.
+cases:
+  # -- GCOPY: page→page blit moves pixels (copy mode TRUE copies transparent too) --------
+  - name: gcopy_moves_pixel
+    code: 'GCLS 0:GPSET 10,10,RGB(255,0,0):GCOPY 0,0,32,32,100,100,1:PRINT GSPOIT(110,110)'
+    expect: { stdout: "-524288" } # red, RGBA5551-truncated (0xFFF80000)
+  - name: gcopy_skip_keeps_destination
+    code: 'GCLS 0:GFILL 100,100,131,131,RGB(0,0,255):GCOPY 0,0,31,31,100,100,0:PRINT GSPOIT(110,110)'
+    expect: { stdout: "-16776968" } # copy mode 0 skips the transparent source -> blue kept
+  - name: gcopy_copy_overwrites_with_transparent
+    code: 'GCLS 0:GFILL 100,100,131,131,RGB(0,0,255):GCOPY 0,0,31,31,100,100,1:PRINT GSPOIT(110,110)'
+    expect: { stdout: "0" } # copy mode 1 copies the transparent source -> destination cleared
+  - name: gcopy_grpf_source_no_error
+    code: 'GCOPY -1,0,0,100,100,0,0,0:PRINT "OK"'
+    expect: { stdout: "OK" } # GRPF (-1) source is accepted (reads transparent in this model)
+  - name: gcopy_six_args_errors
+    code: 'GCOPY 0,0,100,100,200,100'
+    expect: { error: { errnum: 4 } }
+  - name: gcopy_bad_source_page
+    code: 'GCOPY 6,0,0,100,100,200,100,1'
+    expect: { error: { errnum: 10 } }
+
+  # -- GSAVE / GLOAD round-trip through a numeric array (both convert flags) -------------
+  - name: gsave_gload_roundtrip_raw
+    code: 'DIM W[0]:GCLS 0:GPSET 5,5,RGB(0,255,0):GSAVE 0,0,16,16,W,1:GCLS 0:GLOAD 100,100,16,16,W,1,0:PRINT GSPOIT(105,105)'
+    expect: { stdout: "-16713728" } # green round-trips (0xFF00F800)
+  - name: gsave_gload_roundtrip_logical
+    code: 'DIM W[0]:GCLS 0:GPSET 5,5,RGB(0,255,0):GSAVE 0,0,16,16,W,0:GCLS 0:GLOAD 100,100,16,16,W,0,0:PRINT GSPOIT(105,105)'
+    expect: { stdout: "-16713728" } # logical-color flag round-trips to the same pixel
+
+  # -- GSAVE element formats + auto-expanded length ------------------------------------
+  - name: gsave_flag1_raw_word
+    code: 'DIM W%[0]:GCLS 0:GPSET 0,0,RGB(255,0,0):GSAVE 0,0,1,1,W%,1:PRINT W%[0]'
+    expect: { stdout: "63489" } # raw RGBA5551 of red = 0xF801
+  - name: gsave_flag0_logical_word
+    code: 'DIM W%[0]:GCLS 0:GPSET 0,0,RGB(255,0,0):GSAVE 0,0,1,1,W%,0:PRINT W%[0]'
+    expect: { stdout: "-524288" } # 32-bit logical color of red = 0xFFF80000 (signed)
+  - name: gsave_whole_area_length
+    code: 'DIM W[0]:GSAVE W,1:PRINT LEN(W)'
+    expect: { stdout: "262144" } # whole drawing area = 512x512
+  - name: gsave_subrect_length
+    code: 'DIM W[0]:GSAVE 0,0,8,8,W,1:PRINT LEN(W)'
+    expect: { stdout: "64" } # 8x8 sub-rectangle, 1-D array auto-expanded
+
+  # -- GLOAD / GSAVE error guards (all hw_verified) -------------------------------------
+  - name: gload_whole_too_small
+    code: 'DIM W[8]:GLOAD W,1,0'
+    expect: { error: { errnum: 31 } } # 3-arg GLOAD wants 512x512 elements
+  - name: gload_rect_too_small
+    code: 'DIM W[3]:GLOAD 0,0,8,8,W,1,0'
+    expect: { error: { errnum: 31 } } # needs 8x8=64 elements
+  - name: gsave_string_array_type_mismatch
+    code: 'DIM W$[64]:GSAVE 0,0,8,8,W$,1'
+    expect: { error: { errnum: 8 } }
+  - name: gload_string_array_type_mismatch
+    code: 'DIM W$[64]:GLOAD W$,1,0'
+    expect: { error: { errnum: 8 } }

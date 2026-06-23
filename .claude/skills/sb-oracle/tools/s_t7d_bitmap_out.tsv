@@ -1,0 +1,14 @@
+whole_dims	262144
+flag1_red	63489
+flag0_red	4.29444e+09
+flag1_green	1985
+save_len_8x8	64
+rt_f1	-16713728
+rt_f0	-16713728
+gcopy_move	-524288
+gcopy_skip_keeps_dst	-16776968
+gcopy_copy_overwrites	0
+gload_whole_small	errnum=31 errline=1
+gload_rect_small	errnum=31 errline=1
+gsave_str_array	errnum=8 errline=1
+gload_str_array	errnum=8 errline=1

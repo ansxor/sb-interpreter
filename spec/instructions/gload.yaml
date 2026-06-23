@@ -55,13 +55,18 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GLOAD: blits a GSAVE-format array back onto a graphic page with a color-conversion flag or palette (3.5.0 structural cross-check only)." }
   - { type: community, ref: "sbsave corpus: GLOAD appears ~670x — only the documented 3-arg (image_array,flag,mode, e.g. QRY34XVD/TXT/UNPACK 'GLOAD D,1,1') and 7-arg forms occur. Confirms the form-2 PALETTE variant is real in the wild — the 2nd-to-last operand is a palette array name (e.g. 53383XCF/TXT/CHIP8.PKG '...,CHIP8_PAL,TRUE'; '...,SFNPAL%,FALSE'). Legal syntax; runtime output unproven (framebuffer oracle pending, O-T6)." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7d): GLOAD W,1 (2 args, W a DIM'd array) -> errnum 4, errline 1; GLOAD 0,0,8,8,W (5 args) -> errnum 4; A=GLOAD(W,1,0) (used as a function) -> errnum 4." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-23 (s_t7d_bitmap): 3-arg GLOAD loads the WHOLE drawing area = 512x512 (a too-small array -> errnum 31: DIM W[8]:GLOAD W,1,0 -> 31); 7-arg too-small -> errnum 31 (DIM W[3]:GLOAD 0,0,8,8,W,1,0 -> 31); a string image array -> errnum 8 (Type mismatch); GSAVE-then-GLOAD round-trips a pixel exactly for both convert flags (green GPSET 5,5 -> GSAVE 16x16 -> GCLS -> GLOAD elsewhere -> GSPOIT = 0xFF00F800 = -16713728 for flag 0 and flag 1)." }
 
 confidence: disassembled
 
 tests:
-  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7d). Pixel side-effects need the framebuffer oracle (O-T6, queued).
-  - { name: load_whole_flag_ok, code: "DIM WORK[0]\nGSAVE 0,0,8,8,WORK,1\nGLOAD WORK,1,0", expect: { stdout: "" } }
+  # error/arg-count + size expects are hw_verified (sb-oracle s_t7d 2026-06-22/06-23). Pixel side-effects are exercised by harness/corpus/cases/graphics_bitmap.yaml (GSPOIT round-trips).
+  # The 3-arg whole form loads the WHOLE drawing area (512x512 = 262144 elements), so it must be paired with a whole-area GSAVE (a sub-rect GSAVE into a 64-element array would raise errnum 31 — hw_verified).
+  - { name: load_whole_flag_ok, code: "DIM WORK[0]\nGSAVE WORK,1\nGLOAD WORK,1,0", expect: { stdout: "" } }
   - { name: load_rect_flag_ok, code: "DIM WORK[0]\nGSAVE 0,0,8,8,WORK,1\nGLOAD 0,0,8,8,WORK,1,0", expect: { stdout: "" } }
+  - { name: load_whole_too_small_errors, code: "DIM WORK[8]\nGLOAD WORK,1,0", expect: { error: { errnum: 31 } } }
+  - { name: load_rect_too_small_errors, code: "DIM WORK[3]\nGLOAD 0,0,8,8,WORK,1,0", expect: { error: { errnum: 31 } } }
+  - { name: string_array_type_mismatch, code: "DIM WORK$[64]\nGLOAD WORK$,1,0", expect: { error: { errnum: 8 } } }
   - { name: two_args_errors, code: "DIM WORK[0]\nGLOAD WORK,1", expect: { error: { errnum: 4 } } }
   - { name: five_args_errors, code: "DIM WORK[0]\nGLOAD 0,0,8,8,WORK", expect: { error: { errnum: 4 } } }
   - { name: as_function_errors, code: "DIM WORK[0]\nA=GLOAD(WORK,1,0)", expect: { error: { errnum: 4 } } }

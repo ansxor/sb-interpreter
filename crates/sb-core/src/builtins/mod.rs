@@ -147,6 +147,12 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "GCIRCLE",
     "GTRI",
     "GPAINT",
+    // Bitmap ops (M2-T3): GCOPY blits page→page; GSAVE/GLOAD transfer a page region to/from
+    // a numeric array. They mutate the `GrpState` page buffers and (GSAVE) the caller's
+    // array, so the VM routes them like the other graphics commands.
+    "GCOPY",
+    "GSAVE",
+    "GLOAD",
     // Array data-ops (M1-T14): SORT/RSORT mutate their array arguments in place, so the
     // VM routes them to `data::sort` rather than the value-returning `dispatch`.
     "SORT",

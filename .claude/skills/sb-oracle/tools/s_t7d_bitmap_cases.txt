@@ -1,0 +1,14 @@
+whole_dims|DIM W[0]:GSAVE W,1|LEN(W)|prog
+flag1_red|DIM W[0]:GCLS 0:GPSET 0,0,RGB(255,0,0):GSAVE 0,0,1,1,W,1|W[0]|prog
+flag0_red|DIM W[0]:GCLS 0:GPSET 0,0,RGB(255,0,0):GSAVE 0,0,1,1,W,0|W[0]|prog
+flag1_green|DIM W[0]:GCLS 0:GPSET 0,0,RGB(0,255,0):GSAVE 0,0,1,1,W,1|W[0]|prog
+save_len_8x8|DIM W[0]:GSAVE 0,0,8,8,W,1|LEN(W)|prog
+rt_f1|DIM W[0]:GCLS 0:GPSET 5,5,RGB(0,255,0):GSAVE 0,0,16,16,W,1:GCLS 0:GLOAD 100,100,16,16,W,1,0|GSPOIT(105,105)|prog
+rt_f0|DIM W[0]:GCLS 0:GPSET 5,5,RGB(0,255,0):GSAVE 0,0,16,16,W,0:GCLS 0:GLOAD 100,100,16,16,W,0,0|GSPOIT(105,105)|prog
+gcopy_move|DIM D[0]:GCLS 0:GPSET 10,10,RGB(255,0,0):GCOPY 0,0,32,32,100,100,1|GSPOIT(110,110)|prog
+gcopy_skip_keeps_dst|DIM D[0]:GCLS 0:GFILL 100,100,131,131,RGB(0,0,255):GCOPY 0,0,31,31,100,100,0|GSPOIT(110,110)|prog
+gcopy_copy_overwrites|DIM D[0]:GCLS 0:GFILL 100,100,131,131,RGB(0,0,255):GCOPY 0,0,31,31,100,100,1|GSPOIT(110,110)|prog
+gload_whole_small|DIM W[8]:GLOAD W,1,0|err
+gload_rect_small|DIM W[3]:GLOAD 0,0,8,8,W,1,0|err
+gsave_str_array|DIM W$[64]:GSAVE 0,0,8,8,W$,1|err
+gload_str_array|DIM W$[64]:GLOAD W$,1,0|err

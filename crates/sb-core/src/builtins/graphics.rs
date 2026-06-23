@@ -390,6 +390,235 @@ pub fn gpaint(
     Ok(vec![])
 }
 
+/// `GCOPY [src_page,] x1,y1,x2,y2, dx,dy, mode` — blit a rectangle from `src_page` (or the
+/// current drawing page) onto the current drawing page. Exactly 7 args (source = current
+/// page) or 8 args (leading source page); `mode` is normalized to a boolean (non-zero → 1,
+/// copy transparent pixels too). Any other count or a return-value request → errnum 4; an
+/// explicit source page ∉ -1..=5 → errnum 10 (hw_verified sb-oracle s_t7d).
+pub fn gcopy(
+    grp: &mut GrpState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    let (src_page, rect) = match args.len() {
+        7 => (grp.manip_page as i32, args),
+        8 => (src_page(&args[0])?, &args[1..]),
+        _ => return Err(illegal()),
+    };
+    let x1 = floor_coord(&rect[0])?;
+    let y1 = floor_coord(&rect[1])?;
+    let x2 = floor_coord(&rect[2])?;
+    let y2 = floor_coord(&rect[3])?;
+    let dx = floor_coord(&rect[4])?;
+    let dy = floor_coord(&rect[5])?;
+    let copy_transparent = rect[6].to_int()? != 0;
+    grp.gcopy(src_page, x1, y1, x2, y2, dx, dy, copy_transparent);
+    Ok(vec![])
+}
+
+/// `GSAVE [src_page,] [x,y,w,h,] dest_array, convert_flag` — copy a graphic-page region into
+/// a numeric array. Valid arg counts are 2/3 (whole drawing area) or 6/7 (a sub-rectangle),
+/// the optional leading source page distinguishing 3 from 2 and 7 from 6. `convert_flag` 0
+/// stores the 32-bit logical color, 1 the raw 16-bit physical code. The 1-D destination
+/// auto-expands to width×height elements. Errors (hw_verified sb-oracle s_t7d): bad count /
+/// return request → 4; source page ∉ -1..=5 → 10; negative width/height → 10; non-numeric
+/// array → 8; a multi-dimensional array too small to hold the region → 31.
+pub fn gsave(
+    grp: &mut GrpState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    let (has_page, has_rect) = match args.len() {
+        2 => (false, false),
+        3 => (true, false),
+        6 => (false, true),
+        7 => (true, true),
+        _ => return Err(illegal()),
+    };
+    let mut i = 0;
+    let page = if has_page {
+        i += 1;
+        src_page(&args[0])?
+    } else {
+        grp.manip_page as i32
+    };
+    let (x, y, w, h) = if has_rect {
+        let r = region(&args[i..i + 4])?;
+        i += 4;
+        r
+    } else {
+        grp.whole_draw_area()
+    };
+    let dest = &args[i];
+    let raw = args[i + 1].to_int()? != 0;
+    let needed = (w as usize) * (h as usize);
+    // Read the region first, convert each pixel to the element word, then marshal into the
+    // (auto-expanding) destination array.
+    let region = grp.read_region(page, x, y, w, h);
+    let words: Vec<u32> = region
+        .iter()
+        .map(|&hw| GrpState::gsave_word(hw, raw))
+        .collect();
+    store_words(dest, &words, needed)?;
+    Ok(vec![])
+}
+
+/// `GLOAD [x,y,w,h,] image_array, convert_flag_or_palette, mode` — copy image data from a
+/// numeric array onto the current drawing page. Valid arg counts are 3 (whole drawing area
+/// at the origin) or 7 (an explicit destination rectangle). The second-to-last operand is a
+/// numeric scalar (form 1: 0 = data is 32-bit logical colors, 1 = raw 16-bit physical codes)
+/// or a numeric array (form 2: data are palette indices recolored through it). `mode` is
+/// normalized to a boolean (non-zero → 1, copy transparent pixels too). Errors (hw_verified
+/// sb-oracle s_t7d): bad count / return request → 4; negative width/height → 10; non-numeric
+/// image array → 8; an image array smaller than width×height → 31.
+pub fn gload(
+    grp: &mut GrpState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    let rect = match args.len() {
+        3 => None,
+        7 => Some(region(&args[0..4])?),
+        _ => return Err(illegal()),
+    };
+    let base = rect.map_or(0, |_| 4);
+    let image = &args[base];
+    let form_op = &args[base + 1];
+    let copy_transparent = args[base + 2].to_int()? != 0;
+    let (x, y, w, h) = rect.unwrap_or_else(|| grp.whole_draw_area());
+    let count = (w as usize) * (h as usize);
+    let words = load_words(image, count)?;
+    // Form 1 (scalar convert flag) vs form 2 (palette array). The palette path is the
+    // documented index-recolor (oracle-pending exact palette semantics — HARVEST_QUEUE).
+    let halfwords: Vec<u16> = match form_op {
+        Value::IntArray(_) | Value::RealArray(_) => {
+            let palette = load_words(form_op, 0)?; // whole palette, not size-checked
+            words
+                .iter()
+                .map(|&idx| {
+                    let color = palette.get(idx as usize).copied().unwrap_or(0);
+                    GrpState::gload_halfword(color, false)
+                })
+                .collect()
+        }
+        _ => {
+            let raw = form_op.to_int()? != 0;
+            words
+                .iter()
+                .map(|&word| GrpState::gload_halfword(word, raw))
+                .collect()
+        }
+    };
+    grp.write_region(x, y, w, h, &halfwords, copy_transparent);
+    Ok(vec![])
+}
+
+/// A bitmap-op source/destination page argument: integer-coerced, validated to -1..=5
+/// (GRPF..GRP5) else Out of range (10).
+fn src_page(v: &Value) -> Result<i32, RuntimeError> {
+    let p = v.to_int()?;
+    if (-1..=5).contains(&p) {
+        Ok(p)
+    } else {
+        Err(out_of_range())
+    }
+}
+
+/// An `x, y, width, height` operand block (integer-coerced): a negative width or height is
+/// Out of range (10) (hw_verified sb-oracle s_t7d).
+fn region(args: &[Value]) -> Result<(i32, i32, i32, i32), RuntimeError> {
+    let x = floor_coord(&args[0])?;
+    let y = floor_coord(&args[1])?;
+    let w = args[2].to_int()?;
+    let h = args[3].to_int()?;
+    if w < 0 || h < 0 {
+        return Err(out_of_range());
+    }
+    Ok((x, y, w, h))
+}
+
+/// Marshal `words` into a numeric `dest` array (`GSAVE`), auto-expanding a 1-D array to
+/// `needed` elements. An Integer array stores each word's bits as a signed `i32`; a Real
+/// array stores the unsigned 32-bit value as an `f64` (matching real SB, hw_verified: a
+/// logical-color word reads back as its unsigned value from a Double array). A non-numeric
+/// array → Type mismatch (8); a multi-dimensional array too small → Subscript out of range
+/// (31).
+fn store_words(dest: &Value, words: &[u32], needed: usize) -> Result<(), RuntimeError> {
+    match dest {
+        Value::IntArray(a) => {
+            let mut b = a.borrow_mut();
+            grow_or_31(b.dim_count() == 1, &mut b, needed)?;
+            for (slot, &word) in b.as_mut_slice().iter_mut().zip(words) {
+                *slot = word as i32;
+            }
+        }
+        Value::RealArray(a) => {
+            let mut b = a.borrow_mut();
+            grow_or_31(b.dim_count() == 1, &mut b, needed)?;
+            for (slot, &word) in b.as_mut_slice().iter_mut().zip(words) {
+                *slot = word as f64;
+            }
+        }
+        _ => return Err(crate::builtins::type_mismatch()),
+    }
+    Ok(())
+}
+
+/// Grow a 1-D array to hold `needed` elements; a too-small multi-dimensional (or otherwise
+/// non-growable) array → Subscript out of range (31).
+fn grow_or_31<T: Clone + Default + PartialEq>(
+    one_d: bool,
+    a: &mut crate::array::SbArray<T>,
+    needed: usize,
+) -> Result<(), RuntimeError> {
+    if needed > a.len() {
+        if one_d {
+            a.resize(needed)?;
+        } else {
+            return Err(crate::builtins::subscript_out_of_range());
+        }
+    }
+    Ok(())
+}
+
+/// Read the first `count` elements of a numeric `src` array as 32-bit words (`GLOAD`). A
+/// non-numeric array → Type mismatch (8); fewer than `count` elements → Subscript out of
+/// range (31). `count == 0` reads the whole array (used for a palette). An Integer element
+/// is reinterpreted bitwise; a Real element is rounded toward zero and wrapped to 32 bits.
+fn load_words(src: &Value, count: usize) -> Result<Vec<u32>, RuntimeError> {
+    let take = |len: usize| -> Result<usize, RuntimeError> {
+        if count == 0 {
+            Ok(len)
+        } else if count <= len {
+            Ok(count)
+        } else {
+            Err(crate::builtins::subscript_out_of_range())
+        }
+    };
+    match src {
+        Value::IntArray(a) => {
+            let b = a.borrow();
+            let n = take(b.len())?;
+            Ok(b.as_slice()[..n].iter().map(|&i| i as u32).collect())
+        }
+        Value::RealArray(a) => {
+            let b = a.borrow();
+            let n = take(b.len())?;
+            Ok(b.as_slice()[..n].iter().map(|&f| f as i64 as u32).collect())
+        }
+        _ => Err(crate::builtins::type_mismatch()),
+    }
+}
+
 /// Shared 4-coordinate (+ optional color) operand fetch for `GLINE`/`GBOX`/`GFILL`:
 /// 4 args default the color to the current GCOLOR draw color, 5 args take the explicit
 /// color. Any other count → errnum 4.
@@ -705,6 +934,149 @@ mod tests {
         )
         .unwrap();
         assert_eq!(g.gspoit(6, 6), 0xFFF8_0000); // explicit red overrides the draw color
+    }
+
+    fn int_array(n: usize) -> Value {
+        Value::IntArray(
+            crate::array::SbArray::<i32>::new(&[n as i32])
+                .unwrap()
+                .into_ref(),
+        )
+    }
+
+    #[test]
+    fn bitmap_ops_reject_bad_shapes() {
+        let mut g = GrpState::new();
+        // GCOPY: 7/8 args ok, else 4; explicit page out of -1..=5 -> 10; as function -> 4.
+        let seven: Vec<Value> = (0..7).map(|_| Value::Int(1)).collect();
+        assert!(gcopy(&mut g, &seven, 0).is_ok());
+        assert_eq!(gcopy(&mut g, &seven[..6], 0).unwrap_err().errnum, 4);
+        assert_eq!(gcopy(&mut g, &seven, 1).unwrap_err().errnum, 4);
+        let mut eight = seven.clone();
+        eight.insert(0, Value::Int(6)); // source page 6 -> out of range
+        assert_eq!(gcopy(&mut g, &eight, 0).unwrap_err().errnum, 10);
+        eight[0] = Value::Int(-1); // GRPF is accepted
+        assert!(gcopy(&mut g, &eight, 0).is_ok());
+
+        // GSAVE: 2/3/6/7 args ok; string array -> 8; bad page -> 10; as function -> 4.
+        let w = int_array(0);
+        assert!(gsave(&mut g, &[w.clone(), Value::Int(1)], 0).is_ok());
+        assert_eq!(w_len(&w), 262144); // whole area auto-expanded
+                                       // Wrong arg count (5) -> 4.
+        let five: Vec<Value> = (0..5).map(|_| Value::Int(1)).collect();
+        assert_eq!(gsave(&mut g, &five, 0).unwrap_err().errnum, 4);
+        let strarr = Value::StrArray(
+            crate::array::SbArray::<crate::value::SbStr>::new(&[4])
+                .unwrap()
+                .into_ref(),
+        );
+        assert_eq!(
+            gsave(
+                &mut g,
+                &[
+                    Value::Int(0),
+                    Value::Int(0),
+                    Value::Int(8),
+                    Value::Int(8),
+                    strarr,
+                    Value::Int(1)
+                ],
+                0
+            )
+            .unwrap_err()
+            .errnum,
+            8
+        );
+        assert_eq!(
+            gsave(&mut g, &[Value::Int(6), int_array(0), Value::Int(1)], 0)
+                .unwrap_err()
+                .errnum,
+            10
+        );
+        assert_eq!(
+            gsave(&mut g, &[int_array(0), Value::Int(1)], 1)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+
+        // GLOAD: 3/7 args; too-small array -> 31; as function -> 4.
+        assert_eq!(
+            gload(&mut g, &[int_array(8), Value::Int(1), Value::Int(0)], 0)
+                .unwrap_err()
+                .errnum,
+            31
+        ); // whole area wants 262144
+        assert_eq!(
+            gload(
+                &mut g,
+                &[
+                    Value::Int(0),
+                    Value::Int(0),
+                    Value::Int(8),
+                    Value::Int(8),
+                    int_array(3),
+                    Value::Int(1),
+                    Value::Int(0)
+                ],
+                0
+            )
+            .unwrap_err()
+            .errnum,
+            31
+        );
+        assert_eq!(
+            gload(&mut g, &[int_array(64), Value::Int(1), Value::Int(0)], 1)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+    }
+
+    fn w_len(v: &Value) -> usize {
+        match v {
+            Value::IntArray(a) => a.borrow().len(),
+            _ => panic!("not an int array"),
+        }
+    }
+
+    #[test]
+    fn gsave_gload_roundtrip_through_builtins() {
+        let mut g = GrpState::new();
+        g.gpset(5, 5, 0xFF00_FF00); // opaque green
+        let w = int_array(0);
+        // GSAVE 0,0,16,16,W,1
+        gsave(
+            &mut g,
+            &[
+                Value::Int(0),
+                Value::Int(0),
+                Value::Int(16),
+                Value::Int(16),
+                w.clone(),
+                Value::Int(1),
+            ],
+            0,
+        )
+        .unwrap();
+        assert_eq!(w_len(&w), 16 * 16);
+        g.gcls(0);
+        // GLOAD 100,100,16,16,W,1,0
+        gload(
+            &mut g,
+            &[
+                Value::Int(100),
+                Value::Int(100),
+                Value::Int(16),
+                Value::Int(16),
+                w,
+                Value::Int(1),
+                Value::Int(0),
+            ],
+            0,
+        )
+        .unwrap();
+        assert_eq!(g.gspoit(105, 105), 0xFF00_F800); // green round-tripped
     }
 
     #[test]

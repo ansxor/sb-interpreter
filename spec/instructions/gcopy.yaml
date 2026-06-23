@@ -45,6 +45,7 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GCOPY: page-to-page rectangular blit with a transparent-color copy flag (3.5.0 structural cross-check only)." }
   - { type: community, ref: "sbsave corpus: GCOPY appears ~3100x — only the documented 8-arg (with source page) and 7-arg (no source page) forms occur; no other arg count. Confirms both signatures are legal; runtime output unproven (framebuffer oracle pending, O-T6)." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7d): GCOPY 0,0,100,100,200,100 (6 args) -> errnum 4, errline 1; GCOPY 0,0,0,100,100,200,100,1,2 (9 args) -> errnum 4; GCOPY 6,0,0,100,100,200,100,1 (source page 6, out of -1..5) -> errnum 10; A=GCOPY(0,0,100,100,200,100,1) (used as a function) -> errnum 4." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-23 (s_t7d_bitmap): a 7-arg same-page GCOPY moves pixels (red GPSET 10,10 -> GCOPY 0,0,32,32,100,100,1 -> GSPOIT 110,110 = -524288 red). copy_mode governs transparent SOURCE pixels: over a blue destination, GCOPY of a transparent source region with mode 0 KEEPS the destination (GSPOIT = -16776968 blue), mode 1 OVERWRITES it with transparent black (GSPOIT = 0)." }
 
 confidence: disassembled
 

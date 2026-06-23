@@ -53,6 +53,7 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GSAVE: dumps a graphic-page rectangle into a numeric array with a color-conversion flag (3.5.0 structural cross-check only)." }
   - { type: community, ref: "sbsave corpus: GSAVE appears ~520x — all four documented arg counts occur: 3-arg page,array,flag (e.g. 4K24P3MD/TXT/VFONT.LIB 'GSAVE 3,GRPF%,1'), 7-arg page,x,y,w,h,array,flag ('GSAVE 5,SX,SY,16,16,T%,1'), and GRPF -1 source ('GSAVE -1,0,0,512,512,T%,0'). convert_flag is commonly written as TRUE/FALSE/#TRUE (= 1/0). Confirms the signatures are legal; runtime output unproven (framebuffer oracle pending, O-T6)." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7d): GSAVE 0,0,W,1 (4 args, W a DIM'd array) -> errnum 4, errline 1; GSAVE 6,W,1 (source page 6, out of -1..5) -> errnum 10; A=GSAVE(W,1) (used as a function) -> errnum 4." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-23 (s_t7d_bitmap): a 2-arg whole-area GSAVE auto-expands the 1-D array to 512x512 = 262144 elements (DIM W[0]:GSAVE W,1:LEN(W) -> 262144); a 6-arg 8x8 sub-rect -> 64 elements. convert_flag 1 stores the raw RGBA5551 physical code (red GPSET 0,0 -> W[0] = 63489 = 0xF801), flag 0 stores the 32-bit logical color (red -> W%[0] = -524288 = 0xFFF80000 signed, = 4294443008 unsigned in a Double array). A string dest array -> errnum 8 (Type mismatch)." }
 
 confidence: disassembled
 
@@ -64,4 +65,5 @@ tests:
   - { name: save_page_subrect_ok, code: "DIM WORK[0]\nGSAVE 0,0,0,64,64,WORK,1", expect: { stdout: "" } }
   - { name: four_args_errors, code: "DIM WORK[0]\nGSAVE 0,0,WORK,1", expect: { error: { errnum: 4 } } }
   - { name: bad_src_page_errors, code: "DIM WORK[0]\nGSAVE 6,WORK,1", expect: { error: { errnum: 10 } } }
+  - { name: string_array_type_mismatch, code: "DIM WORK$[64]\nGSAVE 0,0,8,8,WORK$,1", expect: { error: { errnum: 8 } } }
   - { name: as_function_errors, code: "DIM WORK[0]\nA=GSAVE(WORK,1)", expect: { error: { errnum: 4 } } }

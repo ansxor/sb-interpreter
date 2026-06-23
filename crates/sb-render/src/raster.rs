@@ -43,7 +43,7 @@ impl GrpState {
     /// Plot one device pixel (halfword `h`) at `(x, y)` on the manipulation page, if it lies
     /// within the write clip ∩ page. Out-of-bounds plots are silently dropped (the device
     /// clips rather than erroring).
-    fn plot_dev(&mut self, x: i32, y: i32, h: u16) {
+    pub(crate) fn plot_dev(&mut self, x: i32, y: i32, h: u16) {
         let Some((x0, y0, x1, y1)) = draw_bounds(&self.write_clip) else {
             return;
         };

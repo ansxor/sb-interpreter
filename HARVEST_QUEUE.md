@@ -310,13 +310,25 @@ oracle to confirm exact output and promote to `hw_verified`.
 - [ ] S-T7d errnum 49 page-availability guard · GCOPY (mov r0,#0x31 @0x1530f0) and GSAVE (@0x154294)
   raise errnum 49 when the resolved source plane is unusable (guard byte [page+0x60] set) — confirm the
   exact error NAME and the precise triggering state. Not in errors.yaml (stops at 47); oracle-pending.
-- [ ] S-T7d GLOAD/GSAVE error edges · GLOAD with too-small image_array → errnum 31 (disasm @0x15381c);
-  GLOAD non-numeric image_array → errnum 8 (@0x1539a8); GSAVE multi-dim too-small dest_array → errnum 31
-  (@0x154218); negative Width/Height → errnum 10 (GSAVE @0x154108, GLOAD @0x153728). Disassembled, oracle-pending.
-- [ ] S-T7d visual/array side-effects (framebuffer path) · GCOPY page-to-page blit (transparent copy mode
-  on/off), GSAVE pixel→array element format (convert flag 0 = 32-bit logical, 1 = 16-bit physical) + 1-D
-  auto-expand to width*height, GLOAD array→page restore (flag vs palette form). All need the framebuffer
-  oracle (O-T6, not yet in the skill). Behavior is from docs + disassembly + corpus.
+- [x] S-T7d GLOAD/GSAVE error edges · HARVESTED 2026-06-23 (sb-oracle batch s_t7d_bitmap, M2-T3):
+  GLOAD too-small image_array → errnum 31 (3-arg whole DIM W[8] and 7-arg DIM W[3], both 31);
+  GLOAD/GSAVE string array → errnum 8 (Type mismatch). Folded into gload.yaml/gsave.yaml (hw_verified).
+  Still oracle-pending: negative Width/Height → errnum 10 (disasm-only; implemented but not yet harvested).
+- [x] S-T7d visual/array side-effects · HARVESTED 2026-06-23 (sb-oracle batch s_t7d_bitmap, M2-T3) WITHOUT
+  the framebuffer oracle — the GSPOIT scalar-read path makes blits/transfers deterministically checkable:
+  GCOPY moves pixels (red GPSET 10,10 → GCOPY 0,0,32,32,100,100,1 → GSPOIT 110,110 = red); copy_mode 0
+  SKIPS the transparent source (destination kept), mode 1 OVERWRITES with transparent (→ 0). GSAVE element
+  word format: flag 1 = raw RGBA5551 (red 0xF801=63489), flag 0 = 32-bit logical ARGB (red 0xFFF80000 =
+  -524288 signed / 4294443008 in a Double array); 1-D dest auto-expands (whole-area 262144, 8×8 = 64).
+  GSAVE/GLOAD round-trip a pixel exactly for both flags. Folded into graphics_bitmap.yaml + the specs
+  (hw_verified). The pixel-EXACT PNG golden of a blit is still M2-T5 (compositor + O-T6).
+- [ ] M2-T3 GRPF (source page -1) content · GCOPY/GSAVE with src_page -1 (GRPF, the captured-screen plane)
+  is accepted (no error, hw_verified) but GRPF is not backed in the GRP model — reads yield transparent
+  pixels. The real GRPF content needs the framebuffer/screen-capture model (O-T6). Implemented as blank; queued.
+- [ ] M2-T3 GLOAD form-2 (palette array) semantics · implemented as the documented index→palette recolor
+  (image word = palette index; palette entry read as a 32-bit logical color → device). The corpus confirms the
+  syntax is real (`...,CHIP8_PAL,TRUE`); the EXACT palette interpretation (entry format, OOB-index behavior,
+  copy_mode interaction) is oracle-pending (needs the framebuffer oracle or a GSPOIT round-trip harvest).
 - [ ] S-T7e color read (GSPOIT · RGB · RGBREAD) · Value/error expects HARVESTED (sb-oracle 2026-06-22 s_t7e):
   GSPOIT off-page -> 0 (NOT -1 as PTC docs claim); RGB clamps channels to 0-255 (RGB(999,999,999)=-1);
   RGB/GSPOIT arg-count errors -> errnum 4. RESOLVED 2026-06-23 (s_c2): (a) GSPOIT post-draw round-trip is
