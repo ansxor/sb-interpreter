@@ -28,6 +28,7 @@
 //! tie-breaking / very-large-magnitude edges are M7-T4; see `HARVEST_QUEUE.md`).
 
 pub(crate) mod console;
+pub(crate) mod data;
 pub(crate) mod graphics;
 mod math;
 mod string;
@@ -120,6 +121,10 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "RGB",
     "RGBREAD",
     "GSPOIT",
+    // Array data-ops (M1-T14): SORT/RSORT mutate their array arguments in place, so the
+    // VM routes them to `data::sort` rather than the value-returning `dispatch`.
+    "SORT",
+    "RSORT",
     // Test-mode assertion (M1-T14): the VM handles it directly (a false condition halts
     // with `VmError::Assert`), so it is not in the stateless `dispatch`.
     "ASSERT__",

@@ -1,0 +1,58 @@
+# SORT / RSORT array data-ops (M1-T14). The first 11 cases are the hw_verified
+# expects from spec/instructions/{sort,rsort}.yaml (sb-oracle batch 2026-06-22, s_t4c).
+# The stable/range/parallel cases below mirror otya_test.sb3's SORT/RSORT/STABLESORT
+# assertions (community-level — they encode that real SB's sort is STABLE in both
+# directions and reorders parallel arrays by the key's permutation); they are queued
+# for an oracle pass in HARVEST_QUEUE.md.
+cases:
+  # --- SORT (ascending), spec hw_verified ---
+  - name: sort_basic
+    code: "DIM A[3]\nA[0]=3\nA[1]=1\nA[2]=2\nSORT A\nPRINT A[0];A[1];A[2]"
+    expect: { stdout: "123" }
+  - name: sort_with_range_prefix
+    code: "DIM A[3]\nA[0]=3\nA[1]=1\nA[2]=2\nSORT 0,3,A\nPRINT A[0];A[1];A[2]"
+    expect: { stdout: "123" }
+  - name: sort_partial
+    code: "DIM A[4]\nA[0]=4\nA[1]=3\nA[2]=2\nA[3]=1\nSORT 1,2,A\nPRINT A[0];A[1];A[2];A[3]"
+    expect: { stdout: "4231" }
+  - name: sort_parallel
+    code: "DIM A[3]\nA[0]=3\nA[1]=1\nA[2]=2\nDIM B[3]\nB[0]=30\nB[1]=10\nB[2]=20\nSORT A,B\nPRINT B[0];B[1];B[2]"
+    expect: { stdout: "102030" }
+  - name: sort_string_key
+    code: "DIM S$[3]\nS$[0]=\"c\"\nS$[1]=\"a\"\nS$[2]=\"b\"\nSORT S$\nPRINT S$[0];S$[1];S$[2]"
+    expect: { stdout: "abc" }
+  - name: sort_float_key
+    code: "DIM A#[3]\nA#[0]=3.5\nA#[1]=1.5\nA#[2]=2.5\nSORT A#\nPRINT A#[0];\",\";A#[1];\",\";A#[2]"
+    expect: { stdout: "1.5,2.5,3.5" }
+  # --- RSORT (descending), spec hw_verified ---
+  - name: rsort_basic
+    code: "DIM A[3]\nA[0]=1\nA[1]=3\nA[2]=2\nRSORT A\nPRINT A[0];A[1];A[2]"
+    expect: { stdout: "321" }
+  - name: rsort_with_range_prefix
+    code: "DIM A[3]\nA[0]=1\nA[1]=3\nA[2]=2\nRSORT 0,3,A\nPRINT A[0];A[1];A[2]"
+    expect: { stdout: "321" }
+  - name: rsort_parallel
+    code: "DIM A[3]\nA[0]=1\nA[1]=3\nA[2]=2\nDIM B[3]\nB[0]=10\nB[1]=30\nB[2]=20\nRSORT A,B\nPRINT B[0];B[1];B[2]"
+    expect: { stdout: "302010" }
+  - name: rsort_string_key
+    code: "DIM S$[3]\nS$[0]=\"a\"\nS$[1]=\"c\"\nS$[2]=\"b\"\nRSORT S$\nPRINT S$[0];S$[1];S$[2]"
+    expect: { stdout: "cba" }
+  - name: rsort_num_key_string_parallel
+    code: "DIM A[3]\nA[0]=3\nA[1]=1\nA[2]=2\nDIM N$[3]\nN$[0]=\"c\"\nN$[1]=\"a\"\nN$[2]=\"b\"\nRSORT A,N$\nPRINT N$[0];N$[1];N$[2]"
+    expect: { stdout: "cba" }
+  # --- stable + range + parallel (hw_verified sb-oracle 2026-06-23; otya agrees) ---
+  # SORT is a STABLE ascending sort: the two equal keys (A=2,3,1,1) keep their order, so
+  # the parallel B (3,4,1,2) lands 1,2,3,4 — NOT 2,1,3,4.
+  - name: sort_stable_parallel
+    code: "DIM A[4]\nDIM B[4]\nA[0]=2\nA[1]=3\nA[2]=1\nA[3]=1\nB[0]=3\nB[1]=4\nB[2]=1\nB[3]=2\nSORT A,B\nPRINT B[0];\",\";B[1];\",\";B[2];\",\";B[3]"
+    expect: { stdout: "1,2,3,4" }
+  # RSORT is the EXACT REVERSE of SORT (NOT a stable descending sort): equal keys end up
+  # in reverse original order, so the two 1s swap -> A=3,2,1,1 / B=4,3,2,1.
+  - name: rsort_reverse_parallel
+    code: "DIM A[4]\nDIM B[4]\nA[0]=2\nA[1]=3\nA[2]=1\nA[3]=1\nB[0]=3\nB[1]=4\nB[2]=1\nB[3]=2\nRSORT A,B\nPRINT B[0];\",\";B[1];\",\";B[2];\",\";B[3]"
+    expect: { stdout: "4,3,2,1" }
+  # Leading start,count restricts the sort to A[1..9]; A[0] (an untouched 0) stays put,
+  # the lone -1 at A[9] migrates to A[1] with its parallel B[9]=12345.
+  - name: sort_range_parallel
+    code: "DIM A[10]\nDIM B[10]\nA[9]=-1\nB[9]=12345\nSORT 1,9,A,B\nPRINT A[0];\",\";A[1];\",\";B[1]"
+    expect: { stdout: "0,-1,12345" }

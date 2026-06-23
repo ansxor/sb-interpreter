@@ -640,6 +640,13 @@ impl Vm {
             self.call_assert(&args)?;
             return Ok(());
         }
+        // Array data-ops (SORT/RSORT, M1-T14) reorder their array arguments in place —
+        // each arrives as a shared `ArrayRef`, so they mutate the caller's variables and
+        // produce no value.
+        if matches!(name, "SORT" | "RSORT") {
+            crate::builtins::data::sort(&args, name == "RSORT").map_err(sb)?;
+            return Ok(());
+        }
         // Console builtins (LOCATE/COLOR/CLS/ACLS/BACKCOLOR/INKEY$, M1-T8) mutate the
         // VM-owned console / screen state, so they too sidestep the stateless dispatch.
         if let Some(ret) = self.call_console(name, &args, wants_value).map_err(sb)? {
@@ -1325,6 +1332,72 @@ mod tests {
     #[test]
     fn assert_string_condition_is_type_mismatch() {
         assert_eq!(run_b_err(r#"ASSERT__ "x","msg""#).errnum(), Some(8));
+    }
+
+    // ---- SORT / RSORT (array data-ops, M1-T14) ----
+
+    #[test]
+    fn sort_reorders_key_and_parallel_arrays() {
+        // A is the key; B is reordered by A's permutation (parallel-array sort).
+        let vm = run_b(
+            "DIM A[3]:DIM B[3]\nA[0]=3:A[1]=1:A[2]=2\nB[0]=30:B[1]=10:B[2]=20\nSORT A,B\n\
+             PRINT A[0];A[1];A[2];\",\";B[0];B[1];B[2]",
+        );
+        assert_eq!(vm.console_text(), "123,102030");
+    }
+
+    #[test]
+    fn rsort_is_descending() {
+        let vm = run_b("DIM A[3]\nA[0]=1:A[1]=3:A[2]=2\nRSORT A\nPRINT A[0];A[1];A[2]");
+        assert_eq!(vm.console_text(), "321");
+    }
+
+    #[test]
+    fn sort_is_stable_rsort_is_its_reverse() {
+        // SORT is a STABLE ascending sort: the two equal keys (the 1s) keep their order,
+        // so the parallel array's tied entries stay 1,2 → B = 1,2,3,4. RSORT is the EXACT
+        // REVERSE of SORT (not a stable descending sort): the tied entries swap → B =
+        // 4,3,2,1. hw_verified (sb-oracle 2026-06-23); otya_test.sb3 STABLE[R]SORTTEST.
+        let setup = "DIM A[4]:DIM B[4]\nA[0]=2:A[1]=3:A[2]=1:A[3]=1\nB[0]=3:B[1]=4:B[2]=1:B[3]=2\n";
+        let asc = run_b(&format!("{setup}SORT A,B\nPRINT B[0];B[1];B[2];B[3]"));
+        assert_eq!(asc.console_text(), "1234");
+        let desc = run_b(&format!("{setup}RSORT A,B\nPRINT B[0];B[1];B[2];B[3]"));
+        assert_eq!(desc.console_text(), "4321");
+    }
+
+    #[test]
+    fn sort_leading_start_count_restricts_the_range() {
+        // SORT 1,2 sorts only A[1..3); A[0] and A[3] stay in place.
+        let vm =
+            run_b("DIM A[4]\nA[0]=4:A[1]=3:A[2]=2:A[3]=1\nSORT 1,2,A\nPRINT A[0];A[1];A[2];A[3]");
+        assert_eq!(vm.console_text(), "4231");
+    }
+
+    #[test]
+    fn sort_string_key_is_lexical() {
+        let vm = run_b(
+            "DIM S$[3]\nS$[0]=\"c\":S$[1]=\"a\":S$[2]=\"b\"\nSORT S$\nPRINT S$[0];S$[1];S$[2]",
+        );
+        assert_eq!(vm.console_text(), "abc");
+    }
+
+    #[test]
+    fn sort_count_past_end_is_out_of_range() {
+        // start+count beyond the key array's length → Out of range (10).
+        assert_eq!(run_b_err("DIM A[3]\nSORT 0,5,A").errnum(), Some(10));
+    }
+
+    #[test]
+    fn sort_non_array_key_is_type_mismatch() {
+        // A non-numeric scalar where an array is wanted → Type mismatch (8). (A numeric
+        // scalar is instead consumed as a leading start/count number — see below.)
+        assert_eq!(run_b_err(r#"SORT "x""#).errnum(), Some(8));
+    }
+
+    #[test]
+    fn sort_without_a_key_array_is_illegal_function_call() {
+        // A lone numeric and no array operand → Illegal function call (4).
+        assert_eq!(run_b_err("VAR A=3\nSORT A").errnum(), Some(4));
     }
 
     /// Read a string global (`A$`) as a Rust `String`.

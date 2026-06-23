@@ -15,6 +15,7 @@ summary: "Sorts a numeric array in descending order. Additional parallel arrays 
 
 semantics:
   - "RSORT array1 sorts the whole array in descending numeric order (the reverse ordering of [[sort]])."
+  - "RSORT is the EXACT REVERSE of [[sort]] — NOT a stable descending sort. Elements with equal keys end up in REVERSE of their original relative order. hw_verified: key 2,3,1,1 with parallel 3,4,1,2 -> parallel 4,3,2,1 (SORT gives 1,2,3,4; RSORT is that reversed, so the two equal 1-keys swap)."
   - "A leading start,count pair sorts only array1[start..start+count-1]; elements outside the range are left in place."
   - "array1 is the key array (numeric). array2..array8 (up to 7 more) are reordered by the SAME permutation as array1 — parallel-array sort."
   - "The leading start/count pair is distinguished from the first array operand by argument TYPE: a number in the first slot is start, an array is array1."
@@ -29,6 +30,7 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst RSORT handler FUN_001450f8 @0x1450f8: same variadic argument parsing/type-checks as SORT @0x14aae0 but with the comparison reversed for descending order" }
   - { type: community, ref: "sbsave corpus: ~139 RSORT; two-array key+parallel most common (~44%); leading start,count prefix real (~10%, e.g. RSORT 0,PCT%,ZB#,JP% in A3W4384E/TXT/MAIN); numeric key + string parallel real (RSORT RANK_SC%,RANK_NM$ in 73383JLY/TXT/SOLIDGUNNER_C); up to 8 parallel arrays (3D z-sorting); used heavily for 3D depth sort" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4c): RSORT A (1,3,2) -> 3,2,1; RSORT 0,3,A -> 3,2,1; RSORT A,B reorders parallel B (10,30,20 -> 30,20,10); string key RSORT S$ (a,c,b) -> c,b,a; numeric key + string parallel RSORT A,N$ (A=3,1,2 N$=c,a,b) -> N$ follows desc sort -> c,b,a" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-23 (M1-T14): EXACT-REVERSE (not stable-descending) — key 2,3,1,1 + parallel 3,4,1,2 -> parallel 4,3,2,1 (the two tied 1-keys SWAP, vs SORT's 1,2,3,4); so RSORT == reverse(SORT) on equal keys" }
 
 confidence: hw_verified
 
@@ -38,3 +40,4 @@ tests:
   - { name: rsort_parallel, code: "DIM A[3]\nA[0]=1\nA[1]=3\nA[2]=2\nDIM B[3]\nB[0]=10\nB[1]=30\nB[2]=20\nRSORT A,B\nPRINT B[0];B[1];B[2]", expect: { stdout: "302010" } }
   - { name: rsort_string_key, code: "DIM S$[3]\nS$[0]=\"a\"\nS$[1]=\"c\"\nS$[2]=\"b\"\nRSORT S$\nPRINT S$[0];S$[1];S$[2]", expect: { stdout: "cba" } }
   - { name: rsort_num_key_string_parallel, code: "DIM A[3]\nA[0]=3\nA[1]=1\nA[2]=2\nDIM N$[3]\nN$[0]=\"c\"\nN$[1]=\"a\"\nN$[2]=\"b\"\nRSORT A,N$\nPRINT N$[0];N$[1];N$[2]", expect: { stdout: "cba" } }
+  - { name: rsort_reverse_parallel, code: "DIM A[4]\nDIM B[4]\nA[0]=2\nA[1]=3\nA[2]=1\nA[3]=1\nB[0]=3\nB[1]=4\nB[2]=1\nB[3]=2\nRSORT A,B\nPRINT B[0];B[1];B[2];B[3]", expect: { stdout: "4321" } }
