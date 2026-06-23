@@ -115,6 +115,8 @@ pub struct Vm {
     pc: usize,
     /// `DATA` read cursor (index into `program.data`).
     data_cursor: usize,
+    /// The 8 TinyMT32 random series behind `RND`/`RNDF`/`RANDOMIZE` (M1-T9).
+    rng: crate::rng::Rng,
 }
 
 impl Vm {
@@ -134,6 +136,7 @@ impl Vm {
             gosub: Vec::new(),
             pc: 0,
             data_cursor: 0,
+            rng: crate::rng::Rng::new(),
         }
     }
 
@@ -484,11 +487,75 @@ impl Vm {
             args.push(self.pop()?);
         }
         args.reverse();
+        // RNG builtins (RND/RNDF/RANDOMIZE, M1-T9) read/mutate the VM's TinyMT series, so
+        // they can't go through the stateless `builtins::dispatch`.
+        if let Some(ret) = self.call_rng(name, &args).map_err(sb)? {
+            if wants_value {
+                self.stack.push(ret);
+            }
+            return Ok(());
+        }
         let ret = crate::builtins::dispatch(name, args).map_err(sb)?;
         if wants_value {
             self.stack.push(ret);
         }
         Ok(())
+    }
+
+    /// Handle the RNG builtins against the VM-owned [`Rng`](crate::rng::Rng). Returns
+    /// `Ok(Some(value))` for `RND`/`RNDF` (the drawn value), `Ok(Some(Void))` for the
+    /// `RANDOMIZE` statement, or `Ok(None)` when `name` is not an RNG builtin (the caller
+    /// then falls through to the stateless dispatch). Argument validation follows the
+    /// `spec/instructions/{rnd,rndf,randomize}.yaml` contract: bad arg count → Illegal
+    /// function call (4), string arg → Type mismatch (8), out-of-range seed/max → Out of
+    /// range (10).
+    fn call_rng(&mut self, name: &str, args: &[Value]) -> Result<Option<Value>, RuntimeError> {
+        match name {
+            "RND" => {
+                // RND(max) draws from series 0; RND(seed_id, max) selects the series.
+                let (seed_id, max) = match args {
+                    [m] => (0, m.to_int()?),
+                    [s, m] => (rng_seed_id(s)?, m.to_int()?),
+                    _ => {
+                        return Err(RuntimeError::new(
+                            crate::builtins::ERR_ILLEGAL_FUNCTION_CALL,
+                        ))
+                    }
+                };
+                if max < 0 {
+                    return Err(crate::builtins::out_of_range());
+                }
+                Ok(Some(Value::Int(self.rng.rnd(seed_id, max))))
+            }
+            "RNDF" => {
+                // RNDF() draws from series 0; RNDF(seed_id) selects the series.
+                let seed_id = match args {
+                    [] => 0,
+                    [s] => rng_seed_id(s)?,
+                    _ => {
+                        return Err(RuntimeError::new(
+                            crate::builtins::ERR_ILLEGAL_FUNCTION_CALL,
+                        ))
+                    }
+                };
+                Ok(Some(Value::Real(self.rng.rndf(seed_id))))
+            }
+            "RANDOMIZE" => {
+                // RANDOMIZE seed_id [, seed_value]; seed_value 0/omitted → entropy.
+                let (seed_id, seed_value) = match args {
+                    [s] => (rng_seed_id(s)?, 0),
+                    [s, v] => (rng_seed_id(s)?, v.to_int()?),
+                    _ => {
+                        return Err(RuntimeError::new(
+                            crate::builtins::ERR_ILLEGAL_FUNCTION_CALL,
+                        ))
+                    }
+                };
+                self.rng.randomize(seed_id, seed_value);
+                Ok(Some(Value::Void))
+            }
+            _ => Ok(None),
+        }
     }
 
     fn return_func(&mut self, has_value: bool) -> Result<(), VmError> {
@@ -653,6 +720,17 @@ fn sb(e: RuntimeError) -> VmError {
     VmError::Sb {
         errnum: e.errnum,
         line: 0,
+    }
+}
+
+/// Coerce a seed-ID argument to a series index, validating the `0..=7` range. A string →
+/// Type mismatch (8); out of range → Out of range (10) (disasm `seed_id >= 8 → errnum 10`).
+fn rng_seed_id(v: &Value) -> Result<usize, RuntimeError> {
+    let id = v.to_int()?;
+    if (0..=7).contains(&id) {
+        Ok(id as usize)
+    } else {
+        Err(crate::builtins::out_of_range())
     }
 }
 
@@ -1189,5 +1267,51 @@ H$=HEX$(255)"#);
     fn builtin_result_discarded_in_statement_position() {
         // A bare function call as a statement runs (and discards the result) cleanly.
         run("FLOOR(3.7)");
+    }
+
+    // ---- RNG (M1-T9): RND / RNDF / RANDOMIZE through the full program path ----
+
+    #[test]
+    fn seeded_rnd_sequence_matches_otya_golden() {
+        // The `otya_test.sb3` fixture (real-SB golden): after `RANDOMIZE 0,1`, the first
+        // four `RND(100)` draws are 89,33,33,52; `RNDF` ≈ 0.836095; next `RND(100)` == 66.
+        let vm = run(
+            "RANDOMIZE 0,1\nA=RND(100)\nB=RND(100)\nC=RND(100)\nD=RND(100)\nF=RNDF(0)\nG=RND(100)",
+        );
+        assert_eq!(int(&vm, "A"), 89);
+        assert_eq!(int(&vm, "B"), 33);
+        assert_eq!(int(&vm, "C"), 33);
+        assert_eq!(int(&vm, "D"), 52);
+        assert_eq!(format!("{:.6}", real(&vm, "F")), "0.836095");
+        assert_eq!(int(&vm, "G"), 66);
+    }
+
+    #[test]
+    fn rnd_two_arg_selects_series() {
+        // The two-arg form picks the series; same seed → same golden as series 0.
+        let vm = run("RANDOMIZE 5,1\nA=RND(5,100)");
+        assert_eq!(int(&vm, "A"), 89);
+    }
+
+    #[test]
+    fn rnd_one_is_zero() {
+        let vm = run("RANDOMIZE 0,1\nA=RND(1)");
+        assert_eq!(int(&vm, "A"), 0);
+    }
+
+    #[test]
+    fn rng_error_conditions() {
+        // RND(-1): max < 0 → Out of range (10).
+        assert_eq!(run_err("A=RND(-1)").errnum(), Some(10));
+        // RND(8,5): seed_id 8 out of 0-7 → Out of range (10).
+        assert_eq!(run_err("A=RND(8,5)").errnum(), Some(10));
+        // RND("x"): string arg → Type mismatch (8).
+        assert_eq!(run_err(r#"A=RND("x")"#).errnum(), Some(8));
+        // RNDF(8): seed_id out of range → 10; RNDF("x") → 8.
+        assert_eq!(run_err("A=RNDF(8)").errnum(), Some(10));
+        assert_eq!(run_err(r#"A=RNDF("x")"#).errnum(), Some(8));
+        // RANDOMIZE 8 → 10; RANDOMIZE "x" → 8.
+        assert_eq!(run_err("RANDOMIZE 8").errnum(), Some(10));
+        assert_eq!(run_err(r#"RANDOMIZE "x""#).errnum(), Some(8));
     }
 }

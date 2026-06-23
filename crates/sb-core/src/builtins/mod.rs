@@ -57,10 +57,46 @@ pub(crate) fn out_of_range() -> RuntimeError {
 /// [`canonical`](crate::compiler) form.
 pub const BUILTIN_NAMES: &[&str] = &[
     // Mathematics
-    "ABS", "FLOOR", "CEIL", "ROUND", "SGN", "CLASSIFY", "MIN", "MAX", "SQR", "POW", "EXP", "LOG",
-    "SIN", "COS", "TAN", "ASIN", "ACOS", "ATAN", "SINH", "COSH", "TANH", "DEG", "RAD", "PI",
+    "ABS",
+    "FLOOR",
+    "CEIL",
+    "ROUND",
+    "SGN",
+    "CLASSIFY",
+    "MIN",
+    "MAX",
+    "SQR",
+    "POW",
+    "EXP",
+    "LOG",
+    "SIN",
+    "COS",
+    "TAN",
+    "ASIN",
+    "ACOS",
+    "ATAN",
+    "SINH",
+    "COSH",
+    "TANH",
+    "DEG",
+    "RAD",
+    "PI",
+    // RNG (M1-T9; handled in the VM since they mutate the TinyMT series state)
+    "RND",
+    "RNDF",
+    "RANDOMIZE",
     // Strings
-    "LEN", "LEFT$", "RIGHT$", "MID$", "SUBST$", "STR$", "VAL", "HEX$", "FORMAT$", "ASC", "CHR$",
+    "LEN",
+    "LEFT$",
+    "RIGHT$",
+    "MID$",
+    "SUBST$",
+    "STR$",
+    "VAL",
+    "HEX$",
+    "FORMAT$",
+    "ASC",
+    "CHR$",
     "INSTR",
 ];
 
@@ -239,7 +275,8 @@ mod tests {
         assert!(b.is_builtin("FLOOR"));
         assert!(b.is_builtin("MID$"));
         assert!(b.is_builtin("PI"));
-        assert!(!b.is_builtin("RND")); // M1-T9
+        assert!(b.is_builtin("RND")); // M1-T9
+        assert!(b.is_builtin("RANDOMIZE")); // M1-T9
         assert!(!b.is_builtin("SPSET")); // later milestone
     }
 }

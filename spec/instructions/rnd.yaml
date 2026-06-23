@@ -30,14 +30,22 @@ errors:
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/rnd.md (RND([Seed ID,] Maximum value); Seed ID 0-7)" }
   - { type: disassembled, ref: "cia_3.6.0.lst RND handler @0x148a18; argcount!=1,2 -> errnum 4 (@0x148a60); args coerced to int (vtable +0x40); max<0 -> errnum 10 (@0x148a9c); seed_id>=8 -> errnum 10 (@0x148b08); core @0x1eb598 indexes 16-byte/series state table @0x1d08000, draws via TinyMT next @0x1ef958, reduces with @0x1fd4e8" }
-  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22 (errors + degenerate range only): RND(1)=0; RND(-1) -> errnum 10; RND(8,5) -> errnum 10; RND(\"x\") -> errnum 8. The TinyMT random SEQUENCE itself is non-deterministic without prior RANDOMIZE and is NOT frozen here (queued: seeded-sequence harvest)." }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22 (errors + degenerate range): RND(1)=0; RND(-1) -> errnum 10; RND(8,5) -> errnum 10; RND(\"x\") -> errnum 8." }
+  - { type: hw_verified, ref: "sb-oracle prog-case run 2026-06-23 (SEEDED SEQUENCE, now a deterministic golden): after RANDOMIZE 0,1 the first four RND(100) draws are 89,33,33,52, and after one intervening RNDF the next RND(100) is 66; same seed on a different series (RANDOMIZE 5,1 -> RND(5,100)) also yields 89. Matches the otya_test.sb3 golden exactly. RND reduces a raw 32-bit TinyMT draw by plain `raw % max` (confirmed: outputs 0x97b6d625/.. mod 100 = 89,33,33,52)." }
 
-# Range/error behavior is hw_verified, but the random-sequence algorithm (the heart of RND)
-# is only disassembled — it cannot be frozen as a deterministic golden. Keep at disassembled.
-confidence: disassembled
+# After RANDOMIZE with a non-zero seed the TinyMT sequence IS deterministic and is now frozen
+# as an hw_verified golden (sb-oracle 2026-06-23). The un-seeded (entropy) sequence remains
+# non-deterministic by design.
+confidence: hw_verified
 
 tests:
   - { name: rnd_one_is_zero, code: "PRINT RND(1)", expect: { stdout: "0" } }
   - { name: negative_out_of_range, code: "A=RND(-1)", expect: { error: { errnum: 10 } } }
   - { name: seed_id_out_of_range, code: "A=RND(8,5)", expect: { error: { errnum: 10 } } }
   - { name: string_type_mismatch, code: 'A=RND("x")', expect: { error: { errnum: 8 } } }
+  # Seeded sequence (hw_verified): the otya_test.sb3 golden, one draw per program.
+  - { name: seeded_draw1, code: "RANDOMIZE 0,1\nPRINT RND(100)", expect: { stdout: "89" } }
+  - { name: seeded_draw2, code: "RANDOMIZE 0,1:R=RND(100)\nPRINT RND(100)", expect: { stdout: "33" } }
+  - { name: seeded_draw4, code: "RANDOMIZE 0,1:R=RND(100):R=RND(100):R=RND(100)\nPRINT RND(100)", expect: { stdout: "52" } }
+  - { name: seeded_after_rndf, code: "RANDOMIZE 0,1:R=RND(100):R=RND(100):R=RND(100):R=RND(100):F=RNDF(0)\nPRINT RND(100)", expect: { stdout: "66" } }
+  - { name: seeded_series5, code: "RANDOMIZE 5,1\nPRINT RND(5,100)", expect: { stdout: "89" } }

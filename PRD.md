@@ -161,7 +161,7 @@ and name the instructions they cover inline.
 - [x] M1-T6 VM (stack machine, 4 slots + COMMON) → M1-T5
 - [x] M1-T7 Builtin registration + math/string builtins → M1-T6, S-T1, S-T2
 - [ ] M1-T8 Control-flow + console builtins → M1-T7, M1-T10, S-T3, S-T5
-- [ ] M1-T9 TinyMT RNG (RND/RNDF/RANDOMIZE) → M1-T7, S-T1
+- [x] M1-T9 TinyMT RNG (RND/RNDF/RANDOMIZE) → M1-T7, S-T1
 - [ ] M1-T10 Console model + render → framebuffer → (M0 sb-render)
 - [ ] M1-T11 Headless runner `sb-run` → M1-T8
 - [ ] M1-T12 Window (native winit + wasm canvas) → M1-T10
