@@ -17,8 +17,12 @@
 //!    `XOFF` are later-milestone and excluded), the array/variable mutation set (`DIM`/`VAR`/
 //!    `DATA`/`SORT`/`SWAP`/`INC`/… — see `IN_SCOPE_DATA_ARRAY_CONSOLE`), and the implemented
 //!    **Console input/output** output builtins (`PRINT`/`COLOR`/`CLS`/`INKEY$` — see
-//!    `IN_SCOPE_CONSOLE`; `LOCATE`'s positioned scrape + the `ATTR`/`CHKCHR`/`FONTDEF`/
-//!    `SCROLL`/`WIDTH` builtins fold in with their own increments). These produce a comparable
+//!    `IN_SCOPE_CONSOLE`; the `ATTR`/`CHKCHR`/`FONTDEF`/`SCROLL`/`WIDTH` builtins fold in
+//!    with their own increments). Specs `sb-core` implements only *partially* contribute
+//!    their deterministic cases via `IN_SCOPE_PARTIAL` (per-case exclusion): `LOCATE`'s
+//!    range/arg-shape error guards fold in now while its positioned-output cases stay
+//!    oracle-pending; `GSPOIT`'s OOB/arg-count guards fold in now while its `GPSET`
+//!    round-trip cases wait on M2-T2. These produce a comparable
 //!    `console_text()` (or a checkable errnum). Graphics/sprite/BG/etc. instructions are
 //!    intentionally out of scope here (their behavior is page/layer state, exercised by the VM
 //!    unit tests + corpus cases) and are folded in as their milestones land.
@@ -73,10 +77,11 @@ const IN_SCOPE_DATA_ARRAY_CONSOLE: &[&str] = &[
 /// `Console input/output` instructions whose builtins `sb-core` implements (M1-T8) and whose
 /// inline `tests:` are deterministic + `console_text()`-comparable: `PRINT` (formatting),
 /// `COLOR` (fg/bg set + range errnums), `CLS` (clears the grid), and `INKEY$` (empty-buffer
-/// `""`). The category is NOT taken wholesale by id: `LOCATE`'s *positioned*-output smoke
-/// cases (`LOCATE 20,15:PRINT "X"`) scrape to leading-whitespace/`\n`-prefixed text and its
-/// `x_edge_50` case exposes a column-50 line-wrap, both oracle-pending (the value-oracle
-/// captures VALUE, not console text — see S-T5a / `HARVEST_QUEUE.md`); `ATTR`/`CHKCHR`/
+/// `""`). The category is NOT taken wholesale by id: `LOCATE` is folded PARTIALLY via
+/// `IN_SCOPE_PARTIAL` — its range (→ 10) / arg-shape (→ 4) error guards replay green now;
+/// only its *positioned*-output cases (`LOCATE 20,15:PRINT "X"` etc.) stay excluded, scraping
+/// to leading-whitespace/`\n`-prefixed text the value-oracle never captured (oracle-pending,
+/// see S-T5a / `HARVEST_QUEUE.md`); `ATTR`/`CHKCHR`/
 /// `FONTDEF`/`SCROLL`/`WIDTH` builtins are not implemented yet (S-T5c). Those fold in with
 /// their own increments. Listed by id.
 const IN_SCOPE_CONSOLE: &[&str] = &["PRINT", "COLOR", "CLS", "INKEY$"];
@@ -95,8 +100,9 @@ const IN_SCOPE_DATA_OPS: &[&str] = &["READ", "RESTORE", "OPTION", "REM"];
 /// `RGBREAD` (unpack via `OUT`), `GPAGE` (display/manip page set+`OUT` get, range errnums),
 /// `GCLS` (clear, arg errnums), `GCOLOR` (draw-color set+get), `GPRIO` (priority set, range
 /// errnums), and `GCLIP` (clip-rect set, arg errnums). The category is NOT taken wholesale:
-/// `GSPOIT` (read a pixel) folds in once `GPSET` and the drawing primitives land (M2-T2) —
-/// its roundtrip `tests:` write a pixel first; the rest of the Graphics category isn't
+/// `GSPOIT` (read a pixel) is folded PARTIALLY via `IN_SCOPE_PARTIAL` — its OOB-returns-0
+/// and arg-count → 4 guards replay green now; only its `GPSET`-then-read round-trip cases
+/// wait on the drawing primitives (M2-T2). The rest of the Graphics category isn't
 /// implemented yet. Listed by id.
 const IN_SCOPE_GRAPHICS: &[&str] = &[
     "RGB", "RGBREAD", "GPAGE", "GCLS", "GCOLOR", "GPRIO", "GCLIP",
@@ -111,6 +117,28 @@ const IN_SCOPE_GRAPHICS: &[&str] = &[
 /// stays excluded: `DISPLAY`/`FADE`/`FADECHK`/`VISIBLE`/`XSCREEN` are display-config / frame
 /// effects (M4) and aren't implemented yet. Listed by id.
 const IN_SCOPE_SCREEN: &[&str] = &["ACLS", "BACKCOLOR"];
+/// Specs `sb-core` implements only **partially** in M1: each is in scope, but the named
+/// cases listed here are EXCLUDED because they block on a later milestone or the
+/// console-text oracle. Everything else in the spec — the deterministic, hw_verified
+/// arg-count / range / out-of-bounds error guards — replays green today (M1-T14 increment
+/// 2026-06-23). `LOCATE`: its two *positioned-output* cases (`basic_xy`, `x_edge_50_ok`)
+/// scrape to leading-whitespace / newline-prefixed text the value-oracle never captured —
+/// oracle-pending (S-T5a, `HARVEST_QUEUE.md`); its range (51,0 / 0,30 / 0,0,2000 → 10) and
+/// arg-shape (single-arg / as-function → 4) cases fold in now. `GSPOIT`: its three
+/// `GPSET`-then-read round-trip cases need the drawing primitives (`GPSET`, M2-T2); its
+/// OOB-returns-0 and arg-count → 4 cases fold in now. Tuples are `(spec id, &[excluded
+/// case names])`.
+const IN_SCOPE_PARTIAL: &[(&str, &[&str])] = &[
+    ("LOCATE", &["basic_xy", "x_edge_50_ok"]),
+    (
+        "GSPOIT",
+        &[
+            "roundtrip_red_truncates",
+            "roundtrip_white_equals_const",
+            "roundtrip_green_top5",
+        ],
+    ),
+];
 
 #[derive(Debug, Deserialize)]
 struct CaseFile {
@@ -268,6 +296,13 @@ fn in_scope_instruction_specs_pass() {
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         let spec: SpecFile =
             serde_yaml::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+        // Partial specs: in scope, but a named subset of cases is excluded (blocked on a
+        // later milestone / the console-text oracle — see `IN_SCOPE_PARTIAL`).
+        let excluded: &[&str] = IN_SCOPE_PARTIAL
+            .iter()
+            .find(|(id, _)| *id == spec.id.as_str())
+            .map(|(_, cases)| *cases)
+            .unwrap_or(&[]);
         let in_scope = spec
             .category
             .as_deref()
@@ -278,13 +313,19 @@ fn in_scope_instruction_specs_pass() {
             || in_scope_console.contains(spec.id.as_str())
             || in_scope_data_ops.contains(spec.id.as_str())
             || in_scope_graphics.contains(spec.id.as_str())
-            || in_scope_screen.contains(spec.id.as_str());
+            || in_scope_screen.contains(spec.id.as_str())
+            || IN_SCOPE_PARTIAL
+                .iter()
+                .any(|(id, _)| *id == spec.id.as_str());
         if !in_scope {
             continue;
         }
         files += 1;
         let src = format!("{}.yaml", spec.id);
         for case in &spec.tests {
+            if excluded.contains(&case.name.as_str()) {
+                continue;
+            }
             check(case, &src, &mut fails);
             count += 1;
         }
