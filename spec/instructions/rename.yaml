@@ -1,0 +1,41 @@
+id: RENAME
+kind: statement
+category: Files
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: name, type: string, range: '"[Resource:]Filename" — file to rename; documented "TXT:" (texts and programs, optional) and "DAT:" (binary data, incl. graphics). Corpus shows PRG:/PRGn: also accepted.' }
+      - { name: newname, type: string, range: '"[Resource:]New name" — the new file name (optionally with a resource prefix)' }
+    returns: { type: void }
+    note: "RENAME \"[Resource:]Filename\",\"[Resource:]New name\" — change a file's name. A confirmation dialog is displayed."
+
+summary: "Changes a file's name; a confirmation dialog is displayed when it runs. Both operands are `\"[Resource:]Filename\"` strings — documented resources are `TXT:` (texts and programs) and `DAT:` (binary data, including graphics); real programs also use `PRG:`/`PRGn:`. Both names may be any string expression (literal, variable, or concatenation). The corpus shows the resource prefix can differ between the two operands (e.g. `TXT:`→`PRG:`), retyping the file."
+
+semantics:
+  - "Handler @0x18cea4. Requires exactly two arguments used as a statement: cmp r0,#0x2 (arg count) and ldreq r0,[r5,#0xc]/cmpeq r0,#0x0 (result count == 0); beq 0x18ced4 on success, else errnum 3 (Syntax error: mov r0,#0x3 @0x18cecc -> b 0x18d0f4 -> bl 0x1fffdc) — so a wrong argument count, or reading RENAME for a value, is errnum 3 (same guard shape as DELETE)."
+  - "The first operand must be a string: its type byte is checked (ldrb r12,[r2,#0x2]; cmp r12,#0x0; beq 0x18cfac @0x18cefc); the non-string branch @0x18cfac raises errnum 8 (Type mismatch: mov r0,#0x8 @0x18cfb4 -> bl 0x1fffdc). The first name is parsed into a resource code + filename by FUN_001d6d6c (bl 0x1d6d6c @0x18cf48); its resource code is range-checked (cmp r0,#0xe; bhi 0x18cf94 @0x18cf5c) with out-of-range -> errnum 4 (mov r0,#0x4 @0x18cf9c)."
+  - "The second operand (new name) is parsed separately by FUN_001d6cec (bl 0x1d6cec @0x18cfd8). The rename then proceeds against the resolved source/destination."
+  - "A confirmation dialog is displayed when RENAME runs (documented)."
+  - "Undocumented cross-resource rename (corpus-verified): the two operands may carry different resource prefixes, e.g. renaming a `TXT:` file to `PRG:` to retype it (`RENAME \"TXT:\"+NAME$,\"PRG:\"+NAME$`). Runtime effect oracle-pending."
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "RENAME is given other than exactly 2 arguments, or is read for a value (used as a function)" }
+  - { errnum: 8, name: "Type mismatch", when: "the first filename operand is not a string" }
+  - { errnum: 4, name: "Illegal function call", when: "the parsed resource code is out of range (not <= 0xe)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/rename.md (1 form: `RENAME \"[File type:]File name\", \"[File type:]New name\"`. 'Changes a file name. When run, a confirmation dialog will be displayed.' File type (optional): \"TXT:\" texts and programs, \"DAT:\" binary data (incl. graphics). Example `RENAME \"SAMPLE\",\"NEWNAME\"`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst RENAME handler @0x18cea4: arg-count guard cmp r0,#0x2 + result-count ldreq r0,[r5,#0xc]/cmpeq r0,#0x0; beq 0x18ced4, else errnum 3 (mov r0,#0x3 @0x18cecc -> b 0x18d0f4 -> bl 0x1fffdc); first-arg string-type check ldrb r12,[r2,#0x2]/cmp r12,#0x0/beq 0x18cfac (non-string -> errnum 8: mov r0,#0x8 @0x18cfb4 -> bl 0x1fffdc); first name parsed by bl 0x1d6d6c (@0x18cf48) with resource-code range guard cmp r0,#0xe/bhi 0x18cf94 (-> errnum 4 @0x18cf9c); second name parsed by bl 0x1d6cec (@0x18cfd8)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bRENAME\\b', 113 occurrences): the cross-resource rename `TXT:`->`PRG:` is real (`RENAME \"TXT:\"+NAME$,\"PRG:\"+NAME$` DNY83D4/TXT/@BACKUP.PRG and PTED; `RENAME \"TXT:HD.\"+NM$,\"PRG:HD.\"+NM$` QRQ3R3D3/TXT/PRG.EXE). Both names are any string expression: bare variables (`RENAME FN$,RN$` A5L3N2HV/TXT/SBLIBCOPY) and expressions (`RENAME N$,LEFT$(N$,4)+CMD$[3]` 538EN8NE/TXT/8080). Syntax legal (shipped programs); rename effect oracle-pending." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d RENAME (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t12b): `RENAME 5,\"NEW\"` (non-string first operand) raises errnum 8 errline 1 (Type mismatch); `RENAME \"A\"` (only 1 argument) raises errnum 3 errline 1 (Syntax error). Confirms the first-operand string-type guard and the 2-argument count guard. The actual rename is filesystem/dialog state with no scalar golden (queued)." }
+
+# Top-level hw_verified: the arg-count guard (errnum 3) and the first-operand string-type guard
+# (errnum 8) are oracle-confirmed and body-pinned; the cross-resource retype form is corpus-only
+# (community) and the rename effect itself is filesystem/dialog state with no scalar golden (queued).
+confidence: hw_verified
+
+tests:
+  - { name: nonstring_name_type_mismatch, code: 'RENAME 5,"NEW"', expect: { error: { errnum: 8 } } }
+  - { name: one_arg_syntax_error, code: 'RENAME "A"', expect: { error: { errnum: 3 } } }

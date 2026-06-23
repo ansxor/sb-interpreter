@@ -1,0 +1,43 @@
+id: EXEC
+kind: statement
+category: Files
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — load and execute a program from a file into a slot.
+  - args:
+      - { name: name, type: string, range: '"[Resource:]Filename" — Resource = PRG0-PRG3 (program SLOT to load into); omitted = a default slot. Filename is any string expression.' }
+    returns: { type: void }
+    note: "EXEC \"[Resource:]Filename\" — load a program file and execute it. Cannot return to the previous program."
+  # Form 2 — execute a program already in a different slot.
+  - args:
+      - { name: slot, type: integer, range: "0-3: SLOT number of the program to execute" }
+    returns: { type: void }
+    note: "EXEC Program-SLOT — execute the program already loaded in slot 0-3. Cannot return to the previous program."
+
+summary: "Loads and executes a program. Form 1 takes a `\"[Resource:]Filename\"` string (resource `PRG0`-`PRG3` selects the slot to load into) and loads then runs that file; form 2 takes a slot number 0-3 and executes the program already in that slot. In both cases it is impossible to return to the previous program (a program EXEC'd into another slot can return via END). EXEC cannot be used to run a program in DIRECT mode."
+
+semantics:
+  - "EXEC is a special-form keyword (keyword id 0x14b=331 in the keyword table @0x30689c; name string @0x2ed6c0), parsed/handled by the slot/loader machinery rather than dispatched through the builtin handler table — so there is no standalone handler body to read; its exact validation is parser/VM-internal."
+  - "Form 1 (string): `EXEC \"[Resource:]Filename\"` loads a program file (resource PRG0-PRG3 picks the destination slot) and begins executing it. The filename is any string expression (corpus: bare variable `EXEC EXE$`, concatenation `EXEC \"PRG2:SYS/SBSMILE\"`, computed slot `EXEC \"PRG\"+STR$(SLOT())+\":...\"`). Path-style filenames containing `/` occur."
+  - "Form 2 (integer): `EXEC Program-SLOT` executes the program already loaded in slot 0-3 (corpus: `EXEC 1`, `EXEC 0`). The slot may be any integer expression."
+  - "Control transfer (documented): it is impossible to return from a program started with EXEC to the previous program; a program EXEC'd into a different slot can return via END. EXEC cannot run a program in DIRECT mode."
+  - "Using EXEC in DIRECT mode is expected to raise errnum 43 (Can't use from DIRECT mode); a missing program file is expected to raise errnum 46 (Load failed). Both error mappings are hypotheses (not body-pinned) and oracle-pending."
+
+errors:
+  - { errnum: 43, name: "Can't use from DIRECT mode", when: "EXEC is used in DIRECT mode (documented as not usable in DIRECT mode) — hypothesis, oracle-pending" }
+  - { errnum: 46, name: "Load failed", when: "the program file (form 1) could not be read — hypothesis, oracle-pending" }
+  - { errnum: 4, name: "Illegal function call", when: "the slot operand (form 2) is outside 0-3 — hypothesis, oracle-pending" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/exec.md (2 forms: `EXEC \"[Resource name:]File name\"` Resource=PRG0-PRG3 'Loads and executes a program'; `EXEC Program SLOT` 0-3 'Executes a program in a different SLOT'. Notes: 'It is impossible to return from a program started with EXEC to the previous program'; 'It is possible to return by using END in a program started with EXEC in another SLOT'; 'This cannot be used to run a program in DIRECT mode'. Examples `EXEC \"SAMPLE\"`, `EXEC \"PRG0:SBGED\"`, `EXEC 2`)" }
+  - { type: hypothesis, ref: "cia_3.6.0.lst EXEC is a special-form keyword, NOT in the builtin dispatch table (disasm.py dispatch EXEC: 'not in dispatch table'); keyword-table entry @0x30689c -> name @0x2ed6c0 (UTF-16 'EXEC'), keyword id 0x14b (331). No standalone handler body was located (parser/VM-internal), so the load/transfer algorithm and errnums are NOT body-pinned." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bEXEC\\b', excludes EXECUTE): both forms are widespread. Form 2 numeric: `EXEC 1` (2D7X32KV/TXT/-GAME-), `EXEC 0` (1DVK34J/TXT/HNZBUS). Form 1 string is any expression: bare variable `EXEC EXE$` (4RYEAXLD/TXT/LOADER), `EXEC FAV$[SELFAV]` (7S3EW3H4/TXT/EDSMILE), concatenation `EXEC \"PRG2:SYS/SBSMILE\"` (1BWX7ENV/TXT/AND-OS), `EXEC \"PRG1:\"+S$` (43SXXEJ3/TXT/-ALPHA_OS-), and computed-slot `EXEC \"PRG\"+STR$(SLOT())+\":MAZENTOMORI\"` (9KX8XDJ6/TXT/MAZENTOMORI). Syntax legal (shipped programs); runtime effect oracle-pending." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d EXEC (3.5.0 structural cross-check only)" }
+
+# Top-level documented: EXEC is a parser-handled special form (keyword id 331) with no
+# body-readable handler; both documented forms are syntax-verified in the corpus but the
+# load/transfer semantics, DIRECT-mode/load-failed errnums, and runtime effect are oracle-pending.
+confidence: documented
+
+tests: []

@@ -463,3 +463,16 @@ oracle to confirm exact output and promote to `hw_verified`.
     DELETE actually removing a file. Also unresolved: `A=FILES` returns NOERR via the runtime
     harness (parser rejects it before the result-count -> errnum 3 guard) — needs a compile-error
     capture path to confirm the parse-time error class.
+
+- S-T12b File management (CHKFILE/RENAME/USE/EXEC): the error guards ARE hw_verified (batch
+    2026-06-22, s_t12b): CHKFILE non-string operand -> errnum 8, CHKFILE used as a statement ->
+    errnum 4; RENAME non-string first operand -> errnum 8, RENAME with 1 arg -> errnum 3.
+    UNHARVESTED (all filesystem/slot/run state, no scalar oracle golden — and they mutate the SD
+    card / running program): CHKFILE existence result (TRUE/FALSE) for TXT/DAT and the undocumented
+    PRG/GRP resource prefixes; RENAME actually renaming a file + the undocumented cross-resource
+    retype `TXT:`->`PRG:`; USE marking a slot executable (numeric form + undocumented
+    `USE "PRGn:Filename"` string form) and its out-of-range-slot errnum; EXEC loading+running a
+    program (form 1 string) / executing an existing slot (form 2 numeric), the DIRECT-mode error
+    (hypothesis errnum 43) and load-failed (hypothesis errnum 46), and the no-return control
+    transfer. USE/EXEC are parser special forms (keyword ids 332/331) with no body-readable
+    handler, so their slot validation + errnums stay hypothesis until harvested.

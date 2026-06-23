@@ -1,0 +1,40 @@
+id: USE
+kind: statement
+category: Files
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — documented: mark a program slot executable by slot number.
+  - args:
+      - { name: slot, type: integer, range: "0-3: program SLOT to make executable" }
+    returns: { type: void }
+    note: "USE Program-SLOT — make the program in the given slot (0-3) executable."
+  # Form 2 — UNDOCUMENTED: mark a slot executable via a "PRGn:Filename" resource string (corpus-verified).
+  - args:
+      - { name: name, type: string, range: '"PRGn:Filename" — program slot (PRG0-PRG3) plus a file name' }
+    returns: { type: void }
+    note: "USE \"PRGn:Filename\" — undocumented string form; corpus-verified, runtime effect oracle-pending."
+
+summary: "Makes a program in the specified program SLOT executable so it can be referenced (e.g. by CALL/cross-slot GOTO/GOSUB) without being the running program. The documented form takes a slot number 0-3 (which may be any integer expression). Real programs also use an undocumented string form `USE \"PRGn:Filename\"`."
+
+semantics:
+  - "USE is a special-form keyword (keyword id 0x14c=332 in the keyword table @0x306724; name string @0x2ed580), parsed/handled by the slot machinery rather than dispatched through the builtin handler table — so there is no standalone handler body to read; its exact validation is parser/VM-internal."
+  - "Documented form: `USE Program-SLOT` marks the program in slot 0-3 as executable. The slot operand may be any integer expression (corpus: `USE 1`, `USE 3`, and a variable `USE C` / `USE I`)."
+  - "Undocumented string form (corpus-verified): `USE \"PRGn:Filename\"` (and concatenated forms like `USE \"PRG1:\"+NAME$`) selects a program slot via a resource string. Runtime effect oracle-pending."
+  - "An out-of-range slot is expected to raise errnum 4 (Illegal function call); a string with a non-PRG resource is expected to error similarly. Both error mappings are hypotheses (not body-pinned) and oracle-pending."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the slot operand is outside 0-3 — hypothesis, oracle-pending" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/use.md (1 form: `USE Program SLOT`. 'Makes a program in the specified program SLOT executable.' Argument: Program SLOT 0-3. Example `USE 2`)" }
+  - { type: hypothesis, ref: "cia_3.6.0.lst USE is a special-form keyword, NOT in the builtin dispatch table (disasm.py dispatch USE: 'not in dispatch table'); keyword-table entry @0x306724 -> name @0x2ed580 (UTF-16 'USE'), keyword id 0x14c (332). No standalone handler body was located (parser/VM-internal), so the slot-validation algorithm and errnum are NOT body-pinned." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bUSE\\b', excludes MOUSE/PAUSE/BECAUSE/REUSE/USED/USER): the documented numeric form is common (`USE 1` 13D4DV3V/TXT/MAIN_PRG_V2; `USE 3` 2383C3HE/TXT/LOWERDASH_C) and accepts a variable slot (`USE C` 2BC4738V/TXT/MOH_JUHSY237D; `USE I` 43AE1XG3/TXT/MMLIBRARY.LIB). The UNDOCUMENTED string form `USE \"PRGn:Filename\"` is real (~26 occurrences): `USE \"PRG1:OS_SAVE\"`, `USE \"PRG2:CL_SAVE\"` (1BWX7ENV/TXT/AND-OS), `USE \"PRG1:THWFNT\"` (81NY839J/TXT/__GAME), and concatenation `USE \"PRG1:\"+NAME$` (Z3VV3JJ/TXT/GAME). Syntax legal (shipped programs); runtime effect oracle-pending." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d USE (3.5.0 structural cross-check only)" }
+
+# Top-level documented: USE is a parser-handled special form (keyword id 332) with no
+# body-readable handler; the documented numeric form and the corpus-only string form are both
+# syntax-verified but their slot validation / errnum / runtime effect are oracle-pending.
+confidence: documented
+
+tests: []

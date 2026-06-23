@@ -1,0 +1,39 @@
+id: CHKFILE
+kind: function
+category: Files
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: name, type: string, range: '"[Resource:]Filename" — Resource prefix selects the file kind to check; documented "TXT:" (texts and programs) and "DAT:" (binary data, incl. graphics). Corpus shows PRG0-PRG3/PRG: and GRP0-GRP5/GRPF also accepted.' }
+    returns: { type: integer, range: "TRUE (1) if the file exists, FALSE (0) if it does not" }
+    note: "Variable = CHKFILE(\"[Resource:]Filename\") — returns TRUE if the file exists, else FALSE."
+
+summary: "Checks whether a file exists, returning TRUE (1) if it does and FALSE (0) if it does not. The single operand is a `\"[Resource:]Filename\"` string; the documented resources are `TXT:` (texts and programs) and `DAT:` (binary data, including graphics), but real programs also pass `PRGn:`/`PRG:` (program slots) and `GRPn:`/`GRPF` (graphic pages). The filename may be any string expression (literal, variable, or concatenation)."
+
+semantics:
+  - "Handler @0x18d414. Requires exactly one argument used as a value (function form): cmp r0,#0x1 (arg count) and ldreq r0,[r4,#0xc]/cmpeq r0,#0x1 (result count == 1); beq 0x18d44c on success, else errnum 4 (Illegal function call: mov r0,#0x4 @0x18d43c -> bl 0x1fffdc) — so a wrong argument count, or using CHKFILE as a statement (not read for a value), is errnum 4."
+  - "The operand must be a string: the arg's type byte is checked (ldrb r12,[r3,#0x2]; cmp r12,#0x0; beq 0x18d4e4 @0x18d460); the non-string branch @0x18d4e4 raises errnum 8 (Type mismatch: mov r0,#0x8 @0x18d4e8 -> bl 0x1fffdc). The name string is parsed into a resource code + filename by FUN_001d6d6c (bl 0x1d6d6c @0x18d4b0) — the same resource-parse helper used by LOAD/SAVE/DELETE/RENAME."
+  - "After parsing, the resource code is range-checked (ldr r0,[sp,#0xa8]; cmp r0,#0x0; beq 0x18d4d4; cmp r0,#0xe; bls 0x18d518 @0x18d4c0): codes 1..0xe (14) proceed to the existence check @0x18d518; an out-of-range/unrecognized resource code falls to the errnum 4 site @0x18d4dc. The accepted resource set is therefore broader than the documented TXT:/DAT:."
+  - "Result: TRUE (existence) / FALSE (no such file). Documented `A=CHKFILE(\"SBATTACK\")` — a no-prefix name is resolved to a default resource by the parser, not rejected."
+  - "Undocumented resource prefixes (corpus-verified): CHKFILE accepts PRG0-PRG3 and the bare PRG: form (program slots), and GRP0-GRP5/GRPF (graphic pages), in addition to the documented TXT:/DAT:. Runtime existence result for these is oracle-pending."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "CHKFILE is given other than exactly 1 argument, used as a statement (not read for a value), or the resource code is out of range (not 1..0xe)" }
+  - { errnum: 8, name: "Type mismatch", when: "the filename operand is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/chkfile.md (1 form: `Variable = CHKFILE(\"[File type:]File name\")`. 'Checks if the specified file exists.' File type: \"TXT:\" texts and programs, \"DAT:\" binary data (incl. graphics). Return values: 'TRUE= Exists, FALSE= Does not exist'. Example `A=CHKFILE(\"SBATTACK\")`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst CHKFILE handler @0x18d414: arg-count guard cmp r0,#0x1 + result-count ldreq r0,[r4,#0xc]/cmpeq r0,#0x1; beq 0x18d44c, else errnum 4 (mov r0,#0x4 @0x18d43c -> bl 0x1fffdc); first-arg string-type check ldrb r12,[r3,#0x2]/cmp r12,#0x0/beq 0x18d4e4 (non-string -> errnum 8: mov r0,#0x8 @0x18d4e8 -> bl 0x1fffdc); name parsed by bl 0x1d6d6c (@0x18d4b0); resource-code range guard ldr r0,[sp,#0xa8]/cmp r0,#0x0/beq 0x18d4d4/cmp r0,#0xe/bls 0x18d518 (out of range -> errnum 4 @0x18d4dc)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bCHKFILE\\b', 384 files): resource prefixes beyond the documented TXT:/DAT: are real — PRG0-PRG3/PRG: (`CHKFILE(\"PRG1:OS_SAVE\")` 1BWX7ENV/TXT/AND-OS; `CHKFILE(\"PRG:SETUP.EXE\")` 43SXXEJ3/TXT/-ALPHA_OS-) and GRP pages (`CHKFILE(\"GRP0:WALLPAPER\")`, `CHKFILE(\"GRP4:ANDROID_ICONS\")` 4KY3343D/TXT/ANROI-DS). The filename is any string expression: bare string variable (`CHKFILE(L$)` 227YK34J/TXT/JINTRI102) and concatenation (`CHKFILE(FILETYPE$+FILENAME$)` 433J5XA3/TXT/ATMOS). Commonly read inside a condition (`IF !CHKFILE(M$) THEN ...`). Syntax legal (shipped programs); existence result for these resources oracle-pending." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d CHKFILE (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t12b): `A=CHKFILE(5)` (non-string name) raises errnum 8 errline 1 (Type mismatch); `CHKFILE(\"SAMPLE\")` used as a statement (not read for a value) raises errnum 4 errline 1 (Illegal function call). Confirms the string-type guard and the arg/result-count guard. The actual file-existence result is filesystem state with no scalar golden (queued)." }
+
+# Top-level hw_verified: the string-type guard (errnum 8) and the arg/result-count guard
+# (errnum 4) are oracle-confirmed and body-pinned; the resource-prefix set beyond TXT:/DAT: is
+# corpus-only (community) and the existence result is filesystem state with no scalar golden (queued).
+confidence: hw_verified
+
+tests:
+  - { name: nonstring_name_type_mismatch, code: "A=CHKFILE(5)", expect: { error: { errnum: 8 } } }
+  - { name: used_as_statement_illegal, code: 'CHKFILE("SAMPLE")', expect: { error: { errnum: 4 } } }
