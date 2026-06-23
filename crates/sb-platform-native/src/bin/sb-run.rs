@@ -78,6 +78,11 @@ fn run(src: &str) -> Result<String, SbError> {
             eprintln!("sb-run: unsupported: {what}");
             Err(SbError { errnum: 0, line: 0 })
         }
+        // A failed `ASSERT__` (test-mode builtin) — report and exit as an error.
+        Err(VmError::Assert { message, line }) => {
+            eprintln!("sb-run: ASSERT__ failed at line {line}: {message}");
+            Err(SbError { errnum: 0, line })
+        }
     }
 }
 

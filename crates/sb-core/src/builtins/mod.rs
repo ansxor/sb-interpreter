@@ -108,6 +108,9 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "ACLS",
     "BACKCOLOR",
     "INKEY$",
+    // Test-mode assertion (M1-T14): the VM handles it directly (a false condition halts
+    // with `VmError::Assert`), so it is not in the stateless `dispatch`.
+    "ASSERT__",
 ];
 
 /// The set of builtins known to the compiler in this slice, so a bare-name use (`PI`) or

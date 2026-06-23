@@ -1,0 +1,128 @@
+'M1 conformance — self-checking ASSERT__ program (M1-T14).
+'Exercises only the features sb-core implements through M1: math/string builtins,
+'arithmetic + i32 wrap, control flow (IF/FOR/WHILE/REPEAT/GOSUB/GOTO/ON), DATA/READ,
+'INC/DEC/SWAP, DEF calls. A false ASSERT__ halts the VM, failing the conformance test.
+
+'--- arithmetic + i32 semantics ---
+ASSERT__ 2+3*4==14, "PRECEDENCE"
+ASSERT__ 7 DIV 2==3, "DIV"
+ASSERT__ 7 MOD 3==1, "MOD"
+ASSERT__ 2*&H7FFFFFFF==-2, "I32_WRAP"
+ASSERT__ 2147483647+1==-2147483648, "I32_OVERFLOW"
+ASSERT__ (5 AND 3)==1, "AND"
+ASSERT__ (5 OR 2)==7, "OR"
+ASSERT__ (5 XOR 1)==4, "XOR"
+
+'--- math builtins ---
+ASSERT__ FLOOR(3.7)==3, "FLOOR"
+ASSERT__ FLOOR(-2.1)==-3, "FLOOR_NEG"
+ASSERT__ CEIL(1.25)==2, "CEIL"
+ASSERT__ ROUND(1.5)==2, "ROUND"
+ASSERT__ ABS(-5)==5, "ABS"
+ASSERT__ SGN(-3)==-1, "SGN"
+ASSERT__ MAX(0,1,5,2)==5, "MAX"
+ASSERT__ MIN(5,1,3)==1, "MIN"
+ASSERT__ SQR(9)==3, "SQR"
+ASSERT__ POW(2,10)==1024, "POW"
+
+'--- string builtins ---
+ASSERT__ LEN("ABC")==3, "LEN"
+ASSERT__ LEFT$("HELLO",2)=="HE", "LEFT$"
+ASSERT__ RIGHT$("HELLO",2)=="LO", "RIGHT$"
+ASSERT__ MID$("HELLO",1,3)=="ELL", "MID$"
+ASSERT__ SUBST$("ABC",1,"XY")=="AXY", "SUBST$"
+ASSERT__ VAL("-12")==-12, "VAL"
+ASSERT__ VAL("&HA")==10, "VAL_HEX"
+ASSERT__ HEX$(255)=="FF", "HEX$"
+ASSERT__ HEX$(65535,8)=="0000FFFF", "HEX$_PAD"
+ASSERT__ ASC("A")==65, "ASC"
+ASSERT__ CHR$(65)=="A", "CHR$"
+ASSERT__ INSTR("HELLO","LL")==2, "INSTR"
+ASSERT__ "A"+"B"=="AB", "CONCAT"
+
+'--- INC / DEC / SWAP ---
+VAR N=0
+INC N
+INC N,3
+DEC N
+ASSERT__ N==3, "INCDEC"
+VAR P=1,Q=2
+SWAP P,Q
+ASSERT__ P==2, "SWAP_A"
+ASSERT__ Q==1, "SWAP_B"
+
+'--- IF / ELSEIF / ELSE ---
+VAR W=0
+IF FALSE THEN
+ W=1
+ELSEIF TRUE THEN
+ W=2
+ELSE
+ W=3
+ENDIF
+ASSERT__ W==2, "ELSEIF"
+
+'--- FOR / NEXT ---
+VAR S=0
+FOR I=1 TO 5
+ S=S+I
+NEXT
+ASSERT__ S==15, "FOR"
+
+'--- STEP ---
+VAR S2=0
+FOR I=10 TO 0 STEP -2
+ S2=S2+1
+NEXT
+ASSERT__ S2==6, "FOR_STEP"
+
+'--- WHILE / WEND ---
+VAR C=0
+WHILE C<3
+ INC C
+WEND
+ASSERT__ C==3, "WHILE"
+
+'--- REPEAT / UNTIL + BREAK / CONTINUE ---
+VAR R=0
+REPEAT
+ INC R
+ IF R==2 THEN CONTINUE
+ IF R==4 THEN BREAK
+UNTIL FALSE
+ASSERT__ R==4, "REPEAT_BREAK"
+
+'--- GOSUB / RETURN ---
+GOSUB @SUB
+ASSERT__ G==7, "GOSUB"
+GOTO @AFTER
+@SUB
+G=7
+RETURN
+@AFTER
+
+'--- ON ... GOTO ---
+VAR K=0
+ON 1 GOTO @ON0,@ON1
+@ON0
+ K=10
+ GOTO @ONEND
+@ON1
+ K=20
+@ONEND
+ASSERT__ K==20, "ON_GOTO"
+
+'--- DATA / READ ---
+DIM ARR[3]
+DATA 11,22,33
+READ ARR[0],ARR[1],ARR[2]
+ASSERT__ ARR[0]==11, "DATA0"
+ASSERT__ ARR[2]==33, "DATA2"
+
+'--- DEF function call ---
+DEF DOUBLE(V)
+ RETURN V*2
+END
+ASSERT__ DOUBLE(21)==42, "DEF_CALL"
+
+PRINT "M1 conformance passed."

@@ -81,6 +81,10 @@ pub enum VmError {
     /// An opcode whose handler is implemented in a later milestone (builtins M1-T7,
     /// console/input M1-T8, `USE`/`EXEC` M6, array-element/runtime-name refs).
     Unsupported(&'static str),
+    /// A failed `ASSERT__` (the test-mode builtin, M1-T14): the condition was false.
+    /// Carries the assertion's message and the 1-based source `line` it fired on. This
+    /// is a harness construct, NOT a SmileBASIC runtime error — it has no `ERRNUM`.
+    Assert { message: String, line: u32 },
 }
 
 impl VmError {
@@ -88,7 +92,7 @@ impl VmError {
     pub fn errnum(&self) -> Option<u32> {
         match self {
             VmError::Sb { errnum, .. } => Some(*errnum),
-            VmError::Unsupported(_) => None,
+            VmError::Unsupported(_) | VmError::Assert { .. } => None,
         }
     }
 }
@@ -611,6 +615,13 @@ impl Vm {
             }
             return Ok(());
         }
+        // `ASSERT__` (M1-T14) is the test-mode builtin: a false condition halts the run
+        // with [`VmError::Assert`] (not a SmileBASIC error). It is a statement command, so
+        // it produces no value.
+        if name == "ASSERT__" {
+            self.call_assert(&args)?;
+            return Ok(());
+        }
         // Console builtins (LOCATE/COLOR/CLS/ACLS/BACKCOLOR/INKEY$, M1-T8) mutate the
         // VM-owned console / screen state, so they too sidestep the stateless dispatch.
         if let Some(ret) = self.call_console(name, &args, wants_value).map_err(sb)? {
@@ -717,6 +728,35 @@ impl Vm {
             "INKEY$" => Ok(Some(cons::inkey(&args)?)),
             "BACKCOLOR" => Ok(Some(self.backcolor(&args, wants_value)?)),
             _ => Ok(None),
+        }
+    }
+
+    /// `ASSERT__ condition[, message$]` — the test-mode assertion (M1-T14). A truthy
+    /// condition (non-zero number) is a no-op; a false (zero) condition halts the run with
+    /// [`VmError::Assert`] carrying `message$` (empty if omitted). A bad argument count is
+    /// an Illegal function call (4); a non-numeric condition is a Type mismatch (8). The
+    /// `line` is filled by [`Vm::attach_line`] from the call site.
+    fn call_assert(&mut self, args: &[Value]) -> Result<(), VmError> {
+        let (cond, message) = match args {
+            [c] => (c.deref(), String::new()),
+            [c, m] => {
+                let msg = match m.deref() {
+                    Value::Str(s) => String::from_utf16_lossy(&s),
+                    other => crate::builtins::format_number(&other).map_err(sb)?,
+                };
+                (c.deref(), msg)
+            }
+            _ => return Err(sb(crate::builtins::illegal())),
+        };
+        let truthy = match cond {
+            Value::Int(i) => i != 0,
+            Value::Real(r) => r != 0.0,
+            _ => return Err(sb(crate::builtins::type_mismatch())),
+        };
+        if truthy {
+            Ok(())
+        } else {
+            Err(VmError::Assert { message, line: 0 })
         }
     }
 
@@ -936,6 +976,10 @@ impl Vm {
             VmError::Sb { errnum, line: 0 } => {
                 let line = self.program.locs.get(pc).map(|l| l.line).unwrap_or(0);
                 VmError::Sb { errnum, line }
+            }
+            VmError::Assert { message, line: 0 } => {
+                let line = self.program.locs.get(pc).map(|l| l.line).unwrap_or(0);
+                VmError::Assert { message, line }
             }
             other => other,
         }
@@ -1169,6 +1213,60 @@ mod tests {
         let mut vm = Vm::new(program);
         vm.run().expect("run");
         vm
+    }
+
+    /// Compile (with the builtin registry) + run, returning the error it halts with.
+    fn run_b_err(src: &str) -> VmError {
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        let ast = parse(src).expect("parse");
+        let program = compile_with(&ast, &StdBuiltins).expect("compile");
+        let mut vm = Vm::new(program);
+        vm.run().expect_err("expected a runtime error")
+    }
+
+    // ---- ASSERT__ (test-mode builtin, M1-T14) ----
+
+    #[test]
+    fn assert_true_is_a_noop() {
+        // A truthy condition lets the program continue to the PRINT.
+        let vm = run_b(r#"ASSERT__ 1,"msg":PRINT "OK""#);
+        assert_eq!(vm.console_text(), "OK");
+    }
+
+    #[test]
+    fn assert_false_halts_with_message_and_line() {
+        let err = run_b_err("PRINT 1\nASSERT__ 2==3,\"twothree\"\nPRINT 9");
+        match err {
+            VmError::Assert { message, line } => {
+                assert_eq!(message, "twothree");
+                assert_eq!(line, 2); // the ASSERT__ is on source line 2
+            }
+            other => panic!("expected VmError::Assert, got {other:?}"),
+        }
+        // A failed assertion is NOT a SmileBASIC error, so it carries no ERRNUM.
+        assert_eq!(run_b_err(r#"ASSERT__ 0,"x""#).errnum(), None);
+    }
+
+    #[test]
+    fn assert_message_is_optional() {
+        // One-arg form: false condition still halts, with an empty message.
+        match run_b_err("ASSERT__ 0") {
+            VmError::Assert { message, .. } => assert_eq!(message, ""),
+            other => panic!("expected VmError::Assert, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn assert_bad_arg_count_is_illegal_function_call() {
+        // Zero / three args → Illegal function call (errnum 4).
+        assert_eq!(run_b_err("ASSERT__").errnum(), Some(4));
+        assert_eq!(run_b_err(r#"ASSERT__ 1,"a",2"#).errnum(), Some(4));
+    }
+
+    #[test]
+    fn assert_string_condition_is_type_mismatch() {
+        assert_eq!(run_b_err(r#"ASSERT__ "x","msg""#).errnum(), Some(8));
     }
 
     /// Read a string global (`A$`) as a Rust `String`.

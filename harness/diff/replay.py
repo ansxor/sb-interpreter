@@ -48,13 +48,43 @@ def main():
 
     runner = sb_core_runner()
     if runner is None:
-        print("\nsb-core headless runner not built yet (M1).")
-        print("Per-instruction spec tests run via: cargo test -p sb-spec")
+        print("\nsb-core headless runner not built yet — build it with:")
+        print("  cargo build -p sb-platform-native --bin sb-run")
+        print("Per-instruction + curated cases run via: cargo test -p sb-core")
         return 0
 
-    # M1: execute each fixture through the runner and diff against expects.
-    print(f"\nrunning fixtures through {runner} ...")
-    _ = subprocess.run  # placeholder to mark the execution seam
+    # M1-T14: execute each self-checking full program through the runner. A program that
+    # uses `ASSERT__` exits non-zero on the first failed assertion (the VM halts), so exit
+    # code 0 means every assertion held. The per-case code→expect YAML fixtures
+    # (harness/corpus/cases + spec/tests + in-scope spec inline tests) are replayed by the
+    # hermetic `cargo test -p sb-core` conformance runner; here we add full-program replay.
+    #
+    # `EXPECTED_PASS` programs gate the exit code; everything else is informational (e.g.
+    # `otya_test.sb3` exercises SORT/RSORT, sprite CALL, DTREAD, DATE$/TIME$ and
+    # out-of-range decimal-literal i32 wrap — features that land in later milestones).
+    expected_pass = {"m1_conformance.sb3", "fizzbuzz.sb3"}
+    print(f"\nrunning {len(programs)} full program(s) through {runner.name} ...")
+    failed = []
+    for prog in programs:
+        proc = subprocess.run(
+            [str(runner), str(prog)], capture_output=True, text=True
+        )
+        gated = prog.name in expected_pass
+        ok = proc.returncode == 0
+        tag = "PASS" if ok else "FAIL"
+        if not gated and not ok:
+            tag = "skip"  # informational: blocked on a later milestone
+        note = ""
+        if not ok and proc.stderr.strip():
+            note = "  " + proc.stderr.strip().splitlines()[0]
+        print(f"  [{tag}] {prog.name}{note}")
+        if gated and not ok:
+            failed.append(prog.name)
+
+    if failed:
+        print(f"\n{len(failed)} expected-pass program(s) failed: {', '.join(failed)}")
+        return 1
+    print("\nall expected-pass programs OK.")
     return 0
 
 

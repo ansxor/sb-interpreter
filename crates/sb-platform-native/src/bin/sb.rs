@@ -94,6 +94,10 @@ mod native {
                 eprintln!("sb: unsupported: {what}");
                 Some(SbError { errnum: 0, line: 0 })
             }
+            Err(VmError::Assert { message, line }) => {
+                eprintln!("sb: ASSERT__ failed at line {line}: {message}");
+                Some(SbError { errnum: 0, line })
+            }
         }
     }
 
