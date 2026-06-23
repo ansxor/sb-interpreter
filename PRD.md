@@ -107,7 +107,7 @@ and name the instructions they cover inline.
 - [x] S-T11b Touch & motion — TOUCH · ACCEL · GYROA · GYROV · GYROSYNC
 - [x] S-T11c Microphone — MICSTART · MICSTOP · MICDATA · MICSAVE
 - [x] S-T11d Screen control — ACLS · BACKCOLOR · DISPLAY · VISIBLE · XSCREEN
-- [ ] S-T11e Fade — FADE · FADECHK
+- [x] S-T11e Fade — FADE · FADECHK
 
 #### S-T12 Files + Source-manip + DIRECT-mode (22) → S-T0
 - [ ] S-T12a File I/O — LOAD · SAVE · FILES · DELETE

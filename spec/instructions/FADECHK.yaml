@@ -1,0 +1,35 @@
+id: FADECHK
+kind: function
+category: Screen control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    returns: { type: integer }
+    note: "FADECHK() — TRUE (1) while a FADE animation is running, FALSE (0) when it is idle/suspended."
+
+summary: "Returns the state of the screen-fader animation: TRUE (1) while a timed FADE is animating, FALSE (0) when no fade animation is in progress (idle or finished)."
+
+semantics:
+  - "Form check (@0x14c2b4-0x14c2c4): requires arg-count 0 ([r0,#0x4]==0) AND result-count 1 ([r4,#0xc]==1, i.e. used in a value context); otherwise raises errnum 4 (Illegal function call: mov r0,#0x4 @0x14c2d4 -> b 0x1fffdc @0x14c2d8). FADECHK takes no arguments and must be read for a value."
+  - "Reads the fade animation state via worker FUN_0014f548 (bl 0x14f548 @0x14c2e0): it loads the fade time-remaining counter [..+0x18][+0x74] and returns 1 when that counter is <= 0 (movle r0,#0x1) and 0 when it is > 0 (movgt r0,#0x0) — i.e. the worker returns 1 for 'idle' and 0 for 'animating'."
+  - "The handler then inverts the worker result with eor r1,r0,#0x1 (@0x14c2e4): worker 1 (idle) -> 0 (FALSE), worker 0 (animating) -> 1 (TRUE). The inverted value is written as the return value through the result vtable [r4,#0x10] (ldr r2,[r2,#0x14]; bx r2 @0x14c2ec-0x14c2f8). Net result: FADECHK() == TRUE while a fade is animating, FALSE otherwise."
+  - "A non-timed FADE (1-arg `FADE color`) sets the color instantly and zeroes the fade timer (FUN_001e9798), so FADECHK() reads FALSE immediately after; a timed `FADE color, time` sets the counter > 0 so FADECHK() reads TRUE until the animation completes (counter reaches 0)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "FADECHK is given any argument, or is used as a statement (not read for a value)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/fadechk.md ('Gets the state of the fading animation', format `Variable=FADECHK()`, return 'TRUE= Animation in progress, FALSE= Animation suspended', example `R=FADECHK()`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst FADECHK handler @0x14c2ac: ldr r0,[r0,#0x4] (arg count) cmp 0 / ldreq r0,[r4,#0xc] (result count) cmpeq 1 -> beq @0x14c2dc, else mov r0,#0x4 errnum 4 (@0x14c2d4 -> b 0x1fffdc @0x14c2d8); valid path @0x14c2dc bl 0x14f548 (read state) then eor r1,r0,#0x1 (@0x14c2e4) inverts it, return via ldr r2,[r2,#0x14]/bx r2 (@0x14c2f0-0x14c2f8)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst FADECHK state worker FUN_0014f548 @0x14f548: ldr r0,[0x14f564]=0x315D48 -> [r0,#0x18] -> [r0,#0x74] (fade time-remaining counter); cmp r0,#0x0; movle r0,#0x1 (counter<=0 -> 1 idle); movgt r0,#0x0 (counter>0 -> 0 animating); bx lr. Combined with the handler's eor #1, FADECHK() yields 1 (TRUE) while animating, 0 (FALSE) when idle" }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d FADECHK (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11e): at program start with no fade animating, `FADECHK()` returns 0 (FALSE); `X=FADECHK(0)` (given an argument) raises errnum 4 errline 1. Confirms the idle/FALSE result and the no-argument guard." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bFADECHK\\b'): all ~60 real uses match the documented no-arg `FADECHK()` function (in IF/WHILE/UNTIL conditions and boolean expressions). No undocumented form." }
+
+confidence: hw_verified
+
+tests:
+  # At RUN start no fade is animating, so FADECHK() reads 0 (FALSE) — hw_verified.
+  - { name: idle_at_start, code: "PRINT FADECHK()", expect: { stdout: "0" } }
+  - { name: fadechk_with_arg_err, code: "A=FADECHK(0)", expect: { error: { errnum: 4 } } }

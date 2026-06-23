@@ -1,0 +1,49 @@
+id: FADE
+kind: function          # has both a statement form (set) and a function form (get)
+category: Screen control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — statement: set the fader color (optionally animated over time).
+  - args:
+      - { name: color, type: integer, range: "ARGB color code (8 bits per A/R/G/B), e.g. from RGB(); RGB(0,0,0,0) disables the fader" }
+    returns: { type: void }
+    note: "FADE color — set the fader color immediately (no animation)."
+  - args:
+      - { name: color, type: integer, range: "ARGB color code" }
+      - { name: time, type: integer, range: ">= 0 (units of 1/60 s); negative raises Out of range" }
+    returns: { type: void }
+    note: "FADE color, time — animate from the current fader color to `color` over `time` 1/60-second frames."
+  # Form 2 — function: read the current fader color.
+  - args: []
+    returns: { type: integer }
+    note: "FADE() — return the current fader color as an ARGB color code."
+
+summary: "Screen fader. As a statement, `FADE color [,time]` fills the entire screen with `color` (an ARGB code, transparency respected) drawn in front of everything; with `time` (1/60 s units) it animates from the current fader color to the target over that many frames, otherwise it changes instantly. RGB(0,0,0,0) disables the fader. As a function, `FADE()` returns the current fader color (8 bits per ARGB element)."
+
+semantics:
+  - "Dispatch on (result-count [r0,#0xc], arg-count [r0,#0x4]) at @0x14ccd0-0x14cee8: result-count 0 (statement) -> @0x14cef0; result-count 1 AND arg-count 0 (function FADE()) -> @0x14cfec; any other combination raises errnum 4 (Illegal function call: mov r0,#0x4 @0x14cf14 -> bl 0x1fffdc). So the statement form must NOT be read for a value and the function form must take no arguments."
+  - "Statement form (@0x14cef0): arg-count 1 -> @0x14cf1c (color only); arg-count 2 -> @0x14cf50 (color, time); any other arg-count (0, or >2) falls through to the errnum-4 path (@0x14cf04). The fader-state global is [0x305628] (ldr r6,[0x14d010]=0x305628)."
+  - "FADE color (1 arg, @0x14cf1c): evaluate the color operand to [sp] via the arg vtable (ldr r2,[r2,#0x40]; blx r2) then call the immediate-set worker FUN_001e9798 (bl 0x1e9798) with the color, which writes the target color and zeroes the fade timer [..+0x74]=0 (str r2,[r1,#0x74] with r2=0 @0x1e97b8) so the new color takes effect at once with no animation."
+  - "FADE color, time (2 args, @0x14cf50): evaluate color to [sp,#0x4] then time to [sp,#0x0] (arg index tracked in r7 for re-entrancy). When the time operand is final, range-check it at @0x14cfc4: cmp 0,time (cmp r5,r0 with r5=0); if 0 <= time (ble) call the timed-fade worker FUN_0014edd4 (bl 0x14edd4 @0x14cfb4) with (color=[sp,#0x4], time=[sp,#0x0]); if time < 0 raise errnum 0xa=10 (Out of range) reported on arg index 1 (mov r0,#0xa / cpy r1,r7 @0x14cfd0-0x14cfd8). time 0 is accepted (instant)."
+  - "Function form FADE() (@0x14cfec): call FUN_0014ed50 (bl 0x14ed50) to read the current fader color, then write it as the return value through the result vtable [r4,#0x10] (ldr r2,[r2,#0x14]; bx r2). The value is an ARGB color code (8 bits each for alpha/red/green/blue)."
+  - "The fader is always composited in front of all screen content and fills the whole screen using the color's alpha (documented). Disabling is by setting a fully-transparent color, RGB(0,0,0,0) (documented)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the statement form is read for a value, the function form FADE() is given arguments, or the statement form is given 0 or more-than-2 arguments" }
+  - { errnum: 10, name: "Out of range", when: "the fade `time` argument is negative" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/fade.md (form 1 `FADE Fading color [,Fading time]` — 'Sets the color for the screen fader', 'The fader is always displayed in the front', 'The entire screen is filled with the fading color (taking the transparent color into consideration)', 'specifying RGB(0,0,0,0) disables the fader', time 'specified in units of 1/60th of a second'; form 2 `Value=FADE()` — 'Gets the current screen fader color', returns 'Color code consisting of an 8-bit value for each ARGB element'; example `FADE RGB(32,64,64,64),60`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst FADE handler @0x14cec4: ldr r1,[r0,#0xc] (result count) / ldr r0,[r0,#0x4] (arg count); result==0 -> beq @0x14cef0, result==1 & args==0 -> beq @0x14cfec, else errnum 4 (mov r0,#0x4 @0x14cf14 -> bl 0x1fffdc @0x14cf18); statement @0x14cef0 ldr r6,[0x14d010]=0x305628, args==1 -> @0x14cf1c, args==2 -> @0x14cf50, else errnum 4 (@0x14cf04); 1-arg eval color to [sp] (ldr r2,[r2,#0x40]; blx r2 @0x14cf30) then bl 0x1e9798 (@0x14cf40); 2-arg eval color to [sp,#0x4] then time to [sp,#0x0], range guard cmp r5(0),r0(time)/ble 0x14cfac (@0x14cfc8) -> bl 0x14edd4 (@0x14cfb4) else mov r0,#0xa errnum 10 / cpy r1,r7(=1 arg index) (@0x14cfd0 -> bl 0x1fffdc @0x14cfdc); function @0x14cfec bl 0x14ed50 then return via ldr r2,[r2,#0x14]/bx r2. literal [0x14d010]=0x305628" }
+  - { type: disassembled, ref: "cia_3.6.0.lst FADE immediate-set worker FUN_001e9798 @0x1e9798: zeroes the fade timer [r1,#0x74]=0 (mov r2,#0x0 @0x1e97a0; str r2,[r1,#0x74] @0x1e97b8) and stores the new fade color [r1+0x68..]=color (str r0,[r1,#0x8] @0x1e97cc; strb r3,[r1,#0x5] flag @0x1e97d0), confirming the 1-arg form is an instant (non-animated) color set" }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d FADE (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11e): `FADE RGB(0,0,0,255),-1` raises errnum 10 errline 1 (Out of range — negative time); bare `FADE` (0 args) raises errnum 4 errline 1; `X=FADE(0)` (function form given an arg) raises errnum 4 errline 1. Confirms the negative-time range guard and the arg/result-count guard. The fader color set/animation itself is screen state with no scalar golden (queued)." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bFADE\\b'): all real uses match the documented `FADE color [,time]` statement and `FADE()` function — color is an integer expression (RGB(...), &H hex, 0, or a variable). No undocumented form: apparent outliers were comments ('FADE OUT), the `@FADE` label, and a `FADE%` variable, not the instruction." }
+
+confidence: hw_verified
+
+tests:
+  - { name: negative_time_out_of_range, code: "FADE RGB(0,0,0,255),-1", expect: { error: { errnum: 10 } } }
+  - { name: statement_zero_args_err, code: "FADE", expect: { error: { errnum: 4 } } }
+  - { name: fade_func_with_arg_err, code: "A=FADE(0)", expect: { error: { errnum: 4 } } }

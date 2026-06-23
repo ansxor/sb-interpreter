@@ -443,3 +443,10 @@ oracle to confirm exact output and promote to `hw_verified`.
     actual targeted-screen and layer-visibility effects. DIRECT-MODE-ONLY (RUN harness can't reach
     these, run in program mode): DISPLAY in DIRECT mode -> errnum 43, and XSCREEN 4 in DIRECT mode
     -> errnum 43 — both pinned from the disassembly but need a DIRECT-mode oracle path.
+
+- S-T11e FADE/FADECHK (no scalar golden — screen/animation state):
+    FADE's actual on-screen fader compositing (whole-screen fill in the color's alpha, drawn in
+    front), the exact ARGB code `FADE()` returns for a given set color, and FADECHK() reading TRUE
+    *during* a live timed fade (would need frame-timed sampling mid-animation). Error guards
+    (negative time -> errnum 10; arg/result-count -> errnum 4) and the idle FADECHK()==0 ARE
+    hw_verified (batch 2026-06-22, s_t11e).
