@@ -182,6 +182,19 @@ const IN_SCOPE_SPRITES: &[&str] = &[
     "SPHITINFO",
     "SPDEF",
 ];
+/// BG core specs `sb-core` implements in M3-T4 (the background-tilemap commands). Each is in
+/// scope for its deterministic contract: the argument-count / return-shape / layer-range /
+/// cell-range / area-limit / tile-size error guards (hw_verified sb-oracle 2026-06-22,
+/// s_t9a/b/c/e), the `BGPAGE`/`BGGET` read-back values (deterministic over the tilemap +
+/// page state), and the `BGROT` mod-360 normalization. The on-screen *side effects* — the
+/// rendered tint, scroll/rotate/scale pixels, and clip area — block on the BG framebuffer
+/// oracle (O-T6 / M3-T6, queued); none of the inline spec cases assert those (they expect an
+/// empty `stdout` or an errnum). `BGANIM`/`BGCOORD`/`BGCOPY`/`BGLOAD`/`BGSAVE`/… land with
+/// M3-T5. Listed by id.
+const IN_SCOPE_BG: &[&str] = &[
+    "BGSCREEN", "BGPAGE", "BGPUT", "BGGET", "BGFILL", "BGCLR", "BGOFS", "BGROT", "BGSCALE",
+    "BGCOLOR", "BGSHOW", "BGHIDE", "BGHOME", "BGCLIP",
+];
 /// Specs `sb-core` implements only **partially** in M1: each is in scope, but the named
 /// cases listed here are EXCLUDED because they block on a later milestone or the
 /// console-text oracle. Everything else in the spec — the deterministic, hw_verified
@@ -349,6 +362,7 @@ fn spec_in_scope(id: &str, category: Option<&str>) -> bool {
         || IN_SCOPE_GRAPHICS.contains(&id)
         || IN_SCOPE_SCREEN.contains(&id)
         || IN_SCOPE_SPRITES.contains(&id)
+        || IN_SCOPE_BG.contains(&id)
         || IN_SCOPE_PARTIAL.iter().any(|(pid, _)| *pid == id)
 }
 

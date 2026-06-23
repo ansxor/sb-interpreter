@@ -27,6 +27,7 @@
 //! integers via C `%d`, doubles via C `%g` to 6 significant figures (the exact
 //! tie-breaking / very-large-magnitude edges are M7-T4; see `HARVEST_QUEUE.md`).
 
+pub(crate) mod bg;
 pub(crate) mod console;
 pub(crate) mod data;
 pub(crate) mod graphics;
@@ -189,6 +190,26 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "SPHITRC",
     "SPHITINFO",
     "SPDEF",
+    // BG core (M3-T4): the background-tilemap commands route over the VM-owned `BgState`.
+    // BGSCREEN/BGPAGE size the map + pick the tile graphic page; BGPUT/BGGET/BGFILL/BGCLR
+    // read/write tile cells; BGOFS/BGROT/BGSCALE/BGHOME/BGCOLOR/BGCLIP are the per-layer
+    // transforms; BGSHOW/BGHIDE toggle visibility. They mutate/read BG state (BGGET/BGPAGE/
+    // BGCOLOR/BGOFS/BGROT/BGSCALE/BGHOME also have GET forms), so they are registered here
+    // for the compiler to treat as builtins.
+    "BGSCREEN",
+    "BGPAGE",
+    "BGPUT",
+    "BGGET",
+    "BGFILL",
+    "BGCLR",
+    "BGOFS",
+    "BGROT",
+    "BGSCALE",
+    "BGCOLOR",
+    "BGSHOW",
+    "BGHIDE",
+    "BGHOME",
+    "BGCLIP",
     // Array data-ops (M1-T14): SORT/RSORT mutate their array arguments in place, so the
     // VM routes them to `data::sort` rather than the value-returning `dispatch`.
     "SORT",

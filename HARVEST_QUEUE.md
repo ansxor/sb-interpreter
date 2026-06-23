@@ -10,6 +10,24 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] M3-T4 (BGGET pixel-coord read) · The pixel→char conversion rounding (flag=1) and the
+  off-map read behavior are not framebuffer-harvested. assumption: char coord = floor(pixel /
+  tileSize) via `div_euclid`, then the cell index is wrapped modulo the map width/height
+  (a repeating map, no error). Confirm the rounding (truncate vs floor) + whether off-map
+  reads wrap, clamp, or return 0.
+- [ ] M3-T4 (BGFILL out-of-bounds rectangle) · The handler shows no coordinate range guard
+  (only the layer check). assumption: the fill rectangle's corners are normalized (min/max)
+  and CLAMPED to the map bounds, so an OOB rectangle fills only its in-bounds intersection
+  (never errors, never panics). Confirm vs an errnum-10 / no-op / wrap behavior.
+- [ ] M3-T4 (BGOFS Z clamp) · The documented Z range is -256..1024. assumption: Z is stored
+  verbatim with no clamp (matching BGSCALE's no-clamp finding). Confirm whether Z is clamped.
+- [ ] M3-T4 (BGPUT/BGFILL malformed hex string) · screenData strings parse as ≤4-digit hex.
+  assumption: an unparseable string parses leniently to 0 (no error); over-long (> 0x2000
+  chars) → errnum 41; wrong type → errnum 8. Confirm the malformed-hex result + the exact
+  length threshold.
+- [ ] M3-T4 (BG layer default visibility) · assumption: BG layers are visible by default
+  (BGSHOW not required to show BGPUT content). Confirm the power-on visibility flag (needs
+  the BG framebuffer oracle, O-T6).
 - [ ] M3-T2 (SPANIM runtime interpolation) · The exact per-frame value of the GRAPHICAL
   animation channels (XY/Z/UV/I/R/S/C) is not framebuffer-harvested. assumption: documented
   model — a positive `time` HOLDS the keyframe item value for that many frames, a negative

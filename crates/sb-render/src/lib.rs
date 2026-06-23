@@ -10,6 +10,7 @@
 //! M2–M3. The crate stays I/O- and GUI-free so it builds for `wasm32-unknown-unknown`;
 //! file I/O (golden PNGs) lives in the `png` encoder + tests only.
 
+pub mod bg;
 pub mod bitmap;
 pub mod compositor;
 pub mod console;

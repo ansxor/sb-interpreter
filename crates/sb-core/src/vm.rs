@@ -43,6 +43,7 @@ use crate::bytecode::{Const, Op, Program, VarRef, VarType};
 use crate::sysvars::ErrSysvar;
 use crate::token::Suffix;
 use crate::value::{Cell, ElemRef, RuntimeError, SbStr, Value};
+use sb_render::bg::BgState;
 use sb_render::console::Console;
 use sb_render::grp::GrpState;
 use sb_render::sprite::SpriteState;
@@ -150,6 +151,12 @@ pub struct Vm {
     /// commands `SPSET`/`SPCLR`/`SPSHOW`/`SPHIDE`/`SPUSED`. The compositor (M3-T6) draws the
     /// live sprites into the framebuffer; the transform/animation setters extend it (M3-T2+).
     sprites: SpriteState,
+    /// The BG (background tilemap) system state (M3-T4): the 4-layer tilemap table + the
+    /// shared graphic page, driven by `BGSCREEN`/`BGPUT`/`BGGET`/`BGFILL`/`BGCLR` and the
+    /// per-layer transforms `BGOFS`/`BGROT`/`BGSCALE`/`BGHOME`/`BGCOLOR`/`BGSHOW`/`BGHIDE`/
+    /// `BGCLIP`/`BGPAGE`. The compositor (M3-T6) draws the visible layers into the
+    /// framebuffer; animation/coord/load-save (M3-T5) extends it.
+    bg: BgState,
     /// The screen background color code (`BACKCOLOR`). The handler round-trips the user's
     /// RGB code, so we store it verbatim; the rendered border color is screen state (M2).
     back_color: i32,
@@ -195,6 +202,7 @@ impl Vm {
             console: Console::top(),
             grp: GrpState::new(),
             sprites: SpriteState::new(),
+            bg: BgState::new(),
             back_color: 0,
             tabstep: 4,
             input_lines: VecDeque::new(),
@@ -234,6 +242,11 @@ impl Vm {
     /// Borrow the sprite system state (the 512-slot table) for rendering / inspection.
     pub fn sprites(&self) -> &SpriteState {
         &self.sprites
+    }
+
+    /// Borrow the BG system state (the 4-layer tilemap table) for rendering / inspection.
+    pub fn bg(&self) -> &BgState {
+        &self.bg
     }
 
     /// The console contents as text: each grid row trimmed of trailing blanks, rows joined
@@ -763,6 +776,12 @@ impl Vm {
         if self.call_sprite(name, &args, out_argc, wants_value)? {
             return Ok(());
         }
+        // BG core builtins (BGSCREEN/BGPUT/BGGET/BGFILL/BGCLR + the per-layer transforms,
+        // M3-T4) mutate or read the VM-owned `BgState` and can leave OUT results, so they
+        // push their own results and bypass the stateless dispatch.
+        if self.call_bg(name, &args, out_argc, wants_value)? {
+            return Ok(());
+        }
         let ret = crate::builtins::dispatch(name, args).map_err(sb)?;
         if wants_value {
             self.stack.push(ret);
@@ -1089,6 +1108,45 @@ impl Vm {
             "SPHITSP" => spr::sphitsp(&mut self.sprites, &args, ret_count),
             "SPHITRC" => spr::sphitrc(&mut self.sprites, &args, ret_count),
             "SPHITINFO" => spr::sphitinfo(&self.sprites, &args, ret_count),
+            _ => return Ok(false),
+        };
+        for v in results.map_err(sb)? {
+            self.stack.push(v);
+        }
+        Ok(true)
+    }
+
+    /// Route a BG core builtin (M3-T4) over the VM-owned [`BgState`]. Returns `Ok(true)` when
+    /// handled (pushing the command's result values — none for the SET-form statements, one
+    /// for `BGGET`/`BGPAGE`/`BGROT`/`BGCOLOR` GET, two/three for the `BGOFS`/`BGSCALE`/
+    /// `BGHOME` OUT forms), or `Ok(false)` when `name` is not a BG builtin. Like the sprite
+    /// commands, the SET/GET-style form is chosen by the **return count**, collapsing the
+    /// function (`wants_value`) and `OUT` (`out_argc`) spellings.
+    fn call_bg(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        out_argc: u8,
+        wants_value: bool,
+    ) -> Result<bool, VmError> {
+        use crate::builtins::bg as b;
+        let ret_count = if wants_value { 1 } else { out_argc as usize };
+        let args: Vec<Value> = args.iter().map(|v| v.deref()).collect();
+        let results = match name {
+            "BGSCREEN" => b::bgscreen(&mut self.bg, &args, ret_count),
+            "BGPAGE" => b::bgpage(&mut self.bg, &args, ret_count),
+            "BGPUT" => b::bgput(&mut self.bg, &args, ret_count),
+            "BGGET" => b::bgget(&self.bg, &args, ret_count),
+            "BGFILL" => b::bgfill(&mut self.bg, &args, ret_count),
+            "BGCLR" => b::bgclr(&mut self.bg, &args, ret_count),
+            "BGOFS" => b::bgofs(&mut self.bg, &args, ret_count),
+            "BGROT" => b::bgrot(&mut self.bg, &args, ret_count),
+            "BGSCALE" => b::bgscale(&mut self.bg, &args, ret_count),
+            "BGCOLOR" => b::bgcolor(&mut self.bg, &args, ret_count),
+            "BGSHOW" => b::bgshow(&mut self.bg, &args, ret_count),
+            "BGHIDE" => b::bghide(&mut self.bg, &args, ret_count),
+            "BGHOME" => b::bghome(&mut self.bg, &args, ret_count),
+            "BGCLIP" => b::bgclip(&mut self.bg, &args, ret_count),
             _ => return Ok(false),
         };
         for v in results.map_err(sb)? {

@@ -1,0 +1,90 @@
+# BG core conformance cases (M3-T4) — full-pipeline (parse→compile→VM) checks of the
+# background-tilemap commands over the 4-layer BgState. These assert only DETERMINISTIC,
+# non-rendering behavior: the tilemap cell write/read round-trip (BGPUT→BGGET, BGFILL→BGGET,
+# BGCLR→BGGET), the BGPAGE / BGOFS / BGROT / BGSCALE / BGHOME set→get round-trips, and the
+# BGROT mod-360 normalization (disassembled). The argument-count / layer-range / cell-range /
+# area-limit / tile-size error guards are hw_verified (sb-oracle 2026-06-22 s_t9a/b/c/e). The
+# on-screen side effects (rendered tint, scrolled/rotated/scaled pixels, clip area) block on
+# the BG framebuffer oracle (O-T6 / M3-T6). Statements are joined with `:` so each case stays
+# a single source line.
+cases:
+  # -- BGPUT / BGGET cell round-trip (char coords) -----------------------------------------
+  - name: bgput_number_read_back
+    code: 'BGSCREEN 0,32,32:BGPUT 0,20,15,1024:PRINT BGGET(0,20,15)'
+    expect: { stdout: "1024" }
+  - name: bgput_hexstring_read_back
+    code: 'BGSCREEN 0,32,32:BGPUT 0,5,5,"80FF":PRINT BGGET(0,5,5)'
+    expect: { stdout: "33023" }
+  - name: bgput_other_cell_still_empty
+    code: 'BGSCREEN 0,32,32:BGPUT 0,1,1,7:PRINT BGGET(0,0,0)'
+    expect: { stdout: "0" }
+  - name: bgput_independent_layers
+    code: 'BGSCREEN 0,16,16:BGSCREEN 1,16,16:BGPUT 0,0,0,9:BGPUT 1,0,0,3:PRINT BGGET(0,0,0);BGGET(1,0,0)'
+    expect: { stdout: "93" }
+
+  # -- BGFILL fills the inclusive rectangle -----------------------------------------------
+  - name: bgfill_fills_region
+    code: 'BGSCREEN 0,32,32:BGFILL 0,5,5,10,10,42:PRINT BGGET(0,7,7);BGGET(0,5,5);BGGET(0,10,10)'
+    expect: { stdout: "424242" }
+  - name: bgfill_leaves_outside_empty
+    code: 'BGSCREEN 0,32,32:BGFILL 0,5,5,10,10,42:PRINT BGGET(0,4,4);BGGET(0,11,11)'
+    expect: { stdout: "00" }
+  - name: bgfill_hexstring
+    code: 'BGSCREEN 0,16,16:BGFILL 0,0,0,3,3,"C040":PRINT BGGET(0,2,2)'
+    expect: { stdout: "49216" }
+
+  # -- BGCLR clears the tilemap -----------------------------------------------------------
+  - name: bgclr_one_layer
+    code: 'BGSCREEN 0,16,16:BGPUT 0,0,0,5:BGCLR 0:PRINT BGGET(0,0,0)'
+    expect: { stdout: "0" }
+  - name: bgclr_all_layers
+    code: 'BGSCREEN 0,16,16:BGSCREEN 1,16,16:BGPUT 0,0,0,5:BGPUT 1,0,0,6:BGCLR:PRINT BGGET(0,0,0);BGGET(1,0,0)'
+    expect: { stdout: "00" }
+  - name: bgscreen_resize_clears
+    code: 'BGSCREEN 0,16,16:BGPUT 0,0,0,5:BGSCREEN 0,32,32:PRINT BGGET(0,0,0)'
+    expect: { stdout: "0" }
+
+  # -- BGPAGE set/get (default GRP5) ------------------------------------------------------
+  - name: bgpage_default
+    code: 'PRINT BGPAGE()'
+    expect: { stdout: "5" }
+  - name: bgpage_set_get
+    code: 'BGPAGE 3:PRINT BGPAGE()'
+    expect: { stdout: "3" }
+
+  # -- BGOFS set/get round-trip (X,Y[,Z]) -------------------------------------------------
+  - name: bgofs_xy_round_trip
+    code: 'BGOFS 0,16,-8:BGOFS 0 OUT X,Y:PRINT X;",";Y'
+    expect: { stdout: "16,-8" }
+  - name: bgofs_xyz_round_trip
+    code: 'BGOFS 0,16,-8,3:BGOFS 0 OUT X,Y,Z:PRINT Z'
+    expect: { stdout: "3" }
+
+  # -- BGROT mod-360 normalization + read-back --------------------------------------------
+  - name: bgrot_normalizes_negative
+    code: 'BGROT 0,-90:BGROT 0 OUT R:PRINT R'
+    expect: { stdout: "270" }
+  - name: bgrot_normalizes_over_360
+    code: 'BGROT 0,450:BGROT 0 OUT R:PRINT R'
+    expect: { stdout: "90" }
+  - name: bgrot_full_turn_is_zero
+    code: 'BGROT 0,360:BGROT 0 OUT R:PRINT R'
+    expect: { stdout: "0" }
+
+  # -- BGSCALE set/get (unclamped) --------------------------------------------------------
+  - name: bgscale_round_trip
+    code: 'BGSCALE 0,1.5,2:BGSCALE 0 OUT SX,SY:PRINT SX;",";SY'
+    expect: { stdout: "1.5,2" }
+  - name: bgscale_above_documented_max
+    code: 'BGSCALE 0,4,4:BGSCALE 0 OUT SX,SY:PRINT SX'
+    expect: { stdout: "4" }
+
+  # -- BGHOME set/get ---------------------------------------------------------------------
+  - name: bghome_round_trip
+    code: 'BGHOME 0,200,120:BGHOME 0 OUT HX,HY:PRINT HX;",";HY'
+    expect: { stdout: "200,120" }
+
+  # -- BGCOLOR set/get (the function GET form) --------------------------------------------
+  - name: bgcolor_round_trip
+    code: 'BGCOLOR 0,-1:PRINT BGCOLOR(0)'
+    expect: { stdout: "-1" }
