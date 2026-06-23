@@ -1,0 +1,40 @@
+id: GYROV
+kind: statement
+category: Various kinds of input
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    out:
+      - { name: p, type: number, desc: "Receives Pitch angular velocity — about the X axis (unit: radians/second)." }
+      - { name: r, type: number, desc: "Receives Roll angular velocity — about the Y axis (unit: radians/second)." }
+      - { name: y, type: number, desc: "Receives Yaw angular velocity — about the Z axis (unit: radians/second)." }
+    note: "GYROV OUT P,R,Y — read the gyro sensor's angular velocity (exactly 3 OUT variables; requires XON MOTION)."
+
+summary: "Reads the gyro sensor's angular velocity into three OUT variables — Pitch (about X), Roll (about Y), Yaw (about Z) — in radians per second. The motion sensor must be enabled first with XON MOTION, otherwise it raises 'Motion sensor is not available' (errnum 37). The hardware reports velocity in revolutions/second, which the handler multiplies by 2π to give radians/second. Unlike [[gyroa]] (accumulated angle) this is an instantaneous rate, so it does not drift. See [[gyrosync]] for resyncing accumulated angle."
+
+semantics:
+  - "GYROV takes no arguments and ALWAYS requires exactly 3 OUT variables (P,R,Y): the handler requires argcount [r4,#0x4]==0 AND return-count [r4,#0xc]==3 (cmp #0x0 @0x15b710 / ldreq r0,[r4,#0xc] / cmpeq r0,#0x3 @0x15b718 / beq @0x15b738) and otherwise raises errnum 4 (Illegal function call: mov r0,#0x4 @0x15b730 / b 0x1fffdc)."
+  - "The motion sensor must be enabled with XON MOTION first: the handler loads the system state ([0x15b7d8] -> 0x01D04070) and tests the motion-enable flag [state+0xec] (cmp #0x0 @0x15b740). If it is 0 it raises errnum 37 (Motion sensor is not available: mov r0,#0x25 @0x15b7c8 / b 0x1fffdc)."
+  - "Each axis is read as a 32-bit float and multiplied by the constant 2π (0x40C90FDB = 6.2831855, vldr.32 s16,[pc,#0x88] @0x15b74c) to convert revolutions/second to radians/second, then converted to double (vcvt.f64.f32 d0,s0) for storage. P = [state+0xa0]*2π (@0x15b748-0x15b758), R = [state+0xa8]*2π (s18, @0x15b778), Y = [state+0xa4]*2π (s17, @0x15b798). Results are stored to the OUT descriptors at [r4,#0x10] (store method [obj,#0x18])."
+  - "The reading is a live hardware value (instantaneous angular rate) and is not deterministically harvestable in a headless emulator."
+  - "Empty OUT slots are accepted: a receiver variable may be omitted with a placeholder comma (e.g. `GYROV OUT P,R,` discards Yaw) — the omitted result is discarded and the slot still counts toward the required 3."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "GYROV is given any argument, or does not have exactly three OUT variables" }
+  - { errnum: 37, name: "Motion sensor is not available", when: "GYROV is used without first enabling the motion sensor with XON MOTION" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gyrov.md (`GYROV OUT P,R,Y` — 'Gets information on the angular velocity of the gyro sensor. Motion sensor(s) should be enabled beforehand with XON MOTION'; P = Pitch (angular velocity of the X-coordinate), R = Roll (Y-coordinate), Y = Yaw (Z-coordinate), unit radians/second; example `XON MOTION` then `GYROV OUT P,R,Y`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GYROV handler @0x15b700: requires argcount [r4,#0x4]==0 AND return-count [r4,#0xc]==3 (cmp #0/cmpeq #3 @0x15b710-0x15b718) else mov r0,#0x4 errnum 4 (@0x15b730 -> b 0x1fffdc); motion-enable flag [state+0xec] (state=0x01D04070 via [0x15b7d8]) cmp #0 -> mov r0,#0x25 errnum 37 (@0x15b7c8); float32 axes [state+0xa0/0xa4/0xa8] each multiplied by 2π const 0x40C90FDB (=6.2831855, @0x15b7dc; vmul.f32 s0,s0,s16 @0x15b758) then vcvt.f64.f32 d0,s0; P=[+0xa0], R=[+0xa8](s18), Y=[+0xa4](s17); OUT store via [r4,#0x10] [obj,#0x18]" }
+  - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d GYROV (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bGYROV\\b OUT'): ~42 occurrences, all the documented 3-var `GYROV OUT P,R,Y` form with varied var names (IPL,IRL,IYL; PA,RA,YA; HID_GYVP#,HID_GYVR#,HID_GYVY#). Empty trailing OUT slot is real: `GYROV OUT P,R,` and `GYROV OUT GYROX,GYROY,` (43SXXEJ3/TXT/-ALPHA_OS-, 4RYDAXSD/TXT/8.5). No extra-argument forms. (oracle-pending: live velocity values + with-XON behavior, queued)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11b): GYROV OUT P,R,Y without XON MOTION raises errnum 37 (Motion sensor is not available, errline 1); GYROV OUT P,R (only 2 OUT vars) raises errnum 4 (Illegal function call, errline 1), confirming the return-count guard fires before the motion-enable check. Live velocity values need motion hardware and remain unharvested (queued)." }
+
+confidence: disassembled
+
+tests:
+  # Live angular velocity needs hardware (not harvestable headless). The XON-MOTION guard
+  # (errnum 37) and the no-arg / exactly-3-OUT shape are pinned from the handler body.
+  - { name: no_motion_enabled, code: "GYROV OUT P,R,Y", expect: { error: { errnum: 37 } } }
+  - { name: too_few_out_vars, code: "GYROV OUT P,R", expect: { error: { errnum: 4 } } }

@@ -1,0 +1,54 @@
+id: TOUCH
+kind: statement
+category: Various kinds of input
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — local terminal's touch panel.
+  - args: []
+    out:
+      - { name: sttm, type: integer, desc: "Receives the touch time counter: increments while touched, 0 = not touched." }
+      - { name: tx, type: integer, desc: "Receives the touch X coordinate (5..314; not the same range as the physical screen size)." }
+      - { name: ty, type: integer, desc: "Receives the touch Y coordinate (5..234)." }
+    note: "TOUCH OUT STTM,TX,TY — read this terminal's touch panel (exactly 3 OUT variables)."
+  # Form 2 — read another terminal's touch panel over wireless.
+  - args:
+      - { name: terminal, type: integer, range: "0..3", optional: true, desc: "Terminal (machine) ID to read over wireless multiplayer. Range-checked against the number of connected terminals." }
+    out:
+      - { name: sttm, type: integer, desc: "Touch time counter (0 = not touched)." }
+      - { name: tx, type: integer, desc: "Touch X coordinate (5..314)." }
+      - { name: ty, type: integer, desc: "Touch Y coordinate (5..234)." }
+    note: "TOUCH terminal OUT STTM,TX,TY — read another terminal's touch panel via wireless communication."
+
+summary: "Reads the lower-screen (touch panel) state into three OUT variables: STTM is a touch-time counter that is 0 while the screen is not being touched and nonzero while it is, and TX,TY are the touch coordinates. The 5-pixel border around the edge of the screen cannot be read, so the returned coordinates fall in TX 5..314, TY 5..234 — deliberately NOT the same range as the physical touch-screen size. An optional terminal ID reads another machine's touch panel over wireless multiplayer. TOUCH always requires exactly 3 OUT variables."
+
+semantics:
+  - "TOUCH ALWAYS requires exactly 3 return (OUT) variables (STTM,TX,TY): the handler checks the requested return count [r0,#0xc]==3 (cmp r0,#0x3 @0x15b9c4 / beq @0x15b9e0) and raises errnum 4 (Illegal function call: mov r0,#0x4 @0x15b9d4 / bl 0x1fffdc) for any other count."
+  - "Argument count must be 0 or 1: the handler dispatches on [r4,#0x4] (cmp #0x0 @0x15b9e4 -> local terminal, cmp #0x1 @0x15b9f0 -> terminal-ID form); any other count falls through to errnum 4 (mov r0,#0x4 @0x15ba00 -> bl 0x1fffdc @0x15ba24). With no argument the local terminal's state pointer is used directly (ldreq r0,[0x15bb0c] @0x15b9e8)."
+  - "Supplying a terminal ID while wireless multiplayer communication is not active raises errnum 52 (an undocumented communication error not in the official 0..47 error table): the arg-count-1 branch tests the comms-state flag [[0x305612]] (ldr r0,[0x15bb10] / ldrb @0x15ba0c) and raises mov r0,#0x34(52) @0x15ba20 -> bl 0x1fffdc when it is set. This wireless path is not deterministically harvestable."
+  - "Terminal ID (form 2) is range-checked against the count of connected terminals: r6 = terminalcount-1 (sub r6,r0,#0x1 @0x15ba48 from [[0x316194]+0x3c4]); the supplied id [sp,#0x0] must satisfy 0 <= id <= r6 (cmp #0x0 / cmpge r6,id / bge @0x15baec) else errnum 10 (Out of range: mov r0,#0xa @0x15baf8 / bl 0x1fffdc). With the documented hardware the valid terminal range is 0..3."
+  - "The three results are read from the terminal's touch state and written to the OUT variables (result descriptors at [r4,#0x10], stored in reverse so the first OUT variable is at the highest slot). STTM (touch time, 0 = not touched) comes from the word at [state+0x70]; the coordinates are packed in the adjacent word [state+0x74]: TX = packed >> 16 (mov r1,r5,lsr #0x10 @0x15baac) and TY = 0xF0(240) - (packed & 0xFFFF) (uxth r0,r5 / rsb r1,r0,#0xf0 @0x15bac4-0x15bac8), giving the documented TX 5..314 / TY 5..234 ranges. With no touch STTM is 0; live touch coordinates require hardware input."
+  - "Empty OUT slots are accepted: a receiver variable may be omitted with a placeholder comma (e.g. `TOUCH OUT TT,,` keeps only the touch time, `TOUCH OUT ,TX,TY` discards the time) — the omitted result is discarded, and the slot still counts toward the required 3 (so the count guard above is unaffected)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "TOUCH is used without exactly three OUT variables, or the argument count is not 0 or 1" }
+  - { errnum: 10, name: "Out of range", when: "a terminal ID is outside 0..(connected terminal count - 1)" }
+  - { errnum: 52, name: "Communication error", when: "a terminal ID is given while wireless multiplayer is not active (undocumented; not in the official error table)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/touch.md (`TOUCH [Terminal ID] OUT STTM,TX,TY` — 'Gets touch information. The 5 pixels around the edge of the screen cannot be read'; Terminal ID 0-3 for another terminal via wireless; STTM = time when the screen is touched (0 = No touch); TX,TY = touch coordinates (TX: 5-314, TY: 5-234), 'not in the same range as the size of the Touch Screen'; example `TOUCH OUT TM,TX,TY`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst TOUCH handler @0x15b9b8: result-count [r0,#0xc]==3 else mov r0,#0x4 errnum 4 (@0x15b9c4-0x15b9d4); argcount [r4,#0x4] dispatch cmp #0x0 (@0x15b9e4, local ptr ldreq r0,[0x15bb0c]) / cmp #0x1 (@0x15b9f0) else errnum 4 (mov r0,#0x4 @0x15ba00); wireless-inactive flag [[0x305612]] -> mov r0,#0x34(52) errnum 52 (ldrb @0x15ba0c / @0x15ba20); terminal range r6=count-1 (sub r6,r0,#0x1 @0x15ba48 from [[0x316194]+0x3c4]), check cmpge r6/bge (@0x15bae0-0x15baec) else mov r0,#0xa errnum 10 (@0x15baf8); results: STTM=[state+0x70], coords packed at [state+0x74] -> TX=packed>>16 (mov r1,r5,lsr #0x10 @0x15baac), TY=0xF0-(packed&0xFFFF) (uxth r0,r5/rsb r1,r0,#0xf0 @0x15bac4-0x15bac8); OUT store via [r4,#0x10] result descriptors" }
+  - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d TOUCH (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bTOUCH\\b.*OUT'): the no-arg 3-var form `TOUCH OUT STTM,TX,TY` dominates (~50+ programs). The terminal-ID form is real and used with computed IDs and array OUT vars: `TOUCH CH/4 OUT STM[CH/4],TCX[CH/4],TCY[CH/4]` alongside `TOUCH OUT STM[0],...` (227YK34J/TXT/JINTRI102), confirming the optional terminal argument. Empty OUT slots are real: `TOUCH OUT TT%,,` (keep only time) and `TOUCH OUT ,TX%,TY%` (discard time) both appear (1DE453HV/TXT/SPACE_MOLE). Proves the terminal-arg, computed-arg and empty-slot forms are legal; live touch values are not deterministically harvestable (no input injection)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11b): TOUCH OUT TM,TX (only 2 OUT vars) raises errnum 4 (Illegal function call, errline 1), confirming the exactly-3-OUT guard. The no-touch STTM baseline is NOT cleanly harvestable here: the harness taps the touch screen to launch RUN, so STTM read back as 1 (the launching touch still registered) rather than the documented 0 — the contaminated value is not frozen. Live touch coordinates / the wireless terminal-range + errnum-52 paths need hardware input and remain unharvested (queued)." }
+
+confidence: disassembled
+
+tests:
+  # Live touch state needs hardware input. The no-touch baseline (STTM=0) is the documented
+  # behavior for a headless interpreter with no touch input (the oracle's own launch tap
+  # contaminates its reading, so it is not hw_verified here); the exactly-3-OUT guard IS
+  # hw_verified, and the argcount guard is pinned from the handler body.
+  - { name: no_touch_time, code: "TOUCH OUT TM,TX,TY\nPRINT TM", expect: { stdout: "0" } }
+  - { name: empty_slot_keep_time, code: "TOUCH OUT TM,,\nPRINT TM", expect: { stdout: "0" } }
+  - { name: too_few_out_vars, code: "TOUCH OUT TM,TX", expect: { error: { errnum: 4 } } }

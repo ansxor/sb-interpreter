@@ -411,3 +411,17 @@ oracle to confirm exact output and promote to `hw_verified`.
     undocumented errnum 52 (comms-not-active) path for BUTTON/STICK/STICKEX: need an active
     wireless multiplayer session (assumption: errnum 10 out-of-range, errnum 52 when inactive,
     from disasm `mov r0,#0xa`/`mov r0,#0x34`).
+- S-T11b (TOUCH/ACCEL/GYROA/GYROV/GYROSYNC) — sensor/touch values need hardware:
+  - Live TOUCH coordinates (TX 5..314, TY 5..234) and the no-touch STTM=0 baseline: the
+    headless oracle taps the touch screen to launch RUN, so its STTM read back as 1 (contaminated
+    by the launch tap), not the documented 0. Needs touch input that is NOT the harness's own tap.
+    Error guards (exactly-3-OUT -> errnum 4) already hw_verified.
+  - TOUCH wireless terminal-ID range (errnum 10) and the undocumented errnum 52 (comms-not-active)
+    path: need an active wireless multiplayer session (assumption from disasm mov r0,#0xa / #0x34).
+  - Live ACCEL axes (G), GYROA angle (rad) and GYROV angular velocity (rad/s): require enabling
+    the motion sensor with XON MOTION (a feature-confirmation dialog that may hang the oracle —
+    not driven live per the sb-oracle skill) plus actual device tilt. The disassembled algorithm
+    (X,Y negated for ACCEL; *2π = 0x40C90FDB for GYROA/GYROV) is pinned; the no-XON errnum 37 and
+    too-few-OUT errnum 4 guards are already hw_verified.
+  - GYROSYNC recalibration side-effect (and the >1-call-per-frame prohibition): needs motion
+    hardware; no observable return. no-XON errnum 37 and the arg-rejection errnum 4 hw_verified.

@@ -1,0 +1,40 @@
+id: ACCEL
+kind: statement
+category: Various kinds of input
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    out:
+      - { name: x, type: number, desc: "Receives X-axis acceleration (unit: G)." }
+      - { name: y, type: number, desc: "Receives Y-axis acceleration (unit: G)." }
+      - { name: z, type: number, desc: "Receives Z-axis acceleration (unit: G)." }
+    note: "ACCEL OUT X,Y,Z — read the accelerometer (exactly 3 OUT variables; requires XON MOTION)."
+
+summary: "Reads the 3DS accelerometer into three OUT variables X,Y,Z in units of G. The motion sensor must be enabled first with XON MOTION, otherwise the instruction raises 'Motion sensor is not available' (errnum 37). Acceleration includes the constant ~1G in the direction of gravity, so the reading is useful for detecting how the device is tilted. The values are read as 32-bit floats and returned as doubles."
+
+semantics:
+  - "ACCEL takes no arguments and ALWAYS requires exactly 3 OUT variables (X,Y,Z): the handler requires argcount [r4,#0x4]==0 AND return-count [r4,#0xc]==3 (cmp #0x0 @0x15b55c / ldreq r0,[r4,#0xc] / cmpeq r0,#0x3 @0x15b564 / beq @0x15b584) and otherwise raises errnum 4 (Illegal function call: mov r0,#0x4 @0x15b57c / b 0x1fffdc)."
+  - "The motion sensor must be enabled with XON MOTION first: the handler loads the system state ([0x15b61c] -> 0x01D04070) and tests the motion-enable flag [state+0xec] (ldr r1,[r0,#0xec] / cmp r1,#0x0 @0x15b588-0x15b58c). If it is 0 (XON MOTION not done) it raises errnum 37 (Motion sensor is not available: mov r0,#0x25 @0x15b60c / b 0x1fffdc)."
+  - "The three axes are read as 32-bit floats from the sensor state and converted to doubles before being stored (vcvt.f64.f32 d0,s0). X is the negated raw X (vldr.32 s0,[state+0x94] / vneg.f32 s0,s0 @0x15b594-0x15b5a0) and Y is the negated raw Y (s17 = [state+0x9c] / vneg.f32 s0,s17 @0x15b5c4); Z is the raw value unmodified (s16 = [state+0x98] @0x15b5e0). Results are stored to the OUT descriptors at [r4,#0x10] (store method [obj,#0x18])."
+  - "The reading is a live hardware value (it continuously detects ~1G in the gravity direction per the docs) and is not deterministically harvestable in a headless emulator."
+  - "Empty OUT slots are accepted: a receiver variable may be omitted with a placeholder comma (e.g. `ACCEL OUT AX#,AY#,` discards Z) — the omitted result is discarded and the slot still counts toward the required 3."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "ACCEL is given any argument, or does not have exactly three OUT variables" }
+  - { errnum: 37, name: "Motion sensor is not available", when: "ACCEL is used without first enabling the motion sensor with XON MOTION" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/accel.md (`ACCEL OUT X,Y,Z` — 'Gets information on acceleration'; 'The motion sensor should be enabled beforehand with XON MOTION'; 'this instruction will continue to detect 1G acceleration in the gravity direction'; X,Y,Z receive acceleration in unit G; example `XON MOTION` then `ACCEL OUT X,Y,Z`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst ACCEL handler @0x15b54c: requires argcount [r4,#0x4]==0 AND return-count [r4,#0xc]==3 (cmp #0/cmpeq #3 @0x15b55c-0x15b564) else mov r0,#0x4 errnum 4 (@0x15b57c -> b 0x1fffdc); motion-enable flag [state+0xec] (state=0x01D04070 via [0x15b61c]) cmp #0 -> mov r0,#0x25 errnum 37 (@0x15b60c); reads float32 axes [state+0x94/0x98/0x9c] with vcvt.f64.f32 d0,s0, X negated (vneg.f32 s0,s0 @0x15b5a0) and Y negated (vneg.f32 s0,s17 @0x15b5c4), Z raw (s16); OUT store via [r4,#0x10] [obj,#0x18]" }
+  - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d ACCEL (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bACCEL\\b.*OUT'): ~25 programs, all the documented `ACCEL OUT X,Y,Z` form with varied var names (X/Y/Z, AX/AY/AZ, SX/SY/SZ), always paired with XON MOTION in context. Empty trailing OUT slot is real: `ACCEL OUT AX#,AY#,` (discard Z) (2383C3HE/TXT/BALL.PRG). No terminal-id or extra-argument forms found. (oracle-pending: live axis values + with-XON behavior, queued)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11b): ACCEL OUT X,Y,Z without XON MOTION raises errnum 37 (Motion sensor is not available, errline 1); ACCEL OUT X,Y (only 2 OUT vars) raises errnum 4 (Illegal function call, errline 1), confirming the return-count guard fires before the motion-enable check. Live axis values need motion hardware and remain unharvested (queued)." }
+
+confidence: disassembled
+
+tests:
+  # Live acceleration needs hardware (not harvestable headless). The XON-MOTION guard
+  # (errnum 37) and the no-arg / exactly-3-OUT shape are pinned from the handler body.
+  - { name: no_motion_enabled, code: "ACCEL OUT X,Y,Z", expect: { error: { errnum: 37 } } }
+  - { name: too_few_out_vars, code: "ACCEL OUT X,Y", expect: { error: { errnum: 4 } } }

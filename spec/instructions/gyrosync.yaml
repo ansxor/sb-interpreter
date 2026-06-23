@@ -1,0 +1,35 @@
+id: GYROSYNC
+kind: statement
+category: Various kinds of input
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    note: "GYROSYNC — update/reset the gyro sensor's accumulated angle (no arguments, no return values; requires XON MOTION)."
+
+summary: "Resets and updates the gyro sensor's accumulated orientation, clearing the integration drift that builds up as [[gyroa]] is read repeatedly. The motion sensor must be enabled first with XON MOTION, otherwise it raises 'Motion sensor is not available' (errnum 37). It should be called periodically to keep the angle accurate, but calling it at an interval of one frame or less is prohibited. Takes no arguments and returns nothing."
+
+semantics:
+  - "GYROSYNC takes no arguments and no return values: the handler requires argcount [r0,#0x4]==0 AND return-count [r0,#0xc]==0 (cmp #0x0 @0x15c068 / ldreq r0,[r0,#0xc] / cmpeq r0,#0x0 @0x15c070 / beq @0x15c08c) and otherwise raises errnum 4 (Illegal function call: mov r0,#0x4 @0x15c084 / b 0x1fffdc)."
+  - "The motion sensor must be enabled with XON MOTION first: the handler loads the system state ([0x15c0c0] -> 0x01D04070) and tests the motion-enable flag [state+0xec] (ldr r0,[r0,#0xec] / cmp #0x0 @0x15c090-0x15c094). If it is 0 it raises errnum 37 (Motion sensor is not available: mov r0,#0x25 @0x15c0b8 / b 0x1fffdc)."
+  - "When the sensor is enabled it calls the gyro-resync routine (bl 0x00138e8c @0x15c0a0) on the sensor state and returns 0 (mov r0,#0x0 @0x15c0a4). This recalibrates the accumulated angle so subsequent GYROA reads start from a corrected baseline; the docs warn it must NOT be called more than once per frame."
+  - "The recalibration is a hardware side-effect with no observable return value, so it is not deterministically harvestable in a headless emulator beyond the XON-MOTION guard."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "GYROSYNC is given any argument or any OUT/return variable" }
+  - { errnum: 37, name: "Motion sensor is not available", when: "GYROSYNC is used without first enabling the motion sensor with XON MOTION" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/gyrosync.md (`GYROSYNC` — 'Updates gyro information'; 'Error accumulation may occur if gyro information is repeatedly retrieved'; 'This instruction should be called to reset information appropriately'; 'calling this instruction at an interval of 1 frame or less is prohibited'; no arguments, no return values; example `GYROSYNC`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst GYROSYNC handler @0x15c060: requires argcount [r0,#0x4]==0 AND return-count [r0,#0xc]==0 (cmp #0 @0x15c068 / cmpeq #0 @0x15c070 / beq @0x15c08c) else mov r0,#0x4 errnum 4 (@0x15c084 -> b 0x1fffdc); motion-enable flag [state+0xec] (state=0x01D04070 via [0x15c0c0]) cmp #0 -> mov r0,#0x25 errnum 37 (@0x15c0b8); when enabled calls resync routine bl 0x00138e8c (@0x15c0a0) and returns 0 (mov r0,#0x0 @0x15c0a4)" }
+  - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d GYROSYNC (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bGYROSYNC\\b'): ~25 calls, 100% the bare zero-arg / zero-return form `GYROSYNC` — never with arguments, OUT variables, or as an expression. Used after `XON MOTION` (YK48E3CX/TXT/PRND201501) and as a user-triggered recalibration `IF BUTTON()==16 THEN GYROSYNC` (C23X239J/TXT/CATCH). Confirms the no-arg / no-return form. (oracle-pending: with-XON behavior, queued)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11b): bare GYROSYNC without XON MOTION raises errnum 37 (Motion sensor is not available, errline 1); GYROSYNC 0 (an argument given) raises errnum 4 (Illegal function call, errline 1), confirming the argument-count guard fires before the motion-enable check. The recalibration side-effect needs motion hardware and remains unharvested (queued)." }
+
+confidence: disassembled
+
+tests:
+  # The recalibration side-effect needs hardware; the no-arg/no-return shape and the
+  # XON-MOTION guard (errnum 37) are pinned from the handler body.
+  - { name: no_motion_enabled, code: "GYROSYNC", expect: { error: { errnum: 37 } } }
+  - { name: rejects_argument, code: "GYROSYNC 0", expect: { error: { errnum: 4 } } }
