@@ -24,6 +24,7 @@
 //! This module is pure data (no I/O), so it builds for `wasm32`.
 
 use crate::ast::{BinOp, Name, UnOp};
+use crate::sysvars::ErrSysvar;
 use crate::token::Suffix;
 
 /// A compile-time constant pushed by [`Op::Push`]. Mirrors the runtime scalar types
@@ -105,6 +106,10 @@ pub enum Op {
     /// static type (the `VarRef`'s declared [`Suffix`], looked up in the symbol
     /// table) per [`crate::value::Value::coerce_to_suffix`].
     PopVar(VarRef),
+    /// Push a read-only error-state system variable (`ERRNUM`/`ERRLINE`/`ERRPRG`,
+    /// M1-T13). The VM reads its current error state; assignment is rejected at
+    /// compile time (Syntax error, errnum 3) so there is no matching pop.
+    PushSysvar(ErrSysvar),
 
     // --- computed references (`VAR(expr)`) ------------------------------------
     /// Pop a value (a variable name), push a reference resolved at runtime.

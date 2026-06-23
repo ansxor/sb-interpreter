@@ -39,6 +39,7 @@
 use crate::array::SbArray;
 use crate::ast::{BinOp, Name, UnOp};
 use crate::bytecode::{Const, Op, Program, VarRef, VarType};
+use crate::sysvars::ErrSysvar;
 use crate::token::Suffix;
 use crate::value::{swap_cells, Cell, RuntimeError, SbStr, Value};
 use sb_render::console::Console;
@@ -135,6 +136,13 @@ pub struct Vm {
     /// Headless there is no live keyboard; a runner/test preloads this via
     /// [`Vm::push_input`]. An empty queue yields an empty line.
     input_lines: VecDeque<SbStr>,
+    /// Error state (M1-T13): the `ERRNUM`/`ERRLINE`/`ERRPRG` read-only sysvars. Boot/`RUN`
+    /// reset to 0 (= "No Error"); set at the moment of a halting error and left readable
+    /// afterwards (the DIRECT-mode residue — see `spec/concepts/error-model.md`). `ERRPRG`
+    /// is the executing program SLOT, always 0 in single-slot M1 (multi-slot → M6).
+    errnum: i32,
+    errline: i32,
+    errprg: i32,
 }
 
 impl Vm {
@@ -159,7 +167,25 @@ impl Vm {
             back_color: 0,
             tabstep: 4,
             input_lines: VecDeque::new(),
+            errnum: 0,
+            errline: 0,
+            errprg: 0,
         }
+    }
+
+    /// The `ERRNUM` of the last halting error (0 = none) — the DIRECT-mode residue.
+    pub fn errnum(&self) -> i32 {
+        self.errnum
+    }
+
+    /// The `ERRLINE` of the last halting error (the 1-based source line).
+    pub fn errline(&self) -> i32 {
+        self.errline
+    }
+
+    /// The `ERRPRG` of the last halting error (the program SLOT; always 0 in M1).
+    pub fn errprg(&self) -> i32 {
+        self.errprg
     }
 
     /// Borrow the text console (grid + cursor + colors) for rendering / inspection.
@@ -211,7 +237,18 @@ impl Vm {
             match self.step(op) {
                 Ok(None) => {}
                 Ok(Some(halt)) => return Ok(halt),
-                Err(e) => return Err(self.attach_line(e, here)),
+                Err(e) => {
+                    let e = self.attach_line(e, here);
+                    // Capture the error-state residue so ERRNUM/ERRLINE/ERRPRG are
+                    // readable after the halt (the DIRECT-mode window, M1-T13). Only a
+                    // SmileBASIC runtime error sets it; an `Unsupported` op does not.
+                    if let VmError::Sb { errnum, line } = e {
+                        self.errnum = errnum as i32;
+                        self.errline = line as i32;
+                        self.errprg = 0; // single-slot M1; multi-slot ERRPRG → M6.
+                    }
+                    return Err(e);
+                }
             }
         }
     }
@@ -246,6 +283,14 @@ impl Vm {
                 let suffix = self.var_suffix(vref)?;
                 let v = self.pop()?.coerce_to_suffix(suffix).map_err(sb)?;
                 *self.cell(vref)?.borrow_mut() = v;
+            }
+            Op::PushSysvar(sv) => {
+                let v = match sv {
+                    ErrSysvar::Errnum => self.errnum,
+                    ErrSysvar::Errline => self.errline,
+                    ErrSysvar::Errprg => self.errprg,
+                };
+                self.stack.push(Value::Int(v));
             }
 
             Op::NewArray { var, ty, dims } => self.new_array(var, ty, dims)?,
@@ -1420,6 +1465,62 @@ C$=A$+B$"#);
                 assert_eq!(line, 2);
             }
             other => panic!("expected Sb error, got {other:?}"),
+        }
+    }
+
+    // ---- error model: ERRNUM / ERRLINE / ERRPRG sysvars (M1-T13) ----
+
+    /// Compile + run, returning the VM even when the run halts with an error (so the
+    /// post-halt error-state residue can be inspected). Uses the builtin registry.
+    fn run_to_halt(src: &str) -> Vm {
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        let ast = parse(src).expect("parse");
+        let program = compile_with(&ast, &StdBuiltins).expect("compile");
+        let mut vm = Vm::new(program);
+        let _ = vm.run();
+        vm
+    }
+
+    #[test]
+    fn errnum_for_documented_error_cases() {
+        // hw_verified codes (errors.yaml / error-model.md): type mismatch, divide by
+        // zero, subscript out of range, illegal function call, out of range.
+        assert_eq!(run_err("A=FLOOR(\"x\")").errnum(), Some(8));
+        assert_eq!(run_err("A=1/0").errnum(), Some(7));
+        assert_eq!(run_err("DIM A[3]\nA[5]=1").errnum(), Some(31));
+        assert_eq!(run_err("A=ABS()").errnum(), Some(4));
+        assert_eq!(run_err("A=SQR(-1)").errnum(), Some(10));
+    }
+
+    #[test]
+    fn error_state_persists_after_halt() {
+        // After a halting error, ERRNUM/ERRLINE/ERRPRG are readable (the DIRECT-mode
+        // residue). The SQR(-1) is on line 2; single-slot → ERRPRG = 0.
+        let vm = run_to_halt("A=0\nB=SQR(-1)");
+        assert_eq!(vm.errnum(), 10);
+        assert_eq!(vm.errline(), 2);
+        assert_eq!(vm.errprg(), 0);
+    }
+
+    #[test]
+    fn errnum_reads_zero_on_a_clean_run() {
+        // No error yet ⇒ ERRNUM/ERRLINE/ERRPRG read 0 mid-program (errnum 0 = No Error).
+        let vm = run("N=ERRNUM\nL=ERRLINE\nP=ERRPRG");
+        assert_eq!(int(&vm, "N"), 0);
+        assert_eq!(int(&vm, "L"), 0);
+        assert_eq!(int(&vm, "P"), 0);
+        // A clean END leaves ERRNUM = 0.
+        assert_eq!(vm.errnum(), 0);
+    }
+
+    #[test]
+    fn error_sysvars_are_read_only() {
+        // Assigning to a read-only error sysvar is a Syntax error (errnum 3) at compile.
+        for src in ["ERRNUM=5", "ERRLINE=1", "ERRPRG=2"] {
+            let ast = parse(src).expect("parse");
+            let err = crate::compiler::compile(&ast).expect_err("expected a compile error");
+            assert_eq!(err.errnum, 3, "{src} should be Syntax error");
         }
     }
 

@@ -32,6 +32,7 @@ use std::collections::HashSet;
 
 use crate::ast::*;
 use crate::bytecode::*;
+use crate::sysvars::ErrSysvar;
 use crate::token::{SourceLoc, Suffix};
 
 /// A compile failure carrying the SmileBASIC error number to raise.
@@ -451,6 +452,17 @@ impl<'a> Compiler<'a> {
         self.cur_loc = stmt.loc;
         match &stmt.kind {
             StmtKind::Assign { name, expr } => {
+                if ErrSysvar::from_name(&canonical(name)).is_some() {
+                    // The error-state sysvars are read-only (sysvars.yaml writable=false);
+                    // assigning to one is a Syntax error (errnum 3), not a write.
+                    return Err(self.err(
+                        ERR_SYNTAX,
+                        format!(
+                            "cannot assign to read-only system variable {}",
+                            canonical(name)
+                        ),
+                    ));
+                }
                 self.compile_expr(expr)?;
                 let v = self.resolve_scalar(name)?;
                 self.emit(Op::PopVar(v));
@@ -1044,7 +1056,11 @@ impl<'a> Compiler<'a> {
                 self.emit(Op::Push(const_from_lit(lit)));
             }
             ExprKind::Var(name) => {
-                if let Some((vref, _)) = self.lookup(name) {
+                if let Some(sv) = ErrSysvar::from_name(&canonical(name)) {
+                    // A read-only error-state sysvar (ERRNUM/ERRLINE/ERRPRG, M1-T13):
+                    // reserved, so it resolves before any user variable.
+                    self.emit(Op::PushSysvar(sv));
+                } else if let Some((vref, _)) = self.lookup(name) {
                     self.emit(Op::PushVar(vref));
                 } else if self.builtins.is_builtin(&canonical(name)) {
                     // A zero-arg builtin / constant used as a bare name (e.g. PI).

@@ -20,6 +20,7 @@ pub mod compiler;
 pub mod lexer;
 pub mod parser;
 pub mod rng;
+pub mod sysvars;
 pub mod token;
 pub mod value;
 pub mod vm;
