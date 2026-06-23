@@ -1,0 +1,31 @@
+id: EFCON
+kind: statement
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    note: "EFCON — turn the music effector ON (0 args). The effect type is chosen separately with EFCSET."
+
+summary: "Turns the music effector ON. The effect type must first be selected with EFCSET (0 = no effect, 1-3 = reverb presets). Takes no arguments and returns nothing (statement). See EFCOFF to turn it off."
+
+semantics:
+  - "Shape gate: the argument count [r0,#0x4] must be 0 AND the result count [r0,#0xc] must be 0 (ldr r1,[r0,#0x4] / cmp r1,#0x0 / ldreq r0,[r0,#0xc] / cmpeq r0,#0x0 / beq @0x1a1d9c). Any argument, or use in a return/result context, raises errnum 3 (Syntax error) with errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x3 / b 0x1fffdc @0x1a1d8c-0x1a1d98)."
+  - "Body: loads the audio-effect state object [0x1a1db0]=0x00315F4C and calls the effector-enable routine bl 0x1d490c with r1=#0x1 (the ON flag), then returns 0 (@0x1a1d9c-0x1a1dac). EFCOFF is the identical handler with r1=#0x0; the only difference is the on/off flag, so EFCON/EFCOFF toggle one boolean on the same state."
+  - "Enabling the effector applies the currently-selected EFCSET effect to the audio mix; the per-source effect amounts are controlled by [[efcwet]]. Audio output has no deterministic emulator golden (O-T7); these cases pin the statement contract."
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "any argument is given, or EFCON is used in a return/result context" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/efcon.md (`EFCON` — 'Turns on the effector setting. The effect type should be selected with the EFCSET instruction'; format `EFCON`, no arguments)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst EFCON handler @0x1a1d70: shape gate ldr r1,[r0,#0x4] / cmp r1,#0x0 / ldreq r0,[r0,#0xc] / cmpeq r0,#0x0 / beq @0x1a1d9c, else errnum 3 errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x3 / b 0x1fffdc @0x1a1d8c-0x1a1d98); body ldr r0,[0x1a1db0]=0x00315F4C / mov r1,#0x1 (ON flag) / bl 0x1d490c / mov r0,#0x0 / ldmia sp!,{r4,pc} @0x1a1d9c-0x1a1dac. Literal [0x1a1db0]=0x00315F4C is the shared audio-effect state, identical to the EFCOFF handler @0x1a27b8 which differs only by mov r1,#0x0" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d EFCON (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bEFCON\\b'): ~38 files, all the bare zero-arg form e.g. 1K237KNV/TXT/FREEBGM_RWI2. Proves the no-argument syntax is the legal form; runtime audio effect unproven (no oracle, O-T7)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar): `EFCON 1` raises errnum 3 (Syntax error). Confirms the no-argument shape gate. Audio output itself is not deterministically harvestable (O-T7)." }
+
+confidence: disassembled
+
+tests:
+  - { name: bare, code: "EFCON", expect: { stdout: "" } }
+  - { name: with_arg_syntax_error, code: "EFCON 1", expect: { error: { errnum: 3 } } }

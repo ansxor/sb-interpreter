@@ -1,0 +1,58 @@
+id: EFCSET
+kind: statement
+category: Sound
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — pick a built-in reverb preset (1 arg).
+  - args:
+      - { name: type, type: integer, range: "0..3", desc: "Effect type: 0 = no effect (same as EFCOFF), 1 = reverb (bathroom), 2 = reverb (cave), 3 = reverb (space)." }
+    note: "EFCSET type — select a built-in music-effect preset (1 arg)."
+  # Form 2 — set the seven raw reverb parameters (7 args, for advanced users).
+  - args:
+      - { name: reflect_time, type: integer, range: "0..2000", desc: "Initial reflection time, in milliseconds." }
+      - { name: reverb_delay, type: integer, range: "0..2000", desc: "Reverberation sound delay time, in milliseconds." }
+      - { name: reverb_decay, type: integer, range: "1..10000", desc: "Reverberation sound decay time, in milliseconds." }
+      - { name: filter1, type: number, range: "0.0..1.0", desc: "Reverberation sound filter coefficient 1." }
+      - { name: filter2, type: number, range: "0.0..1.0", desc: "Reverberation sound filter coefficient 2." }
+      - { name: reflect_gain, type: number, range: "0.0..1.0", desc: "Initial reflection sound gain." }
+      - { name: reverb_gain, type: number, range: "0.0..1.0", desc: "Reverberation sound gain." }
+    note: "EFCSET reflect_time, reverb_delay, reverb_decay, filter1, filter2, reflect_gain, reverb_gain — set the seven raw reverb parameters directly (7 args, advanced users)."
+
+summary: "Selects the music effect. Form 1 (1 arg) picks a built-in reverb preset: 0 = no effect (same as EFCOFF), 1 = bathroom, 2 = cave, 3 = space. Form 2 (7 args, for advanced users) sets the raw reverb parameters directly: initial reflection time (0-2000 ms), reverberation delay (0-2000 ms), decay (1-10000 ms), two filter coefficients (0.0-1.0), initial-reflection gain (0.0-1.0) and reverberation gain (0.0-1.0). The effect is applied while the effector is on (see EFCON). Returns nothing (statement)."
+
+semantics:
+  - "Shape gate: the result count [r4,#0xc] must be 0, and the argument count [r4,#0x4] must be exactly 1 OR exactly 7 (ldr r0,[r0,#0xc] / cmp r0,#0x0 / bne @0x1a2830 ; ldr r0,[r4,#0x4] / cmp r0,#0x1 / beq @0x1a284c ; cmp r0,#0x7 / beq @0x1a28a4). Any other argument count, or use in a result context, raises errnum 3 (Syntax error) with errline -1 (mov r2,#0x0 / mvn r1,#0xffffffff(-1) / mov r0,#0x3 / b 0x1fffdc @0x1a2830-0x1a2848)."
+  - "Form 1 (1 arg, @0x1a284c): arg index 0 is evaluated as an integer (ldr r0,[r4,#0x8] / blx [type_eval+0x40]). The value is passed to the preset-select routine bl 0x1395e0 (with the effect state [0x1a2b00]=0x00315F4C). That routine returns non-zero on success; a return of 0 (an out-of-range type, i.e. not 0..3) raises errnum 10 (Out of range) with errline -1 (mov r2,#0x0 / cpy r1,r2 / mov r0,#0xa / b 0x1fffdc @0x1a2888-0x1a2894). Type 0 = no effect (= EFCOFF), 1/2/3 = the three reverb presets."
+  - "Form 2 (7 args, @0x1a28a4): the first three arguments are integers, each range-checked through the shared arg helper FUN_001eec7c (out of range -> errnum 10): arg0 reflect_time min r3=0 max [sp,#0x0]=r6=#0x7d0=2000 (@0x1a28a4-0x1a28bc); arg1 reverb_delay min 0 max 2000 (@0x1a28cc-0x1a28e0); arg2 reverb_decay min r3=1 max r6+0x1f40=2000+8000=10000 (@0x1a28f0-0x1a2908)."
+  - "Form 2 args 3-6 are floats (filter1, filter2, reflect_gain, reverb_gain) evaluated through the float arg accessor (ldr r2,[r0,#0x30/0x40/0x50/0x60]! / blx [r2,#0x60] @0x1a2918-0x1a29cc); a non-numeric operand records the failing arg index in the type-error slot [0x1a2afc] and aborts. The 0.0 and 1.0 float constants are loaded into s16/s17 during float processing (vldr.32 s16,[0x1a2b04]=0x00000000 / vldr.32 s17,[0x1a2b08]=0x3F800000), corroborating the documented 0.0-1.0 coefficient range."
+  - "On success Form 2 commits all seven values via bl 0x13953c with the three ints in r1/r2/r3 and the four floats in s0-s3 against state [0x1a2b00]=0x00315F4C, then returns 0 (@0x1a29d0-0x1a2a00). The selected effect only becomes audible while the effector is enabled with [[efcon]]; [[efcoff]] disables it; [[efcwet]] sets the per-source effect amounts. Audio output has no deterministic emulator golden (O-T7)."
+
+errors:
+  - { errnum: 3, name: "Syntax error", when: "the argument count is not exactly 1 or 7, or EFCSET is used in a result context" }
+  - { errnum: 10, name: "Out of range", when: "Form 1 type is not 0..3; or Form 2 reflect_time/reverb_delay not in 0..2000, reverb_decay not in 1..10000" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/efcset.md (Form 1 `EFCSET Type number` — 0 No effect (Same as EFCOFF) / 1 Reverb (Bathroom) / 2 Reverb (Cave) / 3 Reverb (Space), example `EFCSET 2`; Form 2 `EFCSET Initial reflection time, Reverberation delay, decay, filter coefficient 1, filter coefficient 2, initial reflection gain, reverberation gain` with ranges 0-2000 / 0-2000 / 1-10000 / 0.0-1.0 / 0.0-1.0 / 0.0-1.0 / 0.0-1.0, example `EFCSET 997,113,1265,0.1,0,0.2,0.1`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst EFCSET handler @0x1a27fc: result gate ldr r0,[r4,#0xc] cmp #0 bne @0x1a2830; argcount [r4,#0x4] cmp #0x1 beq @0x1a284c (form1) / cmp #0x7 beq @0x1a28a4 (form2) / else errnum 3 errline -1 (mvn r1,#-1 / mov r0,#0x3 / b 0x1fffdc @0x1a2844-0x1a2848). Form1: eval arg, bl 0x1395e0 returns 0 -> errnum 10 (mov r0,#0xa @0x1a2890). Form2: 3 ints via bl 0x1eec7c with r6=#0x7d0=2000 (reflect_time max 2000 @0x1a28a4, delay max 2000 @0x1a28cc, decay min r3=1 max r6+0x1f40=10000 @0x1a28f0); 4 floats via blx [r2,#0x60] (@0x1a2918-0x1a29cc) with float consts vldr.32 s16=[0x1a2b04]=0x0 / s17=[0x1a2b08]=0x3F800000=1.0; commit bl 0x13953c r1/r2/r3+s0-s3 against state [0x1a2b00]=0x00315F4C @0x1a29d0-0x1a29f0" }
+  - { type: disassembled, ref: "cia_3.6.0.lst shared integer-arg range helper FUN_001eec7c @0x1eec7c: evaluates the arg (blx [r2,#0x40]), bounds-checks value against min r3 and max [sp,#0x0], raising errnum 10 (mov r2,#0x0 / mov r0,#0xa / b 0x1fffdc @0x1eeccc) — enforces the reflect_time/reverb_delay/reverb_decay bounds in Form 2 (same helper used by [[beep]])" }
+  - { type: community, ref: "osb/SMILEBASIC/sound.d EFCSET (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bEFCSET\\b'): ~98 files. Proves the legal forms: literal type 0/1/2/3 (e.g. EFCSET 0/1/2/3 in 1BWX7ENV/TXT/AND-OS), and variable/expression operands EFCSET ENUM / EFCSET TYPE / EFCSET CHECKCTRL(...) (e.g. 1K237KNV/TXT/FREEBGM_RWI2). The 7-arg advanced form is documented+disassembled but rare in corpus. Proves the syntax + 0..3 type values are legal; runtime audio effect unproven (no oracle, O-T7)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar): error conditions confirmed — `EFCSET 4` and `EFCSET -1` raise errnum 10 (Out of range, type not 0..3); `EFCSET 3000,113,1265,0.1,0,0.2,0.1` (reflect_time > 2000) and `EFCSET 997,113,0,0.1,0,0.2,0.1` (decay < 1) raise errnum 10; `EFCSET 1,2` (2 args) raises errnum 3 (Syntax error). Audio output itself is not deterministically harvestable (O-T7)." }
+
+confidence: disassembled
+
+tests:
+  # Form 1 preset selection and argument-count / range error conditions read from the handler body.
+  # Audio output is not deterministically harvestable (O-T7); these pin the statement contract.
+  - { name: preset_off, code: "EFCSET 0", expect: { stdout: "" } }
+  - { name: preset_bathroom, code: "EFCSET 1", expect: { stdout: "" } }
+  - { name: preset_cave, code: "EFCSET 2", expect: { stdout: "" } }
+  - { name: preset_space, code: "EFCSET 3", expect: { stdout: "" } }
+  - { name: advanced_7args, code: "EFCSET 997,113,1265,0.1,0,0.2,0.1", expect: { stdout: "" } }
+  - { name: type_out_of_range, code: "EFCSET 4", expect: { error: { errnum: 10 } } }
+  - { name: type_negative, code: "EFCSET -1", expect: { error: { errnum: 10 } } }
+  - { name: reflect_time_out_of_range, code: "EFCSET 3000,113,1265,0.1,0,0.2,0.1", expect: { error: { errnum: 10 } } }
+  - { name: decay_below_min, code: "EFCSET 997,113,0,0.1,0,0.2,0.1", expect: { error: { errnum: 10 } } }
+  - { name: bad_arg_count_2, code: "EFCSET 1,2", expect: { error: { errnum: 3 } } }
+  - { name: bad_arg_count_0, code: "EFCSET", expect: { error: { errnum: 3 } } }
