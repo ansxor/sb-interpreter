@@ -691,6 +691,17 @@ impl Vm {
             crate::builtins::data::sort(&args, name == "RSORT").map_err(sb)?;
             return Ok(());
         }
+        // Block ops (COPY/FILL, M1-T14). COPY reads from a source array or — in form 2,
+        // `COPY dest,"@Label"` — from the program's DATA pool, so it lives in the VM
+        // (`call_copy`) where the DATA pool is reachable; FILL is a pure array write.
+        if name == "COPY" {
+            self.call_copy(&args).map_err(sb)?;
+            return Ok(());
+        }
+        if name == "FILL" {
+            crate::builtins::data::fill(&args).map_err(sb)?;
+            return Ok(());
+        }
         // Stack/queue ops (PUSH/UNSHIFT grow, POP/SHIFT shrink, M1-T14). The operand is a
         // shared `ArrayRef` (array form) or a `Value::Ref` to a string scalar, so they
         // mutate the caller's variable; POP/SHIFT also yield the removed element.
@@ -724,6 +735,74 @@ impl Vm {
             self.stack.push(ret);
         }
         Ok(())
+    }
+
+    /// `COPY dest [,dest_offset], src [[,src_offset], count]` (form 1, array→array) or
+    /// `COPY dest [,dest_offset], "@Label" [,count]` (form 2, DATA→array). The form and
+    /// the optional offsets are disambiguated by argument **type**: a numeric in the
+    /// second slot is `dest_offset`; the source operand is then an array (form 1) or a
+    /// string `"@Label"` (form 2). For 1D destinations the array auto-extends if too
+    /// small. Errors (hw_verified sb-oracle 2026-06-22, s_t4c): a non-array source/dest
+    /// or a numeric↔string element mismatch → Type mismatch (8); too few/many arguments
+    /// → Illegal function call (4); an out-of-range offset/count → Out of range (10);
+    /// form 2 with an undefined label → Undefined label (14); form 2 with fewer DATA
+    /// items than required → Out of DATA (13).
+    fn call_copy(&mut self, args: &[Value]) -> Result<(), RuntimeError> {
+        use crate::builtins::data::{elem_count, is_numeric, nonneg, read_values, write_values};
+        use crate::builtins::illegal;
+        let dest = args.first().ok_or_else(illegal)?;
+        let mut i = 1;
+        // An optional `dest_offset` only when a numeric is followed by the source operand.
+        let dest_offset = if i + 1 < args.len() && is_numeric(&args[i]) {
+            let off = nonneg(&args[i])?;
+            i += 1;
+            off
+        } else {
+            0
+        };
+        let src = args.get(i).ok_or_else(illegal)?;
+        let trailing = &args[i + 1..];
+
+        if let Value::Str(label) = src {
+            // Form 2 — read a DATA sequence named by "@Label" into the destination.
+            let count = match trailing {
+                [] => elem_count(dest)?,
+                [c] => nonneg(c)?,
+                _ => return Err(illegal()),
+            };
+            let name = String::from_utf16_lossy(label)
+                .trim_start_matches('@')
+                .to_ascii_uppercase();
+            let idx = self
+                .program
+                .data_labels
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, i)| *i)
+                .ok_or_else(|| RuntimeError::new(ERR_UNDEFINED_LABEL))?;
+            let mut vals = Vec::with_capacity(count);
+            for k in 0..count {
+                let c = self
+                    .program
+                    .data
+                    .get(idx + k)
+                    .ok_or_else(|| RuntimeError::new(ERR_OUT_OF_DATA))?;
+                vals.push(const_to_value(c));
+            }
+            write_values(dest, dest_offset, &vals, true)
+        } else {
+            // Form 1 — copy elements from a source array.
+            let (src_offset, count) = match trailing {
+                [] => (0, None),
+                [c] => (0, Some(nonneg(c)?)),
+                [so, c] => (nonneg(so)?, Some(nonneg(c)?)),
+                _ => return Err(illegal()),
+            };
+            let src_len = elem_count(src)?;
+            let count = count.unwrap_or_else(|| src_len.saturating_sub(src_offset));
+            let vals = read_values(src, src_offset, count)?;
+            write_values(dest, dest_offset, &vals, true)
+        }
     }
 
     /// Handle the RNG builtins against the VM-owned [`Rng`](crate::rng::Rng). Returns
@@ -1456,6 +1535,95 @@ mod tests {
     fn sort_without_a_key_array_is_illegal_function_call() {
         // A lone numeric and no array operand → Illegal function call (4).
         assert_eq!(run_b_err("VAR A=3\nSORT A").errnum(), Some(4));
+    }
+
+    // ---- COPY / FILL (block ops, M1-T14) ----
+    // hw_verified expects from spec/instructions/{copy,fill}.yaml (sb-oracle 2026-06-22).
+
+    #[test]
+    fn copy_array_to_array() {
+        let vm = run_b("DIM S[3]\nS[0]=1:S[1]=2:S[2]=3\nDIM D[3]\nCOPY D,S\nPRINT D[0];D[1];D[2]");
+        assert_eq!(vm.console_text(), "123");
+    }
+
+    #[test]
+    fn copy_auto_extends_a_1d_destination() {
+        // A too-small 1D destination grows to fit the source (LEN(D) → 3).
+        let vm = run_b("DIM S[3]\nDIM D[0]\nCOPY D,S\nPRINT LEN(D)");
+        assert_eq!(vm.console_text(), "3");
+    }
+
+    #[test]
+    fn copy_dest_offset_and_count() {
+        // COPY D,1,S writes from D[1]; COPY D,S,0,2 copies only the first 2 (D[2] stays 0).
+        let off = run_b("DIM S[2]\nS[0]=7:S[1]=8\nDIM D[4]\nCOPY D,1,S\nPRINT D[1];D[2]");
+        assert_eq!(off.console_text(), "78");
+        let cnt =
+            run_b("DIM S[3]\nS[0]=1:S[1]=2:S[2]=3\nDIM D[3]\nCOPY D,S,0,2\nPRINT D[0];D[1];D[2]");
+        assert_eq!(cnt.console_text(), "120");
+    }
+
+    #[test]
+    fn copy_five_arg_form_uses_src_offset() {
+        // COPY D,1,S,2,2 → D[1..3) = S[2..4) = 3,4.
+        let vm = run_b(
+            "DIM S[4]\nS[0]=1:S[1]=2:S[2]=3:S[3]=4\nDIM D[4]\nCOPY D,1,S,2,2\nPRINT D[1];D[2]",
+        );
+        assert_eq!(vm.console_text(), "34");
+    }
+
+    #[test]
+    fn copy_from_data_label() {
+        // Form 2: read a DATA sequence named by "@Label" into the destination.
+        let vm = run_b("DIM D[5]\nCOPY D,\"@SRC\"\nPRINT D[0];D[4]\n@SRC\nDATA 5,1,1,2,4");
+        assert_eq!(vm.console_text(), "54");
+    }
+
+    #[test]
+    fn copy_numeric_into_string_array_is_type_mismatch() {
+        assert_eq!(
+            run_b_err("DIM A[1]\nDIM S$[1]\nCOPY A,S$").errnum(),
+            Some(8)
+        );
+    }
+
+    #[test]
+    fn copy_from_undefined_label_is_undefined_label() {
+        assert_eq!(run_b_err("DIM D[2]\nCOPY D,\"@NOPE\"").errnum(), Some(14));
+    }
+
+    #[test]
+    fn copy_from_data_short_is_out_of_data() {
+        // Default count = dest element count (3) but only 2 DATA items exist → Out of DATA (13).
+        assert_eq!(
+            run_b_err("DIM D[3]\nCOPY D,\"@SRC\"\n@SRC\nDATA 1,2").errnum(),
+            Some(13)
+        );
+    }
+
+    #[test]
+    fn fill_all_and_subrange() {
+        let all = run_b("DIM A[3]\nFILL A,9\nPRINT A[0];A[1];A[2]");
+        assert_eq!(all.console_text(), "999");
+        let sub = run_b("DIM A[4]\nFILL A,7,1,2\nPRINT A[0];A[1];A[2];A[3]");
+        assert_eq!(sub.console_text(), "0770");
+    }
+
+    #[test]
+    fn fill_string_array() {
+        let vm = run_b("DIM S$[2]\nFILL S$,\"x\"\nPRINT S$[0];S$[1]");
+        assert_eq!(vm.console_text(), "xx");
+    }
+
+    #[test]
+    fn fill_value_type_mismatch_is_8() {
+        assert_eq!(run_b_err("DIM A[2]\nFILL A,\"x\"").errnum(), Some(8));
+    }
+
+    #[test]
+    fn fill_past_the_end_is_subscript_out_of_range() {
+        // offset+count beyond the array bounds → Subscript out of range (31).
+        assert_eq!(run_b_err("DIM A[3]\nFILL A,1,2,5").errnum(), Some(31));
     }
 
     // ---- PUSH / POP / SHIFT / UNSHIFT (stack/queue ops, M1-T14) ----

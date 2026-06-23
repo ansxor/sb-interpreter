@@ -130,6 +130,11 @@ pub const BUILTIN_NAMES: &[&str] = &[
     // VM routes them to `data::sort` rather than the value-returning `dispatch`.
     "SORT",
     "RSORT",
+    // Array block ops (M1-T14): COPY copies array→array or a DATA sequence→array (the
+    // DATA form needs the program's DATA pool, so the VM handles it); FILL overwrites
+    // elements with a value. Both mutate their destination array (shared by Rc).
+    "COPY",
+    "FILL",
     // Array stack/queue ops (M1-T14): PUSH/UNSHIFT grow and POP/SHIFT shrink their
     // first operand (a 1D array shared by Rc, or a string variable by reference), so the
     // VM routes them to `data::{push,pop,shift,unshift}` rather than the stateless dispatch.

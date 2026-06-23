@@ -1,0 +1,66 @@
+# COPY / FILL array block-ops (M1-T14). These are the hw_verified expects from
+# spec/instructions/{copy,fill}.yaml (sb-oracle batch 2026-06-22, s_t4c) plus a few
+# spec-derived variants. COPY has two forms (array→array and DATA→array) disambiguated
+# by argument type; FILL overwrites an element range with a value. Both mutate their
+# destination array (shared by Rc). Error edges past the harvested set are queued in
+# HARVEST_QUEUE.md (S-T4c).
+cases:
+  # --- COPY form 1 (array → array), spec hw_verified ---
+  - name: copy_basic
+    code: "DIM S[3]\nS[0]=1\nS[1]=2\nS[2]=3\nDIM D[3]\nCOPY D,S\nPRINT D[0];D[1];D[2]"
+    expect: { stdout: "123" }
+  - name: copy_autoextend
+    code: "DIM S[3]\nDIM D[0]\nCOPY D,S\nPRINT LEN(D)"
+    expect: { stdout: "3" }
+  - name: copy_dest_offset
+    code: "DIM S[2]\nS[0]=7\nS[1]=8\nDIM D[4]\nCOPY D,1,S\nPRINT D[1];D[2]"
+    expect: { stdout: "78" }
+  - name: copy_count
+    code: "DIM S[3]\nS[0]=1\nS[1]=2\nS[2]=3\nDIM D[3]\nCOPY D,S,0,2\nPRINT D[0];D[1];D[2]"
+    expect: { stdout: "120" }
+  - name: copy_five_arg
+    code: "DIM S[4]\nS[0]=1\nS[1]=2\nS[2]=3\nS[3]=4\nDIM D[4]\nCOPY D,1,S,2,2\nPRINT D[1];D[2]"
+    expect: { stdout: "34" }
+  - name: copy_string_array
+    code: "DIM S$[2]\nS$[0]=\"a\"\nS$[1]=\"b\"\nDIM D$[2]\nCOPY D$,S$\nPRINT D$[0];D$[1]"
+    expect: { stdout: "ab" }
+  # --- COPY form 2 (DATA → array), spec hw_verified ---
+  - name: copy_from_data
+    code: "DIM D[5]\nCOPY D,\"@SRC\"\nPRINT D[0];D[4]\n@SRC\nDATA 5,1,1,2,4"
+    expect: { stdout: "54" }
+  - name: copy_from_data_count
+    code: "DIM D[3]\nCOPY D,\"@SRC\",2\nPRINT D[0];D[1];D[2]\n@SRC\nDATA 8,9,7"
+    expect: { stdout: "890" }
+  # --- COPY errors ---
+  - name: copy_type_mismatch
+    code: "DIM A[1]\nDIM S$[1]\nCOPY A,S$"
+    expect: { error: { errnum: 8 } }
+  - name: copy_undefined_label
+    code: "DIM D[2]\nCOPY D,\"@NOPE\""
+    expect: { error: { errnum: 14 } }
+  - name: copy_data_short_is_out_of_data
+    code: "DIM D[3]\nCOPY D,\"@SRC\"\n@SRC\nDATA 1,2"
+    expect: { error: { errnum: 13 } }
+  # --- FILL, spec hw_verified ---
+  - name: fill_all
+    code: "DIM A[3]\nFILL A,9\nPRINT A[0];A[1];A[2]"
+    expect: { stdout: "999" }
+  - name: fill_offset_count
+    code: "DIM A[4]\nFILL A,7,1,2\nPRINT A[0];A[1];A[2];A[3]"
+    expect: { stdout: "0770" }
+  - name: fill_string
+    code: "DIM S$[2]\nFILL S$,\"x\"\nPRINT S$[0];S$[1]"
+    expect: { stdout: "xx" }
+  - name: fill_string_offset
+    code: "DIM S$[4]\nFILL S$,\"-\",1,2\nPRINT S$[0];\",\";S$[1];S$[2];\",\";S$[3]"
+    expect: { stdout: ",--," }
+  - name: fill_real_array
+    code: "DIM A#[2]\nFILL A#,1.5\nPRINT A#[0];A#[1]"
+    expect: { stdout: "1.51.5" }
+  # --- FILL errors ---
+  - name: fill_type_mismatch
+    code: "DIM A[2]\nFILL A,\"x\""
+    expect: { error: { errnum: 8 } }
+  - name: fill_past_end_is_subscript
+    code: "DIM A[3]\nFILL A,1,2,5"
+    expect: { error: { errnum: 31 } }

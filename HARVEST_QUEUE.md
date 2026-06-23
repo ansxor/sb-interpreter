@@ -59,10 +59,14 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   type-mismatch 8) all hw_verified 2026-06-22.
 - [ ] S-T4c (COPY/FILL/SORT/RSORT) · Confirm the secondary error edges: COPY DATA-form with
   fewer DATA items than required (errnum? docs say "an error occurs" — guess 13 Out of DATA);
+  COPY DATA-form with an UNDEFINED "@Label" (guess 14 Undefined label, by analogy with RESTORE);
   FILL with offset/count beyond array bounds (errnum 31?); SORT/RSORT with bad/missing array
   args (errnum 4?). · assumption: per docs/error-table. Core COPY (incl. 5-arg + DATA form),
   FILL (incl. string+offset), SORT/RSORT (numeric/float/string keys + parallels) all
-  hw_verified 2026-06-22.
+  hw_verified 2026-06-22. IMPLEMENTED in sb-core (M1-T14 increment 2026-06-23): COPY/FILL now
+  run; the unharvested error edges are coded to the above assumptions — COPY short DATA → 13,
+  COPY undefined label → 14, FILL out-of-bounds offset/count → 31 (these three stay
+  oracle-pending, NOT yet hw_verified).
 - [ ] S-T4b (PUSH/UNSHIFT/POP/SHIFT) · Confirm behavior on a MULTI-DIMENSIONAL array (e.g.
   `DIM A[2,2]:PUSH A,9`) — does it error (and which errnum) or operate on a flattened/last
   dimension? · assumption: documented for 1D only; multi-dim likely errors. Corpus shows no

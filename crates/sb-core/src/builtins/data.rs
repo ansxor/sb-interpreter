@@ -1,5 +1,5 @@
-//! Array data-ops builtins (M1-T14) — `SORT` / `RSORT` + the stack/queue ops
-//! `PUSH` / `POP` / `SHIFT` / `UNSHIFT`.
+//! Array data-ops builtins (M1-T14) — `SORT` / `RSORT`, the stack/queue ops
+//! `PUSH` / `POP` / `SHIFT` / `UNSHIFT`, and the block ops `COPY` / `FILL`.
 //!
 //! Unlike the pure math/string builtins, these mutate their array arguments **in
 //! place**: each array reaches us as a shared [`ArrayRef`](crate::array::ArrayRef)
@@ -81,8 +81,13 @@ pub(crate) fn sort(args: &[Value], descending: bool) -> Result<(), RuntimeError>
 }
 
 /// A leading `start`/`count` operand is a numeric scalar (Integer or Double).
-fn is_numeric(v: &Value) -> bool {
+pub(crate) fn is_numeric(v: &Value) -> bool {
     matches!(v, Value::Int(_) | Value::Real(_))
+}
+
+/// Element count of an array operand; a non-array raises Type mismatch (8).
+pub(crate) fn elem_count(v: &Value) -> Result<usize, RuntimeError> {
+    array_len(v)
 }
 
 /// Element count of an array operand; a non-array raises Type mismatch (8).
@@ -283,4 +288,138 @@ pub(crate) fn pop(args: &[Value], front: bool) -> Result<Value, RuntimeError> {
         }
         _ => Err(type_mismatch()),
     }
+}
+
+// ---- COPY / FILL (block ops) ----------------------------------------------------
+
+/// Coerce an offset/count operand to a non-negative element index. A string raises
+/// Type mismatch (8); a negative number raises Out of range (10).
+pub(crate) fn nonneg(v: &Value) -> Result<usize, RuntimeError> {
+    let n = v.to_int()?;
+    if n < 0 {
+        Err(out_of_range())
+    } else {
+        Ok(n as usize)
+    }
+}
+
+/// Read `count` elements (from `start`) of an array operand as boxed [`Value`]s. A
+/// non-array operand raises Type mismatch (8); a `[start, start+count)` range past the
+/// end raises Out of range (10).
+pub(crate) fn read_values(
+    src: &Value,
+    start: usize,
+    count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    let len = array_len(src)?;
+    let end = start.checked_add(count).ok_or_else(out_of_range)?;
+    if end > len {
+        return Err(out_of_range());
+    }
+    let out = match src {
+        Value::IntArray(a) => a.borrow().as_slice()[start..end]
+            .iter()
+            .map(|&x| Value::Int(x))
+            .collect(),
+        Value::RealArray(a) => a.borrow().as_slice()[start..end]
+            .iter()
+            .map(|&x| Value::Real(x))
+            .collect(),
+        Value::StrArray(a) => a.borrow().as_slice()[start..end]
+            .iter()
+            .map(|s| Value::Str(s.clone()))
+            .collect(),
+        // `array_len` already rejected a non-array operand.
+        _ => unreachable!(),
+    };
+    Ok(out)
+}
+
+/// Grow a 1D array to `needed` elements (`COPY`'s auto-extend); a too-small
+/// multi-dimensional destination — or any too-small destination when `grow_1d` is
+/// false — raises Out of range (10).
+fn ensure_capacity<T: Clone + Default + PartialEq>(
+    a: &mut SbArray<T>,
+    needed: usize,
+    grow_1d: bool,
+) -> Result<(), RuntimeError> {
+    if needed > a.len() {
+        if grow_1d && a.dim_count() == 1 {
+            a.resize(needed)?;
+        } else {
+            return Err(out_of_range());
+        }
+    }
+    Ok(())
+}
+
+/// Write `vals` into `dest` starting at element `offset`, coercing each value to the
+/// destination's element type. Every value is coerced **before** any element is
+/// written, so a Type mismatch (8) leaves the destination untouched. When `grow_1d`
+/// is set, a 1D destination auto-extends to fit (`COPY`'s behaviour). A non-array
+/// destination raises Type mismatch (8).
+pub(crate) fn write_values(
+    dest: &Value,
+    offset: usize,
+    vals: &[Value],
+    grow_1d: bool,
+) -> Result<(), RuntimeError> {
+    let needed = offset.checked_add(vals.len()).ok_or_else(out_of_range)?;
+    match dest {
+        Value::IntArray(a) => {
+            let coerced: Vec<i32> = vals.iter().map(|v| v.to_int()).collect::<Result<_, _>>()?;
+            let mut b = a.borrow_mut();
+            ensure_capacity(&mut b, needed, grow_1d)?;
+            b.as_mut_slice()[offset..needed].clone_from_slice(&coerced);
+        }
+        Value::RealArray(a) => {
+            let coerced: Vec<f64> = vals.iter().map(|v| v.to_real()).collect::<Result<_, _>>()?;
+            let mut b = a.borrow_mut();
+            ensure_capacity(&mut b, needed, grow_1d)?;
+            b.as_mut_slice()[offset..needed].clone_from_slice(&coerced);
+        }
+        Value::StrArray(a) => {
+            let coerced: Vec<SbStr> = vals
+                .iter()
+                .map(|v| v.as_str().cloned())
+                .collect::<Result<_, _>>()?;
+            let mut b = a.borrow_mut();
+            ensure_capacity(&mut b, needed, grow_1d)?;
+            b.as_mut_slice()[offset..needed].clone_from_slice(&coerced);
+        }
+        _ => return Err(type_mismatch()),
+    }
+    Ok(())
+}
+
+/// `FILL array, value [,offset [,count]]` — set elements to `value`. The array is
+/// shared by `Rc`, so the overwrite is visible to the caller. Errors: wrong argument
+/// count → Illegal function call (4); a non-array first operand, or a value whose type
+/// does not match a numeric array's element type → Type mismatch (8); `offset`/`count`
+/// past the array bounds → Subscript out of range (31). `FILL` never changes the array
+/// length (hw_verified sb-oracle 2026-06-22, s_t4c).
+pub(crate) fn fill(args: &[Value]) -> Result<(), RuntimeError> {
+    if args.len() < 2 || args.len() > 4 {
+        return Err(illegal());
+    }
+    let array = &args[0];
+    let value = args[1].deref();
+    let len = array_len(array)?;
+    let offset = match args.get(2) {
+        Some(v) => nonneg(v)?,
+        None => 0,
+    };
+    let count = match args.get(3) {
+        Some(v) => nonneg(v)?,
+        None => len.saturating_sub(offset),
+    };
+    // FILL does not grow the array: a range past the end is Subscript out of range (31).
+    let end = offset
+        .checked_add(count)
+        .ok_or_else(subscript_out_of_range)?;
+    if end > len {
+        return Err(subscript_out_of_range());
+    }
+    let vals = vec![value; count];
+    write_values(array, offset, &vals, false)
 }

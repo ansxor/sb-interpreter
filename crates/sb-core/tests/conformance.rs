@@ -53,8 +53,10 @@ const IN_SCOPE_CONTROL: &[&str] = &[
 /// Array / variable **mutation** instructions (`Variables and Arrays` category) that
 /// `sb-core` fully implements — including the array-element reference forms (`SWAP A[i],A[j]`,
 /// `INC A[i]`, `DEC A[i]`) now that [`Op::PushArrayRef`] is wired (M1-T14 increment). Their
-/// inline `tests:` are deterministic + `console_text()`-comparable. NOT taken wholesale: the
-/// not-yet-built `COPY`/`FILL` (M7) are excluded by omission. `VAR` is now in scope: its
+/// inline `tests:` are deterministic + `console_text()`-comparable. `COPY` and `FILL` are now
+/// in scope (M1-T14 increment 2026-06-23): COPY copies array→array (`COPY D,S`, dest_offset,
+/// src_offset, count forms, 1D auto-extend) or reads a DATA sequence (`COPY D,"@Label"`); FILL
+/// overwrites a value into an element range. `VAR` is now in scope: its
 /// duplicate-declaration errnum (18) landed (M1-T14 increment 2026-06-23), so its inline
 /// `tests:` (incl. the `duplicate_error` 18 case) replay green. `DATA` is now in scope: its
 /// items (numbers, strings, const-exprs, `&H` hex, and `#NAME` named constants — the
@@ -65,8 +67,8 @@ const IN_SCOPE_CONTROL: &[&str] = &[
 /// Syntax error 3, both hw_verified); their read forms block on live input and have no
 /// deterministic golden. Listed by id.
 const IN_SCOPE_DATA_ARRAY_CONSOLE: &[&str] = &[
-    "DIM", "VAR", "DATA", "SORT", "RSORT", "PUSH", "POP", "SHIFT", "UNSHIFT", "SWAP", "INC", "DEC",
-    "INPUT", "LINPUT",
+    "DIM", "VAR", "DATA", "SORT", "RSORT", "COPY", "FILL", "PUSH", "POP", "SHIFT", "UNSHIFT",
+    "SWAP", "INC", "DEC", "INPUT", "LINPUT",
 ];
 /// `Console input/output` instructions whose builtins `sb-core` implements (M1-T8) and whose
 /// inline `tests:` are deterministic + `console_text()`-comparable: `PRINT` (formatting),
