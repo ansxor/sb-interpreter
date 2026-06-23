@@ -316,9 +316,15 @@ impl Vm {
             Op::End => return Ok(Some(Halt::End)),
             Op::Stop => return Ok(Some(Halt::Stop)),
 
+            Op::CallBuiltin {
+                name,
+                argc,
+                out_argc,
+                wants_value,
+            } => self.call_builtin(&name, argc, out_argc, wants_value)?,
+
             // -- deferred to later milestones --------------------------------------
-            Op::CallBuiltin { .. } => return Err(VmError::Unsupported("builtin call (M1-T7)")),
-            Op::CallDynamic { .. } => return Err(VmError::Unsupported("CALL (M1-T7)")),
+            Op::CallDynamic { .. } => return Err(VmError::Unsupported("CALL (M6)")),
             Op::PrintItem | Op::PrintTab | Op::PrintNewline => {
                 return Err(VmError::Unsupported("PRINT (M1-T8)"))
             }
@@ -458,6 +464,30 @@ impl Vm {
             wants_value,
         });
         self.pc = self.program.functions[func].address;
+        Ok(())
+    }
+
+    /// Call a registered builtin (M1-T7 math/string set). Pops `argc` value args
+    /// (topmost = last arg), dispatches by canonical name, and pushes the single return
+    /// value when the caller wants it. These builtins take no `OUT` params, so
+    /// `out_argc` is expected to be 0. An unknown name → Undefined function (errnum 16).
+    fn call_builtin(
+        &mut self,
+        name: &str,
+        argc: u8,
+        out_argc: u8,
+        wants_value: bool,
+    ) -> Result<(), VmError> {
+        let _ = out_argc; // math/string builtins produce no OUT results.
+        let mut args = Vec::with_capacity(argc as usize);
+        for _ in 0..argc {
+            args.push(self.pop()?);
+        }
+        args.reverse();
+        let ret = crate::builtins::dispatch(name, args).map_err(sb)?;
+        if wants_value {
+            self.stack.push(ret);
+        }
         Ok(())
     }
 
@@ -785,6 +815,26 @@ mod tests {
         vm.run().expect_err("expected a runtime error")
     }
 
+    /// Compile + run with the M1-T7 builtin registry (so bare names like `PI` resolve
+    /// as calls), returning the VM for inspection.
+    fn run_b(src: &str) -> Vm {
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        let ast = parse(src).expect("parse");
+        let program = compile_with(&ast, &StdBuiltins).expect("compile");
+        let mut vm = Vm::new(program);
+        vm.run().expect("run");
+        vm
+    }
+
+    /// Read a string global (`A$`) as a Rust `String`.
+    fn string(vm: &Vm, ident: &str) -> String {
+        match vm.global_value(ident, Suffix::Str).expect("var exists") {
+            Value::Str(u) => String::from_utf16_lossy(&u),
+            other => panic!("{ident}$ is not Str: {other:?}"),
+        }
+    }
+
     fn int(vm: &Vm, name: &str) -> i32 {
         match vm.global_value(name, Suffix::None).expect("var exists") {
             Value::Int(i) => i,
@@ -1072,5 +1122,72 @@ C$=A$+B$"#);
             }
             other => panic!("expected Sb error, got {other:?}"),
         }
+    }
+
+    // ---- builtin calls (M1-T7) ----
+
+    #[test]
+    fn math_builtins_via_assignment() {
+        // Paren calls compile to CallBuiltin even without the registry.
+        let vm = run("A=FLOOR(3.7)\nB=ABS(-5)\nC=MAX(3,2.5)\nD=MIN(1,2,3,4)");
+        assert_eq!(real(&vm, "A"), 3.0);
+        assert_eq!(int(&vm, "B"), 5);
+        assert_eq!(int(&vm, "C"), 3); // MAX keeps the Integer winner's type
+        assert_eq!(int(&vm, "D"), 1);
+    }
+
+    #[test]
+    fn niladic_pi_call() {
+        // PI() is a 0-arg paren call -> CallBuiltin, Double pi.
+        let vm = run("A=PI()");
+        assert!((real(&vm, "A") - std::f64::consts::PI).abs() < 1e-12);
+    }
+
+    #[test]
+    fn bare_pi_resolves_with_registry() {
+        // With the builtin registry, the bare name `PI` (no parens) is a call, not a var.
+        let vm = run_b("A=PI*2");
+        assert!((real(&vm, "A") - std::f64::consts::TAU).abs() < 1e-12);
+    }
+
+    #[test]
+    fn nested_builtin_calls() {
+        // SQR(POW(3,2)) = SQR(9) = 3.
+        let vm = run("A=SQR(POW(3,2))");
+        assert_eq!(real(&vm, "A"), 3.0);
+    }
+
+    #[test]
+    fn string_builtins_via_assignment() {
+        let vm = run(r#"A$=LEFT$("ABCDEF",3)
+B$=MID$("ABCDEF",2,2)
+C=LEN("HELLO")
+D=INSTR("ABCDEF","CD")
+E$=CHR$(65)
+F=ASC("Z")
+G$=STR$(123)
+H$=HEX$(255)"#);
+        assert_eq!(string(&vm, "A"), "ABC");
+        assert_eq!(string(&vm, "B"), "CD");
+        assert_eq!(int(&vm, "C"), 5);
+        assert_eq!(int(&vm, "D"), 2);
+        assert_eq!(string(&vm, "E"), "A");
+        assert_eq!(int(&vm, "F"), 90);
+        assert_eq!(string(&vm, "G"), "123");
+        assert_eq!(string(&vm, "H"), "FF");
+    }
+
+    #[test]
+    fn builtin_value_arg_errors_propagate() {
+        // SQR(-1) -> Out of range (10); FLOOR("x") -> Type mismatch (8).
+        assert_eq!(run_err("A=SQR(-1)").errnum(), Some(10));
+        assert_eq!(run_err(r#"A=FLOOR("x")"#).errnum(), Some(8));
+        assert_eq!(run_err(r#"A=LEFT$("ABC",-1)"#).errnum(), Some(10));
+    }
+
+    #[test]
+    fn builtin_result_discarded_in_statement_position() {
+        // A bare function call as a statement runs (and discards the result) cleanly.
+        run("FLOOR(3.7)");
     }
 }

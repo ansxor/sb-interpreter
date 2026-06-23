@@ -737,3 +737,28 @@ oracle to confirm exact output and promote to `hw_verified`.
   evaluated operand value (per the compiler lowering), but `Operate(LAnd/LOr)` — emitted only
   if the compiler ever bypasses short-circuit — normalizes to 0/1. Confirm SB's `X=A&&B`
   result value (cross-ref the M1-T5 `&&`/`||` queue entry).
+
+## M1-T7 — Builtins (math/string edges to confirm)
+- **STR$/PRINT double formatting**: `builtins::format_g` formats doubles with C `%g` at 6
+  significant figures (matches the harvested SQR(2)=1.41421, PI()=3.14159, 1e-05,
+  1.23457e+07). The exact half-way rounding mode (round-half-to-even vs away-from-zero) and
+  very-large/huge-magnitude + subnormal edges are M7-T4; harvest a sweep (e.g. STR$(0.5),
+  STR$(2.5), STR$(1.5)→tie cases, STR$(1E308), STR$(1.5E-310)) to pin the mode. assumption:
+  Rust's round-half-to-even, matching C printf.
+- **MIN/MAX of an empty array**: `min_max` returns Illegal function call (errnum 4) for an
+  empty array (no element to return). Real SB result unconfirmed — harvest `DIM E[0]:A=MIN(E)`.
+- **MID$ negative start/length**: `mid` clamps negative `start`/`length` to 0 (docs only
+  cover non-negative). Confirm `MID$("ABC",-1,2)` / `MID$("ABC",1,-1)` vs oracle.
+- **SUBST$ start/count past end**: `subst` clamps `start` to len and `count` to `len-start`.
+  Confirm `SUBST$("ABC",5,2,"X")` / `SUBST$("ABC",1,9,"X")` vs oracle.
+- **VAL parsing details**: `val` trims surrounding whitespace, parses the whole string (else
+  0), and accepts `&H`/`&B`/exponent. Confirm leading `+`, leading/trailing whitespace,
+  `&H`/`&B` overflow wrap, and lone `"&H"`/`"."` vs oracle. assumption: whole-string parse,
+  trim, wrap on overflow.
+- **HEX$ digits range**: `hex` rejects `digits` outside 1..63 with Out of range (10), mirroring
+  STR$. The spec says only "the supported width range" — confirm the exact HEX$ digits bound.
+- **FORMAT$ %B + extras**: `format` supports `%S %D %X %F %B`, flags `-+ 0`, width, `.prec`,
+  and `%%`. `%B`, `%%`, unknown-directive passthrough, too-few-args (→ errnum 4 here), and
+  type-mismatch-per-directive are oracle-pending (see format.yaml). Harvest a directive sweep.
+- **PI()/EXP()/CLASSIFY with-arg-count errors**: arg-count guards (PI with an arg → 4,
+  CLASSIFY inf→1/NaN→2) follow the disassembly; harvest to raise to hw_verified.

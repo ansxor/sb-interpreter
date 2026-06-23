@@ -7,11 +7,12 @@
 //! the `sb-platform-*` crates.
 //!
 //! The lexer (M1-T1), AST node types (M1-T2), parser (M1-T3), runtime
-//! value/array types (M1-T4) and the bytecode + compiler (M1-T5) are implemented
-//! so far.
+//! value/array types (M1-T4), bytecode + compiler (M1-T5), stack VM (M1-T6) and the
+//! math/string builtins (M1-T7) are implemented so far.
 
 pub mod array;
 pub mod ast;
+pub mod builtins;
 pub mod bytecode;
 pub mod compiler;
 pub mod lexer;
@@ -21,6 +22,7 @@ pub mod value;
 pub mod vm;
 
 pub use array::{ArrayRef, SbArray};
+pub use builtins::{dispatch as call_builtin, StdBuiltins, BUILTIN_NAMES};
 pub use bytecode::{Const, Function, Op, OptionFlags, Program, VarInfo, VarRef, VarType};
 pub use compiler::{compile, compile_with, Builtins, CompileError, NoBuiltins};
 pub use lexer::Lexer;
