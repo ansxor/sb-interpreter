@@ -12,8 +12,22 @@ workspace = true
 
 [dependencies]
 sb-core = { path = "../sb-core" }
+sb-render = { path = "../sb-render" }
+
+# The windowed host (`sb`) blits the rendered framebuffer to a real OS window. winit +
+# softbuffer are heavy, desktop-only deps — target-gate them off wasm32 so the workspace's
+# `--target wasm32-unknown-unknown` build (which still walks this crate) stays clean. The
+# wasm canvas host lives in the separate `sb-platform-wasm` crate.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+winit = "0.30"
+softbuffer = "0.4"
 
 # The headless runner the deterministic replay gate (harness/diff/replay.py) shells out to.
 [[bin]]
 name = "sb-run"
 path = "src/bin/sb-run.rs"
+
+# The windowed host: opens a window and shows the program's console output.
+[[bin]]
+name = "sb"
+path = "src/bin/sb.rs"

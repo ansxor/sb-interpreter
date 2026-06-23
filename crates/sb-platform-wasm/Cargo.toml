@@ -1,0 +1,34 @@
+[package]
+name = "sb-platform-wasm"
+description = "Web platform layer for the SmileBASIC interpreter: a wasm-bindgen module that runs a program through sb-core and blits the rendered framebuffer to an HTML <canvas>. The desktop window host is the separate sb-platform-native crate."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+# cdylib → the loadable wasm module; rlib so the workspace's native build can still link it.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sb-core = { path = "../sb-core" }
+sb-render = { path = "../sb-render" }
+
+# Browser bindings are only meaningful (and only link) on wasm32. Target-gating them keeps
+# the workspace's native `cargo build`/`cargo test` from pulling web-sys onto the desktop.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
+version = "0.3"
+features = [
+    "Window",
+    "Document",
+    "HtmlCanvasElement",
+    "CanvasRenderingContext2d",
+    "ImageData",
+]
