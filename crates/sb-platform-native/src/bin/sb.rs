@@ -89,7 +89,13 @@ mod native {
         let mut vm = Vm::new(program);
         let result = vm.run();
         // Composite whatever the program drew, halted or not.
-        *fb = compose_top_screen(vm.grp(), vm.console(), DEFAULT_BACKDROP);
+        *fb = compose_top_screen(
+            vm.grp(),
+            vm.bg(),
+            vm.sprites(),
+            vm.console(),
+            DEFAULT_BACKDROP,
+        );
         match result {
             Ok(_) => None,
             Err(VmError::Sb { errnum, line }) => Some(SbError { errnum, line }),

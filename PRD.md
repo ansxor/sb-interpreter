@@ -18,7 +18,7 @@ under `prd/` (start at `prd/README.md`). Task IDs here match those docs.
 | **O** | **Oracle engine — `sb-oracle` skill** | `prd/oracle.md` | 🔥 value/errnum/graphics harvest work; audio = MML-event specs (no emulator golden) + ref capture |
 | M1 | Core VM + a real window | `prd/M1.md` | ✅ done (T1–T14; conformance gate green, native + wasm) |
 | M2 | Graphics (GRP + compositor) | `prd/M2.md` | ✅ done (T1–T5; GRP model, primitives, bitmap ops, compositor, hw_verified golden pixel-diff) |
-| M3 | Sprites & BG | `prd/M3.md` | ⬜ gated on S |
+| M3 | Sprites & BG | `prd/M3.md` | ✅ done (T1–T6; sprite/BG state + collision/anim/transforms, full compositor stack with Z-interleaving; composite pixel-exactness queued O-T6) |
 | M4 | Input & timing | `prd/M4.md` | ⬜ gated on S |
 | M5 | Audio (MML) | `prd/M5.md` | ⬜ gated on S |
 | M6 | Files, projects, system, stubs | `prd/M6.md` | ⬜ gated on S |
@@ -181,7 +181,7 @@ and name the instructions they cover inline.
 - [x] M3-T3 Collision → M3-T1
 - [x] M3-T4 BG core → S-T9, M2-T4
 - [x] M3-T5 BG extras → M3-T4
-- [ ] M3-T6 Composite + golden diffs → M3-T2, M3-T3, M3-T5, O-T6
+- [x] M3-T6 Composite + golden diffs → M3-T2, M3-T3, M3-T5, O-T6
 
 ## M4 — Input & timing  (gated on S-T11)
 - [ ] M4-T1 Buttons/sticks → S-T11

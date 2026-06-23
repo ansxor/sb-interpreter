@@ -28,8 +28,10 @@
 //! (palette index 0 = transparent). Partial (8-bit) sprite/console alpha blending is a
 //! composite-capture question for O-T6 (queued) — M2 composites with the device 1-bit key.
 
+use crate::bg::{BgLayer, BgState, BG_LAYER_COUNT};
 use crate::console::Console;
 use crate::grp::{rgba5551_to_argb8888, ClipRect, GrpPage, GrpState, GRP_DIM};
+use crate::sprite::{Sprite, SpriteState};
 use crate::{Framebuffer, TOP_HEIGHT, TOP_WIDTH};
 
 /// Default backdrop: opaque black. The console's default background is transparent, so a
@@ -140,25 +142,281 @@ pub fn compose(width: usize, height: usize, backdrop: u32, layers: &[&dyn Layer]
     fb
 }
 
-/// Compose the standard top-screen scene from the VM's graphics state: backdrop → the GRP
-/// display page (at its `GPRIO` Z, cropped to its display clip) → console (front). BG and
-/// sprite layers (M3) slot in between by Z. Returns the 400×240 top-screen framebuffer.
-pub fn compose_top_screen(grp: &GrpState, console: &Console, backdrop: u32) -> Framebuffer {
-    let grp_layer = GrpLayer {
+/// Sample one device halfword (RGBA5551) from a sheet GRP page at `(x, y)`. Off-page reads
+/// return `0` (a fully-transparent pixel — alpha bit clear), so sprites/BG whose source
+/// rectangle runs past the 512×512 sheet edge just leave those texels transparent.
+#[inline]
+fn sample_sheet(page: &GrpPage, x: i32, y: i32) -> u16 {
+    if x < 0 || y < 0 || x >= GRP_DIM as i32 || y >= GRP_DIM as i32 {
+        return 0;
+    }
+    page.pixels[y as usize * GRP_DIM + x as usize]
+}
+
+/// Modulate a source ARGB8888 texel by a layer's ARGB8888 multiply color (`SPCOLOR`/
+/// `BGCOLOR`). The default opaque-white code (`0xFFFFFFFF`) is the identity (no change), so
+/// the common case is a fast no-op. Each channel is `round(src * mod / 255)`.
+///
+/// FIDELITY: the per-channel rounding (and whether SB modulates alpha) is oracle-pending —
+/// the *composite* framebuffer capture (O-T6, screenshot path) hasn't been harvested. Queued
+/// in `HARVEST_QUEUE.md` (M3-T6). The default white path — what every committed test uses —
+/// is exact regardless.
+#[inline]
+fn modulate(src: u32, modc: u32) -> u32 {
+    if modc == 0xFFFF_FFFF {
+        return src;
+    }
+    let ch = |sh: u32| {
+        let s = (src >> sh) & 0xFF;
+        let m = (modc >> sh) & 0xFF;
+        (s * m + 127) / 255
+    };
+    (ch(24) << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)
+}
+
+/// Additive blend `argb` onto the destination pixel (`#SPADD` attribute): per-channel
+/// saturating add of RGB, leaving the result opaque. FIDELITY: the exact additive math is
+/// oracle-pending (O-T6 composite, queued); only the non-additive path is exercised by the
+/// committed tests.
+#[inline]
+fn blend_add(fb: &mut Framebuffer, x: usize, y: usize, argb: u32) {
+    let d = fb.get_argb(x, y);
+    let add = |sh: u32| (((d >> sh) & 0xFF) + ((argb >> sh) & 0xFF)).min(0xFF);
+    fb.set_argb(x, y, 0xFF00_0000 | (add(16) << 16) | (add(8) << 8) | add(0));
+}
+
+/// One displayed sprite as a composited layer: it samples its source rectangle from a sheet
+/// GRP page (`SPPAGE`) and paints it at the sprite's screen position, applying the sprite's
+/// home/pivot, scale, 90°-step + free rotation, H/V flip, color modulate and additive flag.
+///
+/// FIDELITY: the **placement** (identity transform), alpha-keying, H/V flip and 90° rotation
+/// are deterministic and pinned by the compositor tests. The exact sub-pixel sampling of
+/// *free* rotation / fractional `SPSCALE`, the `SPCHR` sheet offset, the color-modulate
+/// rounding and additive math are oracle-pending — they need the composite screenshot capture
+/// (O-T6), queued in `HARVEST_QUEUE.md` (M3-T6).
+pub struct SpriteLayer<'a> {
+    /// The sprite slot to draw (must be `active` + `display`).
+    pub sprite: &'a Sprite,
+    /// The GRP page the sprite samples (`grp.pages[sprite.page]`).
+    pub sheet: &'a GrpPage,
+}
+
+impl Layer for SpriteLayer<'_> {
+    fn z(&self) -> i32 {
+        self.sprite.z.round() as i32
+    }
+
+    fn composite(&self, fb: &mut Framebuffer) {
+        render_sprite(self.sprite, self.sheet, fb);
+    }
+}
+
+/// Rasterize one sprite onto `fb` by inverse-mapping every framebuffer pixel in the sprite's
+/// transformed bounding box back to a source texel. The forward transform places sprite-local
+/// point `l` (in `0..w × 0..h`) at screen `(x,y) + R(angle)·S(scale)·(l − home)`, so the home
+/// point lands exactly on `(SPOFS x, y)`; the inverse recovers `l` from each screen pixel.
+fn render_sprite(sp: &Sprite, sheet: &GrpPage, fb: &mut Framebuffer) {
+    if !sp.active || !sp.display || sp.w <= 0 || sp.h <= 0 {
+        return;
+    }
+    let (w, h) = (sp.w, sp.h);
+    let total_deg = sp.rot + 90.0 * sp.rot90 as f64;
+    let rad = total_deg.to_radians();
+    let (c, s) = (rad.cos(), rad.sin());
+    // A zero scale would collapse the sprite to nothing (and divide-by-zero on inverse); SB
+    // treats it as not visible. Guard so we simply draw nothing.
+    if sp.scale_x == 0.0 || sp.scale_y == 0.0 {
+        return;
+    }
+    let (hx, hy) = (sp.home_x as f64, sp.home_y as f64);
+    let fwd = |lx: f64, ly: f64| {
+        let ax = (lx - hx) * sp.scale_x;
+        let ay = (ly - hy) * sp.scale_y;
+        (sp.x + ax * c - ay * s, sp.y + ax * s + ay * c)
+    };
+    // Screen bounding box of the four source-rect corners.
+    let corners = [
+        fwd(0.0, 0.0),
+        fwd(w as f64, 0.0),
+        fwd(0.0, h as f64),
+        fwd(w as f64, h as f64),
+    ];
+    let (mut minx, mut miny, mut maxx, mut maxy) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for &(cx, cy) in &corners {
+        minx = minx.min(cx);
+        miny = miny.min(cy);
+        maxx = maxx.max(cx);
+        maxy = maxy.max(cy);
+    }
+    let x0 = (minx.floor() as i32).max(0);
+    let y0 = (miny.floor() as i32).max(0);
+    let x1 = (maxx.ceil() as i32).min(fb.width as i32 - 1);
+    let y1 = (maxy.ceil() as i32).min(fb.height as i32 - 1);
+    for py in y0..=y1 {
+        for px in x0..=x1 {
+            let dx = px as f64 - sp.x;
+            let dy = py as f64 - sp.y;
+            // Inverse: undo rotation (Rᵀ), then scale, then re-add the home pivot.
+            let rx = dx * c + dy * s;
+            let ry = -dx * s + dy * c;
+            let lx = rx / sp.scale_x + hx;
+            let ly = ry / sp.scale_y + hy;
+            let li = lx.round() as i32;
+            let lj = ly.round() as i32;
+            if li < 0 || lj < 0 || li >= w || lj >= h {
+                continue;
+            }
+            // H/V flip mirror the local lookup within the source rectangle.
+            let sx = if sp.flip_h { w - 1 - li } else { li };
+            let sy = if sp.flip_v { h - 1 - lj } else { lj };
+            let texel = sample_sheet(sheet, sp.u + sx, sp.v + sy);
+            if texel & 1 == 0 {
+                continue; // 1-bit alpha key: clear bit = transparent.
+            }
+            let argb = modulate(rgba5551_to_argb8888(texel), sp.color);
+            if sp.additive {
+                blend_add(fb, px as usize, py as usize, argb);
+            } else {
+                fb.set_argb(px as usize, py as usize, argb);
+            }
+        }
+    }
+}
+
+/// One BG tilemap layer as a composited layer: it tiles its `cells` from a sheet GRP page
+/// (`BGPAGE`), honoring scroll (`BGOFS`), home/pivot, rotation, scale and the per-cell
+/// character/H/V-flip bits of the 16-bit screen data.
+///
+/// FIDELITY: the **screen-data decode** (char 0..1023 = bits 0-9, H-flip = bit 10, V-flip =
+/// bit 11, palette = bits 12-15) is *documented* (`bgput.md`); the tile **placement**, scroll,
+/// wrap, H/V flip and char-0-empty transparency are deterministic and pinned by the compositor
+/// tests. The 16-color **palette** remap, the exact rotation/scale sampling, scroll *sign*, and
+/// the sheet tile layout are oracle-pending — they need the composite screenshot capture
+/// (O-T6), queued in `HARVEST_QUEUE.md` (M3-T6).
+pub struct BgRenderLayer<'a> {
+    /// The BG layer to draw (skipped when `!visible`).
+    pub layer: &'a BgLayer,
+    /// The GRP page BG tiles sample (`grp.pages[bg.page]`).
+    pub sheet: &'a GrpPage,
+}
+
+impl Layer for BgRenderLayer<'_> {
+    fn z(&self) -> i32 {
+        self.layer.ofs_z
+    }
+
+    fn composite(&self, fb: &mut Framebuffer) {
+        render_bg(self.layer, self.sheet, fb);
+    }
+}
+
+/// Rasterize one BG layer onto `fb`. For each framebuffer pixel in the layer's display clip we
+/// inverse-map screen→map space (`map = ofs + home + S⁻¹·Rᵀ·(screen − home)`), find the cell
+/// covering that map pixel (wrapping modulo the map dimensions), decode the cell's screen data,
+/// and sample the corresponding texel from the sheet tile.
+fn render_bg(layer: &BgLayer, sheet: &GrpPage, fb: &mut Framebuffer) {
+    if !layer.visible || layer.width <= 0 || layer.height <= 0 || layer.tile_size <= 0 {
+        return;
+    }
+    if layer.scale_x == 0.0 || layer.scale_y == 0.0 {
+        return;
+    }
+    // Display clip (pixels) ∩ framebuffer. `None` = the whole layer (the full screen).
+    let (cx0, cy0, cx1, cy1) =
+        layer
+            .clip
+            .unwrap_or((0, 0, fb.width as i32 - 1, fb.height as i32 - 1));
+    let x0 = cx0.max(0);
+    let y0 = cy0.max(0);
+    let x1 = cx1.min(fb.width as i32 - 1);
+    let y1 = cy1.min(fb.height as i32 - 1);
+    let tile = layer.tile_size;
+    let tiles_per_row = (GRP_DIM as i32 / tile).max(1);
+    let rad = (layer.rot as f64).to_radians();
+    let (c, s) = (rad.cos(), rad.sin());
+    let (hx, hy) = (layer.home_x as f64, layer.home_y as f64);
+    for py in y0..=y1 {
+        for px in x0..=x1 {
+            let dx = px as f64 - hx;
+            let dy = py as f64 - hy;
+            let rx = dx * c + dy * s;
+            let ry = -dx * s + dy * c;
+            let mx = (rx / layer.scale_x + hx + layer.ofs_x as f64).round() as i32;
+            let my = (ry / layer.scale_y + hy + layer.ofs_y as f64).round() as i32;
+            // Cell covering this map pixel (wrap so a scrolled/off-map read repeats the map).
+            let ccx = mx.div_euclid(tile).rem_euclid(layer.width);
+            let ccy = my.div_euclid(tile).rem_euclid(layer.height);
+            let tx = mx.rem_euclid(tile);
+            let ty = my.rem_euclid(tile);
+            let data = layer.cell(ccx, ccy);
+            let chr = (data & 0x03FF) as i32; // bits 0-9: character 0..1023
+            if chr == 0 {
+                continue; // character 0 = empty cell (transparent).
+            }
+            let hflip = data & 0x0400 != 0; // bit 10
+            let vflip = data & 0x0800 != 0; // bit 11
+            let col = chr % tiles_per_row;
+            let row = chr / tiles_per_row;
+            let sxp = if hflip { tile - 1 - tx } else { tx };
+            let syp = if vflip { tile - 1 - ty } else { ty };
+            let texel = sample_sheet(sheet, col * tile + sxp, row * tile + syp);
+            if texel & 1 == 0 {
+                continue; // transparent sheet texel.
+            }
+            let argb = modulate(rgba5551_to_argb8888(texel), layer.color);
+            fb.set_argb(px as usize, py as usize, argb);
+        }
+    }
+}
+
+/// Compose the standard top-screen scene from the VM's graphics state into the 400×240
+/// framebuffer. Back→front the layer stack is: backdrop → the GRP display page (at its `GPRIO`
+/// Z, cropped to its display clip) → the four BG layers (each at its `BGOFS` Z) → the displayed
+/// sprites (each at its `SPOFS` Z) → console (front). Layers are sorted rear→front by Z
+/// ([`compose`]); the documented equal-Z stack `GRP < BG < sprite < console` is encoded by the
+/// slice order, and within BG **layer 0 (foreground) draws in front of layer 1+** at equal Z.
+///
+/// FIDELITY: the per-layer **default Z** values, the exact equal-Z tie-break across kinds, and
+/// the sprite-vs-sprite paint order (here ascending management number = rear→front) are
+/// oracle-pending — they need the composite screenshot capture (O-T6); queued in
+/// `HARVEST_QUEUE.md` (M3-T6).
+pub fn compose_top_screen(
+    grp: &GrpState,
+    bg: &BgState,
+    sprites: &SpriteState,
+    console: &Console,
+    backdrop: u32,
+) -> Framebuffer {
+    // Build the layer list in rear→front order so the stable Z sort keeps the documented
+    // layer stack at equal Z. Box the trait objects so the heterogeneous kinds share one list.
+    let mut layers: Vec<Box<dyn Layer + '_>> = Vec::new();
+    layers.push(Box::new(GrpLayer {
         page: &grp.pages[grp.display_page as usize],
         clip: grp.display_clip,
         z: grp.prio,
-    };
-    let console_layer = ConsoleLayer {
+    }));
+    // BG layers: push high→low layer number so layer 0 ends up frontmost among ties.
+    for li in (0..BG_LAYER_COUNT).rev() {
+        layers.push(Box::new(BgRenderLayer {
+            layer: &bg.layers[li],
+            sheet: &grp.pages[bg.page as usize],
+        }));
+    }
+    // Sprites: ascending management number (rear→front); exact order oracle-pending.
+    for sp in &sprites.sprites {
+        if sp.active && sp.display {
+            layers.push(Box::new(SpriteLayer {
+                sprite: sp,
+                sheet: &grp.pages[sp.page as usize],
+            }));
+        }
+    }
+    layers.push(Box::new(ConsoleLayer {
         console,
         z: CONSOLE_DEFAULT_Z,
-    };
-    compose(
-        TOP_WIDTH,
-        TOP_HEIGHT,
-        backdrop,
-        &[&grp_layer, &console_layer],
-    )
+    }));
+    let refs: Vec<&dyn Layer> = layers.iter().map(|b| b.as_ref()).collect();
+    compose(TOP_WIDTH, TOP_HEIGHT, backdrop, &refs)
 }
 
 /// Render the top-left `width`×`height` crop of a GRP page to an RGBA8888 framebuffer — the
@@ -185,7 +443,9 @@ pub fn grp_page_to_framebuffer(page: &GrpPage, width: usize, height: usize) -> F
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bg::BG_PAGE_DEFAULT;
     use crate::grp::{argb8888_to_rgba5551, GrpState};
+    use crate::sprite::SPRITE_PAGE_DEFAULT;
 
     fn full_clip() -> ClipRect {
         ClipRect {
@@ -196,11 +456,22 @@ mod tests {
         }
     }
 
+    /// Compose the top screen with no BG/sprite overlays (the M2 GRP+console scene).
+    fn top(grp: &GrpState, console: &Console) -> Framebuffer {
+        compose_top_screen(
+            grp,
+            &BgState::new(),
+            &SpriteState::new(),
+            console,
+            DEFAULT_BACKDROP,
+        )
+    }
+
     #[test]
     fn grp_opaque_pixel_shows_over_backdrop() {
         let mut grp = GrpState::new();
         grp.gcls(0xFFFF_0000); // opaque red fill on the display page
-        let fb = compose_top_screen(&grp, &Console::top(), DEFAULT_BACKDROP);
+        let fb = top(&grp, &Console::top());
         // Red truncates through the device format to 0xFFF80000.
         assert_eq!(fb.get_argb(0, 0), 0xFFF8_0000);
         assert_eq!(fb.get_argb(399, 239), 0xFFF8_0000);
@@ -209,7 +480,7 @@ mod tests {
     #[test]
     fn grp_transparent_pixel_lets_backdrop_through() {
         let grp = GrpState::new(); // blank page = all halfword 0 = alpha bit clear
-        let fb = compose_top_screen(&grp, &Console::top(), DEFAULT_BACKDROP);
+        let fb = top(&grp, &Console::top());
         // Nothing drawn: the opaque-black backdrop survives.
         assert_eq!(fb.get_argb(10, 10), DEFAULT_BACKDROP);
     }
@@ -221,7 +492,7 @@ mod tests {
         let mut console = Console::top();
         console.print_str("A"); // white-on-transparent glyph at (0,0)
                                 // GRP prio 0 ties with the console's screen-plane Z; console wins by slice order.
-        let fb = compose_top_screen(&grp, &console, DEFAULT_BACKDROP);
+        let fb = top(&grp, &console);
         // Some glyph foreground pixel in the first cell is white (not the red GRP).
         let mut saw_white = false;
         for y in 0..8 {
@@ -284,7 +555,7 @@ mod tests {
             x1: 9,
             y1: 9,
         };
-        let fb = compose_top_screen(&grp, &Console::top(), DEFAULT_BACKDROP);
+        let fb = top(&grp, &Console::top());
         assert_eq!(fb.get_argb(4, 4), DEFAULT_BACKDROP); // outside clip = backdrop
         assert_eq!(fb.get_argb(5, 5), 0xFFF8_F8F8); // inside clip = white
         assert_eq!(fb.get_argb(9, 9), 0xFFF8_F8F8);
@@ -297,7 +568,202 @@ mod tests {
         grp.manip_page = 3;
         grp.gcls(0xFF00_00FF); // draw blue on page 3
         grp.display_page = 3; // and show page 3
-        let fb = compose_top_screen(&grp, &Console::top(), DEFAULT_BACKDROP);
+        let fb = top(&grp, &Console::top());
         assert_eq!(fb.get_argb(0, 0), 0xFF00_00F8); // blue (5-bit truncated)
+    }
+
+    // ---- sprite rasterization (M3-T6) -------------------------------------------------
+
+    /// Full top-screen compose with the given BG + sprite state (default backdrop).
+    fn scene(
+        grp: &GrpState,
+        bg: &BgState,
+        sprites: &SpriteState,
+        console: &Console,
+    ) -> Framebuffer {
+        compose_top_screen(grp, bg, sprites, console, DEFAULT_BACKDROP)
+    }
+
+    #[test]
+    fn sprite_blits_its_source_rect_at_the_home_position() {
+        let mut grp = GrpState::new();
+        grp.manip_page = SPRITE_PAGE_DEFAULT; // sprites default to sampling GRP4
+        grp.gfill(10, 10, 13, 13, 0xFFFF_0000); // a 4×4 opaque-red block on the sheet
+        let mut sprites = SpriteState::new();
+        sprites.set_direct(0, 10, 10, 4, 4, 0x01); // U,V=10,10 W,H=4, display ON
+        sprites.sprites[0].x = 100.0;
+        sprites.sprites[0].y = 50.0;
+        let fb = scene(&grp, &BgState::new(), &sprites, &Console::top());
+        // Home 0,0 → source (U,V) lands exactly on (SPOFS x, y); red truncates to 0xFFF80000.
+        assert_eq!(fb.get_argb(100, 50), 0xFFF8_0000);
+        assert_eq!(fb.get_argb(103, 53), 0xFFF8_0000); // bottom-right of the 4×4
+        assert_eq!(fb.get_argb(104, 54), DEFAULT_BACKDROP); // just past the sprite
+        assert_eq!(fb.get_argb(99, 50), DEFAULT_BACKDROP); // just left of it
+    }
+
+    #[test]
+    fn hidden_sprite_is_not_drawn() {
+        let mut grp = GrpState::new();
+        grp.manip_page = SPRITE_PAGE_DEFAULT;
+        grp.gfill(0, 0, 3, 3, 0xFFFF_0000);
+        let mut sprites = SpriteState::new();
+        sprites.set_direct(0, 0, 0, 4, 4, 0x00); // attr 0 = display OFF
+        let fb = scene(&grp, &BgState::new(), &sprites, &Console::top());
+        assert_eq!(fb.get_argb(0, 0), DEFAULT_BACKDROP);
+    }
+
+    #[test]
+    fn sprite_transparent_texel_lets_layers_behind_through() {
+        let mut grp = GrpState::new();
+        grp.manip_page = SPRITE_PAGE_DEFAULT; // sheet (page 4) left blank → alpha-clear
+        let mut sprites = SpriteState::new();
+        sprites.set_direct(0, 0, 0, 8, 8, 0x01);
+        let fb = scene(&grp, &BgState::new(), &sprites, &Console::top());
+        // Every sampled texel has the alpha bit clear → nothing painted, backdrop survives.
+        assert_eq!(fb.get_argb(0, 0), DEFAULT_BACKDROP);
+    }
+
+    #[test]
+    fn sprite_flip_h_mirrors_the_source_horizontally() {
+        let mut grp = GrpState::new();
+        grp.manip_page = SPRITE_PAGE_DEFAULT;
+        grp.gpset(10, 10, 0xFFFF_0000); // left texel red
+        grp.gpset(11, 10, 0xFF00_FF00); // right texel green
+        let mut sprites = SpriteState::new();
+        sprites.set_direct(0, 10, 10, 2, 1, 0x01);
+        sprites.sprites[0].x = 100.0;
+        sprites.sprites[0].y = 50.0;
+        let fb = scene(&grp, &BgState::new(), &sprites, &Console::top());
+        assert_eq!(fb.get_argb(100, 50), 0xFFF8_0000); // red on the left
+        assert_eq!(fb.get_argb(101, 50), 0xFF00_F800); // green on the right
+        sprites.sprites[0].flip_h = true;
+        let fb = scene(&grp, &BgState::new(), &sprites, &Console::top());
+        assert_eq!(fb.get_argb(100, 50), 0xFF00_F800); // mirrored: green left
+        assert_eq!(fb.get_argb(101, 50), 0xFFF8_0000); // red right
+    }
+
+    #[test]
+    fn sprite_flip_v_mirrors_the_source_vertically() {
+        let mut grp = GrpState::new();
+        grp.manip_page = SPRITE_PAGE_DEFAULT;
+        grp.gpset(10, 10, 0xFFFF_0000); // top texel red
+        grp.gpset(10, 11, 0xFF00_FF00); // bottom texel green
+        let mut sprites = SpriteState::new();
+        sprites.set_direct(0, 10, 10, 1, 2, 0x01);
+        sprites.sprites[0].x = 100.0;
+        sprites.sprites[0].y = 50.0;
+        sprites.sprites[0].flip_v = true;
+        let fb = scene(&grp, &BgState::new(), &sprites, &Console::top());
+        assert_eq!(fb.get_argb(100, 50), 0xFF00_F800); // mirrored: green on top
+        assert_eq!(fb.get_argb(100, 51), 0xFFF8_0000); // red on bottom
+    }
+
+    // ---- BG rasterization (M3-T6) -----------------------------------------------------
+
+    /// Paint sheet pixels for the default 16×16 BG tile `chr` (tiles_per_row = 512/16 = 32).
+    fn paint_bg_tile(grp: &mut GrpState, chr: i32, color: u32) {
+        grp.manip_page = BG_PAGE_DEFAULT; // BG samples GRP5 by default
+        let (col, row) = (chr % 32, chr / 32);
+        grp.gfill(col * 16, row * 16, col * 16 + 15, row * 16 + 15, color);
+    }
+
+    #[test]
+    fn bg_tiles_a_cell_from_the_sheet() {
+        let mut grp = GrpState::new();
+        paint_bg_tile(&mut grp, 1, 0xFF00_00FF); // char 1 = blue
+        let mut bg = BgState::new();
+        bg.layers[0].set_cell(0, 0, 1); // place char 1 at cell (0,0)
+        let fb = scene(&grp, &bg, &SpriteState::new(), &Console::top());
+        // Cell (0,0) covers screen pixels (0..15, 0..15).
+        assert_eq!(fb.get_argb(0, 0), 0xFF00_00F8);
+        assert_eq!(fb.get_argb(15, 15), 0xFF00_00F8);
+        // Cell (1,0) is char 0 = empty → backdrop shows through.
+        assert_eq!(fb.get_argb(16, 0), DEFAULT_BACKDROP);
+    }
+
+    #[test]
+    fn bg_ofs_scrolls_the_map() {
+        let mut grp = GrpState::new();
+        paint_bg_tile(&mut grp, 1, 0xFF00_00FF); // char 1 = blue
+        let mut bg = BgState::new();
+        bg.layers[0].set_cell(1, 0, 1); // char 1 at cell (1,0) → screen (16..31,*)
+        let fb = scene(&grp, &bg, &SpriteState::new(), &Console::top());
+        assert_eq!(fb.get_argb(0, 0), DEFAULT_BACKDROP); // unscrolled: cell (0,0) empty
+        assert_eq!(fb.get_argb(16, 0), 0xFF00_00F8); // the blue cell at its map position
+        bg.set_ofs(0, 16, 0, None); // scroll one tile left
+        let fb = scene(&grp, &bg, &SpriteState::new(), &Console::top());
+        assert_eq!(fb.get_argb(0, 0), 0xFF00_00F8); // cell (1,0) now at the origin
+    }
+
+    #[test]
+    fn bg_cell_hflip_mirrors_the_tile() {
+        let mut grp = GrpState::new();
+        grp.manip_page = BG_PAGE_DEFAULT;
+        grp.gfill(16, 0, 23, 15, 0xFFFF_0000); // char 1 left half red
+        grp.gfill(24, 0, 31, 15, 0xFF00_FF00); // char 1 right half green
+        let mut bg = BgState::new();
+        bg.layers[0].set_cell(0, 0, 1); // no flip
+        let fb = scene(&grp, &bg, &SpriteState::new(), &Console::top());
+        assert_eq!(fb.get_argb(0, 0), 0xFFF8_0000); // red on the left
+        assert_eq!(fb.get_argb(15, 0), 0xFF00_F800); // green on the right
+        bg.layers[0].set_cell(0, 0, 1 | 0x0400); // bit 10 = H-flip
+        let fb = scene(&grp, &bg, &SpriteState::new(), &Console::top());
+        assert_eq!(fb.get_argb(0, 0), 0xFF00_F800); // mirrored: green left
+        assert_eq!(fb.get_argb(15, 0), 0xFFF8_0000); // red right
+    }
+
+    // ---- cross-layer Z interleaving (M3-T6 acceptance) --------------------------------
+
+    /// Build the layered stack used by the Z-order tests: GRP display page red (rear), a blue
+    /// BG tile over the top-left 16×16, and an 8×8 green sprite at the origin.
+    fn z_stack() -> (GrpState, BgState, SpriteState) {
+        let mut grp = GrpState::new();
+        grp.gcls(0xFFFF_0000); // GRP display page 0 = opaque red
+        paint_bg_tile(&mut grp, 1, 0xFF00_00FF); // BG sheet (GRP5): char 1 = blue
+        grp.manip_page = SPRITE_PAGE_DEFAULT; // sprite sheet (GRP4)
+        grp.gfill(0, 0, 7, 7, 0xFF00_FF00); // 8×8 green sprite image
+        let mut bg = BgState::new();
+        bg.layers[0].set_cell(0, 0, 1); // blue over screen (0..15, 0..15)
+        let mut sprites = SpriteState::new();
+        sprites.set_direct(0, 0, 0, 8, 8, 0x01); // 8×8 sprite at the origin
+        (grp, bg, sprites)
+    }
+
+    #[test]
+    fn default_z_orders_grp_bg_sprite_console() {
+        let (grp, bg, sprites) = z_stack();
+        let fb = scene(&grp, &bg, &sprites, &Console::top());
+        // (0,0): sprite (green) is frontmost over BG over GRP.
+        assert_eq!(fb.get_argb(0, 0), 0xFF00_F800);
+        // (10,0): no sprite here (it's 8×8) → BG blue over the red GRP.
+        assert_eq!(fb.get_argb(10, 0), 0xFF00_00F8);
+        // (300,200): no sprite, BG cell empty → bare GRP red.
+        assert_eq!(fb.get_argb(300, 200), 0xFFF8_0000);
+    }
+
+    #[test]
+    fn console_paints_in_front_of_sprites_and_bg() {
+        let (grp, bg, sprites) = z_stack();
+        let mut console = Console::top();
+        console.print_str("A"); // white glyph in cell (0,0), over the green sprite
+        let fb = scene(&grp, &bg, &sprites, &console);
+        let mut saw_white = false;
+        for y in 0..8 {
+            for x in 0..8 {
+                if fb.get_argb(x, y) == 0xFFF8_F8F8 {
+                    saw_white = true;
+                }
+            }
+        }
+        assert!(saw_white, "console glyph should paint over the sprite/BG");
+    }
+
+    #[test]
+    fn sprite_z_sends_it_behind_a_nearer_bg_layer() {
+        let (grp, bg, mut sprites) = z_stack();
+        sprites.sprites[0].z = 1000.0; // push the sprite to the rear (BG ofs_z default 0)
+        let fb = scene(&grp, &bg, &sprites, &Console::top());
+        // Z now wins over the slice-order default: at (0,0) the nearer BG blue covers the sprite.
+        assert_eq!(fb.get_argb(0, 0), 0xFF00_00F8);
     }
 }

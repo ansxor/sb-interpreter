@@ -1069,3 +1069,28 @@ the conformance gate; the following runtime OUTPUTS need the BG framebuffer/tran
   flip cell word format (modeled as the raw 16-bit cell, round-trips within sb-core), the
   auto-grown 1-D array length, and the meaning of the undocumented 3/7-arg trailing operand
   (currently evaluated then ignored) are unverified.
+
+## M3-T6 — Sprite/BG composite into framebuffer (implemented 2026-06-23; pixel-exactness oracle-pending)
+The sprite + BG rasterizers and the full layer stack (`compose_top_screen`: backdrop → GRP →
+BG×4 → sprites → console, Z-sorted) are wired in `crates/sb-render/src/compositor.rs`. The
+**deterministic** behavior — sprite placement at the home point, the 1-bit alpha key, H/V flip,
+BG tile placement / scroll / wrap / per-cell H-flip / char-0 transparency, and Z-interleaving
+across all layer kinds — is pinned by the compositor unit tests. The following need the
+**composite screenshot** capture (O-T6 composite path; `screenshot`/Ctrl+P, NOT the single-page
+GRP round-trip) before they can be raised above `hypothesis`:
+- **Per-layer default Z + equal-Z tie-break across kinds** — modeled as `GRP < BG < sprite <
+  console` (slice order), BG layer 0 (foreground) in front of layer 1+, sprites ascending
+  management number = rear→front. Confirm the real paint order (esp. sprite-vs-sprite and
+  whether lower or higher SP number is frontmost).
+- **Sprite free-rotation / fractional `SPSCALE` sampling** — the inverse-affine nearest-texel
+  map here vs SB's exact sub-pixel rule (rounding, pivot handling). Identity / 90°-step / flip
+  are exact; arbitrary `SPROT`/`SPSCALE` are not pinned.
+- **`SPCHR` sheet offset** — the `chr` field is carried but not yet folded into the source-rect
+  sampling; how SPCHR shifts the sampled tile is unverified.
+- **Color modulate (`SPCOLOR`/`BGCOLOR`) rounding + whether alpha is modulated**, and the
+  **additive (`#SPADD`) blend** math — modeled as `round(src*mod/255)` and saturating RGB add;
+  the white/non-additive default (all committed tests) is exact, the rest is a guess.
+- **BG 16-color palette remap** — the screen-data palette nibble (bits 12-15) is decoded but
+  NOT applied; tiles sample the sheet's RGBA directly. Needs the palette→color mapping.
+- **BG sheet tile layout + scroll sign** — char N → sheet tile `(N%(512/tile), N/(512/tile))`
+  and `BGOFS` scroll direction (map = screen + ofs) are assumptions; confirm against a capture.

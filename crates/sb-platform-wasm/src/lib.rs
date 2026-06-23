@@ -31,7 +31,13 @@ pub fn render_program(src: &str) -> Framebuffer {
     let mut vm = Vm::new(program);
     // Ignore the halt result: a halted program's partial scene is still worth showing.
     let _ = vm.run();
-    compose_top_screen(vm.grp(), vm.console(), DEFAULT_BACKDROP)
+    compose_top_screen(
+        vm.grp(),
+        vm.bg(),
+        vm.sprites(),
+        vm.console(),
+        DEFAULT_BACKDROP,
+    )
 }
 
 /// An opaque-black top-screen framebuffer (used when the program fails to parse/compile).
