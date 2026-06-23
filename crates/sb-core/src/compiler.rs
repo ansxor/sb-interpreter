@@ -32,7 +32,7 @@ use std::collections::HashSet;
 
 use crate::ast::*;
 use crate::bytecode::*;
-use crate::sysvars::ErrSysvar;
+use crate::sysvars::Sysvar;
 use crate::token::{SourceLoc, Suffix};
 
 /// A compile failure carrying the SmileBASIC error number to raise.
@@ -112,14 +112,13 @@ fn canonical(name: &Name) -> String {
     format!("{}{}", name.ident, s)
 }
 
-/// The reserved read-only system variables a bare name resolves to before any user
-/// variable: the error-state trio (ERRNUM/ERRLINE/ERRPRG, M1-T13), the frame counter
-/// MAINCNT (M4-T3) and the HARDWARE model (M4-T4). All are `writable=false`
-/// (`spec/reference/sysvars.yaml`), so assigning to one is a compile-time Syntax error
-/// (errnum 3). (HARDWARE reads through the builtin registry, like PI, so it is gated here
-/// only for the assignment check.)
+/// Whether a bare name is a **read-only** system variable that cannot be assigned to
+/// (`spec/reference/sysvars.yaml`, M6-T3). The general system-variable surface ([`Sysvar`])
+/// carries its own [`writable`](Sysvar::writable) flag; only `TABSTEP`/`SYSBEEP` are writable.
+/// `HARDWARE` reads through the builtin registry (M4-T4), not [`Sysvar`], so it is gated here
+/// for the assignment check. Assigning to any of these is a compile-time Syntax error (errnum 3).
 fn is_readonly_sysvar(cname: &str) -> bool {
-    ErrSysvar::from_name(cname).is_some() || cname == "MAINCNT" || cname == "HARDWARE"
+    Sysvar::from_name(cname).is_some_and(|sv| !sv.writable()) || cname == "HARDWARE"
 }
 
 /// The stack/queue ops (M1-T14) whose first operand is taken by reference so the op
@@ -532,21 +531,25 @@ impl<'a> Compiler<'a> {
         self.cur_loc = stmt.loc;
         match &stmt.kind {
             StmtKind::Assign { name, expr } => {
-                if is_readonly_sysvar(&canonical(name)) {
-                    // The reserved sysvars read here (ERRNUM/ERRLINE/ERRPRG, M1-T13; MAINCNT,
-                    // M4-T3) are read-only (sysvars.yaml writable=false); assigning to one is
-                    // a Syntax error (errnum 3), not a write.
+                let cname = canonical(name);
+                if let Some(sv) = Sysvar::from_name(&cname).filter(|sv| sv.writable()) {
+                    // A writable system variable (TABSTEP/SYSBEEP, M6-T3): the assignment takes
+                    // effect on the VM's state rather than declaring a user variable.
+                    self.compile_expr(expr)?;
+                    self.emit(Op::StoreSysvar(sv));
+                } else if is_readonly_sysvar(&cname) {
+                    // The read-only system variables (ERRNUM/ERRLINE/ERRPRG, M1-T13; MAINCNT,
+                    // M4-T3; VERSION/FREEMEM/CSR*/…, M6-T3; HARDWARE, M4-T4) reject assignment
+                    // (sysvars.yaml writable=false): a Syntax error (errnum 3), not a write.
                     return Err(self.err(
                         ERR_SYNTAX,
-                        format!(
-                            "cannot assign to read-only system variable {}",
-                            canonical(name)
-                        ),
+                        format!("cannot assign to read-only system variable {cname}"),
                     ));
+                } else {
+                    self.compile_expr(expr)?;
+                    let v = self.resolve_scalar(name)?;
+                    self.emit(Op::PopVar(v));
                 }
-                self.compile_expr(expr)?;
-                let v = self.resolve_scalar(name)?;
-                self.emit(Op::PopVar(v));
             }
             StmtKind::ArrayAssign {
                 name,
@@ -1166,14 +1169,10 @@ impl<'a> Compiler<'a> {
                 self.emit(Op::Push(const_from_lit(lit)));
             }
             ExprKind::Var(name) => {
-                if let Some(sv) = ErrSysvar::from_name(&canonical(name)) {
-                    // A read-only error-state sysvar (ERRNUM/ERRLINE/ERRPRG, M1-T13):
-                    // reserved, so it resolves before any user variable.
+                if let Some(sv) = Sysvar::from_name(&canonical(name)) {
+                    // A system variable (MAINCNT/VERSION/TIME$/ERRNUM/…, M6-T3): reserved, so
+                    // it resolves before any user variable. The VM reads the live value.
                     self.emit(Op::PushSysvar(sv));
-                } else if canonical(name) == "MAINCNT" {
-                    // MAINCNT (M4-T3) — the read-only frame counter; like the error sysvars
-                    // it is reserved and resolves before any user variable.
-                    self.emit(Op::PushMaincnt);
                 } else if let Some((vref, _)) = self.lookup(name) {
                     self.emit(Op::PushVar(vref));
                 } else if self.builtins.is_builtin(&canonical(name)) {

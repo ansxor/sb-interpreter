@@ -1240,3 +1240,23 @@ VM-owned in-memory `Storage`. Items to confirm / extend:
 - **Cross-resource RENAME (TXT:→PRG:)** — sb-core renames within the *source* resource's folder
   (TXT and program both live in the TXT folder, so the corpus `RENAME "TXT:"+N$,"PRG:"+N$` retype
   works as a same-folder rename). Confirm the real retype semantics on the oracle.
+
+### M6-T3 System variables — oracle-pending + model notes
+- **FREEMEM allocator model** — sb-core reports a fixed constant (8314876, the real
+  near-empty-program value, sb-oracle 2026-06-23). Real SB FREEMEM *decreases* as a program
+  DIMs arrays / defines resources. Modelling the allocator so FREEMEM tracks real usage (and
+  the low-memory branch / errnum 4 "Out of memory" boundary) is deferred. Harvest FREEMEM at a
+  few known allocation sizes (e.g. `DIM A[100000]:PRINT FREEMEM`) to fit the per-element cost.
+- **PRGSLOT default** — the oracle's launch environment read PRGSLOT=1 (the slot the program was
+  loaded into). sb-core reports the running slot (0, single-slot M6). The PRG-edit-target slot
+  (set by PRGEDIT, M6-T4) and the multi-slot launch slot (M6-T6) decide the real default;
+  confirm what a freshly-launched single program reads on the oracle.
+- **RESULT semantics** — boots TRUE (1) before any DIALOG (hw_verified 2026-06-23). DIALOG
+  (M6-T5) sets TRUE/FALSE/-1 (Suspended). Confirm the exact post-dialog values + the -1
+  suspended case on the oracle when DIALOG lands.
+- **TABSTEP out-of-range write** — sb-core clamps a negative `TABSTEP=n` to 0 and stores any
+  positive value verbatim. The real valid range / whether an out-of-range value raises errnum 10
+  (or clamps) is unconfirmed. Harvest `TABSTEP=-1` / `TABSTEP=999` then `PRINT TABSTEP`.
+- **SYSBEEP write effect** — sb-core stores the flag and exposes it to the platform UI; whether
+  any nonzero is TRUE or only 1 toggles the beep, and whether ACLS resets it, is unconfirmed
+  (no audible golden, O-T7). Confirm the truthiness + ACLS-reset behavior on the oracle.

@@ -99,6 +99,61 @@ impl Default for FrameClock {
     }
 }
 
+/// The wall-clock date/time behind the `DATE$` and `TIME$` system variables (M6-T3).
+///
+/// On real hardware these read the 3DS RTC. `sb-core` keeps no real clock (it must stay
+/// deterministic + wasm-safe), so the VM owns a fixed [`WallClock`] that the platform layer
+/// can refresh per frame ([`Vm::set_wall_clock`](crate::vm::Vm)). The headless default is a
+/// fixed epoch so tests are reproducible without injection — `DATE$`/`TIME$` are deterministic
+/// under the injected clock, exactly as M6-T3 requires.
+///
+/// Fields are stored verbatim and formatted with zero-padding; no calendar arithmetic is done,
+/// so whatever the platform injects is what the program reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WallClock {
+    /// Full year, e.g. `2000`.
+    pub year: u16,
+    /// Month `1..=12`.
+    pub month: u8,
+    /// Day of month `1..=31`.
+    pub day: u8,
+    /// Hour `0..=23`.
+    pub hour: u8,
+    /// Minute `0..=59`.
+    pub minute: u8,
+    /// Second `0..=59`.
+    pub second: u8,
+}
+
+impl WallClock {
+    /// The fixed headless epoch: `2000/01/01 00:00:00`. Deterministic, so a test that reads
+    /// `DATE$`/`TIME$` without injecting a clock gets a stable value.
+    pub const EPOCH: WallClock = WallClock {
+        year: 2000,
+        month: 1,
+        day: 1,
+        hour: 0,
+        minute: 0,
+        second: 0,
+    };
+
+    /// `DATE$` — the date string `YYYY/MM/DD` (zero-padded fields).
+    pub fn date_string(&self) -> String {
+        format!("{:04}/{:02}/{:02}", self.year, self.month, self.day)
+    }
+
+    /// `TIME$` — the time string `HH:MM:SS` (zero-padded fields, 24-hour).
+    pub fn time_string(&self) -> String {
+        format!("{:02}:{:02}:{:02}", self.hour, self.minute, self.second)
+    }
+}
+
+impl Default for WallClock {
+    fn default() -> Self {
+        Self::EPOCH
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

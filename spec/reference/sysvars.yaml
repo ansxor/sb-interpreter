@@ -44,6 +44,15 @@ sources:
       VERSION=50724864 (&H03060000 → 3.6.0). Boot defaults of the writable pair: TABSTEP=4,
       SYSBEEP=1 (TRUE). HARDWARE=1 (Azahar emulates new3DS; would be 0 on old 3DS) — value is
       hardware-dependent, not a universal golden. Captured `PRINT <sysvar>` on real SB 3.6.0.
+  - type: hw_verified
+    reference: >-
+      sb-oracle (M6-T3, 2026-06-23): offline/no-peripheral defaults captured via `PRINT
+      <sysvar>` on real SB 3.6.0. RESULT=1 (TRUE) before any DIALOG. No wireless session →
+      MPCOUNT=0 but MPHOST=-1 and MPLOCAL=-1 (no host / no local user). Mic idle →
+      MICPOS=0, MICSIZE=0. CSRZ=0 (flat console). FREEMEM=8314876 for a near-empty program
+      (it decreases with allocation, so it is a snapshot, not an invariant golden). PRGSLOT
+      read 1 in the oracle's launch environment (the slot the program was loaded into) — slot-
+      dependent, not a universal default; PRG-edit-target semantics are M6-T4.
 
 # type: i = Integer (i32), s = String. value: present only for the fixed constants.
 system_variables:
@@ -82,7 +91,16 @@ oracle:
     FALSE: 0
     VERSION: 50724864   # &H03060000 (3.6.0)
     CALLIDX: 0          # outside any SPFUNC/BGFUNC callback
+    RESULT: 1           # TRUE before any DIALOG (M6-T3 oracle 2026-06-23)
+    MPCOUNT: 0          # not in a wireless session
+    MPHOST: -1          # no host assigned offline
+    MPLOCAL: -1         # no local user assigned offline
+    MICPOS: 0           # mic idle
+    MICSIZE: 0          # mic idle
+    CSRZ: 0             # flat console grid has no cursor depth
   environment_dependent:  # captured on Azahar, NOT universal goldens
     HARDWARE: 1        # new3DS; 0 on old 3DS
     TABSTEP: 4         # boot default (writable → session-dependent)
     SYSBEEP: 1         # boot default TRUE (writable → session-dependent)
+    FREEMEM: 8314876   # near-empty program; decreases with allocation (snapshot, not invariant)
+    PRGSLOT: 1         # the slot the oracle launched into; slot-dependent (M6-T4/T6)

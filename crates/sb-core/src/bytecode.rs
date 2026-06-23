@@ -24,7 +24,7 @@
 //! This module is pure data (no I/O), so it builds for `wasm32`.
 
 use crate::ast::{BinOp, Name, UnOp};
-use crate::sysvars::ErrSysvar;
+use crate::sysvars::Sysvar;
 use crate::token::Suffix;
 
 /// A compile-time constant pushed by [`Op::Push`]. Mirrors the runtime scalar types
@@ -106,14 +106,15 @@ pub enum Op {
     /// static type (the `VarRef`'s declared [`Suffix`], looked up in the symbol
     /// table) per [`crate::value::Value::coerce_to_suffix`].
     PopVar(VarRef),
-    /// Push a read-only error-state system variable (`ERRNUM`/`ERRLINE`/`ERRPRG`,
-    /// M1-T13). The VM reads its current error state; assignment is rejected at
-    /// compile time (Syntax error, errnum 3) so there is no matching pop.
-    PushSysvar(ErrSysvar),
-    /// Push the `MAINCNT` system variable — the 60 fps frame counter (M4-T3). The VM reads
-    /// the [`FrameClock`](crate::clock::FrameClock); read-only (`writable=false`), so like
-    /// the error sysvars assignment is rejected at compile time and there is no matching pop.
-    PushMaincnt,
+    /// Push a system variable (M6-T3) — `MAINCNT`, `VERSION`, `TIME$`, `ERRNUM`, … The VM
+    /// reads the live system state in [`Vm::read_sysvar`](crate::vm::Vm). A read-only one
+    /// (almost all of them) rejects assignment at compile time (Syntax error, errnum 3), so it
+    /// has no matching store.
+    PushSysvar(Sysvar),
+    /// Pop a value and store it into a *writable* system variable (`TABSTEP`/`SYSBEEP`, M6-T3),
+    /// routed through [`Vm::write_sysvar`](crate::vm::Vm). The compiler only emits this for the
+    /// two writable names; assigning to any other system variable is rejected at compile time.
+    StoreSysvar(Sysvar),
 
     // --- computed references (`VAR(expr)`) ------------------------------------
     /// Pop a value (a variable name), push a reference resolved at runtime.

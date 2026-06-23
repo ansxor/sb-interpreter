@@ -42,13 +42,13 @@ use crate::ast::{BinOp, Name, UnOp};
 use crate::builtins::screen::ScreenConfig;
 use crate::builtins::sound::AudioState;
 use crate::bytecode::{Const, Op, Program, VarRef, VarType};
-use crate::clock::FrameClock;
+use crate::clock::{FrameClock, WallClock};
 use crate::input::InputState;
 use crate::storage::{
     parse_files_filter, parse_resource, FilesFilter, Folder, MemStorage, ResourceKind, Storage,
     DEFAULT_PROJECT,
 };
-use crate::sysvars::ErrSysvar;
+use crate::sysvars::Sysvar;
 use crate::token::Suffix;
 use crate::value::{Cell, ElemRef, RuntimeError, SbStr, Value};
 use sb_render::bg::BgState;
@@ -64,6 +64,14 @@ use std::collections::VecDeque;
 /// this is a generous hypothesis bound that lets ordinary recursion run while still
 /// catching unbounded recursion.
 pub const CALL_STACK_LIMIT: usize = 8192;
+
+/// The `FREEMEM` system variable's reported free user memory (M6-T3). SmileBASIC computes this
+/// from its real allocator, so it *decreases* as a program DIMs arrays / defines resources;
+/// `sb-core` does not model the allocator, so it reports a fixed faithful constant. The value
+/// is anchored to real SB 3.6.0: a near-empty program reported `8314876` (sb-oracle 2026-06-23).
+/// Programs that branch on FREEMEM (low-memory guards) therefore see "plenty free"; modelling
+/// the allocator so FREEMEM tracks real usage is queued (`HARVEST_QUEUE.md`).
+const DEFAULT_FREEMEM: i32 = 8_314_876;
 
 // errnums used directly by the VM (names per `spec/reference/errors.yaml`).
 const ERR_STACK_OVERFLOW: u32 = 5;
@@ -173,9 +181,25 @@ pub struct Vm {
     /// The screen background color code (`BACKCOLOR`). The handler round-trips the user's
     /// RGB code, so we store it verbatim; the rendered border color is screen state (M2).
     back_color: i32,
-    /// `TABSTEP` — the `PRINT ,` tab-stop width. Boot default 4 (`sysvars.yaml`); the
-    /// writable system-variable wiring lands with M6-T3 (queued).
+    /// `TABSTEP` — the `PRINT ,` tab-stop width. Boot default 4 (`sysvars.yaml`); writable via
+    /// the `TABSTEP = n` system-variable assignment (M6-T3).
     tabstep: usize,
+    /// `SYSBEEP` — the system-beep enable flag (M6-T3). Boot default 1 (TRUE = allowed,
+    /// `sysvars.yaml`); writable via `SYSBEEP = n`. Stored verbatim so a read round-trips the
+    /// written value; the audible UI beep it gates is platform UI (no deterministic golden).
+    sysbeep: i32,
+    /// `RESULT` — the last DIALOG result (M6-T3). Boot default 1 (TRUE) on real SB 3.6.0 before
+    /// any dialog (sb-oracle 2026-06-23); DIALOG (M6-T5) sets it to TRUE/FALSE/-1 (Suspended).
+    result: i32,
+    /// `CALLIDX` — the index passed into the current SPFUNC/BGFUNC callback (M6-T3). 0 outside
+    /// any callback (the hw_verified golden); the per-frame callback dispatch (M6-T6) sets it.
+    callidx: i32,
+    /// `FREEMEM` — free user memory in KB (M6-T3). A fixed faithful model (we don't track the
+    /// real allocator); the exact boot value is oracle-pending (`HARVEST_QUEUE.md`).
+    freemem: i32,
+    /// The wall-clock date/time behind `DATE$`/`TIME$` (M6-T3). Deterministic default epoch;
+    /// the native host injects the real RTC via [`Vm::set_wall_clock`].
+    wall_clock: WallClock,
     /// Queued input lines for `INPUT`/`LINPUT` (one entry = one ENTER-terminated line).
     /// Headless there is no live keyboard; a runner/test preloads this via
     /// [`Vm::push_input`]. An empty queue yields an empty line.
@@ -237,6 +261,11 @@ impl Vm {
             input: InputState::new(),
             back_color: 0,
             tabstep: 4,
+            sysbeep: 1,
+            result: 1,
+            callidx: 0,
+            freemem: DEFAULT_FREEMEM,
+            wall_clock: WallClock::EPOCH,
             input_lines: VecDeque::new(),
             errnum: 0,
             errline: 0,
@@ -279,6 +308,66 @@ impl Vm {
     /// The current `MAINCNT` — the 60 fps frame counter (frames since the clock started).
     pub fn maincnt(&self) -> i32 {
         self.clock.maincnt()
+    }
+
+    /// Inject the wall-clock date/time behind `DATE$`/`TIME$` (M6-T3). The native host calls
+    /// this with the real RTC; headless it stays at the deterministic epoch. `SYSBEEP`'s flag
+    /// (whether the UI beep plays) is read with [`Vm::sysbeep`].
+    pub fn set_wall_clock(&mut self, wall_clock: WallClock) {
+        self.wall_clock = wall_clock;
+    }
+
+    /// The current `SYSBEEP` flag (M6-T3): non-zero = the system UI beep is allowed. The
+    /// platform UI layer reads this to decide whether to play the keypress beep.
+    pub fn sysbeep(&self) -> i32 {
+        self.sysbeep
+    }
+
+    /// Read a system variable's live value (M6-T3). Integer sysvars push [`Value::Int`];
+    /// `TIME$`/`DATE$` push a [`Value`] String formatted from the injected [`WallClock`].
+    fn read_sysvar(&self, sv: Sysvar) -> Value {
+        match sv {
+            Sysvar::Csrx => Value::Int(self.console.cur_x as i32),
+            Sysvar::Csry => Value::Int(self.console.cur_y as i32),
+            // The console is a flat 2-D grid with no per-cursor depth, so CSRZ reads 0.
+            Sysvar::Csrz => Value::Int(0),
+            Sysvar::Freemem => Value::Int(self.freemem),
+            // &H03060000 = 3.6.0 (hw_verified golden, sysvars.yaml).
+            Sysvar::Version => Value::Int(0x0306_0000),
+            Sysvar::Tabstep => Value::Int(self.tabstep as i32),
+            Sysvar::Sysbeep => Value::Int(self.sysbeep),
+            Sysvar::Errnum => Value::Int(self.errnum),
+            Sysvar::Errline => Value::Int(self.errline),
+            Sysvar::Errprg => Value::Int(self.errprg),
+            // The PRG* edit target slot defaults to the running slot (refined by PRGEDIT, M6-T4).
+            Sysvar::Prgslot => Value::Int(self.current_slot as i32),
+            Sysvar::Result => Value::Int(self.result),
+            Sysvar::Maincnt => Value::Int(self.clock.maincnt()),
+            // Mic/multiplayer are faithful offline stubs (refined in M6-T5). hw_verified offline
+            // values (sb-oracle 2026-06-23): mic not recording → MICPOS/MICSIZE = 0; no wireless
+            // session → MPCOUNT = 0 but MPHOST/MPLOCAL = -1 (no host / no local user assigned).
+            Sysvar::Micpos | Sysvar::Micsize => Value::Int(0),
+            Sysvar::Mpcount => Value::Int(0),
+            Sysvar::Mphost | Sysvar::Mplocal => Value::Int(-1),
+            Sysvar::Time => Value::str_from(&self.wall_clock.time_string()),
+            Sysvar::Date => Value::str_from(&self.wall_clock.date_string()),
+            Sysvar::Callidx => Value::Int(self.callidx),
+        }
+    }
+
+    /// Write a *writable* system variable (M6-T3). Only `TABSTEP`/`SYSBEEP` reach here (the
+    /// compiler rejects assignment to the read-only ones); the value is coerced to Integer
+    /// (a String → Type mismatch, errnum 8). A negative `TABSTEP` clamps to 0 (the tab math is
+    /// unsigned); the exact out-of-range behavior is oracle-pending (`HARVEST_QUEUE.md`).
+    fn write_sysvar(&mut self, sv: Sysvar, value: Value) -> Result<(), RuntimeError> {
+        let n = value.to_int()?;
+        match sv {
+            Sysvar::Tabstep => self.tabstep = n.max(0) as usize,
+            Sysvar::Sysbeep => self.sysbeep = n,
+            // Unreachable: the compiler only emits StoreSysvar for the two writable names.
+            _ => debug_assert!(false, "StoreSysvar for read-only {}", sv.canonical()),
+        }
+        Ok(())
     }
 
     /// The native host's per-frame heartbeat (M4-T3): advance the frame clock one displayed
@@ -421,15 +510,12 @@ impl Vm {
                 *self.cell(vref)?.borrow_mut() = v;
             }
             Op::PushSysvar(sv) => {
-                let v = match sv {
-                    ErrSysvar::Errnum => self.errnum,
-                    ErrSysvar::Errline => self.errline,
-                    ErrSysvar::Errprg => self.errprg,
-                };
-                self.stack.push(Value::Int(v));
+                let v = self.read_sysvar(sv);
+                self.stack.push(v);
             }
-            Op::PushMaincnt => {
-                self.stack.push(Value::Int(self.clock.maincnt()));
+            Op::StoreSysvar(sv) => {
+                let v = self.pop()?;
+                self.write_sysvar(sv, v).map_err(sb)?;
             }
 
             Op::NewArray { var, ty, dims } => self.new_array(var, ty, dims)?,
@@ -4015,6 +4101,120 @@ H$=HEX$(255)"#);
         let ast = parse("MAINCNT=5").expect("parse");
         let err = compile_with(&ast, &StdBuiltins).expect_err("MAINCNT is read-only");
         assert_eq!(err.errnum, 3);
+    }
+
+    // ---- System variables (M6-T3) ----
+
+    #[test]
+    fn version_encodes_3_6_0() {
+        // VERSION = &H03060000 = 50724864 (hw_verified golden, sysvars.yaml).
+        assert_eq!(int(&run("V=VERSION"), "V"), 50_724_864);
+        assert_eq!(out("PRINT VERSION"), "50724864");
+    }
+
+    #[test]
+    fn date_and_time_strings_are_deterministic_under_the_injected_clock() {
+        // The default headless epoch is 2000/01/01 00:00:00.
+        assert_eq!(out("PRINT DATE$"), "2000/01/01");
+        assert_eq!(out("PRINT TIME$"), "00:00:00");
+        // Injecting a wall clock changes both, with zero-padded fields.
+        let prog = compile(&parse("D$=DATE$\nT$=TIME$").expect("parse")).expect("compile");
+        let mut vm = Vm::new(prog);
+        vm.set_wall_clock(WallClock {
+            year: 2026,
+            month: 6,
+            day: 9,
+            hour: 7,
+            minute: 4,
+            second: 30,
+        });
+        vm.run().expect("run");
+        assert_eq!(string(&vm, "D"), "2026/06/09");
+        assert_eq!(string(&vm, "T"), "07:04:30");
+    }
+
+    #[test]
+    fn date_and_time_need_the_dollar_suffix() {
+        // TIME / DATE (no `$`) are ordinary numeric variables, not the string sysvars.
+        let vm = run("TIME=5\nDATE=7");
+        assert_eq!(int(&vm, "TIME"), 5);
+        assert_eq!(int(&vm, "DATE"), 7);
+    }
+
+    #[test]
+    fn tabstep_is_writable_and_takes_effect() {
+        // Boot default 4; `TABSTEP=n` writes the VM state, and a read returns it.
+        assert_eq!(out("PRINT TABSTEP"), "4");
+        let vm = run("TABSTEP=8\nS=TABSTEP");
+        assert_eq!(int(&vm, "S"), 8);
+        // And the new width drives the `PRINT ,` tab: "1" at col 0, tab to col 8, "2".
+        assert_eq!(out("TABSTEP=8\nPRINT \"1\",\"2\""), "1       2");
+    }
+
+    #[test]
+    fn sysbeep_is_writable_and_round_trips() {
+        // Boot default 1 (TRUE = beep allowed). `SYSBEEP=0` disables it; the flag round-trips
+        // and is exposed to the platform UI via `Vm::sysbeep`.
+        assert_eq!(out("PRINT SYSBEEP"), "1");
+        let vm = run("SYSBEEP=0\nS=SYSBEEP");
+        assert_eq!(int(&vm, "S"), 0);
+        assert_eq!(vm.sysbeep(), 0);
+        assert_eq!(run("SYSBEEP=1").sysbeep(), 1);
+    }
+
+    #[test]
+    fn writable_sysvars_reject_a_string() {
+        // TABSTEP/SYSBEEP are Integer: assigning a String is a Type mismatch (errnum 8).
+        assert_eq!(run_err(r#"TABSTEP="x""#).errnum(), Some(8));
+        assert_eq!(run_err(r#"SYSBEEP="x""#).errnum(), Some(8));
+    }
+
+    #[test]
+    fn csrx_csry_track_the_text_cursor() {
+        // After LOCATE the cursor sysvars report the column/row; CSRZ is a flat-grid 0.
+        let vm = run("LOCATE 12,7\nX=CSRX\nY=CSRY\nZ=CSRZ");
+        assert_eq!(int(&vm, "X"), 12);
+        assert_eq!(int(&vm, "Y"), 7);
+        assert_eq!(int(&vm, "Z"), 0);
+    }
+
+    #[test]
+    fn freemem_and_stub_sysvars_read_their_model_values() {
+        // hw_verified offline values (sb-oracle 2026-06-23): FREEMEM is a large positive
+        // constant (8314876, near-empty-program snapshot); RESULT boots TRUE (1); CALLIDX/
+        // MICPOS = 0; no session → MPCOUNT 0 but MPHOST/MPLOCAL = -1; PRGSLOT = running slot.
+        let vm = run("F=FREEMEM\nR=RESULT\nC=CALLIDX\nP=PRGSLOT\nMC=MPCOUNT\nMH=MPHOST\nML=MPLOCAL\nMI=MICPOS");
+        assert_eq!(int(&vm, "F"), 8_314_876);
+        assert_eq!(int(&vm, "R"), 1);
+        assert_eq!(int(&vm, "C"), 0);
+        assert_eq!(int(&vm, "P"), 0);
+        assert_eq!(int(&vm, "MC"), 0);
+        assert_eq!(int(&vm, "MH"), -1);
+        assert_eq!(int(&vm, "ML"), -1);
+        assert_eq!(int(&vm, "MI"), 0);
+    }
+
+    #[test]
+    fn read_only_sysvars_reject_assignment() {
+        // Every non-writable system variable is a compile-time Syntax error (errnum 3) on write.
+        for src in [
+            "VERSION=1",
+            "FREEMEM=1",
+            "CSRX=1",
+            "CSRY=1",
+            "CSRZ=1",
+            "RESULT=1",
+            "PRGSLOT=1",
+            "CALLIDX=1",
+            "MPCOUNT=1",
+            "MICPOS=1",
+            "TIME$=\"x\"",
+            "DATE$=\"x\"",
+        ] {
+            let ast = parse(src).expect("parse");
+            let err = crate::compiler::compile(&ast).expect_err("read-only");
+            assert_eq!(err.errnum, 3, "{src} should be a Syntax error");
+        }
     }
 
     // ---- BGM commands: BGMPLAY/BGMSTOP/BGMCHK/BGMVAR/BGMVOL/BGMSET/BGMSETD/BGMCLEAR (M5-T3) ----
