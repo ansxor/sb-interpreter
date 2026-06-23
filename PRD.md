@@ -117,7 +117,7 @@ and name the instructions they cover inline.
 - [x] S-T12e DIRECT-mode — RUN · CONT · NEW · CLEAR · LIST · BACKTRACE · PROJECT
 
 #### S-T13 Wireless (8) → S-T0
-- [ ] S-T13a Session — MPSTART · MPEND · MPSET · MPSTAT
+- [x] S-T13a Session — MPSTART · MPEND · MPSET · MPSTAT
 - [ ] S-T13b Messaging — MPSEND · MPRECV · MPGET · MPNAME$
 
 #### S-T14 Verify reference tables (vs disassembly + oracle) → O-T4

@@ -1,0 +1,44 @@
+id: MPSTAT
+kind: function
+category: Wireless communication
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — terminal ID supplied: connection status of one peer.
+  - args:
+      - { name: terminal_id, type: integer, range: "0-3: ID of another terminal in the session" }
+    returns: { type: integer, range: "0: not connected, 1: connected" }
+    note: "MPSTAT(terminal_id) — returns whether the terminal with the given ID is connected (0/1)."
+  # Form 2 — omitted: whole-session status.
+  - args: []
+    returns: { type: integer, range: "0: session not established, 1: session established" }
+    note: "MPSTAT() (or bare MPSTAT) — terminal_id omitted: returns the status of the whole session (0/1)."
+
+summary: "Gets the connection status of a terminal in a wireless communication session, returning 0 (not connected) or 1 (connected). With a terminal ID (0-3) it reports that specific peer; with the argument omitted it reports the whole session. Communication is dropped if the system enters sleep mode."
+
+semantics:
+  - "MPSTAT is a function and must produce exactly one return value: the handler requires return-count (dispatch block +0xc) == 1 (`cmp r0,#0x1`/`bne` @0x183d28..0x183d30); a call shape that does not yield one value falls through to errnum 4 (Illegal function call) -> `mov r0,#0x4` @0x183d78."
+  - "Argument count must be 0 or 1 (`cmp r0,#0x0`/`beq` then `cmp r0,#0x1`/`beq` @0x183d58..0x183d68); 2+ arguments raise errnum 4 -> `mov r0,#0x4` @0x183d78."
+  - "MP-restriction guard: the global byte flag @0x305612 is tested; when it is non-zero MPSTAT raises errnum 52 (Incompatible statement) — `ldrb`/`cmp r0,#0x0` @0x183d34..0x183d3c -> `mov r0,#0x34` @0x183d50. Same flag as MPSTART/MPEND/MPSET."
+  - "Omitted-argument (whole-session) form: reads a session-state field (`ldr r0,[..,#0x24]` @0x183d80..0x183d84) and returns 1 when it equals 10 (the 'session established' state, `cmp r0,#0xa`/`moveq r1,#0x1`/`movne r1,#0x0` @0x183d88..0x183d90), else 0."
+  - "Terminal-ID form: the ID is range-checked against the session's terminal count (`r7 = count-1`, `sub r7,r0,#0x1` @0x183db4) — an out-of-range ID raises errnum 10 (Out of range) -> `mov r0,#0xa` @0x183e38; an in-range ID returns 1 if that peer is connected, else 0. Docs give the user-facing range as 0-3."
+  - "May be called without parentheses in the no-argument form (corpus: `PRINT MPSTAT`), which is the whole-session form; the documented call form is `MPSTAT([terminal_id])`. The terminal_id operand may be any integer expression (corpus: `MPSTAT(1-ID)`, `MPSTAT(I%)`, `MPSTAT(!MPLOCAL)`)."
+
+errors:
+  - { errnum: 4,  name: "Illegal function call", when: "more than one argument is supplied, or the call does not provide a return slot" }
+  - { errnum: 52, name: "Incompatible statement", when: "MP is unavailable in the current context (global MP-restriction flag @0x305612 is non-zero)" }
+  - { errnum: 10, name: "Out of range", when: "the supplied terminal_id is outside the valid range for the session" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/mpstat.md (1 form: `Variable = MPSTAT( [Terminal ID] )`. 'Gets the connection status of a specified terminal in a wireless communication session'; Terminal ID 0-3, 'If omitted, the whole session will be assumed'; Return Values '0: Not connected, 1: Connected'; 'Communication will be terminated if the system goes into sleep mode'. Example `RET=MPSTAT( 2 )`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst MPSTAT handler @0x183d20 (FUN_00183d20): return-count!=1 or argcount>1 -> errnum 4 (`cmp r0,#0x1` @0x183d28, `mov r0,#0x4` @0x183d78); MP-restriction byte @0x305612 non-zero -> errnum 52 (`mov r0,#0x34` @0x183d50); 0-arg whole-session result `cmp r0,#0xa`/`moveq r1,#0x1`/`movne r1,#0x0` @0x183d88; terminal-id range guard `sub r7,r0,#0x1` @0x183db4 with errnum 10 (`mov r0,#0xa` @0x183e38). errnum 52 string @0x2e9a38 = 'Incompatible statement' (error pointer table entry 52 @0x3055c8, base @0x3054f8)." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bMPSTAT\\b', 28 files): both documented forms appear — no-arg `MPSTAT()` and bare `PRINT MPSTAT` (J3434DKS/TXT/MPSETUP.CONFIG), and terminal-id with expressions `MPSTAT(1-ID)` / `MPSTAT(I%)` / `MPSTAT(!MPLOCAL)` (227YK34J/TXT/JINTRI102, E3S34XGX/TXT/BATTLESHIP). Confirms the optional-arg + expression-operand + no-parens forms are legal; the 0/1 return values are oracle-pending (need a real session)." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d MPSTAT (3.5.0 structural cross-check only)" }
+
+# Body-pinned argcount/restriction/range errnums (4/52/10) and the whole-session 'state==10'
+# decode are `disassembled`. The 0/1 connection results need real wireless peers and are
+# oracle-pending (HARVEST_QUEUE.md), so the top-level confidence stays disassembled.
+confidence: disassembled
+
+tests:
+  - { name: too_many_args, code: 'A=MPSTAT(0,1)', expect: { error: { errnum: 4 } } }

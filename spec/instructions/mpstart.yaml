@@ -1,0 +1,46 @@
+id: MPSTART
+kind: statement
+category: Wireless communication
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: max_users, type: integer, range: "2-4: maximum number of concurrently connected users" }
+      - { name: identifier, type: string, range: '1-16 chars: communication identifier ("connection password"); only peers whose MPSTART identifier matches may join the session' }
+    returns: { type: void }
+    note: 'MPSTART max_users, "identifier" — opens a local-wireless session. Both operands may be any integer/string expression (corpus). Whether the session was actually established is reported through the RESULT system variable.'
+
+summary: 'Starts a local wireless communication session for 2-4 players. The first operand is the maximum number of connected users (2-4); the second is a communication-identifier string (any text, used as a join password — only terminals whose identifiers are equal may connect). After MPSTART the program reads the RESULT system variable to learn whether a session was successfully established. A session is also terminated if the system enters sleep mode.'
+
+semantics:
+  - "Argument count is fixed at exactly 2 (a statement, 0 return slots): the handler requires value-arg-count (dispatch block +0x4) == 2 and return-count (+0xc) == 0, otherwise it raises errnum 4 (Illegal function call) — `cmp r0,#0x2` @0x1840b8 -> `mov r0,#0x4` @0x1840d0."
+  - "MP-restriction guard: a global byte flag @0x305612 is tested first; when it is non-zero the command raises errnum 52 (Incompatible statement) — `ldrb`/`cmp r0,#0x0` @0x1840e0..0x1840ec -> `mov r0,#0x34` @0x1840f8. This same flag gates every MP command (MPSTART/MPEND/MPSET/MPSTAT), so MP is rejected with 'Incompatible statement' in any context where wireless is unavailable."
+  - "max_users range is 2..4 inclusive: `cmp r0,#0x2`/`blt` then `cmp r0,#0x4`/`ble` @0x184190..0x1841a0; outside that range raises errnum 10 (Out of range) -> `mov r0,#0xa` @0x1841ac. The operand may be a variable/expression (corpus: `MPSTART USERS,...`, `MPSTART MPMAX,TAG$`)."
+  - "The second operand must be a string: a type-tag byte is checked @0x184148 (`ldrb r0,[r12,#0x2]`/`cmp r0,#0x0`/`beq`) and a non-string raises errnum 8 (Type mismatch) -> `mov r0,#0x8` @0x1841c4. It may be a string variable or a concatenation (corpus: `MPSTART 2,INST$`, `MPSTART 2,\"PTCMKII\"+R$`)."
+  - "The identifier string length must be 1..16: `ldr r0,[sp,#0xc]` (length), `sub r0,r0,#0x1`, `cmp r0,#0x10`, `bcc` @0x184168..0x184174 — proceed only when (len-1) unsigned-< 16 (i.e. len in 1..16); a length of 0 or >16 falls through to errnum 10 (Out of range) -> `mov r0,#0xa` @0x184180."
+  - "When all checks pass the handler initialises the wireless session (call into the MP layer @0x13e130) and updates the RESULT system variable; MPSTART itself has no return value or console output."
+  - "Communication is dropped if the console enters sleep mode (docs)."
+
+errors:
+  - { errnum: 4,  name: "Illegal function call", when: "argument count is not exactly 2" }
+  - { errnum: 52, name: "Incompatible statement", when: "MP is unavailable in the current context (global MP-restriction flag @0x305612 is non-zero)" }
+  - { errnum: 10, name: "Out of range", when: "max_users is outside 2-4, or the identifier string length is 0 or greater than 16" }
+  - { errnum: 8,  name: "Type mismatch", when: "the second operand is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/mpstart.md (1 form: `MPSTART Maximum number of connected users, \"Communication identifier string\"`. 'Starts a wireless communication session'; max users 2-4; identifier 'Any character string for authentication'; 'Connection to a session is allowed when MPSTART identifiers are equal'; 'The RESULT system variable should be used to get information on whether or not a session has successfully been established'; 'Communication will be terminated if the system goes into sleep mode'. Example `MPSTART 4,\"ANYSTR\"`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst MPSTART handler @0x1840a8 (FUN_001840a8): argcount!=2 -> errnum 4 (`cmp r0,#0x2` @0x1840b8, `mov r0,#0x4` @0x1840d0); MP-restriction byte @0x305612 non-zero -> errnum 52 (`mov r0,#0x34` @0x1840f8); max_users guarded `cmp r0,#0x2`/`cmp r0,#0x4` @0x184190..0x1841a0 with errnum 10 (`mov r0,#0xa` @0x1841ac); non-string 2nd arg -> errnum 8 (`mov r0,#0x8` @0x1841c4); identifier length `sub r0,r0,#0x1`/`cmp r0,#0x10`/`bcc` @0x184168 -> errnum 10 (`mov r0,#0xa` @0x184180) when not 1..16; session init call @0x13e130. errnum 52 string @0x2e9a38 = 'Incompatible statement' (error pointer table base @0x3054f8, entry 52 @0x3055c8)." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bMPSTART\\b', 70 files): documented 2-arg form dominates; both operands are routinely expressions — variable user count (`MPSTART USERS,\"SHAREBOX\"` 4DAXEXWD/TXT/---ATOMIC---; `MPSTART MPMAX,TAG$` L1NV3344/TXT/EX8TECHDEMO), string-variable identifier (`MPSTART 2,INST$` D3B4V8HV/TXT/SNDPTC; `MPSTART 4,ROOMNAME$` NKK4S4A3/TXT/VSPAC), and concatenation (`MPSTART 2,\"PTCMKII\"+R$` NRQ4B33D/TXT/-MKIILIB). Syntax legal (shipped programs); runtime/RESULT effect oracle-pending (needs real wireless peers)." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d MPSTART (3.5.0 structural cross-check only)" }
+
+# Body-pinned arg-count / range / type / restriction errnums (4/52/10/8) are `disassembled`.
+# The runtime session-establishment + RESULT semantics need real wireless peers and are
+# oracle-pending (queued in HARVEST_QUEUE.md), so the top-level confidence stays disassembled.
+confidence: disassembled
+
+tests:
+  - { name: wrong_argcount, code: 'MPSTART 4', expect: { error: { errnum: 4 } } }
+  - { name: max_users_too_small, code: 'MPSTART 1,"X"', expect: { error: { errnum: 10 } } }
+  - { name: max_users_too_large, code: 'MPSTART 5,"X"', expect: { error: { errnum: 10 } } }
+  - { name: identifier_not_string, code: 'MPSTART 4,99', expect: { error: { errnum: 8 } } }
+  - { name: identifier_too_long, code: 'MPSTART 4,"ABCDEFGHIJKLMNOPQ"', expect: { error: { errnum: 10 } } }

@@ -1,0 +1,34 @@
+id: MPEND
+kind: statement
+category: Wireless communication
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    returns: { type: void }
+    note: "MPEND — ends the current wireless communication session. Takes no arguments."
+
+summary: "Ends the wireless communication session started by MPSTART. All participating terminals close the session synchronously, and a wait dialog is displayed while they do. Takes no arguments and returns nothing."
+
+semantics:
+  - "Takes no arguments: the handler requires value-arg-count (dispatch block +0x4) == 0 and return-count (+0xc) == 0, otherwise it raises errnum 4 (Illegal function call) — `cmp r1,#0x0`/`cmpeq r0,#0x0` @0x183a40..0x183a48 -> `mov r0,#0x4` @0x183a5c."
+  - "MP-restriction guard: the global byte flag @0x305612 is tested; when it is non-zero MPEND raises errnum 52 (Incompatible statement) — `ldrb`/`cmp r0,#0x0` @0x183a64..0x183a6c -> `mov r0,#0x34` @0x183a80. This is the same flag that gates MPSTART/MPSET/MPSTAT."
+  - "When the guard passes the handler tears down the session via the MP layer (`mov r0,#0x1`, `bl 0x1da424` @0x183a88) and returns 0; there is no return value or console output."
+  - "All participants close the session synchronously and a wait dialog is shown during teardown (docs). Calling MPEND with no active session is benign in practice (no documented error beyond the restriction guard) — runtime behaviour oracle-pending."
+
+errors:
+  - { errnum: 4,  name: "Illegal function call", when: "any argument is supplied (MPEND takes none)" }
+  - { errnum: 52, name: "Incompatible statement", when: "MP is unavailable in the current context (global MP-restriction flag @0x305612 is non-zero)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/mpend.md (1 form: `MPEND`, no arguments. 'Ends a wireless communication session'; 'All participants close the session synchronously'; 'A wait dialog will be displayed'. Example `MPEND`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst MPEND handler @0x183a38 (FUN_00183a38): argcount!=0 -> errnum 4 (`cmp r1,#0x0` @0x183a40, `mov r0,#0x4` @0x183a5c); MP-restriction byte @0x305612 non-zero -> errnum 52 (`mov r0,#0x34` @0x183a80); on success `mov r0,#0x1`,`bl 0x1da424` @0x183a88..0x183a8c tears down the session and returns 0. errnum 52 string @0x2e9a38 = 'Incompatible statement' (error pointer table entry 52 @0x3055c8, base @0x3054f8)." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bMPEND\\b', 58 files): every occurrence is the bare zero-argument form `MPEND` (in cleanup/conditional/dialog contexts), never with arguments — consistent with the docs and the handler's argcount==0 requirement. Runtime teardown behaviour oracle-pending (needs a real session)." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d MPEND (3.5.0 structural cross-check only)" }
+
+# Body-pinned argcount/restriction errnums (4/52) are `disassembled`. The session-teardown
+# runtime effect needs a real wireless session and is oracle-pending (HARVEST_QUEUE.md).
+confidence: disassembled
+
+tests:
+  - { name: rejects_argument, code: 'MPEND 1', expect: { error: { errnum: 4 } } }

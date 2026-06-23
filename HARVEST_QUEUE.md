@@ -10,6 +10,19 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] S-T13a (MPSTART/MPEND/MPSET/MPSTAT) · Wireless-session behaviors are body-pinned for
+  validation (arg-count errnum 4, MP-restriction errnum 52 "Incompatible statement" via flag
+  @0x305612, range errnum 10, MPSTART non-string identifier errnum 8) but the actual NETWORK
+  effects need real wireless peers (the single Azahar oracle can't form a 2-4 player session).
+  Open questions: (a) is the MP-restriction flag @0x305612 zero in a normal program-mode
+  session — i.e. does a valid MPSTART proceed to a connection dialog, or does it immediately
+  raise errnum 52? (b) MPSTART RESULT value on success/failure/timeout; (c) MPSTAT 0/1 return
+  for self vs peers and whole-session; (d) MPSET Double operand — truncated or errnum 8?;
+  (e) does real SB reject the corpus 3-arg `MPSET a,b,c` (C2NVX3QJ/PETITWORLD) with errnum 4 as
+  the handler's `cmp r0,#0x2` implies? · assumption: validation errnums per disassembly; network
+  results documented-only. NOTE: MPSTART/MPEND attempt real networking — harvest cautiously
+  (connection dialogs may hang the oracle); the pre-network validation errors (errnum 4/10/8)
+  are the safe cases to harvest first.
 - [ ] S-T4d (RESTORE) · Confirm RESTORE to an undefined @Label -> errnum 14 (Undefined label),
   and the cross-slot form RESTORE "1:@Label" after USE 1 (needs a 2nd slot loaded — single-slot
   oracle can't easily test). · assumption: errnum 14 per docs/error-table; cross-slot per docs.
