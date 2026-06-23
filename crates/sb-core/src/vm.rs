@@ -39,6 +39,7 @@
 
 use crate::array::SbArray;
 use crate::ast::{BinOp, Name, UnOp};
+use crate::builtins::screen::ScreenConfig;
 use crate::bytecode::{Const, Op, Program, VarRef, VarType};
 use crate::clock::FrameClock;
 use crate::input::InputState;
@@ -185,6 +186,10 @@ pub struct Vm {
     /// advances when a program blocks on frames (VSYNC/WAIT) or the platform ticks it; the
     /// native host paces it to wall-clock 60 fps. See [`crate::clock`].
     clock: FrameClock,
+    /// Screen configuration (M4-T4): the `XSCREEN` mode, the `DISPLAY` output target, the
+    /// per-screen `VISIBLE` layer flags and the `HARDWARE` model. The compositor reads the
+    /// Upper-screen visibility flags via [`Vm::screen_visibility`].
+    screen: ScreenConfig,
 }
 
 impl Vm {
@@ -217,6 +222,7 @@ impl Vm {
             errline: 0,
             errprg: 0,
             clock: FrameClock::new(),
+            screen: ScreenConfig::new(),
         }
     }
 
@@ -274,6 +280,12 @@ impl Vm {
     /// Borrow the hardware-input snapshot (button masks + stick axes) — for inspection.
     pub fn input(&self) -> &InputState {
         &self.input
+    }
+
+    /// The Upper-screen layer visibility (`VISIBLE`, M4-T4) for the compositor. The
+    /// reimplementation renders only the Upper screen, so this returns screen 0's flags.
+    pub fn screen_visibility(&self) -> sb_render::compositor::LayerVisibility {
+        self.screen.upper_visibility()
     }
 
     /// Mutably borrow the hardware-input snapshot so the platform layer (or a scripted-input
@@ -824,6 +836,14 @@ impl Vm {
         if self.call_input(name, &args, out_argc, wants_value)? {
             return Ok(());
         }
+        // Screen configuration (XSCREEN/DISPLAY/VISIBLE/HARDWARE, M4-T4) mutates/reads the
+        // VM-owned `ScreenConfig`, so it bypasses the stateless dispatch.
+        if let Some(ret) = self.call_screen(name, &args, wants_value).map_err(sb)? {
+            if wants_value && !matches!(ret, Value::Void) {
+                self.stack.push(ret);
+            }
+            return Ok(());
+        }
         let ret = crate::builtins::dispatch(name, args).map_err(sb)?;
         if wants_value {
             self.stack.push(ret);
@@ -1047,6 +1067,37 @@ impl Vm {
                 cons::fontdef(&mut self.console, &args, wants_value)?;
                 Ok(Some(Value::Void))
             }
+            _ => Ok(None),
+        }
+    }
+
+    /// Route a screen-configuration builtin (XSCREEN/DISPLAY/VISIBLE/HARDWARE, M4-T4) over
+    /// the VM-owned [`ScreenConfig`]. Returns `Ok(Some(value))` when handled (the statement
+    /// commands return [`Value::Void`]; DISPLAY's GET form and HARDWARE return an Integer),
+    /// or `Ok(None)` when `name` is not a screen builtin (the caller falls through to the
+    /// stateless dispatch). Argument/range validation follows the disassembled handlers.
+    fn call_screen(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        wants_value: bool,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let args: Vec<Value> = args.iter().map(|v| v.deref()).collect();
+        match name {
+            "XSCREEN" => {
+                self.screen.xscreen(&args, wants_value)?;
+                Ok(Some(Value::Void))
+            }
+            "DISPLAY" => Ok(Some(
+                self.screen
+                    .display(&args, wants_value)?
+                    .unwrap_or(Value::Void),
+            )),
+            "VISIBLE" => {
+                self.screen.visible(&args, wants_value)?;
+                Ok(Some(Value::Void))
+            }
+            "HARDWARE" => Ok(Some(self.screen.hardware(&args)?)),
             _ => Ok(None),
         }
     }
@@ -3084,6 +3135,77 @@ H$=HEX$(255)"#);
         // SET then GET returns the stored color code.
         let vm = run("BACKCOLOR 12345\nA=BACKCOLOR()");
         assert_eq!(int(&vm, "A"), 12345);
+    }
+
+    // ---- Screen configuration: XSCREEN/DISPLAY/VISIBLE/HARDWARE (M4-T4) ----
+
+    #[test]
+    fn xscreen_runs_documented_forms() {
+        // The 1-arg and 3-arg forms both run without error (corpus-ubiquitous shapes).
+        run("XSCREEN 0");
+        run("XSCREEN 3,512,4");
+        run("XSCREEN 2,128,4"); // the doc example
+    }
+
+    #[test]
+    fn xscreen_error_conditions() {
+        // hw_verified (sb-oracle batch s_t11d, xscreen.yaml).
+        assert_eq!(run_err("XSCREEN 2,128").errnum(), Some(4)); // 2 args illegal
+        assert_eq!(run_err("XSCREEN 5").errnum(), Some(10)); // mode out of range
+        assert_eq!(run_err("XSCREEN 2,513,4").errnum(), Some(10)); // sprites > 512
+        assert_eq!(run_err("XSCREEN 2,256,5").errnum(), Some(10)); // BG > 4
+        assert_eq!(run_b_err("A=XSCREEN(2)").errnum(), Some(4)); // no return value
+    }
+
+    #[test]
+    fn display_get_round_trips() {
+        // The GET form reports the currently selected screen; default is the Upper screen 0.
+        let vm = run_b("DISPLAY 0:A=DISPLAY()");
+        assert_eq!(int(&vm, "A"), 0);
+        // XSCREEN 2 exposes the Touch Screen, so DISPLAY 1 is accepted and read back.
+        let vm = run_b("XSCREEN 2:DISPLAY 1:A=DISPLAY()");
+        assert_eq!(int(&vm, "A"), 1);
+    }
+
+    #[test]
+    fn display_error_conditions() {
+        // hw_verified (sb-oracle batch s_t11d, display.yaml).
+        assert_eq!(run_err("DISPLAY 0,1").errnum(), Some(4)); // SET needs exactly 1 arg
+        assert_eq!(run_err("XSCREEN 0:DISPLAY 1").errnum(), Some(10)); // Touch unavailable
+        assert_eq!(run_b_err("A=DISPLAY(0)").errnum(), Some(4)); // GET takes no args
+    }
+
+    #[test]
+    fn visible_runs_and_gates_layers() {
+        // hw_verified arg guard (visible.yaml): exactly 4 arguments.
+        assert_eq!(run_err("VISIBLE 1,1,1").errnum(), Some(4)); // too few
+        assert_eq!(run_err("VISIBLE 1,1,1,1,1").errnum(), Some(4)); // too many
+        assert_eq!(run_b_err("A=VISIBLE(1,1,1,1)").errnum(), Some(4)); // no return value
+                                                                       // The four flags booleanize onto the selected screen's layer visibility.
+        let vm = run("VISIBLE 0,1,0,1");
+        let v = vm.screen_visibility();
+        assert!(!v.console && v.graphic && !v.bg && v.sprite);
+        // Any nonzero shows the layer; all-ON restores the full stack.
+        let vm = run("VISIBLE 2,2,2,2");
+        let v = vm.screen_visibility();
+        assert!(v.console && v.graphic && v.bg && v.sprite);
+    }
+
+    #[test]
+    fn hardware_reports_the_model() {
+        // HARDWARE reads as a bare-name sysvar (1 = new3DS, the Azahar/oracle value).
+        let vm = run_b("H=HARDWARE");
+        assert_eq!(int(&vm, "H"), 1);
+    }
+
+    #[test]
+    fn hardware_is_read_only() {
+        // Assigning to the read-only sysvar is a compile-time Syntax error (errnum 3).
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        let ast = parse("HARDWARE=2").expect("parse");
+        let err = compile_with(&ast, &StdBuiltins).expect_err("assignment must be rejected");
+        assert_eq!(err.errnum, 3);
     }
 
     // ---- INKEY$ (M1-T8) ----

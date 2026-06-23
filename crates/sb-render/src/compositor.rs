@@ -42,6 +42,32 @@ use crate::{Framebuffer, TOP_HEIGHT, TOP_WIDTH};
 /// `HARVEST_QUEUE.md`. Callers may pass any ARGB8888 backdrop to [`compose`].
 pub const DEFAULT_BACKDROP: u32 = 0xFF00_0000;
 
+/// Per-layer on/off flags for one screen (`VISIBLE console, graphic, bg, sprite`, M4-T4).
+/// A cleared flag drops that whole layer group from the composite. The default shows every
+/// layer (boot state), so callers that don't model `VISIBLE` keep the full stack.
+#[derive(Debug, Clone, Copy)]
+pub struct LayerVisibility {
+    /// Console (text) layer.
+    pub console: bool,
+    /// GRP graphics display page.
+    pub graphic: bool,
+    /// BG tilemap layers.
+    pub bg: bool,
+    /// Sprite layer.
+    pub sprite: bool,
+}
+
+impl Default for LayerVisibility {
+    fn default() -> Self {
+        LayerVisibility {
+            console: true,
+            graphic: true,
+            bg: true,
+            sprite: true,
+        }
+    }
+}
+
 /// Default Z for the console layer (screen plane). The per-layer *default* Z values and the
 /// exact equal-Z tie-break are oracle-pending (O-T6 composite capture, queued); M2 places
 /// the console at the screen plane and relies on the stable slice-order tie-break to keep it
@@ -386,35 +412,45 @@ pub fn compose_top_screen(
     sprites: &SpriteState,
     console: &Console,
     backdrop: u32,
+    vis: LayerVisibility,
 ) -> Framebuffer {
     // Build the layer list in rear→front order so the stable Z sort keeps the documented
     // layer stack at equal Z. Box the trait objects so the heterogeneous kinds share one list.
+    // A `VISIBLE`-hidden layer group (M4-T4) is dropped from the list entirely.
     let mut layers: Vec<Box<dyn Layer + '_>> = Vec::new();
-    layers.push(Box::new(GrpLayer {
-        page: &grp.pages[grp.display_page as usize],
-        clip: grp.display_clip,
-        z: grp.prio,
-    }));
-    // BG layers: push high→low layer number so layer 0 ends up frontmost among ties.
-    for li in (0..BG_LAYER_COUNT).rev() {
-        layers.push(Box::new(BgRenderLayer {
-            layer: &bg.layers[li],
-            sheet: &grp.pages[bg.page as usize],
+    if vis.graphic {
+        layers.push(Box::new(GrpLayer {
+            page: &grp.pages[grp.display_page as usize],
+            clip: grp.display_clip,
+            z: grp.prio,
         }));
     }
-    // Sprites: ascending management number (rear→front); exact order oracle-pending.
-    for sp in &sprites.sprites {
-        if sp.active && sp.display {
-            layers.push(Box::new(SpriteLayer {
-                sprite: sp,
-                sheet: &grp.pages[sp.page as usize],
+    // BG layers: push high→low layer number so layer 0 ends up frontmost among ties.
+    if vis.bg {
+        for li in (0..BG_LAYER_COUNT).rev() {
+            layers.push(Box::new(BgRenderLayer {
+                layer: &bg.layers[li],
+                sheet: &grp.pages[bg.page as usize],
             }));
         }
     }
-    layers.push(Box::new(ConsoleLayer {
-        console,
-        z: CONSOLE_DEFAULT_Z,
-    }));
+    // Sprites: ascending management number (rear→front); exact order oracle-pending.
+    if vis.sprite {
+        for sp in &sprites.sprites {
+            if sp.active && sp.display {
+                layers.push(Box::new(SpriteLayer {
+                    sprite: sp,
+                    sheet: &grp.pages[sp.page as usize],
+                }));
+            }
+        }
+    }
+    if vis.console {
+        layers.push(Box::new(ConsoleLayer {
+            console,
+            z: CONSOLE_DEFAULT_Z,
+        }));
+    }
     let refs: Vec<&dyn Layer> = layers.iter().map(|b| b.as_ref()).collect();
     compose(TOP_WIDTH, TOP_HEIGHT, backdrop, &refs)
 }
@@ -464,6 +500,7 @@ mod tests {
             &SpriteState::new(),
             console,
             DEFAULT_BACKDROP,
+            LayerVisibility::default(),
         )
     }
 
@@ -581,7 +618,25 @@ mod tests {
         sprites: &SpriteState,
         console: &Console,
     ) -> Framebuffer {
-        compose_top_screen(grp, bg, sprites, console, DEFAULT_BACKDROP)
+        compose_top_screen(
+            grp,
+            bg,
+            sprites,
+            console,
+            DEFAULT_BACKDROP,
+            LayerVisibility::default(),
+        )
+    }
+
+    /// Compose `z_stack` with custom layer visibility (M4-T4 `VISIBLE`).
+    fn scene_vis(
+        grp: &GrpState,
+        bg: &BgState,
+        sprites: &SpriteState,
+        console: &Console,
+        vis: LayerVisibility,
+    ) -> Framebuffer {
+        compose_top_screen(grp, bg, sprites, console, DEFAULT_BACKDROP, vis)
     }
 
     #[test]
@@ -765,5 +820,60 @@ mod tests {
         let fb = scene(&grp, &bg, &sprites, &Console::top());
         // Z now wins over the slice-order default: at (0,0) the nearer BG blue covers the sprite.
         assert_eq!(fb.get_argb(0, 0), 0xFF00_00F8);
+    }
+
+    // ---- VISIBLE layer gating (M4-T4) -------------------------------------------------
+
+    #[test]
+    fn hidden_sprite_layer_reveals_the_bg_behind() {
+        // The default stack shows the green sprite over the blue BG at (0,0); hiding the
+        // sprite layer (VISIBLE _,_,_,0) drops it, so the BG blue shows through.
+        let (grp, bg, sprites) = z_stack();
+        let vis = LayerVisibility {
+            sprite: false,
+            ..Default::default()
+        };
+        let fb = scene_vis(&grp, &bg, &sprites, &Console::top(), vis);
+        assert_eq!(fb.get_argb(0, 0), 0xFF00_00F8); // BG blue, sprite hidden
+    }
+
+    #[test]
+    fn hiding_graphic_and_bg_falls_through_to_the_backdrop() {
+        // With the GRP, BG and sprite layers all hidden, an empty console leaves only the
+        // backdrop — every overlay layer is gone.
+        let (grp, bg, sprites) = z_stack();
+        let vis = LayerVisibility {
+            graphic: false,
+            bg: false,
+            sprite: false,
+            console: true,
+        };
+        let fb = scene_vis(&grp, &bg, &sprites, &Console::top(), vis);
+        assert_eq!(fb.get_argb(0, 0), DEFAULT_BACKDROP);
+        assert_eq!(fb.get_argb(300, 200), DEFAULT_BACKDROP);
+    }
+
+    #[test]
+    fn hidden_console_layer_drops_the_text() {
+        // A printed glyph normally paints white over the scene; hiding the console layer
+        // (VISIBLE 0,_,_,_) leaves the sprite green showing instead.
+        let (grp, bg, sprites) = z_stack();
+        let mut console = Console::top();
+        console.print_str("A");
+        let vis = LayerVisibility {
+            console: false,
+            ..Default::default()
+        };
+        let fb = scene_vis(&grp, &bg, &sprites, &console, vis);
+        let mut saw_white = false;
+        for y in 0..8 {
+            for x in 0..8 {
+                if fb.get_argb(x, y) == 0xFFF8_F8F8 {
+                    saw_white = true;
+                }
+            }
+        }
+        assert!(!saw_white, "hidden console layer must not paint its glyph");
+        assert_eq!(fb.get_argb(0, 0), 0xFF00_F800); // sprite green shows instead
     }
 }

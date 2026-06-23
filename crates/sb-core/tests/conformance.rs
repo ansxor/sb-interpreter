@@ -130,10 +130,12 @@ const IN_SCOPE_GRAPHICS: &[&str] = &[
 /// state — 0 or 3 args ok, 1/2 args → errnum 4) and `BACKCOLOR` (set the screen background
 /// color; the no-arg statement and the multi-arg form both → errnum 4). The rendered color
 /// itself is screen state with no scalar golden, so the assertable behavior is the call-shape
-/// / arg-count guard (both hw_verified via sb-oracle batch s_t11d). The rest of the category
-/// stays excluded: `DISPLAY`/`FADE`/`FADECHK`/`VISIBLE`/`XSCREEN` are display-config / frame
-/// effects (M4) and aren't implemented yet. Listed by id.
-const IN_SCOPE_SCREEN: &[&str] = &["ACLS", "BACKCOLOR"];
+/// / arg-count guard (both hw_verified via sb-oracle batch s_t11d). The display-config
+/// commands `XSCREEN`/`DISPLAY`/`VISIBLE` fold in with M4-T4: the screen reconfiguration has
+/// no scalar golden, so their assertable behavior is the arg-shape (→ 4) and range (→ 10)
+/// guards, all hw_verified via sb-oracle batch s_t11d. Still excluded: `FADE`/`FADECHK`
+/// (frame effects, M5/M4 later). Listed by id.
+const IN_SCOPE_SCREEN: &[&str] = &["ACLS", "BACKCOLOR", "XSCREEN", "DISPLAY", "VISIBLE"];
 /// `Sprites` instructions whose lifecycle `sb-core` implements (M3-T1: the 512-slot sprite
 /// table + create/release/show/hide/query commands) and whose inline `tests:` are
 /// deterministic + checkable: `SPSET` (six forms — explicit slot or auto-allocate, range /

@@ -1113,3 +1113,18 @@ guards are hw_verified (s_t11a, already in the specs). Queued for a future input
 - **BUTTON wireless terminal form (errnum 52)** — the 2-arg `BUTTON(f,term)` / `STICK term`
   paths raise the undocumented comms error 52 when multiplayer is inactive; gated on live
   wireless, so kept out of the deterministic golden.
+
+## M4-T4 — Display config (XSCREEN/DISPLAY/VISIBLE/HARDWARE) — dual-screen output deferred
+The screen *state* (XSCREEN mode, DISPLAY target, VISIBLE per-layer flags, HARDWARE model) is
+modeled, with the arg-shape (→ 4) and range (→ 10) guards hw_verified (s_t11d, already in the
+specs) and VISIBLE layer gating wired into the compositor (golden-style pixel tests). What is
+NOT yet realized / verifiable:
+- **DISPLAY 1 → Touch-screen output** — the reimplementation renders only the Upper screen;
+  there is no Touch-screen framebuffer/console/GRP, so selecting screen 1 tracks the target but
+  does not route console/graphics there. Needs a second-screen render path + the composite
+  screenshot capture (O-T6) to verify which screen each layer lands on.
+- **XSCREEN sprite/BG split across screens** — the 0..512 / 0..4 allocation is validated but
+  not partitioned between Upper and Touch (all sprites/BG composite onto the Upper screen).
+- **VISIBLE on the Touch screen + DIRECT-mode guards** — screen-1 visibility is stored but
+  unrendered; the XSCREEN-4 / DISPLAY errnum-43 DIRECT-mode guards aren't exercised (programs
+  run in program mode, matching the oracle capture). Queued for the DIRECT-mode harness.

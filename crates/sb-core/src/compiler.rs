@@ -113,11 +113,13 @@ fn canonical(name: &Name) -> String {
 }
 
 /// The reserved read-only system variables a bare name resolves to before any user
-/// variable: the error-state trio (ERRNUM/ERRLINE/ERRPRG, M1-T13) and the frame counter
-/// MAINCNT (M4-T3). All are `writable=false` (`spec/reference/sysvars.yaml`), so assigning
-/// to one is a compile-time Syntax error (errnum 3).
+/// variable: the error-state trio (ERRNUM/ERRLINE/ERRPRG, M1-T13), the frame counter
+/// MAINCNT (M4-T3) and the HARDWARE model (M4-T4). All are `writable=false`
+/// (`spec/reference/sysvars.yaml`), so assigning to one is a compile-time Syntax error
+/// (errnum 3). (HARDWARE reads through the builtin registry, like PI, so it is gated here
+/// only for the assignment check.)
 fn is_readonly_sysvar(cname: &str) -> bool {
-    ErrSysvar::from_name(cname).is_some() || cname == "MAINCNT"
+    ErrSysvar::from_name(cname).is_some() || cname == "MAINCNT" || cname == "HARDWARE"
 }
 
 /// The stack/queue ops (M1-T14) whose first operand is taken by reference so the op

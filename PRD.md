@@ -187,7 +187,7 @@ and name the instructions they cover inline.
 - [x] M4-T1 Buttons/sticks → S-T11
 - [x] M4-T2 Touch/keyboard → S-T11
 - [x] M4-T3 Frame timing (VSYNC/WAIT/MAINCNT) → S-T4
-- [ ] M4-T4 Display config → S-T11
+- [x] M4-T4 Display config → S-T11
 - [ ] M4-T5 Host input mapping → M4-T1, M4-T2
 
 ## M5 — Audio (MML)  (gated on S-T10)

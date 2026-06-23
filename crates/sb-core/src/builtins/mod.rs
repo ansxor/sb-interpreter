@@ -33,6 +33,7 @@ pub(crate) mod data;
 pub(crate) mod graphics;
 pub(crate) mod input;
 mod math;
+pub(crate) mod screen;
 pub(crate) mod sprite;
 mod string;
 
@@ -256,6 +257,15 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "POP",
     "SHIFT",
     "UNSHIFT",
+    // Screen configuration (M4-T4): XSCREEN sets the screen mode + sprite/BG split; DISPLAY
+    // selects/reads the output screen; VISIBLE toggles the four display layers; HARDWARE
+    // reports the hardware model. They route over the VM-owned `ScreenConfig` (and HARDWARE
+    // is a read-only bare-name sysvar, like PI a zero-arg builtin), so they are registered
+    // here for the compiler to treat as builtins rather than variables.
+    "XSCREEN",
+    "DISPLAY",
+    "VISIBLE",
+    "HARDWARE",
     // Test-mode assertion (M1-T14): the VM handles it directly (a false condition halts
     // with `VmError::Assert`), so it is not in the stateless `dispatch`.
     "ASSERT__",

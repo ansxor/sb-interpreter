@@ -76,6 +76,7 @@ mod native {
                 vm.sprites(),
                 vm.console(),
                 DEFAULT_BACKDROP,
+                vm.screen_visibility(),
             ),
             Scene::Failed => {
                 let mut fb = Framebuffer::top();

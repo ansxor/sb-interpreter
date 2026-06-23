@@ -37,6 +37,7 @@ pub fn render_program(src: &str) -> Framebuffer {
         vm.sprites(),
         vm.console(),
         DEFAULT_BACKDROP,
+        vm.screen_visibility(),
     )
 }
 
