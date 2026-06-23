@@ -161,6 +161,11 @@ pub struct Vm {
     errnum: i32,
     errline: i32,
     errprg: i32,
+    /// Frame-timing stub state for `WAIT`/`VSYNC` (M1-T14). Real 60 fps timing arrives
+    /// with M4; M1 only validates call shape and treats the wait as an instant no-op
+    /// while advancing these counters so repeated calls don't drift backward.
+    frame_count: u64,
+    last_vsync: u64,
 }
 
 impl Vm {
@@ -189,6 +194,8 @@ impl Vm {
             errnum: 0,
             errline: 0,
             errprg: 0,
+            frame_count: 0,
+            last_vsync: 0,
         }
     }
 
@@ -684,6 +691,14 @@ impl Vm {
             self.call_assert(&args)?;
             return Ok(());
         }
+        // Frame-timing builtins (WAIT/VSYNC, M1-T14): M1 stubs them as instant no-ops
+        // (real 60 fps pacing is M4) while validating the documented call shape.
+        if let Some(ret) = self.call_timing(name, &args, wants_value).map_err(sb)? {
+            if wants_value && !matches!(ret, Value::Void) {
+                self.stack.push(ret);
+            }
+            return Ok(());
+        }
         // Array data-ops (SORT/RSORT, M1-T14) reorder their array arguments in place —
         // each arrives as a shared `ArrayRef`, so they mutate the caller's variables and
         // produce no value.
@@ -859,6 +874,52 @@ impl Vm {
             }
             _ => Ok(None),
         }
+    }
+
+    /// Frame-timing builtins `WAIT`/`VSYNC` (M1-T14). M1 stubs the actual wait as an
+    /// instant no-op (real 60 fps pacing lives in M4) while validating the documented
+    /// call shape: statement only (function use → errnum 4), optional integer argument
+    /// defaulting to 1, negative values treated as 0.
+    fn call_timing(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        wants_value: bool,
+    ) -> Result<Option<Value>, RuntimeError> {
+        use crate::builtins::illegal;
+        let count = match name {
+            "WAIT" | "VSYNC" => {
+                if wants_value {
+                    return Err(illegal());
+                }
+                match args.len() {
+                    0 => 1,
+                    1 => {
+                        let n = args[0].to_int()?;
+                        if n < 0 {
+                            0
+                        } else {
+                            n as u64
+                        }
+                    }
+                    _ => return Err(illegal()),
+                }
+            }
+            _ => return Ok(None),
+        };
+        match name {
+            "WAIT" => {
+                self.frame_count = self.frame_count.saturating_add(count);
+                self.last_vsync = self.frame_count;
+            }
+            "VSYNC" => {
+                let target = self.last_vsync.saturating_add(count);
+                self.frame_count = self.frame_count.max(target);
+                self.last_vsync = self.frame_count;
+            }
+            _ => {}
+        }
+        Ok(Some(Value::Void))
     }
 
     /// Route a console builtin (M1-T8) over the VM-owned [`Console`] / screen state.

@@ -1,0 +1,16 @@
+cases:
+  - name: wait_negative_is_noop
+    code: WAIT -5
+    expect: { stdout: "" }
+  - name: vsync_negative_is_noop
+    code: VSYNC -1
+    expect: { stdout: "" }
+  - name: wait_too_many_args
+    code: WAIT 1,2
+    expect: { error: { errnum: 4 } }
+  - name: vsync_string_arg
+    code: VSYNC "X"
+    expect: { error: { errnum: 8 } }
+  - name: wait_vsync_then_print
+    code: WAIT:VSYNC 0:PRINT 1
+    expect: { stdout: "1" }

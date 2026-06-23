@@ -100,7 +100,7 @@ const IN_SCOPE_CONSOLE: &[&str] = &[
 /// → 15, unknown option → 3), and `REM` (line + trailing comment ignored). The rest of the
 /// category stays excluded: `WAIT`/`VSYNC` are frame-timing (M4), `DTREAD`/`TMREAD`/`KEY`/
 /// `DIALOG` and the `CHK*` builtins aren't implemented yet. Listed by id.
-const IN_SCOPE_DATA_OPS: &[&str] = &["READ", "RESTORE", "OPTION", "REM"];
+const IN_SCOPE_DATA_OPS: &[&str] = &["READ", "RESTORE", "OPTION", "REM", "WAIT", "VSYNC"];
 /// `Graphics` instructions whose builtins `sb-core` implements (M2-T1: the GRP page-state
 /// model + color helpers) and whose inline `tests:` are deterministic + `console_text()`-
 /// comparable (M1-T14 increment 2026-06-23): `RGB` (channel pack → signed ARGB),
