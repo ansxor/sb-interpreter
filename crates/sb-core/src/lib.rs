@@ -7,8 +7,10 @@
 //! the `sb-platform-*` crates.
 //!
 //! The lexer (M1-T1), AST node types (M1-T2), parser (M1-T3), runtime
-//! value/array types (M1-T4), bytecode + compiler (M1-T5), stack VM (M1-T6) and the
-//! math/string builtins (M1-T7) are implemented so far.
+//! value/array types (M1-T4), bytecode + compiler (M1-T5), stack VM (M1-T6), the
+//! math/string builtins (M1-T7), the TinyMT RNG (M1-T9) and the console builtins
+//! (M1-T8: `PRINT`/`LOCATE`/`COLOR`/`BACKCOLOR`/`CLS`/`ACLS`/`INPUT`/`LINPUT`/`INKEY$`,
+//! driving the [`sb_render`] console model) are implemented so far.
 
 pub mod array;
 pub mod ast;

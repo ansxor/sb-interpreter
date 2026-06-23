@@ -616,10 +616,12 @@ impl<'a> Compiler<'a> {
                 if let Some(p) = prompt {
                     self.compile_expr(p)?;
                 }
+                let types: Vec<VarType> = vars.iter().map(input_target_type).collect();
                 self.emit(Op::Input {
                     count: vars.len() as u8,
                     question: *question,
                     has_prompt: prompt.is_some(),
+                    types,
                 });
                 for v in vars {
                     self.compile_pop_target(v)?;
@@ -1171,6 +1173,25 @@ impl<'a> Compiler<'a> {
                 msg: "array base must be a variable".into(),
             }),
         }
+    }
+}
+
+/// The receiver type of an `INPUT` target, used to parse each typed field: a `$`-suffixed
+/// variable (or string-array element) receives the raw text (`VarType::Str`); every other
+/// receiver parses a number. A `VAR()`-style runtime reference defaults to numeric.
+fn input_target_type(expr: &Expr) -> VarType {
+    let suffix = match &expr.kind {
+        ExprKind::Var(name) => name.suffix,
+        ExprKind::Index { array, .. } => match &array.kind {
+            ExprKind::Var(name) => name.suffix,
+            _ => Suffix::None,
+        },
+        _ => Suffix::None,
+    };
+    match suffix {
+        Suffix::Str => VarType::Str,
+        Suffix::Int => VarType::Int,
+        Suffix::Real | Suffix::None => VarType::Real,
     }
 }
 

@@ -170,6 +170,13 @@ impl Console {
     /// Write one character at the cursor using the current color/attribute, then advance.
     /// Wraps at the right edge; scrolls the grid up when advancing past the bottom row.
     pub fn put_char(&mut self, ch: u16) {
+        // The cursor may sit on the off-screen right edge (`LOCATE 50` is a legal column
+        // per locate.yaml: 0..49 displayable, 50 = off-screen edge). Wrap to the next row
+        // before writing so the write stays in bounds.
+        if self.cur_x >= self.cols {
+            self.cur_x = 0;
+            self.line_feed();
+        }
         let i = self.idx(self.cur_x, self.cur_y);
         self.cells[i] = Cell {
             ch,
@@ -186,6 +193,20 @@ impl Console {
         if self.cur_x >= self.cols {
             self.cur_x = 0;
             self.line_feed();
+        }
+    }
+
+    /// `PRINT ,` tab: advance the cursor to the next column that is a multiple of
+    /// `step` (the TABSTEP system variable, default 4); cells skipped over are left
+    /// untouched (they render as their background). If the next stop is at or past the
+    /// right edge, wrap to column 0 of the next row.
+    pub fn tab(&mut self, step: usize) {
+        let step = step.max(1);
+        let target = (self.cur_x / step + 1) * step;
+        if target >= self.cols {
+            self.newline();
+        } else {
+            self.cur_x = target;
         }
     }
 

@@ -27,6 +27,7 @@
 //! integers via C `%d`, doubles via C `%g` to 6 significant figures (the exact
 //! tie-breaking / very-large-magnitude edges are M7-T4; see `HARVEST_QUEUE.md`).
 
+pub(crate) mod console;
 mod math;
 mod string;
 
@@ -98,6 +99,15 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "ASC",
     "CHR$",
     "INSTR",
+    // Console I/O (M1-T8; LOCATE/COLOR/CLS/ACLS/BACKCOLOR mutate console/screen state and
+    // INKEY$/INPUT/LINPUT read input, so the VM handles them directly rather than through
+    // the stateless `dispatch`).
+    "LOCATE",
+    "COLOR",
+    "CLS",
+    "ACLS",
+    "BACKCOLOR",
+    "INKEY$",
 ];
 
 /// The set of builtins known to the compiler in this slice, so a bare-name use (`PI`) or

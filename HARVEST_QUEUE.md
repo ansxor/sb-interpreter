@@ -778,3 +778,24 @@ oracle to confirm exact output and promote to `hw_verified`.
   8×8 font (ASCII subset, lowercase folds to uppercase, no kana/kanji). The real SB glyphs are
   a firmware ROM asset — harvest the font sheet (O-T6) so console goldens can be pixel-matched
   against the emulator instead of being self-consistent only.
+
+## M1-T8 — Control-flow + console builtins
+- **PRINT `,` tab vs TABSTEP**: `PrintTab` advances to the next multiple of `tabstep`
+  (boot default 4, hardcoded on the VM). Wire TABSTEP as the real writable system variable
+  (M6-T3) and harvest a `PRINT a,b` column golden to confirm the tab-stop math + edge wrap.
+- **INPUT/LINPUT runtime behavior**: implemented against a headless input queue
+  (`Vm::push_input`). NOT modeled vs real SB: the typed-text echo to the console, the
+  "?Redo from start" re-prompt on too-few/ill-typed numeric fields (we default an
+  unparseable numeric field to 0), and the field/type parsing of mixed numeric+string
+  receivers. No deterministic golden (blocks on live keyboard) — error cases only.
+- **INKEY$ live keypress**: returns "" headless (no key buffer). A real buffered-key result
+  is real-time keyboard state — no deterministic golden; only the empty + arg-count (errnum 4)
+  cases are pinned.
+- **BACKCOLOR color round-trip + rendered border**: SET stores / GET returns the user RGB
+  code verbatim (round-trip). The internal channel byte-swap and the actual rendered
+  border/clear color are screen state — harvest the round-trip value + border pixel (O-T6).
+- **LOCATE Z depth**: the depth operand is range-validated (-256.0..1024.0 → errnum 10) but
+  not modeled by the 2-D console grid; z-ordering arrives with the compositor (M2).
+- **ACLS full reset**: resets the console color/attr/grid + VM back_color/tabstep here. The
+  full documented visual reset (font/sprite/BG reload, both screens, fade/palette) and the
+  undocumented 3-arg per-flag selective reset are screen state — oracle-pending (O-T6).

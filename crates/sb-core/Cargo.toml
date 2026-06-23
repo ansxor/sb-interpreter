@@ -10,3 +10,12 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+# The text console *model* (grid + cursor + colors). I/O- and GUI-free, so it keeps
+# sb-core's wasm32 build intact; the VM owns a Console and PRINT/LOCATE/COLOR/CLS drive it.
+sb-render = { path = "../sb-render" }
+
+# Dev-only: replay the YAML conformance fixtures (harness/corpus/cases) through the VM.
+# Dev-dependencies don't affect the wasm32 lib build.
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"

@@ -200,11 +200,15 @@ pub enum Op {
     /// End-of-statement newline for a non-`;`-terminated `PRINT`.
     PrintNewline,
     /// `INPUT`: print the (already-pushed) prompt if `has_prompt`, add `?` if
-    /// `question`, read `count` values and push them for the following pops.
+    /// `question`, read a line, split it on commas into `count` fields, parse each
+    /// field per the matching receiver type in `types` (a `Str` receiver keeps the
+    /// raw text, a numeric receiver parses a number), and push the fields for the
+    /// following pops. `types.len() == count as usize`.
     Input {
         count: u8,
         question: bool,
         has_prompt: bool,
+        types: Vec<VarType>,
     },
     /// `LINPUT`: read one whole line, push it for the following pop.
     Linput { has_prompt: bool },

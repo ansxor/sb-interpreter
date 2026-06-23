@@ -16,11 +16,14 @@
 //! and scalar `INC`/`DEC`/`SWAP`. Recursion past [`CALL_STACK_LIMIT`] raises **Stack
 //! overflow** (errnum 5).
 //!
-//! Builtins ([`Op::CallBuiltin`]/[`Op::CallDynamic`], M1-T7), console + input
-//! (`Print*`/`Input`/`Linput`, M1-T8) and `USE`/`EXEC` (M6), plus array-element /
-//! runtime-name references ([`Op::PushArrayRef`]/[`Op::PushRefExpr`]), are not yet
-//! wired and raise [`VmError::Unsupported`] rather than panicking — their handlers
-//! land in the milestones above.
+//! Builtins ([`Op::CallBuiltin`]/[`Op::CallDynamic`], M1-T7) and console + input
+//! (`Print*`/`Input`/`Linput` plus the `LOCATE`/`COLOR`/`BACKCOLOR`/`CLS`/`ACLS`/`INKEY$`
+//! builtins, M1-T8) are wired: the VM owns an [`sb_render::console::Console`] that `PRINT`
+//! and the console commands drive, and a headless input queue ([`Vm::push_input`]) feeds
+//! `INPUT`/`LINPUT`. `USE`/`EXEC` (M6) and array-element / runtime-name references
+//! ([`Op::PushArrayRef`]/[`Op::PushRefExpr`]) are not yet wired and raise
+//! [`VmError::Unsupported`] rather than panicking — their handlers land in the milestones
+//! above.
 //!
 //! ## Operator semantics (from the spec/disassembly)
 //!
@@ -35,10 +38,12 @@
 
 use crate::array::SbArray;
 use crate::ast::{BinOp, Name, UnOp};
-use crate::bytecode::{Const, Op, Program, VarRef};
+use crate::bytecode::{Const, Op, Program, VarRef, VarType};
 use crate::token::Suffix;
 use crate::value::{swap_cells, Cell, RuntimeError, SbStr, Value};
+use sb_render::console::Console;
 use std::cmp::Ordering;
+use std::collections::VecDeque;
 
 /// Max combined depth of the `GOSUB` return stack + `DEF` call frames before raising
 /// **Stack overflow** (errnum 5). The exact value real SB 3.6.0 trips at is queued
@@ -117,6 +122,19 @@ pub struct Vm {
     data_cursor: usize,
     /// The 8 TinyMT32 random series behind `RND`/`RNDF`/`RANDOMIZE` (M1-T9).
     rng: crate::rng::Rng,
+    /// The text console model (M1-T10): grid + cursor + COLOR/ATTR state, driven by
+    /// `PRINT`/`LOCATE`/`COLOR`/`CLS`/`ACLS` (M1-T8).
+    console: Console,
+    /// The screen background color code (`BACKCOLOR`). The handler round-trips the user's
+    /// RGB code, so we store it verbatim; the rendered border color is screen state (M2).
+    back_color: i32,
+    /// `TABSTEP` — the `PRINT ,` tab-stop width. Boot default 4 (`sysvars.yaml`); the
+    /// writable system-variable wiring lands with M6-T3 (queued).
+    tabstep: usize,
+    /// Queued input lines for `INPUT`/`LINPUT` (one entry = one ENTER-terminated line).
+    /// Headless there is no live keyboard; a runner/test preloads this via
+    /// [`Vm::push_input`]. An empty queue yields an empty line.
+    input_lines: VecDeque<SbStr>,
 }
 
 impl Vm {
@@ -137,7 +155,47 @@ impl Vm {
             pc: 0,
             data_cursor: 0,
             rng: crate::rng::Rng::new(),
+            console: Console::top(),
+            back_color: 0,
+            tabstep: 4,
+            input_lines: VecDeque::new(),
         }
+    }
+
+    /// Borrow the text console (grid + cursor + colors) for rendering / inspection.
+    pub fn console(&self) -> &Console {
+        &self.console
+    }
+
+    /// The console contents as text: each grid row trimmed of trailing blanks, rows joined
+    /// by `\n`, trailing blank rows dropped. This is the deterministic `stdout` of a run
+    /// (it mirrors what the oracle scrapes from console memory — e.g. `CLS` empties it).
+    pub fn console_text(&self) -> String {
+        let c = &self.console;
+        let mut lines: Vec<String> = Vec::with_capacity(c.rows);
+        for y in 0..c.rows {
+            let mut line = String::new();
+            for x in 0..c.cols {
+                let ch = c.cell(x, y).ch;
+                // An empty cell (never written) reads as a space; trailing ones are
+                // trimmed off below.
+                line.push(if ch == 0 {
+                    ' '
+                } else {
+                    char::from_u32(ch as u32).unwrap_or('\u{FFFD}')
+                });
+            }
+            lines.push(line.trim_end().to_string());
+        }
+        while lines.last().is_some_and(|l| l.is_empty()) {
+            lines.pop();
+        }
+        lines.join("\n")
+    }
+
+    /// Queue one line of input for the next `INPUT`/`LINPUT` (headless input source).
+    pub fn push_input(&mut self, line: &str) {
+        self.input_lines.push_back(line.encode_utf16().collect());
     }
 
     /// Run to completion (or error). The operand stack is empty between statements
@@ -326,13 +384,26 @@ impl Vm {
                 wants_value,
             } => self.call_builtin(&name, argc, out_argc, wants_value)?,
 
+            // -- console output (M1-T8) --------------------------------------------
+            Op::PrintItem => {
+                let v = self.pop()?.deref();
+                let units = crate::builtins::console::format_print_item(&v).map_err(sb)?;
+                for u in units {
+                    self.console.put_char(u);
+                }
+            }
+            Op::PrintTab => self.console.tab(self.tabstep),
+            Op::PrintNewline => self.console.newline(),
+            Op::Input {
+                count,
+                question,
+                has_prompt,
+                types,
+            } => self.do_input(count, question, has_prompt, &types)?,
+            Op::Linput { has_prompt } => self.do_linput(has_prompt)?,
+
             // -- deferred to later milestones --------------------------------------
             Op::CallDynamic { .. } => return Err(VmError::Unsupported("CALL (M6)")),
-            Op::PrintItem | Op::PrintTab | Op::PrintNewline => {
-                return Err(VmError::Unsupported("PRINT (M1-T8)"))
-            }
-            Op::Input { .. } => return Err(VmError::Unsupported("INPUT (M1-T8)")),
-            Op::Linput { .. } => return Err(VmError::Unsupported("LINPUT (M1-T8)")),
             Op::Use => return Err(VmError::Unsupported("USE (M6)")),
             Op::Exec => return Err(VmError::Unsupported("EXEC (M6)")),
             Op::PushRefExpr | Op::PopRef => {
@@ -495,6 +566,14 @@ impl Vm {
             }
             return Ok(());
         }
+        // Console builtins (LOCATE/COLOR/CLS/ACLS/BACKCOLOR/INKEY$, M1-T8) mutate the
+        // VM-owned console / screen state, so they too sidestep the stateless dispatch.
+        if let Some(ret) = self.call_console(name, &args, wants_value).map_err(sb)? {
+            if wants_value && !matches!(ret, Value::Void) {
+                self.stack.push(ret);
+            }
+            return Ok(());
+        }
         let ret = crate::builtins::dispatch(name, args).map_err(sb)?;
         if wants_value {
             self.stack.push(ret);
@@ -556,6 +635,119 @@ impl Vm {
             }
             _ => Ok(None),
         }
+    }
+
+    /// Route a console builtin (M1-T8) over the VM-owned [`Console`] / screen state.
+    /// Returns `Ok(Some(value))` when handled (statement commands return [`Value::Void`]),
+    /// or `Ok(None)` when `name` is not a console builtin (the caller falls through to the
+    /// stateless dispatch). Argument validation follows the console specs.
+    fn call_console(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        wants_value: bool,
+    ) -> Result<Option<Value>, RuntimeError> {
+        use crate::builtins::console as cons;
+        let args: Vec<Value> = args.iter().map(|v| v.deref()).collect();
+        match name {
+            "LOCATE" => {
+                cons::locate(&mut self.console, &args, wants_value)?;
+                Ok(Some(Value::Void))
+            }
+            "COLOR" => {
+                cons::color(&mut self.console, &args, wants_value)?;
+                Ok(Some(Value::Void))
+            }
+            "CLS" => {
+                cons::cls(&mut self.console, &args, wants_value)?;
+                Ok(Some(Value::Void))
+            }
+            "ACLS" => {
+                cons::acls(&mut self.console, &args, wants_value)?;
+                // ACLS resets the wider screen draw state too (not just the console grid).
+                self.back_color = 0;
+                self.tabstep = 4;
+                Ok(Some(Value::Void))
+            }
+            "INKEY$" => Ok(Some(cons::inkey(&args)?)),
+            "BACKCOLOR" => Ok(Some(self.backcolor(&args, wants_value)?)),
+            _ => Ok(None),
+        }
+    }
+
+    /// `BACKCOLOR` — the SET form (statement, exactly 1 argument) stores the background
+    /// color code; the GET form (function, 0 arguments) returns it. The handler round-trips
+    /// the user's RGB code, so we store and return it verbatim. Any other call shape →
+    /// errnum 4 (`backcolor.yaml`, hw_verified).
+    fn backcolor(&mut self, args: &[Value], wants_value: bool) -> Result<Value, RuntimeError> {
+        if wants_value {
+            if !args.is_empty() {
+                return Err(crate::builtins::illegal());
+            }
+            Ok(Value::Int(self.back_color))
+        } else {
+            if args.len() != 1 {
+                return Err(crate::builtins::illegal());
+            }
+            self.back_color = args[0].to_int()?;
+            Ok(Value::Void)
+        }
+    }
+
+    /// `INPUT` (M1-T8): optionally print the prompt and `?`, read one line, split it on
+    /// commas into `count` fields, parse each per its receiver type, and push the fields so
+    /// the following `PopVar`s assign them in receiver order.
+    fn do_input(
+        &mut self,
+        count: u8,
+        question: bool,
+        has_prompt: bool,
+        types: &[VarType],
+    ) -> Result<(), VmError> {
+        if has_prompt {
+            let p = self.pop()?.deref();
+            self.print_units(&p)?;
+        }
+        if question {
+            self.console.put_char(u16::from(b'?'));
+        }
+        let line = self.input_lines.pop_front().unwrap_or_default();
+        self.console.newline(); // ENTER moves to the next line
+        let fields: Vec<&[u16]> = line.split(|&u| u == COMMA).collect();
+        let mut values: Vec<Value> = Vec::with_capacity(count as usize);
+        for i in 0..count as usize {
+            let field = fields.get(i).copied().unwrap_or(&[]);
+            let ty = types.get(i).copied().unwrap_or(VarType::Real);
+            values.push(parse_input_field(field, ty));
+        }
+        // The receivers' `PopVar`s pop top-first in declaration order, so push reversed
+        // (the first receiver's value ends on top).
+        for v in values.into_iter().rev() {
+            self.stack.push(v);
+        }
+        Ok(())
+    }
+
+    /// `LINPUT` (M1-T8): optionally print the prompt, then read one whole line (commas
+    /// kept) into the single following string receiver.
+    fn do_linput(&mut self, has_prompt: bool) -> Result<(), VmError> {
+        if has_prompt {
+            let p = self.pop()?.deref();
+            self.print_units(&p)?;
+        }
+        let line = self.input_lines.pop_front().unwrap_or_default();
+        self.console.newline();
+        self.stack.push(Value::Str(line));
+        Ok(())
+    }
+
+    /// Print a value's formatted code units to the console (shared by INPUT/LINPUT prompts).
+    fn print_units(&mut self, v: &Value) -> Result<(), VmError> {
+        let units = crate::builtins::console::format_print_item(v).map_err(sb)?;
+        for u in units {
+            self.console.put_char(u);
+        }
+        Ok(())
     }
 
     fn return_func(&mut self, has_value: bool) -> Result<(), VmError> {
@@ -702,6 +894,35 @@ impl Vm {
             }
             other => other,
         }
+    }
+}
+
+/// The UTF-16 code unit for `,`, the `INPUT` field delimiter.
+const COMMA: u16 = b',' as u16;
+
+/// Parse one `INPUT` field into the value its receiver expects: a string receiver keeps the
+/// raw text; a numeric receiver parses a number (integer if it has no fractional/exponent
+/// part, else a Double), defaulting to `0` when the field is not a valid number (a degraded
+/// stand-in for SmileBASIC's interactive "?Redo from start" re-prompt — queued).
+fn parse_input_field(field: &[u16], ty: VarType) -> Value {
+    match ty {
+        VarType::Str => Value::Str(field.to_vec()),
+        VarType::Int => Value::Int(parse_input_number(field).to_int().unwrap_or(0)),
+        VarType::Real => parse_input_number(field),
+    }
+}
+
+/// Parse a numeric `INPUT` field, returning an Integer when it parses as `i32` and a Double
+/// otherwise (or Integer `0` when it is not a number).
+fn parse_input_number(field: &[u16]) -> Value {
+    let s = String::from_utf16_lossy(field);
+    let s = s.trim();
+    if let Ok(i) = s.parse::<i32>() {
+        Value::Int(i)
+    } else if let Ok(r) = s.parse::<f64>() {
+        Value::Real(r)
+    } else {
+        Value::Int(0)
     }
 }
 
@@ -1313,5 +1534,202 @@ H$=HEX$(255)"#);
         // RANDOMIZE 8 → 10; RANDOMIZE "x" → 8.
         assert_eq!(run_err("RANDOMIZE 8").errnum(), Some(10));
         assert_eq!(run_err(r#"RANDOMIZE "x""#).errnum(), Some(8));
+    }
+
+    // ---- console output: PRINT (M1-T8) ----
+
+    /// Run a program and return its console text (the deterministic `stdout`).
+    fn out(src: &str) -> String {
+        run(src).console_text()
+    }
+
+    #[test]
+    fn print_integer_and_string() {
+        assert_eq!(out("PRINT 42"), "42");
+        assert_eq!(out(r#"PRINT "HI""#), "HI");
+        assert_eq!(out("PRINT 2*3+1"), "7");
+    }
+
+    #[test]
+    fn print_negative_number_has_no_leading_space() {
+        // SmileBASIC does NOT pad positive numbers with a leading space (unlike MS BASIC).
+        assert_eq!(out("PRINT -5"), "-5");
+        assert_eq!(out("PRINT 7"), "7");
+    }
+
+    #[test]
+    fn print_real_uses_g_format() {
+        assert_eq!(out("PRINT 7/2"), "3.5");
+        assert_eq!(out("PRINT 1.0"), "1");
+    }
+
+    #[test]
+    fn print_semicolon_concatenates_with_no_gap() {
+        assert_eq!(out(r#"PRINT "A";"B""#), "AB");
+        assert_eq!(out("PRINT 1;2;3"), "123");
+    }
+
+    #[test]
+    fn print_comma_tabs_to_next_tabstep() {
+        // TABSTEP default 4: "1" at col 0, tab to col 4, "2".
+        assert_eq!(out("PRINT 1,2"), "1   2");
+    }
+
+    #[test]
+    fn print_question_alias() {
+        assert_eq!(out(r#"?"Q""#), "Q");
+    }
+
+    #[test]
+    fn print_multiple_lines() {
+        assert_eq!(out(r#"PRINT "A":PRINT "B""#), "A\nB");
+    }
+
+    #[test]
+    fn print_trailing_semicolon_suppresses_newline() {
+        // Two PRINTs, the first `;`-terminated, share a line.
+        assert_eq!(out(r#"PRINT "A";:PRINT "B""#), "AB");
+    }
+
+    #[test]
+    fn print_type_mismatch_is_errnum_8() {
+        // A bare string/number mix that produces a non-printable value can't arise from a
+        // literal here; PRINT of an array name is a Type mismatch.
+        assert_eq!(run_err("DIM A[3]\nPRINT A").errnum(), Some(8));
+    }
+
+    // ---- console state: LOCATE / COLOR / CLS (M1-T8) ----
+
+    #[test]
+    fn locate_then_print_positions_text() {
+        // `;` suppresses the trailing newline so the cursor stays where the text left it.
+        let vm = run(r#"LOCATE 5,2:PRINT "X";"#);
+        assert_eq!(vm.console().cell(5, 2).ch, u16::from(b'X'));
+        // After printing one char the cursor advanced to col 6.
+        assert_eq!((vm.console().cur_x, vm.console().cur_y), (6, 2));
+    }
+
+    #[test]
+    fn color_sets_cell_palette() {
+        let vm = run(r#"COLOR 3,4:PRINT "X""#);
+        assert_eq!(vm.console().cell(0, 0).fg, 3);
+        assert_eq!(vm.console().cell(0, 0).bg, 4);
+    }
+
+    #[test]
+    fn cls_clears_console() {
+        // hw_verified: PRINT then CLS leaves the console empty.
+        assert_eq!(out(r#"PRINT "X":CLS"#), "");
+    }
+
+    #[test]
+    fn console_command_error_conditions() {
+        // hw_verified expects from the console specs.
+        assert_eq!(run_err("LOCATE 51,0").errnum(), Some(10)); // X out of range
+        assert_eq!(run_err("LOCATE 0,30").errnum(), Some(10)); // Y out of range
+        assert_eq!(run_err("LOCATE 0,0,2000").errnum(), Some(10)); // Z out of range
+        assert_eq!(run_err("LOCATE 0").errnum(), Some(4)); // single slot
+        assert_eq!(run_err("COLOR 16").errnum(), Some(10)); // fg out of range
+        assert_eq!(run_err("COLOR 0,16").errnum(), Some(10)); // bg out of range
+        assert_eq!(run_err("CLS 0").errnum(), Some(4)); // CLS takes no args
+        assert_eq!(run_err("BACKCOLOR").errnum(), Some(4)); // SET needs 1 arg
+        assert_eq!(run_err("BACKCOLOR 0,1").errnum(), Some(4)); // too many
+        assert_eq!(run_err("ACLS 1").errnum(), Some(4)); // 1 arg illegal
+        assert_eq!(run_err("ACLS 1,1").errnum(), Some(4)); // 2 args illegal
+    }
+
+    #[test]
+    fn console_commands_as_functions_error() {
+        assert_eq!(run_err("A=LOCATE(0,0)").errnum(), Some(4));
+        assert_eq!(run_err("A=COLOR(7)").errnum(), Some(4));
+        assert_eq!(run_err("A=CLS()").errnum(), Some(4));
+    }
+
+    #[test]
+    fn x_edge_50_wraps_not_panics() {
+        // LOCATE 50 (off-screen edge) is legal and must not panic; printing wraps to the
+        // next row, so "X" still lands on the console.
+        assert!(out(r#"LOCATE 50,0:PRINT "X""#).contains('X'));
+    }
+
+    #[test]
+    fn acls_runs_and_resets() {
+        // The no-arg form and the corpus-verified 3-arg form both run; no error.
+        run(r#"COLOR 3,4:PRINT "X":ACLS"#);
+        run("ACLS 1,1,0");
+    }
+
+    #[test]
+    fn backcolor_round_trips() {
+        // SET then GET returns the stored color code.
+        let vm = run("BACKCOLOR 12345\nA=BACKCOLOR()");
+        assert_eq!(int(&vm, "A"), 12345);
+    }
+
+    // ---- INKEY$ (M1-T8) ----
+
+    #[test]
+    fn inkey_is_empty_headless() {
+        // No live keyboard buffer headless → "".
+        assert_eq!(out("C$=INKEY$():PRINT LEN(C$)"), "0");
+        assert_eq!(run_err("C$=INKEY$(1)").errnum(), Some(4));
+    }
+
+    // ---- INPUT / LINPUT (M1-T8) ----
+
+    /// Run with a preloaded input queue, returning the VM for inspection.
+    fn run_with_input(src: &str, lines: &[&str]) -> Vm {
+        let ast = parse(src).expect("parse");
+        let program = compile(&ast).expect("compile");
+        let mut vm = Vm::new(program);
+        for l in lines {
+            vm.push_input(l);
+        }
+        vm.run().expect("run");
+        vm
+    }
+
+    #[test]
+    fn input_numeric_and_string() {
+        let vm = run_with_input("INPUT A\nINPUT B$", &["42", "hello"]);
+        assert_eq!(int(&vm, "A"), 42);
+        assert_eq!(string(&vm, "B"), "hello");
+    }
+
+    #[test]
+    fn input_multiple_comma_fields() {
+        let vm = run_with_input("INPUT A,B,C", &["1,2,3"]);
+        assert_eq!(int(&vm, "A"), 1);
+        assert_eq!(int(&vm, "B"), 2);
+        assert_eq!(int(&vm, "C"), 3);
+    }
+
+    #[test]
+    fn input_real_field() {
+        let vm = run_with_input("INPUT R", &["3.5"]);
+        assert_eq!(real(&vm, "R"), 3.5);
+    }
+
+    #[test]
+    fn input_literal_receiver_is_syntax_error() {
+        // `INPUT "X";1` — a literal receiver is rejected (errnum 3); the parser catches it
+        // before compilation (hw_verified: real SB raises errnum 3 for a non-variable
+        // receiver).
+        let err = parse(r#"INPUT "X";1"#).expect_err("syntax error");
+        assert_eq!(err.errnum, 3);
+    }
+
+    #[test]
+    fn linput_keeps_commas() {
+        let vm = run_with_input("LINPUT S$", &["a,b,c"]);
+        assert_eq!(string(&vm, "S"), "a,b,c");
+    }
+
+    #[test]
+    fn input_prompt_is_printed() {
+        // The guide text + `?` show before the (queued) input is read.
+        let vm = run_with_input(r#"INPUT "NAME";A$"#, &["bob"]);
+        assert_eq!(string(&vm, "A"), "bob");
+        assert!(vm.console_text().starts_with("NAME?"));
     }
 }

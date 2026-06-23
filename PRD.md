@@ -160,7 +160,7 @@ and name the instructions they cover inline.
 - [x] M1-T5 Bytecode + Compiler — `bytecode.rs` (flat `Op` enum + `Const`/`VarRef`/`VarType`/`Function`/`Program`) + `compiler.rs` (AST→bytecode): var resolution (global index / DEF-local bp-relative), OPTION STRICT (undeclared→errnum 15) + auto-declare + DEFINT, backpatched labels (undefined→errnum 14), DATA pool + RESTORE@label→data-index, DEF/COMMON funcs (addressed, name-dispatched), array/ref/paren-form disambiguation, osb-shaped IF/FOR/WHILE/REPEAT lowering + short-circuit &&/||. 20 unit + corpus no-panic sweep (3,329 programs, 0 panics). Builtin disambiguation deferred to M1-T7 via `Builtins` predicate; lowering edges queued. → M1-T3, M1-T4
 - [x] M1-T6 VM (stack machine, 4 slots + COMMON) → M1-T5
 - [x] M1-T7 Builtin registration + math/string builtins → M1-T6, S-T1, S-T2
-- [ ] M1-T8 Control-flow + console builtins → M1-T7, M1-T10, S-T3, S-T5
+- [x] M1-T8 Control-flow + console builtins → M1-T7, M1-T10, S-T3, S-T5
 - [x] M1-T9 TinyMT RNG (RND/RNDF/RANDOMIZE) → M1-T7, S-T1
 - [x] M1-T10 Console model + render → framebuffer → (M0 sb-render)
 - [ ] M1-T11 Headless runner `sb-run` → M1-T8
