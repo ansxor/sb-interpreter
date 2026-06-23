@@ -21,7 +21,7 @@ under `prd/` (start at `prd/README.md`). Task IDs here match those docs.
 | M3 | Sprites & BG | `prd/M3.md` | ✅ done (T1–T6; sprite/BG state + collision/anim/transforms, full compositor stack with Z-interleaving; composite pixel-exactness queued O-T6) |
 | M4 | Input & timing | `prd/M4.md` | ✅ done (T1–T5; input state + 60fps clock + host keymap wired native + wasm; live-program input awaits the frame-yielding model) |
 | M5 | Audio (MML) | `prd/M5.md` | 🔧 in progress (T1 MML parser, T2 synth, T3 BGM, T4 SFX/voice, T5 audio backend done; T6 golden-WAV harvest todo — deferred, no deterministic audio golden per O-T7) |
-| M6 | Files, projects, system, stubs | `prd/M6.md` | ⬜ gated on S |
+| M6 | Files, projects, system, stubs | `prd/M6.md` | 🔧 in progress (T1 storage abstraction done) |
 | M7 | Hardening | `prd/M7.md` | ⬜ |
 
 ---
@@ -204,7 +204,7 @@ and name the instructions they cover inline.
 - [ ] M5-T6 Golden WAV harvest + diff → M5-T3, M5-T4, O-T7  (⚠ NOT a deterministic golden — reference/loose-spectral only; deferred refining layer)
 
 ## M6 — Files, projects, system, faithful stubs  (gated on S-T12)
-- [ ] M6-T1 Storage abstraction → S-T12
+- [x] M6-T1 Storage abstraction → S-T12 — new `sb-core::storage` (wasm-safe, I/O-free): the `Storage` trait (`projects`/`list`/`read`/`write`/`delete`/`rename`/`exists`, keyed `(project, Folder{Txt|Dat}, in-SB name)`, sorted/deterministic), the logical resource model (`parse_resource` splits `"TYPE:NAME"` → `ResourceKind` {Program 0-3 / Graphic 0-5 / GraphicFont / Text / Data} with the disassembled `SAVE`-handler errnum map: unknown type → 4, index past family → 10; `FilesFilter` for FILES), `MemStorage` in-memory impl + deterministic `serialize`/`deserialize`, and an `extdata` codec (`wrap`/`unwrap` of the 80-byte-header + body + 20-byte-HMAC-SHA1-footer container, dependency-free SHA-1/HMAC). HMAC footer **cross-checked byte-for-byte** against the oracle's `sb_extdata.py` golden (TXT `PRINT 1` → `6d7b94ed…`), plus SHA1/HMAC RFC test vectors. Platform impls: `sb-platform-native::storage::FsStorage` (real `<root>/<project>/{TXT,DAT}/<name>` tree matching the corpus layout) + `sb-platform-wasm::storage::IdbStorage` (in-memory mirror persisted to IndexedDB as one serialized blob; wasm32-gated). 21 sb-core + 4 native storage tests; full gate green incl. wasm build.
 - [ ] M6-T2 File commands → M6-T1
 - [ ] M6-T3 System variables → S-T14
 - [ ] M6-T4 Source-edit (PRG*) → M6-T1, S-T12

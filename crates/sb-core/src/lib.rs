@@ -24,6 +24,7 @@ pub mod input;
 pub mod lexer;
 pub mod parser;
 pub mod rng;
+pub mod storage;
 pub mod sysvars;
 pub mod token;
 pub mod value;
@@ -35,6 +36,10 @@ pub use bytecode::{Const, Function, Op, OptionFlags, Program, VarInfo, VarRef, V
 pub use compiler::{compile, compile_with, Builtins, CompileError, NoBuiltins};
 pub use lexer::Lexer;
 pub use parser::{parse, parse_expression, ParseError, Parser};
+pub use storage::{
+    parse_files_filter, parse_resource, FilesFilter, Folder, MemStorage, ResourceError,
+    ResourceKind, ResourceSpec, Storage, StorageError, DEFAULT_PROJECT,
+};
 pub use token::{SourceLoc, Suffix, Token, TokenKind};
 pub use value::{swap_cells, Cell, RuntimeError, SbStr, Value, ValueType};
 pub use vm::{Halt, Vm, VmError, CALL_STACK_LIMIT};

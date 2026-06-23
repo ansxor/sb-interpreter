@@ -35,6 +35,12 @@ use sb_core::{parse, Vm};
 use sb_render::compositor::{compose_top_screen, DEFAULT_BACKDROP};
 use sb_render::Framebuffer;
 
+// The browser IndexedDB storage backend (M6-T1): backs the `sb-core` `Storage` trait with an
+// in-memory mirror persisted to IndexedDB. `wasm32`-only (the native host uses the filesystem);
+// the storage *logic* lives in the wasm-safe, gate-tested `sb-core` core.
+#[cfg(target_arch = "wasm32")]
+pub mod storage;
+
 /// The default browser keymap: DOM `KeyboardEvent.code` → logical
 /// [`Bind`](sb_core::host_input::Bind). Kept platform-side (the native host keys the same
 /// layout off winit `KeyCode`) and device-neutral so it builds + is tested on the desktop.

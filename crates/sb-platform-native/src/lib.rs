@@ -10,3 +10,10 @@
 // in `sb-audio` and is always built and unit-tested.
 #[cfg(all(feature = "audio", not(target_arch = "wasm32")))]
 pub mod audio;
+
+// The native filesystem storage backend (M6-T1): backs the `sb-core` `Storage` trait with a
+// `<root>/<project>/{TXT,DAT}/<name>` directory tree matching SmileBASIC's on-device project
+// layout (and the unpacked corpus). Device I/O lives here so `sb-core` stays wasm-safe; the
+// wasm host uses IndexedDB instead (`sb-platform-wasm`).
+#[cfg(not(target_arch = "wasm32"))]
+pub mod storage;

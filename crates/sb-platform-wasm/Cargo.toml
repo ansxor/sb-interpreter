@@ -23,6 +23,8 @@ sb-audio = { path = "../sb-audio" }
 # the workspace's native `cargo build`/`cargo test` from pulling web-sys onto the desktop.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
+# Typed-array view used to shuttle the serialized storage blob in/out of IndexedDB (M6-T1).
+js-sys = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
 version = "0.3"
@@ -44,4 +46,14 @@ features = [
     "AudioNode",
     "AudioDestinationNode",
     "AudioContextState",
+    # IndexedDB persistence for the storage layer (M6-T1).
+    "IdbFactory",
+    "IdbOpenDbRequest",
+    "IdbDatabase",
+    "IdbTransaction",
+    "IdbTransactionMode",
+    "IdbObjectStore",
+    "IdbRequest",
+    "Event",
+    "DomException",
 ]
