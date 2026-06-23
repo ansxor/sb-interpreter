@@ -711,8 +711,10 @@ oracle to confirm exact output and promote to `hw_verified`.
   SYSBEEP=1 (environment- or session-dependent, not universal). REMAINING (dynamic, no scalar
   golden in a warm program-mode session — assumption is the docs description):
   - CSRX/CSRY/CSRZ cursor position (depends on prior PRINT/LOCATE state).
-  - MAINCNT frame counter (monotonic) + whether `MAINCNT=0` reset assignment is legal
-    (docs list read-only, but real SB is rumored to allow reset — corpus shows only `==`).
+  - MAINCNT frame counter value (monotonic, frames-since-launch — no scalar golden possible).
+    RESOLVED 2026-06-23 (M4-T3): `MAINCNT=5` assignment raises **errnum 3** (Syntax error),
+    errline 1 — MAINCNT is read-only (the "reset is allowed" rumor is false); corpus shows only
+    reads. Still open: boot value / monotonicity across RUN/NEW/CLEAR and halt+CONT.
   - FREEMEM (memory-dependent), MICPOS/MICSIZE (no mic), MPCOUNT/MPHOST/MPLOCAL (no session),
     ERRNUM/ERRLINE/ERRPRG (require a prior error), PRGSLOT/RESULT, TIME$/DATE$ (clock).
   - Confirm the read-only sysvars actually raise on assignment (which errnum) vs silently

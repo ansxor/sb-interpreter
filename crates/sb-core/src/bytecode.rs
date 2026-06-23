@@ -110,6 +110,10 @@ pub enum Op {
     /// M1-T13). The VM reads its current error state; assignment is rejected at
     /// compile time (Syntax error, errnum 3) so there is no matching pop.
     PushSysvar(ErrSysvar),
+    /// Push the `MAINCNT` system variable — the 60 fps frame counter (M4-T3). The VM reads
+    /// the [`FrameClock`](crate::clock::FrameClock); read-only (`writable=false`), so like
+    /// the error sysvars assignment is rejected at compile time and there is no matching pop.
+    PushMaincnt,
 
     // --- computed references (`VAR(expr)`) ------------------------------------
     /// Pop a value (a variable name), push a reference resolved at runtime.

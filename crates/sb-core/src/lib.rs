@@ -16,6 +16,7 @@ pub mod array;
 pub mod ast;
 pub mod builtins;
 pub mod bytecode;
+pub mod clock;
 pub mod compiler;
 pub mod consts;
 pub mod input;

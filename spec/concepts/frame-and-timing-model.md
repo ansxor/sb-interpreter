@@ -10,6 +10,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/brepeat.md + fade.md (timing in units of 1/60th of a second)" }
   - { type: disassembled, ref: "cia_3.6.0.lst: one global frame counter at ptr [0x315ec0]. MAINCNT getter @0x15e5f8 does ldr r0,[0x15e604](->0x315ec0)/ldr r0,[r0,#0] -> returns *[0x315ec0]. WAIT handler @0x14afb0 targets current+count from [0x315ec0]; VSYNC handler @0x1455c8 targets lastVsync+count from [0x315ee8] then writes current back to [0x315ee8]. Both yield per frame with swi 0xa and check count<=0 to skip. The three xrefs of 0x315ec0 are exactly these handlers + the MAINCNT getter." }
   - { type: hw_verified, ref: "spec/instructions/VSYNC.yaml + WAIT.yaml: A=VSYNC(1)/A=WAIT(1) -> errnum 4 (sb-oracle batch 2026-06-22)" }
+  - { type: hw_verified, ref: "MAINCNT is read-only (sysvars.yaml writable=false): assigning `MAINCNT=5` -> errnum 3 (Syntax error), errline 1 (sb-oracle batch 2026-06-23). M4-T3 rejects it at compile time, matching the ERRNUM/ERRLINE/ERRPRG read-only handling." }
 confidence: disassembled
 related:
   - VSYNC

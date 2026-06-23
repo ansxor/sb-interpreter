@@ -40,6 +40,7 @@
 use crate::array::SbArray;
 use crate::ast::{BinOp, Name, UnOp};
 use crate::bytecode::{Const, Op, Program, VarRef, VarType};
+use crate::clock::FrameClock;
 use crate::input::InputState;
 use crate::sysvars::ErrSysvar;
 use crate::token::Suffix;
@@ -180,11 +181,10 @@ pub struct Vm {
     errnum: i32,
     errline: i32,
     errprg: i32,
-    /// Frame-timing stub state for `WAIT`/`VSYNC` (M1-T14). Real 60 fps timing arrives
-    /// with M4; M1 only validates call shape and treats the wait as an instant no-op
-    /// while advancing these counters so repeated calls don't drift backward.
-    frame_count: u64,
-    last_vsync: u64,
+    /// The 60 fps frame clock (M4-T3) behind `MAINCNT`/`VSYNC`/`WAIT`. Headless, it only
+    /// advances when a program blocks on frames (VSYNC/WAIT) or the platform ticks it; the
+    /// native host paces it to wall-clock 60 fps. See [`crate::clock`].
+    clock: FrameClock,
 }
 
 impl Vm {
@@ -216,8 +216,7 @@ impl Vm {
             errnum: 0,
             errline: 0,
             errprg: 0,
-            frame_count: 0,
-            last_vsync: 0,
+            clock: FrameClock::new(),
         }
     }
 
@@ -234,6 +233,22 @@ impl Vm {
     /// The `ERRPRG` of the last halting error (the program SLOT; always 0 in M1).
     pub fn errprg(&self) -> i32 {
         self.errprg
+    }
+
+    /// The current `MAINCNT` — the 60 fps frame counter (frames since the clock started).
+    pub fn maincnt(&self) -> i32 {
+        self.clock.maincnt()
+    }
+
+    /// The native host's per-frame heartbeat (M4-T3): advance the frame clock one displayed
+    /// frame and run the per-frame background machinery (sprite/BG animation step), as the
+    /// `swi 0xa` VBlank tick does on hardware. `MAINCNT` advances by one. Called by the
+    /// platform's 60 fps loop *after* `run()` returns, so animations set up by the program
+    /// keep advancing in the window; it does not touch the VSYNC anchor (only VSYNC/WAIT do).
+    pub fn tick_frame(&mut self) {
+        self.clock.tick(1);
+        self.sprites.tick(1);
+        self.bg.tick(1);
     }
 
     /// Borrow the text console (grid + cursor + colors) for rendering / inspection.
@@ -365,6 +380,9 @@ impl Vm {
                     ErrSysvar::Errprg => self.errprg,
                 };
                 self.stack.push(Value::Int(v));
+            }
+            Op::PushMaincnt => {
+                self.stack.push(Value::Int(self.clock.maincnt()));
             }
 
             Op::NewArray { var, ty, dims } => self.new_array(var, ty, dims)?,
@@ -734,8 +752,8 @@ impl Vm {
             self.call_assert(&args)?;
             return Ok(());
         }
-        // Frame-timing builtins (WAIT/VSYNC, M1-T14): M1 stubs them as instant no-ops
-        // (real 60 fps pacing is M4) while validating the documented call shape.
+        // Frame-timing builtins (WAIT/VSYNC, M4-T3): advance the frame clock (instantly in
+        // the headless model) after validating the documented call shape.
         if let Some(ret) = self.call_timing(name, &args, wants_value).map_err(sb)? {
             if wants_value && !matches!(ret, Value::Void) {
                 self.stack.push(ret);
@@ -937,10 +955,12 @@ impl Vm {
         }
     }
 
-    /// Frame-timing builtins `WAIT`/`VSYNC` (M1-T14). M1 stubs the actual wait as an
-    /// instant no-op (real 60 fps pacing lives in M4) while validating the documented
-    /// call shape: statement only (function use → errnum 4), optional integer argument
-    /// defaulting to 1, negative values treated as 0.
+    /// Frame-timing builtins `WAIT`/`VSYNC` (M4-T3) over the VM-owned [`FrameClock`].
+    /// Both are statements (function use → errnum 4) taking an optional integer frame count
+    /// that defaults to 1, with negative counts treated as 0 ("0: Ignore"). WAIT counts from
+    /// the present frame; VSYNC counts from the previous VSYNC (see `clock::FrameClock`).
+    /// Headless the wait resolves instantly, advancing `MAINCNT` by the resolved count; the
+    /// per-frame background machinery (sprite/BG animation) steps once per elapsed frame.
     fn call_timing(
         &mut self,
         name: &str,
@@ -968,21 +988,12 @@ impl Vm {
             }
             _ => return Ok(None),
         };
-        let before = self.frame_count;
-        match name {
-            "WAIT" => {
-                self.frame_count = self.frame_count.saturating_add(count);
-                self.last_vsync = self.frame_count;
-            }
-            "VSYNC" => {
-                let target = self.last_vsync.saturating_add(count);
-                self.frame_count = self.frame_count.max(target);
-                self.last_vsync = self.frame_count;
-            }
-            _ => {}
-        }
+        let elapsed = match name {
+            "WAIT" => self.clock.wait(count),
+            "VSYNC" => self.clock.vsync(count),
+            _ => 0,
+        };
         // Sprite (M3-T2) and BG (M3-T5) animations advance one step per displayed frame.
-        let elapsed = self.frame_count - before;
         self.sprites.tick(elapsed);
         self.bg.tick(elapsed);
         Ok(Some(Value::Void))
@@ -3419,5 +3430,59 @@ H$=HEX$(255)"#);
             i.push_key(b'B' as u16);
         });
         assert_eq!(vm.console_text(), "AB0");
+    }
+
+    // -- M4-T3 frame timing: MAINCNT + VSYNC/WAIT over the frame clock ------------
+
+    #[test]
+    fn maincnt_starts_at_zero() {
+        // A fresh program has never advanced a frame, so MAINCNT reads 0.
+        assert_eq!(run_b("?MAINCNT").console_text(), "0");
+    }
+
+    #[test]
+    fn wait_advances_maincnt_by_the_count() {
+        // WAIT counts from the present frame: WAIT 60 leaves MAINCNT at 60.
+        assert_eq!(run_b("WAIT 60\n?MAINCNT").console_text(), "60");
+        // A bare WAIT defaults to one frame.
+        assert_eq!(run_b("WAIT\n?MAINCNT").console_text(), "1");
+        // WAIT 0 ("0: Ignore") does not advance.
+        assert_eq!(run_b("WAIT 0\n?MAINCNT").console_text(), "0");
+    }
+
+    #[test]
+    fn vsync_loop_advances_maincnt_one_per_frame() {
+        // Five `VSYNC 1`s, each anchored at the previous VSYNC, advance MAINCNT to 5.
+        assert_eq!(
+            run_b("FOR I=0 TO 4\nVSYNC 1\nNEXT\n?MAINCNT").console_text(),
+            "5"
+        );
+    }
+
+    #[test]
+    fn maincnt_difference_measures_elapsed_frames() {
+        // The idiom `MAINCNT - start`: capture, wait, and the delta is the frames blocked.
+        assert_eq!(run_b("S=MAINCNT\nWAIT 30\n?MAINCNT-S").console_text(), "30");
+    }
+
+    #[test]
+    fn tick_frame_advances_maincnt_and_animation() {
+        // The platform heartbeat: set up a BG scroll animation, return from the program,
+        // then drive frames from the host loop — MAINCNT advances and the scroll steps.
+        let mut vm = run_b("BGSCREEN 0,32,32\nBGANIM 0,\"XY\",2,16,8");
+        assert_eq!(vm.maincnt(), 0);
+        vm.tick_frame();
+        assert_eq!(vm.maincnt(), 1);
+        assert_eq!((vm.bg().layers[0].ofs_x, vm.bg().layers[0].ofs_y), (16, 8));
+    }
+
+    #[test]
+    fn maincnt_is_read_only() {
+        // MAINCNT is writable=false: assigning is a compile-time Syntax error (errnum 3).
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        let ast = parse("MAINCNT=5").expect("parse");
+        let err = compile_with(&ast, &StdBuiltins).expect_err("MAINCNT is read-only");
+        assert_eq!(err.errnum, 3);
     }
 }

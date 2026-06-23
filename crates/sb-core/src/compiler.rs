@@ -112,6 +112,14 @@ fn canonical(name: &Name) -> String {
     format!("{}{}", name.ident, s)
 }
 
+/// The reserved read-only system variables a bare name resolves to before any user
+/// variable: the error-state trio (ERRNUM/ERRLINE/ERRPRG, M1-T13) and the frame counter
+/// MAINCNT (M4-T3). All are `writable=false` (`spec/reference/sysvars.yaml`), so assigning
+/// to one is a compile-time Syntax error (errnum 3).
+fn is_readonly_sysvar(cname: &str) -> bool {
+    ErrSysvar::from_name(cname).is_some() || cname == "MAINCNT"
+}
+
 /// The stack/queue ops (M1-T14) whose first operand is taken by reference so the op
 /// can grow/shrink the caller's array or write a modified string scalar back.
 fn is_stack_op(cname: &str) -> bool {
@@ -522,9 +530,10 @@ impl<'a> Compiler<'a> {
         self.cur_loc = stmt.loc;
         match &stmt.kind {
             StmtKind::Assign { name, expr } => {
-                if ErrSysvar::from_name(&canonical(name)).is_some() {
-                    // The error-state sysvars are read-only (sysvars.yaml writable=false);
-                    // assigning to one is a Syntax error (errnum 3), not a write.
+                if is_readonly_sysvar(&canonical(name)) {
+                    // The reserved sysvars read here (ERRNUM/ERRLINE/ERRPRG, M1-T13; MAINCNT,
+                    // M4-T3) are read-only (sysvars.yaml writable=false); assigning to one is
+                    // a Syntax error (errnum 3), not a write.
                     return Err(self.err(
                         ERR_SYNTAX,
                         format!(
@@ -1159,6 +1168,10 @@ impl<'a> Compiler<'a> {
                     // A read-only error-state sysvar (ERRNUM/ERRLINE/ERRPRG, M1-T13):
                     // reserved, so it resolves before any user variable.
                     self.emit(Op::PushSysvar(sv));
+                } else if canonical(name) == "MAINCNT" {
+                    // MAINCNT (M4-T3) — the read-only frame counter; like the error sysvars
+                    // it is reserved and resolves before any user variable.
+                    self.emit(Op::PushMaincnt);
                 } else if let Some((vref, _)) = self.lookup(name) {
                     self.emit(Op::PushVar(vref));
                 } else if self.builtins.is_builtin(&canonical(name)) {

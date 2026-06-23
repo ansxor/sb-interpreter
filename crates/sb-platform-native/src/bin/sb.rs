@@ -6,9 +6,11 @@
 //! (winit + softbuffer). It is the visual counterpart of `sb-run`: same VM, same
 //! framebuffer, one drawn to a window instead of dumped as text.
 //!
-//! M1 has no frame-yielding execution model yet (VSYNC/WAIT scheduling is M4), so the VM
-//! runs to completion up front and the window then displays the final console state,
-//! redrawing it on resize. The per-frame blit loop lands once the VM yields per frame.
+//! The VM still runs to completion up front (a frame-*yielding* execution model — where a
+//! program's own `VSYNC` loop drives the window live — is a later milestone). Once it
+//! returns, the host enters a real **60 fps loop** (M4-T3): every `clock::FRAME_DURATION` it
+//! ticks the VM's frame clock (`MAINCNT` advances; sprite/BG animations step) and re-blits,
+//! so animations set up before the program ended keep playing at a steady ~60 fps.
 //!
 //! winit + softbuffer are desktop-only; this whole file compiles to an empty `main` on
 //! `wasm32` (the canvas host is the separate `sb-platform-wasm` crate) so the workspace's
@@ -28,8 +30,10 @@ mod native {
     use std::num::NonZeroU32;
     use std::process::ExitCode;
     use std::rc::Rc;
+    use std::time::Instant;
 
     use sb_core::builtins::StdBuiltins;
+    use sb_core::clock::FRAME_DURATION;
     use sb_core::compiler::compile_with;
     use sb_core::{parse, Vm, VmError};
     use sb_render::compositor::{compose_top_screen, DEFAULT_BACKDROP};
@@ -50,53 +54,66 @@ mod native {
         line: u32,
     }
 
-    /// Run `src` to completion and render its final console state into a top-screen
-    /// framebuffer. The buffer is returned even on error so the window still shows whatever
-    /// the program printed before it halted; the error (if any) is reported alongside.
-    fn run_to_framebuffer(src: &str) -> (Framebuffer, Option<SbError>) {
-        let mut fb = Framebuffer::top();
-        // Opaque-black backdrop: GRP/console pixels are transparent by default, so a cleared
-        // buffer would leave un-blittable garbage — paint the backdrop first. On a parse/
-        // compile failure (before any scene exists) this backdrop is what the window shows.
-        fb.clear(DEFAULT_BACKDROP);
-
-        let err = run_console(src, &mut fb);
-        (fb, err)
+    /// The result of preparing a program: either a live VM (so the host loop can keep
+    /// ticking its frame clock + animations) or a failure before any scene existed.
+    enum Scene {
+        /// Parse → compile → run succeeded enough to have a VM; the host loop animates it.
+        /// Boxed — a `Vm` is far larger than the `Failed` variant.
+        Live(Box<Vm>),
+        /// Parse/compile failed before a VM existed — only the backdrop is shown.
+        Failed,
     }
 
-    /// Parse → compile → run, then composite the scene (backdrop → GRP display page →
-    /// console, M2-T4) into `fb`. Returns the SmileBASIC error if any stage raised one (the
-    /// partial scene is still composited).
-    fn run_console(src: &str, fb: &mut Framebuffer) -> Option<SbError> {
+    /// Composite the current scene into a fresh top-screen framebuffer (backdrop → GRP
+    /// display page → BG → sprites → console, M2-T4 / M3-T6). For a [`Scene::Failed`] there
+    /// is nothing to draw, so it is just the opaque-black backdrop (GRP/console pixels are
+    /// transparent by default, so the backdrop must be painted first to be blittable).
+    fn compose(scene: &Scene) -> Framebuffer {
+        match scene {
+            Scene::Live(vm) => compose_top_screen(
+                vm.grp(),
+                vm.bg(),
+                vm.sprites(),
+                vm.console(),
+                DEFAULT_BACKDROP,
+            ),
+            Scene::Failed => {
+                let mut fb = Framebuffer::top();
+                fb.clear(DEFAULT_BACKDROP);
+                fb
+            }
+        }
+    }
+
+    /// Parse → compile → run `src` to completion. Returns the scene to display plus the
+    /// SmileBASIC error if any stage raised one (the partial scene is still kept + animated).
+    fn prepare(src: &str) -> (Scene, Option<SbError>) {
         let ast = match parse(src) {
             Ok(ast) => ast,
             Err(e) => {
-                return Some(SbError {
-                    errnum: e.errnum,
-                    line: e.loc.line,
-                })
+                return (
+                    Scene::Failed,
+                    Some(SbError {
+                        errnum: e.errnum,
+                        line: e.loc.line,
+                    }),
+                )
             }
         };
         let program = match compile_with(&ast, &StdBuiltins) {
             Ok(p) => p,
             Err(e) => {
-                return Some(SbError {
-                    errnum: e.errnum,
-                    line: e.loc.line,
-                })
+                return (
+                    Scene::Failed,
+                    Some(SbError {
+                        errnum: e.errnum,
+                        line: e.loc.line,
+                    }),
+                )
             }
         };
         let mut vm = Vm::new(program);
-        let result = vm.run();
-        // Composite whatever the program drew, halted or not.
-        *fb = compose_top_screen(
-            vm.grp(),
-            vm.bg(),
-            vm.sprites(),
-            vm.console(),
-            DEFAULT_BACKDROP,
-        );
-        match result {
+        let err = match vm.run() {
             Ok(_) => None,
             Err(VmError::Sb { errnum, line }) => Some(SbError { errnum, line }),
             Err(VmError::Unsupported(what)) => {
@@ -107,23 +124,41 @@ mod native {
                 eprintln!("sb: ASSERT__ failed at line {line}: {message}");
                 Some(SbError { errnum: 0, line })
             }
-        }
+        };
+        (Scene::Live(Box::new(vm)), err)
     }
 
-    /// winit application state: the program's rendered framebuffer plus the live window +
-    /// softbuffer surface (created in `resumed`, kept for the window's lifetime).
+    /// winit application state: the live scene (VM) + its last composited framebuffer, the
+    /// window + softbuffer surface (created in `resumed`), and the next frame's deadline for
+    /// the 60 fps pacer.
     struct App {
+        scene: Scene,
         fb: Framebuffer,
+        /// The instant the next frame is due. `None` until the window is up; once running it
+        /// advances by `FRAME_DURATION` each tick so the loop holds a steady ~60 fps.
+        next_frame: Option<Instant>,
         window: Option<Rc<Window>>,
         surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
     }
 
     impl App {
-        fn new(fb: Framebuffer) -> Self {
+        fn new(scene: Scene) -> Self {
+            let fb = compose(&scene);
             Self {
+                scene,
                 fb,
+                next_frame: None,
                 window: None,
                 surface: None,
+            }
+        }
+
+        /// Advance one displayed frame: tick the VM's frame clock + animations and
+        /// recomposite. A no-op for a failed scene (nothing to animate).
+        fn step_frame(&mut self) {
+            if let Scene::Live(vm) = &mut self.scene {
+                vm.tick_frame();
+                self.fb = compose(&self.scene);
             }
         }
 
@@ -194,6 +229,40 @@ mod native {
                 }
             }
             self.window = Some(window);
+            // Start the 60 fps pacer from the moment the window is up.
+            self.next_frame = Some(Instant::now() + FRAME_DURATION);
+        }
+
+        /// The 60 fps heartbeat (M4-T3). Each `FRAME_DURATION` boundary we step the scene one
+        /// frame and request a redraw; `ControlFlow::WaitUntil` sleeps until the next boundary
+        /// so the loop holds ~60 fps without busy-spinning. A failed scene has nothing to
+        /// animate, so it falls back to event-driven `Wait`.
+        fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+            if matches!(self.scene, Scene::Failed) {
+                event_loop.set_control_flow(ControlFlow::Wait);
+                return;
+            }
+            let Some(deadline) = self.next_frame else {
+                return;
+            };
+            let now = Instant::now();
+            if now >= deadline {
+                self.step_frame();
+                if let Some(w) = self.window.as_ref() {
+                    w.request_redraw();
+                }
+                // Advance to the next frame boundary; if we fell far behind (e.g. the window
+                // was hidden), resync to "now" rather than firing a burst of catch-up frames.
+                let next = deadline + FRAME_DURATION;
+                self.next_frame = Some(if next <= now {
+                    now + FRAME_DURATION
+                } else {
+                    next
+                });
+            }
+            if let Some(next) = self.next_frame {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(next));
+            }
         }
 
         fn window_event(
@@ -230,7 +299,7 @@ mod native {
             }
         };
 
-        let (fb, err) = run_to_framebuffer(&src);
+        let (scene, err) = prepare(&src);
         // Report a SmileBASIC error like `sb-run` does (the window still shows the output).
         if let Some(e) = &err {
             eprintln!("ERRNUM={} ERRLINE={}", e.errnum, e.line);
@@ -251,7 +320,7 @@ mod native {
         };
         event_loop.set_control_flow(ControlFlow::Wait);
 
-        let mut app = App::new(fb);
+        let mut app = App::new(scene);
         if let Err(e) = event_loop.run_app(&mut app) {
             eprintln!("sb: event loop error: {e}");
             return ExitCode::from(1);
@@ -270,12 +339,13 @@ mod native {
         #[test]
         fn renders_printed_text_to_pixels() {
             // `?"HI"` should light up some non-black foreground pixels on the black backdrop.
-            let (fb, err) = run_to_framebuffer(r#"?"HI""#);
+            let (scene, err) = prepare(r#"?"HI""#);
             assert!(
                 err.is_none(),
                 "clean program, got {:?}",
                 err.map(|e| e.errnum)
             );
+            let fb = compose(&scene);
             assert_eq!(fb.width, sb_render::TOP_WIDTH);
             let lit = (0..fb.width)
                 .flat_map(|x| (0..fb.height).map(move |y| (x, y)))
@@ -286,11 +356,26 @@ mod native {
         #[test]
         fn error_is_reported_but_console_still_renders() {
             // SQR(-1) → Out of range (10) on line 1; the framebuffer is still produced.
-            let (fb, err) = run_to_framebuffer("A=SQR(-1)");
+            let (scene, err) = prepare("A=SQR(-1)");
             let err = err.expect("should error");
             assert_eq!(err.errnum, 10);
             assert_eq!(err.line, 1);
-            assert_eq!(fb.width, sb_render::TOP_WIDTH);
+            assert_eq!(compose(&scene).width, sb_render::TOP_WIDTH);
+        }
+
+        #[test]
+        fn frame_loop_ticks_maincnt_and_animation() {
+            // The 60 fps host loop drives the VM's frame clock: stepping a frame advances
+            // MAINCNT and steps a BG scroll animation set up before the program ended.
+            let (mut scene, err) = prepare("BGSCREEN 0,32,32\nBGANIM 0,\"XY\",2,16,8");
+            assert!(err.is_none());
+            let Scene::Live(vm) = &mut scene else {
+                panic!("expected a live scene");
+            };
+            assert_eq!(vm.maincnt(), 0);
+            vm.tick_frame();
+            assert_eq!(vm.maincnt(), 1);
+            assert_eq!((vm.bg().layers[0].ofs_x, vm.bg().layers[0].ofs_y), (16, 8));
         }
     }
 }
