@@ -476,3 +476,16 @@ oracle to confirm exact output and promote to `hw_verified`.
     (hypothesis errnum 43) and load-failed (hypothesis errnum 46), and the no-return control
     transfer. USE/EXEC are parser special forms (keyword ids 332/331) with no body-readable
     handler, so their slot validation + errnums stay hypothesis until harvested.
+
+- S-T12c Source read (PRGGET$/PRGNAME$/PRGSIZE): the error guards ARE hw_verified (batch
+    2026-06-22, s_t12c): PRGGET$ with no active PRGEDIT -> errnum 38 (the no-PRGEDIT check
+    precedes the arg-count check, so PRGGET$(0) without PRGEDIT is also 38); PRGGET$(0) WITH an
+    active edit target (PRGEDIT 1) -> errnum 4; PRGNAME$(4)/PRGNAME$(-1) -> errnum 10,
+    PRGNAME$(0,1) -> errnum 4; PRGSIZE(4)/PRGSIZE(-1)/PRGSIZE(0,3) -> errnum 10, PRGSIZE(0,0,0)
+    -> errnum 4. UNHARVESTED (all program-slot/edit state — no portable scalar golden, and they
+    depend on loaded slot contents): PRGGET$ returned line text + the empty-string-past-EOF
+    result + the trailing-LF strip; PRGNAME$ returned file-name strings per slot (incl. the
+    empty string for a never-LOAD/SAVEd slot) and the no-arg running/last-run-slot value;
+    PRGSIZE returned counts for type 0 (lines) / 1 (characters) / 2 (free characters) and the
+    no-arg last-run-slot count. These need a known program loaded into a slot to produce a
+    stable expected value (M6-T4 source-edit harness).

@@ -112,7 +112,7 @@ and name the instructions they cover inline.
 #### S-T12 Files + Source-manip + DIRECT-mode (22) → S-T0
 - [x] S-T12a File I/O — LOAD · SAVE · FILES · DELETE
 - [x] S-T12b File management — CHKFILE · RENAME · USE · EXEC
-- [ ] S-T12c Source read — PRGGET$ · PRGNAME$ · PRGSIZE
+- [x] S-T12c Source read — PRGGET$ · PRGNAME$ · PRGSIZE
 - [ ] S-T12d Source edit — PRGSET · PRGINS · PRGDEL · PRGEDIT
 - [ ] S-T12e DIRECT-mode — RUN · CONT · NEW · CLEAR · LIST · BACKTRACE · PROJECT
 

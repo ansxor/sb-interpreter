@@ -1,0 +1,54 @@
+id: PRGSIZE
+kind: function
+category: Source code manipulation
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — no argument: line count of the running / last-run slot.
+  - args: []
+    returns: { type: integer, desc: "Number of lines in the running / last-run slot" }
+    note: "PRGSIZE() — line count of the running (or last-run) slot."
+  # Form 2 — explicit slot, default type 0 (lines).
+  - args:
+      - { name: slot, type: integer, range: "0-3: program SLOT to measure" }
+    returns: { type: integer, desc: "Number of lines in that slot" }
+    note: "PRGSIZE(slot) — line count of the given slot (type defaults to 0)."
+  # Form 3 — slot + value type.
+  - args:
+      - { name: slot, type: integer, range: "0-3: program SLOT to measure" }
+      - { name: type, type: integer, range: "0-2: 0=lines, 1=characters, 2=free characters", default: 0 }
+    returns: { type: integer, desc: "Type-appropriate count for that slot" }
+    note: "PRGSIZE(slot,type) — type 0=lines, 1=characters, 2=free characters."
+
+summary: "Returns a size of a program SLOT's source: number of lines (type 0, default), number of characters (type 1), or number of remaining free characters (type 2). With no slot argument it measures the running slot, or the last-run slot when no program is running (usually slot 0)."
+
+semantics:
+  - "Accepts 0, 1, or 2 arguments. Supplying 3 or more raises errnum 4 (Illegal function call)."
+  - "Argument 1 is the program SLOT (0-3); argument 2 is the value type (0=number of lines, 1=number of characters, 2=number of free characters), defaulting to 0."
+  - "No-arg form: measures the running slot, or the last-run slot when no program is running (read from the runtime state global), with type 0."
+  - "The slot operand may be any integer expression. The corpus uses literals 0-3 and variables (`PRGSIZE(SLOT)`, `PRGSIZE(S1)`), and arithmetic on the result (`FOR I=0 TO PRGSIZE(slot)-1`)."
+  - "The slot is validated to 0-3 inclusive and the type to 0-2 inclusive (each `cmp,#0; blt; cmp,#hi; ble`); either out of range raises errnum 10 (Out of range)."
+  - "Returns an Integer. Type 0 counts source lines; type 1 counts characters in the source; type 2 reports free characters (remaining capacity). Memory-usage idiom: `ROUND(PRGSIZE(3,1)/(PRGSIZE(3,1)+PRGSIZE(3,2))*100)`."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "3 or more arguments are supplied" }
+  - { errnum: 10, name: "Out of range", when: "the slot is outside 0-3 or the type is outside 0-2" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/prgsize.md (1 form: `Variable=PRGSIZE( [Program SLOT [,Type of value to get]] )`. 'Gets the number of lines in the source code.' Arguments: Program SLOT 0-3; Type 0=number of lines, 1=number of characters, 2=number of free characters (default 0). Returns the type-appropriate value. Example `A=PRGSIZE(0)`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst PRGSIZE handler @0x189f80; arg-count `ldr r0,[r0,#0x4]; cmp r0,#0x2` >2 -> `mov r0,#0x4` (errnum 4) `bl 0x001fffdc`; branches `cmp r0,#0x2; beq 0x18a004` (2 args) and `cmp r0,#0x1; blt 0x18a094` (0 args, last-run slot via `ldr r0,[0x18a124]; ldr r0,[r0,#0x1c]`); type validation `ldr r0,[sp,#0x4]; cmp r0,#0; blt 0x18a048; cmp r0,#0x2; ble` else `mov r0,#0xa` (errnum 10); slot validation `cmp r0,#0; blt; cmp r0,#0x3; ble` else `mov r0,#0xa`; final type switch 0/1/2 dispatches distinct count helpers", confidence: disassembled }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bPRGSIZE\\b': ~249 occurrences; no-arg `FOR I=0 TO PRGSIZE()` (53383XCF/TXT/EXECUTE), single-arg `PRGSIZE(0..3)` / `PRGSIZE(S1)`, two-arg `PRGSIZE(2,0)`, `PRGSIZE(C,1)`, `PRGSIZE(3,2)`; no type value beyond 0/1/2 observed). Syntax legal (shipped programs); runtime counts oracle-pending." }
+  - { type: community, ref: "osb/SMILEBASIC/program.d Program size (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t12c): `A=PRGSIZE(4)` -> errnum 10 errline 1; `A=PRGSIZE(-1)` -> errnum 10; `A=PRGSIZE(0,3)` (type out of 0-2) -> errnum 10; `A=PRGSIZE(0,0,0)` (3 args) -> errnum 4 errline 1. Confirms the slot 0-3 and type 0-2 range guards (errnum 10) and the >2-arg guard (errnum 4). The returned counts are program-slot state with no scalar golden (queued)." }
+
+# Top-level hw_verified: the errnum-4 (too many args) and errnum-10 (slot/type out of range)
+# guards are oracle-confirmed and body-pinned (@0x189f80); the 0/1/2-arg signature, the
+# type/slot defaults, and the no-arg last-run-slot path are body-read. The returned counts
+# are stateful (depend on slot contents) and stay oracle-pending (HARVEST_QUEUE.md).
+confidence: hw_verified
+
+tests:
+  - { name: slot_out_of_range_high, code: "A=PRGSIZE(4)", expect: { error: { errnum: 10 } } }
+  - { name: slot_out_of_range_negative, code: "A=PRGSIZE(-1)", expect: { error: { errnum: 10 } } }
+  - { name: type_out_of_range, code: "A=PRGSIZE(0,3)", expect: { error: { errnum: 10 } } }
+  - { name: too_many_args, code: "A=PRGSIZE(0,0,0)", expect: { error: { errnum: 4 } } }

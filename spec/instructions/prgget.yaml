@@ -1,0 +1,43 @@
+id: PRGGET$
+kind: function
+category: Source code manipulation
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Takes NO arguments — the handler raises errnum 4 if any are supplied.
+  - args: []
+    returns: { type: string, desc: "Source text of the current edit line (empty string if there is no applicable line)" }
+    note: "PRGGET$() — read the current line selected by PRGEDIT."
+
+summary: "Returns the source character string of the current line of the program slot being edited. The current slot and line are selected beforehand by PRGEDIT; calling PRGGET$ without an active PRGEDIT target raises errnum 38. Returns an empty string when the current line is past the end of the program (no applicable line)."
+
+semantics:
+  - "Takes no arguments. The current slot/line are NOT passed in — they are the edit state set by a prior PRGEDIT. The corpus form is always the no-arg `PRGGET$()` (381 occurrences, e.g. `P$=PRGGET$()`); supplying any argument raises errnum 4 (Illegal function call) — but only once an edit target is active (see ordering below)."
+  - "Requires an active edit target: the handler loads the PRGEDIT state global and, if no slot is being edited, raises errnum 38 (Use PRGEDIT before any PRG function). PRGEDIT must be called first."
+  - "Check ordering (oracle-confirmed): the no-PRGEDIT check (errnum 38) is performed FIRST, before the argument-count check. So `PRGGET$(0)` with no active PRGEDIT raises errnum 38 (not 4); the errnum-4 path is reached only when an edit target is active (`PRGEDIT 1:A$=PRGGET$(0)` -> errnum 4)."
+  - "Returns the full source text of the current line as a string."
+  - "A trailing line-feed (char code 10) terminating the line is stripped from the returned string (the handler special-cases the U+000A at the end of the line)."
+  - "Returns the empty string when there is no applicable line (the current line index is past the last line of the program)."
+  - "Typical idiom is to iterate lines with PRGEDIT inside a loop bounded by PRGSIZE: `FOR I=0 TO PRGSIZE(slot)-1 : PRGEDIT slot,I : P$=PRGGET$() : ... : NEXT`."
+
+errors:
+  - { errnum: 38, name: "Use PRGEDIT before any PRG function", when: "PRGGET$ is called without an active PRGEDIT edit target" }
+  - { errnum: 4, name: "Illegal function call", when: "any argument is supplied (PRGGET$ takes none)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/prgget.md (1 form: `String variable=PRGGET$()`. 'Gets the current single line as a character string.' Return: source string of the current line, or empty string if there is no applicable line. Example `A$=PRGGET$()`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst PRGGET$ handler @0x189528; loads PRGEDIT-state global via `ldr r6,[0x1896f0]` then `ldr r0,[r6,#0x0]; cmp r0,#0x0; beq 0x189568` -> at 0x189568 `mov r0,#0x26` (errnum 38) `bl 0x001fffdc` (raise); arg-count check `ldr r0,[r4,#0x4]; cmp r0,#0x0` non-zero -> `mov r0,#0x4` (errnum 4) `b 0x001896e4`; trailing-LF strip `ldrh r0,[r0,#-0x2]; cmp r0,#0xa; beq 0x18968c`", confidence: disassembled }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bPRGGET\\$': 381 occurrences, always the no-arg `PRGGET$()` form, never with an argument; canonical idiom `FOR I=1 TO PRGSIZE(1)-1 : PRGEDIT 1,I : P$=PRGGET$()` in 4DHJ23F3/TXT/AMIIBO_SB). Syntax legal (shipped programs); runtime line text + empty-string edge oracle-pending." }
+  - { type: community, ref: "osb/SMILEBASIC/program.d PRG* edit family (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t12c): `A$=PRGGET$()` with no active PRGEDIT -> errnum 38 errline 1; `A$=PRGGET$(0)` with no active PRGEDIT -> errnum 38 (the no-PRGEDIT check precedes the arg-count check); `PRGEDIT 1:A$=PRGGET$(0)` (edit target active, arg supplied) -> errnum 4 errline 1; `PRGEDIT 1` on a non-running slot is NOERR. The returned line text + empty-string-past-EOF result are program-slot state with no scalar golden (queued)." }
+
+# Top-level hw_verified: the errnum-38 (no PRGEDIT) and errnum-4 (arg supplied) guards and
+# their ordering are oracle-confirmed and body-pinned (@0x189528). The returned line text and
+# the empty-string-past-EOF result are stateful (depend on slot contents) and stay
+# oracle-pending (HARVEST_QUEUE.md).
+confidence: hw_verified
+
+tests:
+  - { name: no_prgedit_errors, code: "A$=PRGGET$()", expect: { error: { errnum: 38 } } }
+  - { name: no_prgedit_with_arg, code: "A$=PRGGET$(0)", expect: { error: { errnum: 38 } } }
+  - { name: arg_with_edit_target, code: "PRGEDIT 1:A$=PRGGET$(0)", expect: { error: { errnum: 4 } } }

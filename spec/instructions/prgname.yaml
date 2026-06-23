@@ -1,0 +1,46 @@
+id: PRGNAME$
+kind: function
+category: Source code manipulation
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — no argument: the slot of the currently running / last-run program.
+  - args: []
+    returns: { type: string, desc: "File name handled (LOAD/SAVE) for the running / last-run slot" }
+    note: "PRGNAME$() — file name of the running slot, or the last-run slot if none is running."
+  # Form 2 — explicit slot 0-3.
+  - args:
+      - { name: slot, type: integer, range: "0-3: program SLOT to read the file name of" }
+    returns: { type: string, desc: "File name handled (LOAD/SAVE) for that program SLOT" }
+    note: "PRGNAME$(slot) — file name of the given program slot (0-3)."
+
+summary: "Returns the program file name last handled by LOAD/SAVE for a program SLOT. With no argument it uses the slot in which the program is running, or — when no program is running — the slot of the last program run (usually slot 0; a STOP/START/error freezes that as the last-run slot until the next RUN). With an argument it reads the named slot 0-3."
+
+semantics:
+  - "Accepts 0 or 1 arguments. Supplying 2 or more raises errnum 4 (Illegal function call)."
+  - "No-arg form: returns the file name for the running slot; if no program is running, the slot of the last program run (usually slot 0). The handler reads the current/last-run slot index from the runtime state global."
+  - "One-arg form: the slot operand may be any integer expression. The corpus uses literal slots 0-3 and variables (`PRGNAME$(I)` over `FOR I=0 TO 3`; `VAR N$=PRGNAME$(SLOT%)`)."
+  - "The slot is validated to 0-3 inclusive (`cmp slot,#0; blt; cmp slot,#3; ble`); an out-of-range slot raises errnum 10 (Out of range)."
+  - "Returns the file name as a string; a slot that has never been LOAD/SAVEd returns the empty string (corpus tests `IF PRGNAME$(N)==\"\" THEN` to detect an empty slot)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "2 or more arguments are supplied" }
+  - { errnum: 10, name: "Out of range", when: "the slot argument is outside 0-3" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/prgname.md (1 form: `String variable=PRGNAME$([Program SLOT])`. 'Program file name File that has been handled with the LOAD/SAVE instruction.' Argument: Program SLOT 0-3. Returns the file name; with no program running the 'SLOT of the last program run' (usually SLOT 0); a STOP/START/error freezes the last-run slot until the next RUN. Example `PRINT PRGNAME$(0)`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst PRGNAME$ handler @0x189e50; arg-count `ldr r0,[r0,#0x4]; cmp r0,#0x1` >1 -> `mov r0,#0x4` (errnum 4) `bl 0x001fffdc`; `cmp r0,#0x1; beq 0x189ef8` splits the 1-arg vs 0-arg path; 1-arg slot validation `ldr r0,[sp,#0x0]; cmp r0,#0x0; blt 0x189f40; cmp r0,#0x3; ble 0x189ea0` else at 0x189f40 `mov r0,#0xa` (errnum 10); 0-arg path reads last-run slot via `ldr r0,[0x189f70]; ldr r0,[r0,#0x1c]`", confidence: disassembled }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bPRGNAME\\$': ~164 occurrences across 100+ files; no-arg `PRGNAME$()`, literal slots `PRGNAME$(0..3)`, and variable slots `PRGNAME$(I)` / `VAR N$=PRGNAME$(SLOT%)` in 7Z7NE3RJ/TXT/PTC_EDITOR; empty-slot detection `IF PRGNAME$(N)==\"\"` and identity checks `IF PRGNAME$(0)==\"BBZH\"`). Syntax legal (shipped programs); runtime file-name values oracle-pending." }
+  - { type: community, ref: "osb/SMILEBASIC/program.d Program/Slot name (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t12c): `A$=PRGNAME$(4)` -> errnum 10 errline 1; `A$=PRGNAME$(-1)` -> errnum 10; `A$=PRGNAME$(0,1)` (2 args) -> errnum 4 errline 1. Confirms the slot 0-3 range guard (errnum 10) and the >1-arg guard (errnum 4). The returned file-name strings are LOAD/SAVE state with no scalar golden (queued)." }
+
+# Top-level hw_verified: the errnum-4 (too many args) and errnum-10 (slot out of 0-3) guards
+# are oracle-confirmed and body-pinned (@0x189e50); the 0/1-arg signature and the no-arg
+# last-run-slot path are body-read. The returned file-name strings are stateful (depend on
+# what was LOAD/SAVEd) and stay oracle-pending (HARVEST_QUEUE.md).
+confidence: hw_verified
+
+tests:
+  - { name: slot_out_of_range_high, code: "A$=PRGNAME$(4)", expect: { error: { errnum: 10 } } }
+  - { name: slot_out_of_range_negative, code: "A$=PRGNAME$(-1)", expect: { error: { errnum: 10 } } }
+  - { name: too_many_args, code: "A$=PRGNAME$(0,1)", expect: { error: { errnum: 4 } } }
