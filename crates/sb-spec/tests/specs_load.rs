@@ -385,6 +385,148 @@ fn sysvar_table_matches_disassembly() {
     );
 }
 
+// ── Built-in-constant table conformance (S-T14c) ─────────────────────────────────────
+//
+// `spec/reference/constants.yaml` is the built-in `#CONST` table. The NAME set was verified
+// against the binary (each is a UTF-16LE string in the .rodata keyword/name pool, addr per
+// row); the VALUES were harvested with `PRINT <#CONST>` on real SmileBASIC 3.6.0 (sb-oracle,
+// S-T14c) and frozen under `oracle.goldens` (signed i32). The harvest CORRECTED 7 doc errors
+// (#BLUE, #CYAN, #ZL, #ZR, #BGROT90/180/270). These are deterministic fixtures replayed here
+// (the `.bin`/emulator are absent in CI). If real SmileBASIC ever disagrees, fix the YAML.
+
+#[derive(serde::Deserialize)]
+struct ConstTable {
+    constants: Vec<ConstRow>,
+}
+
+#[derive(serde::Deserialize)]
+struct ConstRow {
+    name: String,
+    group: String,
+    raw: String,
+    bits: u32,
+    addr: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ConstOracle {
+    oracle: ConstGoldens,
+}
+
+#[derive(serde::Deserialize)]
+struct ConstGoldens {
+    goldens: std::collections::HashMap<String, i32>,
+}
+
+#[test]
+fn constant_table_matches_disassembly_and_oracle() {
+    let path = spec_dir().join("reference/constants.yaml");
+    let text = std::fs::read_to_string(&path).expect("constants.yaml readable");
+    let table: ConstTable = serde_yaml::from_str(&text).expect("constants.yaml parses");
+    let ob: ConstOracle = serde_yaml::from_str(&text).expect("oracle block parses");
+
+    // The documented 79-constant set, exactly — no additions/drops.
+    assert_eq!(
+        table.constants.len(),
+        79,
+        "constant table must hold the 79 documented built-in constants"
+    );
+    assert_eq!(
+        ob.oracle.goldens.len(),
+        79,
+        "every constant must have an oracle golden"
+    );
+
+    for row in &table.constants {
+        // Every name is a `#`-prefixed identifier with a non-empty group.
+        assert!(
+            row.name.starts_with('#') && row.name.len() >= 2,
+            "constant name must be #-prefixed: {:?}",
+            row.name
+        );
+        assert!(!row.group.is_empty(), "{}: empty group", row.name);
+
+        // `raw` (decimal or &Hxxxx) parses to exactly `bits` (u32).
+        let parsed = row
+            .raw
+            .strip_prefix("&H")
+            .map(|h| u32::from_str_radix(h, 16))
+            .unwrap_or_else(|| row.raw.parse::<u32>())
+            .unwrap_or_else(|_| panic!("{}: raw not parseable: {}", row.name, row.raw));
+        assert_eq!(parsed, row.bits, "{}: raw {} != bits", row.name, row.raw);
+
+        // Name address lives in the .rodata name pool [0x2C8000, 0x2FD000).
+        let a = row
+            .addr
+            .strip_prefix("0x")
+            .and_then(|h| u64::from_str_radix(h, 16).ok())
+            .unwrap_or_else(|| panic!("{}: addr not 0x-hex: {}", row.name, row.addr));
+        assert!(
+            (0x2C8000..0x2FD000).contains(&a),
+            "{}: name addr 0x{a:x} outside .rodata pool",
+            row.name
+        );
+
+        // `bits` reinterpreted as i32 EQUALS the oracle golden (the value SB actually PRINTs).
+        let golden = ob
+            .oracle
+            .goldens
+            .get(&row.name)
+            .unwrap_or_else(|| panic!("{}: missing oracle golden", row.name));
+        assert_eq!(
+            row.bits as i32, *golden,
+            "{}: bits-as-i32 ({}) must equal oracle golden ({})",
+            row.name, row.bits as i32, golden
+        );
+    }
+
+    let by_name: std::collections::HashMap<&str, &ConstRow> = table
+        .constants
+        .iter()
+        .map(|r| (r.name.as_str(), r))
+        .collect();
+
+    // Spot-check frozen rows: name → (raw, bits, addr). Includes the 7 oracle-corrected
+    // doc errors and representative rows from each group.
+    for (name, raw, bits, addr) in [
+        ("#TRUE", "1", 1u32, "0x2ef2ac"),
+        ("#FALSE", "0", 0, "0x2ef208"),
+        ("#WHITE", "&HFFF8F8F8", 0xFFF8F8F8, "0x2ef25c"),
+        ("#A", "&H0010", 16, "0x2eefd0"),
+        ("#FUCHSIA", "&HFFF800F8", 0xFFF800F8, "0x2eefd8"), // == #MAGENTA
+        // ── the 7 oracle-corrected doc errors ──
+        ("#BLUE", "&HFF0000F8", 0xFF0000F8, "0x2ef27c"), // docs said &HFF0000FF
+        ("#CYAN", "&HFF00F8F8", 0xFF00F8F8, "0x2ef54c"), // docs said &HFF0000F8; == #AQUA
+        ("#ZL", "&H1000", 4096, "0x2ef4fc"),             // docs/ZR were swapped
+        ("#ZR", "&H0800", 2048, "0x2ef790"),
+        ("#BGROT90", "&H1000", 4096, "0x2eef68"), // docs one bit low
+        ("#BGROT180", "&H2000", 8192, "0x2eef2c"),
+        ("#BGROT270", "&H3000", 12288, "0x2eeef0"),
+    ] {
+        let row = by_name
+            .get(name)
+            .unwrap_or_else(|| panic!("constant {name} missing"));
+        assert_eq!(row.raw, raw, "{name} raw");
+        assert_eq!(row.bits, bits, "{name} bits");
+        assert_eq!(row.addr, addr, "{name} addr");
+    }
+
+    // Alias pairs share a value (post-correction): #AQUA == #CYAN, #FUCHSIA == #MAGENTA.
+    assert_eq!(
+        by_name["#AQUA"].bits, by_name["#CYAN"].bits,
+        "#AQUA and #CYAN are the same color"
+    );
+    assert_eq!(
+        by_name["#FUCHSIA"].bits, by_name["#MAGENTA"].bits,
+        "#FUCHSIA and #MAGENTA are the same color"
+    );
+
+    // Names are unique.
+    let unique: std::collections::BTreeSet<&str> =
+        table.constants.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(unique.len(), 79, "constant names must be unique");
+}
+
 #[test]
 fn reverted_refs_are_caught() {
     // The exact ref shapes from commit df691b1 (the 14 reverted slices) must be flagged.

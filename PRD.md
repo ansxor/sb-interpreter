@@ -123,7 +123,7 @@ and name the instructions they cover inline.
 #### S-T14 Verify reference tables (vs disassembly + oracle) → O-T4
 - [x] S-T14a Error table — `spec/reference/errors.yaml` vs disasm error strings (@≈0x1E965C) + oracle → O-T5
 - [x] S-T14b System variables — `spec/reference/sysvars.yaml` vs disasm sysvar addrs + oracle
-- [ ] S-T14c Built-in constants — `spec/reference/constants.yaml` vs disasm constant table + oracle
+- [x] S-T14c Built-in constants — `spec/reference/constants.yaml` vs disasm constant names + oracle (all 79 hw_verified; corrected 7 doc errors: #BLUE/#CYAN, #ZL/#ZR swap, #BGROT90/180/270)
 
 ### S-C — Concept specs (architecture/models; Markdown in `spec/concepts/`, see prd/specs.md)
 - [ ] S-C1 execution-model — lexer/parser/compiler/VM, 4 slots + COMMON, frame layout · governs M1

@@ -1,81 +1,223 @@
-# AUTO-GENERATED from sb-docs/.../reference/constants.md — do not edit.
+# Built-in constants — name · value · group, verified against the SmileBASIC 3.6.0 binary
+# AND real SmileBASIC 3.6.0 via the sb-oracle (every value harvested as a frozen golden).
+#
+# NAME SET (disassembled): each of the 79 constant names below was located as a
+# NUL-terminated UTF-16LE string in the binary's .rodata keyword/name pool via the sb-disasm
+# tool (`disasm.py find <#NAME>`); the address is in each row's `addr`. Names are stored WITH
+# the leading '#' (e.g. "#WHITE\0" @0x2ef25c, "#A\0" @0x2eefd0). The sorted keyword table
+# near 0x2c8e00 holds 12-byte records `(name_ptr, name_ptr, 0)` that xref back to these strings
+# (e.g. #WHITE's name @0x2ef25c is referenced by the records @0x2c894c/@0x2c8950) — the SAME
+# table format that holds the command and system-variable names (see sysvars.yaml). Reading the
+# table out of SmileBASIC_3.6.0_CIA.bin uses runtime addr = file offset + 0x100000. Constant
+# VALUES are substituted inline by the lexer (a constant is not a runtime variable), so the
+# value is NOT stored in the 12-byte name record (its third field is 0, like sysvars) — values
+# come from the oracle, not the binary's name table.
+#
+# VALUES (hw_verified): all 79 were harvested with `PRINT <#CONST>` on real SmileBASIC 3.6.0
+# (sb-oracle, S-T14c). SmileBASIC Integer is i32, so a color word like &HFFF8F8F8 PRINTs as the
+# signed -460552; the per-name signed result is frozen under `oracle.goldens` below. `bits` is
+# the value as an UNSIGNED u32 (the ARGB word / flag); `bits` reinterpreted as i32 EQUALS the
+# golden (the conformance test asserts this for every row).
+#
+# ⚠ THE ORACLE CORRECTED 7 DOCUMENTATION ERRORS (sb-docs values were wrong; real SB wins):
+#   #BLUE   = &HFF0000F8 (docs said &HFF0000FF — the blue channel caps at F8 on SB's ramp)
+#   #CYAN   = &HFF00F8F8 (docs said &HFF0000F8; real #CYAN equals #AQUA)
+#   #ZL     = &H1000 / 4096   and  #ZR = &H0800 / 2048   (docs had the two swapped)
+#   #BGROT90/#BGROT180/#BGROT270 = &H1000/&H2000/&H3000 (4096/8192/12288) — the BG rotation
+#       field is bits 12-13 (rot<<12); docs listed it one bit too low (&H0800/&H1000/&H2000).
+# Alias pairs that legitimately share a value: #ON=#YES=#TRUE=1, #OFF=#NO=#FALSE=0,
+# #FUCHSIA=#MAGENTA=&HFFF800F8, and (post-correction) #AQUA=#CYAN=&HFF00F8F8.
+confidence: hw_verified
+sources:
+  - type: disassembled
+    reference: >-
+      All 79 constant names are NUL-terminated UTF-16LE strings in the binary's .rodata
+      keyword/name pool, located with `disasm.py find <#NAME>`: e.g. #WHITE @0x2ef25c,
+      #A @0x2eefd0, #FUCHSIA @0x2eefd8, #CHKXY @0x2efabc, #BGROT270 @0x2eeef0 (full addr set
+      in each row's `addr`; all 79 found, none missing). The sorted keyword table near
+      @0x2c8e00 holds 12-byte records `(name_ptr, name_ptr, 0)`; #WHITE's name @0x2ef25c is
+      xref'd by the records @0x2c894c/@0x2c8950 and #AQUA @0x2ef040 by @0x2c8550/@0x2c8554.
+      This confirms the binary's constant NAME set + per-name address. The numeric VALUE is
+      not in the record (third field is 0) — it is substituted inline by the lexer, so values
+      are oracle-verified (below), not read from this table.
+  - type: hw_verified
+    reference: >-
+      sb-oracle (S-T14c): `PRINT <#CONST>` on real SmileBASIC 3.6.0 for all 79 constants;
+      results frozen under `oracle.goldens` (signed i32). This harvest CORRECTED 7 doc errors
+      vs sb-docs/.../reference/constants.md: #BLUE=&HFF0000F8, #CYAN=&HFF00F8F8 (=#AQUA),
+      #ZL=&H1000 & #ZR=&H0800 (docs swapped), and #BGROT90/180/270=&H1000/&H2000/&H3000
+      (docs one bit low). The other 72 matched the docs (as i32). Captured on Azahar 3.6.0.
+  - type: documented
+    reference: >-
+      sb-docs/smilebasic-3/reference/constants.md (all 79 constants, 8 groups) — accurate
+      except the 7 values listed above, which the oracle overrode.
+
+# name: constant identifier (incl. leading '#'). group: doc category. raw: the oracle-verified
+# literal (decimal or `&Hxxxx`). bits: that value as u32 (== oracle golden reinterpreted i32).
+# addr: UTF-16LE name-string address in the binary's .rodata pool.
 constants:
-  - { name: "#ON", group: "Generic", raw: "1", bits: 1 }
-  - { name: "#OFF", group: "Generic", raw: "0", bits: 0 }
-  - { name: "#YES", group: "Generic", raw: "1", bits: 1 }
-  - { name: "#NO", group: "Generic", raw: "0", bits: 0 }
-  - { name: "#TRUE", group: "Generic", raw: "1", bits: 1 }
-  - { name: "#FALSE", group: "Generic", raw: "0", bits: 0 }
-  - { name: "#AQUA", group: "RGB colors", raw: "&HFF00F8F8", bits: 4278253816 }
-  - { name: "#BLACK", group: "RGB colors", raw: "&HFF000000", bits: 4278190080 }
-  - { name: "#BLUE", group: "RGB colors", raw: "&HFF0000FF", bits: 4278190335 }
-  - { name: "#CYAN", group: "RGB colors", raw: "&HFF0000F8", bits: 4278190328 }
-  - { name: "#FUCHSIA", group: "RGB colors", raw: "&HFFF800F8", bits: 4294443256 }
-  - { name: "#GRAY", group: "RGB colors", raw: "&HFF808080", bits: 4286611584 }
-  - { name: "#GREEN", group: "RGB colors", raw: "&HFF008000", bits: 4278222848 }
-  - { name: "#LIME", group: "RGB colors", raw: "&HFF00F800", bits: 4278253568 }
-  - { name: "#MAGENTA", group: "RGB colors", raw: "&HFFF800F8", bits: 4294443256 }
-  - { name: "#MAROON", group: "RGB colors", raw: "&HFF800000", bits: 4286578688 }
-  - { name: "#NAVY", group: "RGB colors", raw: "&HFF000080", bits: 4278190208 }
-  - { name: "#OLIVE", group: "RGB colors", raw: "&HFF808000", bits: 4286611456 }
-  - { name: "#PURPLE", group: "RGB colors", raw: "&HFF800080", bits: 4286578816 }
-  - { name: "#RED", group: "RGB colors", raw: "&HFFF80000", bits: 4294443008 }
-  - { name: "#SILVER", group: "RGB colors", raw: "&HFFC0C0C0", bits: 4290822336 }
-  - { name: "#TEAL", group: "RGB colors", raw: "&HFF008080", bits: 4278222976 }
-  - { name: "#WHITE", group: "RGB colors", raw: "&HFFF8F8F8", bits: 4294506744 }
-  - { name: "#YELLOW", group: "RGB colors", raw: "&HFFF8F800", bits: 4294506496 }
-  - { name: "#TBLACK", group: "Text colors", raw: "1", bits: 1 }
-  - { name: "#TMAROON", group: "Text colors", raw: "2", bits: 2 }
-  - { name: "#TRED", group: "Text colors", raw: "3", bits: 3 }
-  - { name: "#TGREEN", group: "Text colors", raw: "4", bits: 4 }
-  - { name: "#TLIME", group: "Text colors", raw: "5", bits: 5 }
-  - { name: "#TOLIVE", group: "Text colors", raw: "6", bits: 6 }
-  - { name: "#TYELLOW", group: "Text colors", raw: "7", bits: 7 }
-  - { name: "#TNAVY", group: "Text colors", raw: "8", bits: 8 }
-  - { name: "#TBLUE", group: "Text colors", raw: "9", bits: 9 }
-  - { name: "#TPURPLE", group: "Text colors", raw: "10", bits: 10 }
-  - { name: "#TMAGENTA", group: "Text colors", raw: "11", bits: 11 }
-  - { name: "#TTEAL", group: "Text colors", raw: "12", bits: 12 }
-  - { name: "#TCYAN", group: "Text colors", raw: "13", bits: 13 }
-  - { name: "#TGRAY", group: "Text colors", raw: "14", bits: 14 }
-  - { name: "#TWHITE", group: "Text colors", raw: "15", bits: 15 }
-  - { name: "#UP", group: "Button bits", raw: "&H0001", bits: 1 }
-  - { name: "#DOWN", group: "Button bits", raw: "&H0002", bits: 2 }
-  - { name: "#LEFT", group: "Button bits", raw: "&H0004", bits: 4 }
-  - { name: "#RIGHT", group: "Button bits", raw: "&H0008", bits: 8 }
-  - { name: "#A", group: "Button bits", raw: "&H0010", bits: 16 }
-  - { name: "#B", group: "Button bits", raw: "&H0020", bits: 32 }
-  - { name: "#X", group: "Button bits", raw: "&H0040", bits: 64 }
-  - { name: "#Y", group: "Button bits", raw: "&H0080", bits: 128 }
-  - { name: "#L", group: "Button bits", raw: "&H0100", bits: 256 }
-  - { name: "#R", group: "Button bits", raw: "&H0200", bits: 512 }
-  - { name: "#ZL", group: "Button bits", raw: "&H0800", bits: 2048 }
-  - { name: "#ZR", group: "Button bits", raw: "&H1000", bits: 4096 }
-  - { name: "#TROT0", group: "Text rotation & reflection (ATTR)", raw: "&H00", bits: 0 }
-  - { name: "#TROT90", group: "Text rotation & reflection (ATTR)", raw: "&H01", bits: 1 }
-  - { name: "#TROT180", group: "Text rotation & reflection (ATTR)", raw: "&H02", bits: 2 }
-  - { name: "#TROT270", group: "Text rotation & reflection (ATTR)", raw: "&H03", bits: 3 }
-  - { name: "#TREVH", group: "Text rotation & reflection (ATTR)", raw: "&H04", bits: 4 }
-  - { name: "#TREVV", group: "Text rotation & reflection (ATTR)", raw: "&H08", bits: 8 }
-  - { name: "#SPSHOW", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H01", bits: 1 }
-  - { name: "#SPROT0", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H00", bits: 0 }
-  - { name: "#SPROT90", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H02", bits: 2 }
-  - { name: "#SPROT180", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H04", bits: 4 }
-  - { name: "#SPROT270", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H06", bits: 6 }
-  - { name: "#SPREVH", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H08", bits: 8 }
-  - { name: "#SPREVV", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H10", bits: 16 }
-  - { name: "#SPADD", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H20", bits: 32 }
-  - { name: "#BGROT0", group: "Background attributes (BG ATTR)", raw: "&H0000", bits: 0 }
-  - { name: "#BGROT90", group: "Background attributes (BG ATTR)", raw: "&H0800", bits: 2048 }
-  - { name: "#BGROT180", group: "Background attributes (BG ATTR)", raw: "&H1000", bits: 4096 }
-  - { name: "#BGROT270", group: "Background attributes (BG ATTR)", raw: "&H2000", bits: 8192 }
-  - { name: "#BGREVH", group: "Background attributes (BG ATTR)", raw: "&H4000", bits: 16384 }
-  - { name: "#BGREVV", group: "Background attributes (BG ATTR)", raw: "&H8000", bits: 32768 }
-  - { name: "#CHKXY", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H01", bits: 1 }
-  - { name: "#CHKZ", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H02", bits: 2 }
-  - { name: "#CHKUV", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H04", bits: 4 }
-  - { name: "#CHKI", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H08", bits: 8 }
-  - { name: "#CHKR", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H10", bits: 16 }
-  - { name: "#CHKS", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H20", bits: 32 }
-  - { name: "#CHKC", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H40", bits: 64 }
-  - { name: "#CHKV", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H80", bits: 128 }
+  - { name: "#ON", group: "Generic", raw: "1", bits: 1, addr: "0x2ef5b4" }
+  - { name: "#OFF", group: "Generic", raw: "0", bits: 0, addr: "0x2ef310" }
+  - { name: "#YES", group: "Generic", raw: "1", bits: 1, addr: "0x2ef7a4" }
+  - { name: "#NO", group: "Generic", raw: "0", bits: 0, addr: "0x2ef650" }
+  - { name: "#TRUE", group: "Generic", raw: "1", bits: 1, addr: "0x2ef2ac" }
+  - { name: "#FALSE", group: "Generic", raw: "0", bits: 0, addr: "0x2ef208" }
+  - { name: "#AQUA", group: "RGB colors", raw: "&HFF00F8F8", bits: 4278253816, addr: "0x2ef040" }
+  - { name: "#BLACK", group: "RGB colors", raw: "&HFF000000", bits: 4278190080, addr: "0x2ef434" }
+  - { name: "#BLUE", group: "RGB colors", raw: "&HFF0000F8", bits: 4278190328, addr: "0x2ef27c" }
+  - { name: "#CYAN", group: "RGB colors", raw: "&HFF00F8F8", bits: 4278253816, addr: "0x2ef54c" }
+  - { name: "#FUCHSIA", group: "RGB colors", raw: "&HFFF800F8", bits: 4294443256, addr: "0x2eefd8" }
+  - { name: "#GRAY", group: "RGB colors", raw: "&HFF808080", bits: 4286611584, addr: "0x2efa78" }
+  - { name: "#GREEN", group: "RGB colors", raw: "&HFF008000", bits: 4278222848, addr: "0x2ef568" }
+  - { name: "#LIME", group: "RGB colors", raw: "&HFF00F800", bits: 4278253568, addr: "0x2ef1a0" }
+  - { name: "#MAGENTA", group: "RGB colors", raw: "&HFFF800F8", bits: 4294443256, addr: "0x2ef018" }
+  - { name: "#MAROON", group: "RGB colors", raw: "&HFF800000", bits: 4286578688, addr: "0x2ef5f8" }
+  - { name: "#NAVY", group: "RGB colors", raw: "&HFF000080", bits: 4278190208, addr: "0x2efaa0" }
+  - { name: "#OLIVE", group: "RGB colors", raw: "&HFF808000", bits: 4286611456, addr: "0x2ef2e0" }
+  - { name: "#PURPLE", group: "RGB colors", raw: "&HFF800080", bits: 4286578816, addr: "0x2ef16c" }
+  - { name: "#RED", group: "RGB colors", raw: "&HFFF80000", bits: 4294443008, addr: "0x2ef0e8" }
+  - { name: "#SILVER", group: "RGB colors", raw: "&HFFC0C0C0", bits: 4290822336, addr: "0x2ef75c" }
+  - { name: "#TEAL", group: "RGB colors", raw: "&HFF008080", bits: 4278222976, addr: "0x2ef498" }
+  - { name: "#WHITE", group: "RGB colors", raw: "&HFFF8F8F8", bits: 4294506744, addr: "0x2ef25c" }
+  - { name: "#YELLOW", group: "RGB colors", raw: "&HFFF8F800", bits: 4294506496, addr: "0x2efa18" }
+  - { name: "#TBLACK", group: "Text colors", raw: "1", bits: 1, addr: "0x2ef444" }
+  - { name: "#TMAROON", group: "Text colors", raw: "2", bits: 2, addr: "0x2ef608" }
+  - { name: "#TRED", group: "Text colors", raw: "3", bits: 3, addr: "0x2ef0f4" }
+  - { name: "#TGREEN", group: "Text colors", raw: "4", bits: 4, addr: "0x2ef578" }
+  - { name: "#TLIME", group: "Text colors", raw: "5", bits: 5, addr: "0x2ef1ac" }
+  - { name: "#TOLIVE", group: "Text colors", raw: "6", bits: 6, addr: "0x2ef2f0" }
+  - { name: "#TYELLOW", group: "Text colors", raw: "7", bits: 7, addr: "0x2efa28" }
+  - { name: "#TNAVY", group: "Text colors", raw: "8", bits: 8, addr: "0x2efaac" }
+  - { name: "#TBLUE", group: "Text colors", raw: "9", bits: 9, addr: "0x2ef288" }
+  - { name: "#TPURPLE", group: "Text colors", raw: "10", bits: 10, addr: "0x2ef17c" }
+  - { name: "#TMAGENTA", group: "Text colors", raw: "11", bits: 11, addr: "0x2ef02c" }
+  - { name: "#TTEAL", group: "Text colors", raw: "12", bits: 12, addr: "0x2ef4a4" }
+  - { name: "#TCYAN", group: "Text colors", raw: "13", bits: 13, addr: "0x2ef558" }
+  - { name: "#TGRAY", group: "Text colors", raw: "14", bits: 14, addr: "0x2efa84" }
+  - { name: "#TWHITE", group: "Text colors", raw: "15", bits: 15, addr: "0x2ef26c" }
+  - { name: "#UP", group: "Button bits", raw: "&H0001", bits: 1, addr: "0x2ef70c" }
+  - { name: "#DOWN", group: "Button bits", raw: "&H0002", bits: 2, addr: "0x2ef644" }
+  - { name: "#LEFT", group: "Button bits", raw: "&H0004", bits: 4, addr: "0x2ef874" }
+  - { name: "#RIGHT", group: "Button bits", raw: "&H0008", bits: 8, addr: "0x2ef890" }
+  - { name: "#A", group: "Button bits", raw: "&H0010", bits: 16, addr: "0x2eefd0" }
+  - { name: "#B", group: "Button bits", raw: "&H0020", bits: 32, addr: "0x2ef04c" }
+  - { name: "#X", group: "Button bits", raw: "&H0040", bits: 64, addr: "0x2efa3c" }
+  - { name: "#Y", group: "Button bits", raw: "&H0080", bits: 128, addr: "0x2efa60" }
+  - { name: "#L", group: "Button bits", raw: "&H0100", bits: 256, addr: "0x2ef480" }
+  - { name: "#R", group: "Button bits", raw: "&H0200", bits: 512, addr: "0x2ef724" }
+  - { name: "#ZL", group: "Button bits", raw: "&H1000", bits: 4096, addr: "0x2ef4fc" }
+  - { name: "#ZR", group: "Button bits", raw: "&H0800", bits: 2048, addr: "0x2ef790" }
+  - { name: "#TROT0", group: "Text rotation & reflection (ATTR)", raw: "&H00", bits: 0, addr: "0x2eefc0" }
+  - { name: "#TROT90", group: "Text rotation & reflection (ATTR)", raw: "&H01", bits: 1, addr: "0x2eef90" }
+  - { name: "#TROT180", group: "Text rotation & reflection (ATTR)", raw: "&H02", bits: 2, addr: "0x2eef54" }
+  - { name: "#TROT270", group: "Text rotation & reflection (ATTR)", raw: "&H03", bits: 3, addr: "0x2eef18" }
+  - { name: "#TREVH", group: "Text rotation & reflection (ATTR)", raw: "&H04", bits: 4, addr: "0x2ef404" }
+  - { name: "#TREVV", group: "Text rotation & reflection (ATTR)", raw: "&H08", bits: 8, addr: "0x2ef9f0" }
+  - { name: "#SPSHOW", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H01", bits: 1, addr: "0x2efa08" }
+  - { name: "#SPROT0", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H00", bits: 0, addr: "0x2eefb0" }
+  - { name: "#SPROT90", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H02", bits: 2, addr: "0x2eef7c" }
+  - { name: "#SPROT180", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H04", bits: 4, addr: "0x2eef40" }
+  - { name: "#SPROT270", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H06", bits: 6, addr: "0x2eef04" }
+  - { name: "#SPREVH", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H08", bits: 8, addr: "0x2ef3f4" }
+  - { name: "#SPREVV", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H10", bits: 16, addr: "0x2ef9e0" }
+  - { name: "#SPADD", group: "Sprite attributes (SPSET/SPCHR ATTR)", raw: "&H20", bits: 32, addr: "0x2ef0d8" }
+  - { name: "#BGROT0", group: "Background attributes (BG ATTR)", raw: "&H0000", bits: 0, addr: "0x2eefa0" }
+  - { name: "#BGROT90", group: "Background attributes (BG ATTR)", raw: "&H1000", bits: 4096, addr: "0x2eef68" }
+  - { name: "#BGROT180", group: "Background attributes (BG ATTR)", raw: "&H2000", bits: 8192, addr: "0x2eef2c" }
+  - { name: "#BGROT270", group: "Background attributes (BG ATTR)", raw: "&H3000", bits: 12288, addr: "0x2eeef0" }
+  - { name: "#BGREVH", group: "Background attributes (BG ATTR)", raw: "&H4000", bits: 16384, addr: "0x2ef3e4" }
+  - { name: "#BGREVV", group: "Background attributes (BG ATTR)", raw: "&H8000", bits: 32768, addr: "0x2ef9d0" }
+  - { name: "#CHKXY", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H01", bits: 1, addr: "0x2efabc" }
+  - { name: "#CHKZ", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H02", bits: 2, addr: "0x2efacc" }
+  - { name: "#CHKUV", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H04", bits: 4, addr: "0x2ef9c0" }
+  - { name: "#CHKI", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H08", bits: 8, addr: "0x2ef414" }
+  - { name: "#CHKR", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H10", bits: 16, addr: "0x2ef76c" }
+  - { name: "#CHKS", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H20", bits: 32, addr: "0x2ef7b0" }
+  - { name: "#CHKC", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H40", bits: 64, addr: "0x2ef098" }
+  - { name: "#CHKV", group: "Collision check flags (SPCHK/BGCHK)", raw: "&H80", bits: 128, addr: "0x2ef9b4" }
+
+# ── Oracle goldens (sb-oracle, S-T14c) ───────────────────────────────────────────────
+# Frozen `PRINT <#CONST>` results from real SmileBASIC 3.6.0 (signed i32). These are the
+# authoritative values; if `bits` (u32) reinterpreted as i32 ever disagrees, the YAML is
+# wrong, not the test. Replayed deterministically (the emulator is not needed in CI).
+oracle:
+  goldens:
+    "#ON": 1
+    "#OFF": 0
+    "#YES": 1
+    "#NO": 0
+    "#TRUE": 1
+    "#FALSE": 0
+    "#AQUA": -16713480
+    "#BLACK": -16777216
+    "#BLUE": -16776968
+    "#CYAN": -16713480
+    "#FUCHSIA": -524040
+    "#GRAY": -8355712
+    "#GREEN": -16744448
+    "#LIME": -16713728
+    "#MAGENTA": -524040
+    "#MAROON": -8388608
+    "#NAVY": -16777088
+    "#OLIVE": -8355840
+    "#PURPLE": -8388480
+    "#RED": -524288
+    "#SILVER": -4144960
+    "#TEAL": -16744320
+    "#WHITE": -460552
+    "#YELLOW": -460800
+    "#TBLACK": 1
+    "#TMAROON": 2
+    "#TRED": 3
+    "#TGREEN": 4
+    "#TLIME": 5
+    "#TOLIVE": 6
+    "#TYELLOW": 7
+    "#TNAVY": 8
+    "#TBLUE": 9
+    "#TPURPLE": 10
+    "#TMAGENTA": 11
+    "#TTEAL": 12
+    "#TCYAN": 13
+    "#TGRAY": 14
+    "#TWHITE": 15
+    "#UP": 1
+    "#DOWN": 2
+    "#LEFT": 4
+    "#RIGHT": 8
+    "#A": 16
+    "#B": 32
+    "#X": 64
+    "#Y": 128
+    "#L": 256
+    "#R": 512
+    "#ZL": 4096
+    "#ZR": 2048
+    "#TROT0": 0
+    "#TROT90": 1
+    "#TROT180": 2
+    "#TROT270": 3
+    "#TREVH": 4
+    "#TREVV": 8
+    "#SPSHOW": 1
+    "#SPROT0": 0
+    "#SPROT90": 2
+    "#SPROT180": 4
+    "#SPROT270": 6
+    "#SPREVH": 8
+    "#SPREVV": 16
+    "#SPADD": 32
+    "#BGROT0": 0
+    "#BGROT90": 4096
+    "#BGROT180": 8192
+    "#BGROT270": 12288
+    "#BGREVH": 16384
+    "#BGREVV": 32768
+    "#CHKXY": 1
+    "#CHKZ": 2
+    "#CHKUV": 4
+    "#CHKI": 8
+    "#CHKR": 16
+    "#CHKS": 32
+    "#CHKC": 64
+    "#CHKV": 128
