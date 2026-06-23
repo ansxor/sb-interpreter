@@ -1,26 +1,88 @@
-# AUTO-GENERATED from sb-docs/.../reference/system-variables.md — do not edit.
+# System variables — name · type · writability, verified against the SmileBASIC 3.6.0 binary.
+#
+# Source of truth is the binary, NOT only the docs. Every system-variable name below was
+# located as a UTF-16LE string in the binary's keyword/name table in .rodata via the
+# sb-disasm tool (`disasm.py find <NAME>`), and the address recorded in each row's `addr`.
+# The keyword table near 0x2c8e00 references these names as 12-byte records
+# `(name_ptr, name_ptr, 0)` — e.g. MAINCNT's name @0x2ef8c4 is referenced by the table
+# entry @0x2c90e4 (xref'd back to the same string). Reading the table out of
+# SmileBASIC_3.6.0_CIA.bin uses runtime addr = file offset + 0x100000.
+#
+# The official docs (sb-docs/.../reference/system-variables.md) list all 24 names with a
+# one-line description and flag TABSTEP/SYSBEEP as writable. The binary confirms the name
+# set and the real-program corpus confirms the writability split (see `corpus` notes).
+#
+# `type` is i (Integer/i32) or s (String) — TIME$/DATE$ are the only strings (the `$`
+# is part of the name in the binary, e.g. "TIME$\0" @0x2eead8, "DATE$\0" @0x2eeae4).
+# `writable` is whether assignment (`X = <expr>`) is legal; read-only ones raise on write.
+# `value` is the FIXED value for the constant-like entries (TRUE/FALSE); other values are
+# dynamic (frame count, cursor, error state, …) and harvested as oracle goldens where the
+# result is deterministic.
+confidence: disassembled
+sources:
+  - type: disassembled
+    reference: >-
+      Every sysvar name is a UTF-16LE string in the binary's .rodata keyword/name pool,
+      located with `disasm.py find <NAME>`: e.g. MAINCNT @0x2ef8c4, VERSION @0x2ef5c8,
+      HARDWARE @0x2ef1cc, CSRX @0x2efa54, "TIME$" @0x2eead8, "DATE$" @0x2eeae4,
+      TRUE @0x2ed1f8, FALSE @0x2ed00c (full addr set in each row's `addr`). The keyword
+      table near @0x2c8e00 holds 12-byte records `(name_ptr, name_ptr, 0)`; e.g. the
+      MAINCNT entry @0x2c90e4 and the VERSION entry @0x2c96d8 each xref back to their
+      name string. This confirms the binary's NAME set; the per-name addr is the
+      disassembly anchor. Values/behavior are documented/oracle (see per-row notes).
+  - type: documented
+    reference: sb-docs/smilebasic-3/reference/system-variables.md (all 24, writability of TABSTEP/SYSBEEP)
+  - type: community
+    reference: >-
+      sbsave corpus writability split: genuine assignments (`NAME=<expr>`, excluding `==`
+      and `=&H` string forms) found ONLY for TABSTEP (e.g. 51VVV3NJ/TXT/XCMD.LIB) and
+      SYSBEEP (237 files, e.g. 1DVENVAE/TXT/PICS_R1_1V `SYSBEEP=T`). CSRX/CSRY/MAINCNT/
+      VERSION appear only in comparisons (`CSRX==32` in 5RLXC2KE/TXT/PINBALL_PTC) — read-only.
+  - type: hw_verified
+    reference: >-
+      sb-oracle (S-T14b): TRUE=1, FALSE=0, CALLIDX=0 (outside callback), and the fixed
+      VERSION=50724864 (&H03060000 → 3.6.0). Boot defaults of the writable pair: TABSTEP=4,
+      SYSBEEP=1 (TRUE). HARDWARE=1 (Azahar emulates new3DS; would be 0 on old 3DS) — value is
+      hardware-dependent, not a universal golden. Captured `PRINT <sysvar>` on real SB 3.6.0.
+
+# type: i = Integer (i32), s = String. value: present only for the fixed constants.
 system_variables:
-  - { name: "CSRX", desc: "Cursor position X", writable: false }
-  - { name: "CSRY", desc: "Cursor position Y", writable: false }
-  - { name: "CSRZ", desc: "Cursor position Z (depth)", writable: false }
-  - { name: "FREEMEM", desc: "Amount of free user memory available (in KB)", writable: false }
-  - { name: "VERSION", desc: "System version (&HXXYYZZZZ)", writable: false }
-  - { name: "TABSTEP", desc: "TAB movement amount (writable)", writable: true }
-  - { name: "SYSBEEP", desc: "System sound effects (writable, TRUE=allowed)", writable: true }
-  - { name: "ERRNUM", desc: "Error number", writable: false }
-  - { name: "ERRLINE", desc: "Line where an error occurred", writable: false }
-  - { name: "ERRPRG", desc: "Program SLOT where an error occurred", writable: false }
-  - { name: "PRGSLOT", desc: "Current program SLOT for the PRG instruction", writable: false }
-  - { name: "RESULT", desc: "Dialog result (TRUE/FALSE/-1=Suspended)", writable: false }
-  - { name: "MAINCNT", desc: "Number of frames since SmileBASIC was launched", writable: false }
-  - { name: "MICPOS", desc: "Current sampling location", writable: false }
-  - { name: "MICSIZE", desc: "Number of samples in the sampling buffer", writable: false }
-  - { name: "MPCOUNT", desc: "Number of participants in a session", writable: false }
-  - { name: "MPHOST", desc: "Host ID", writable: false }
-  - { name: "MPLOCAL", desc: "User ID", writable: false }
-  - { name: "TRUE", desc: "Always 1", writable: false }
-  - { name: "FALSE", desc: "Always 0", writable: false }
-  - { name: "TIME$", desc: "Time string (HH:MM:SS)", writable: false }
-  - { name: "DATE$", desc: "Date string (YYYY/MM/DD)", writable: false }
-  - { name: "HARDWARE", desc: "Hardware information (1=new3DS)", writable: false }
-  - { name: "CALLIDX", desc: "Number called by SPFUNC and BGFUNC", writable: false }
+  - { name: "CSRX",     type: i, writable: false, addr: "0x2efa54", desc: "Cursor position X" }
+  - { name: "CSRY",     type: i, writable: false, addr: "0x2efa94", desc: "Cursor position Y" }
+  - { name: "CSRZ",     type: i, writable: false, addr: "0x2efad8", desc: "Cursor position Z (depth)" }
+  - { name: "FREEMEM",  type: i, writable: false, addr: "0x2ef504", desc: "Amount of free user memory available (in KB)" }
+  - { name: "VERSION",  type: i, writable: false, addr: "0x2ef5c8", desc: "System version (&HXXYYZZZZ)" }
+  - { name: "TABSTEP",  type: i, writable: true,  addr: "0x2ef68c", desc: "TAB movement amount (writable)" }
+  - { name: "SYSBEEP",  type: i, writable: true,  addr: "0x2ef670", desc: "System sound effects (writable, TRUE=allowed)" }
+  - { name: "ERRNUM",   type: i, writable: false, addr: "0x2ef53c", desc: "Error number" }
+  - { name: "ERRLINE",  type: i, writable: false, addr: "0x2ef1bc", desc: "Line where an error occurred" }
+  - { name: "ERRPRG",   type: i, writable: false, addr: "0x2ef3d4", desc: "Program SLOT where an error occurred" }
+  - { name: "PRGSLOT",  type: i, writable: false, addr: "0x2ef90c", desc: "Current program SLOT for the PRG instruction" }
+  - { name: "RESULT",   type: i, writable: false, addr: "0x2ef8b4", desc: "Dialog result (TRUE/FALSE/-1=Suspended)" }
+  - { name: "MAINCNT",  type: i, writable: false, addr: "0x2ef8c4", desc: "Number of frames since SmileBASIC was launched" }
+  - { name: "MICPOS",   type: i, writable: false, addr: "0x2ef7bc", desc: "Current sampling location" }
+  - { name: "MICSIZE",  type: i, writable: false, addr: "0x2ef300", desc: "Number of samples in the sampling buffer" }
+  - { name: "MPCOUNT",  type: i, writable: false, addr: "0x2ef8fc", desc: "Number of participants in a session" }
+  - { name: "MPHOST",   type: i, writable: false, addr: "0x2ef954", desc: "Host ID" }
+  - { name: "MPLOCAL",  type: i, writable: false, addr: "0x2ef488", desc: "User ID" }
+  - { name: "TRUE",     type: i, writable: false, addr: "0x2ed1f8", desc: "Always 1", value: 1 }
+  - { name: "FALSE",    type: i, writable: false, addr: "0x2ed00c", desc: "Always 0", value: 0 }
+  - { name: "TIME$",    type: s, writable: false, addr: "0x2eead8", desc: "Time string (HH:MM:SS)" }
+  - { name: "DATE$",    type: s, writable: false, addr: "0x2eeae4", desc: "Date string (YYYY/MM/DD)" }
+  - { name: "HARDWARE", type: i, writable: false, addr: "0x2ef1cc", desc: "Hardware information (1=new3DS)" }
+  - { name: "CALLIDX",  type: i, writable: false, addr: "0x2efa44", desc: "Number called by SPFUNC and BGFUNC" }
+
+# ── Oracle goldens (sb-oracle, S-T14b) ───────────────────────────────────────────────
+# Deterministic-valued sysvars confirmed against real SmileBASIC 3.6.0. Dynamic ones
+# (MAINCNT/FREEMEM/TIME$/DATE$/CSR*/MIC*/MP*/ERR*) are not frozen as value goldens — their
+# results depend on runtime state — and are queued in HARVEST_QUEUE.md for behavior checks.
+oracle:
+  goldens:           # frozen: value is invariant for SmileBASIC 3.6.0
+    TRUE: 1
+    FALSE: 0
+    VERSION: 50724864   # &H03060000 (3.6.0)
+    CALLIDX: 0          # outside any SPFUNC/BGFUNC callback
+  environment_dependent:  # captured on Azahar, NOT universal goldens
+    HARDWARE: 1        # new3DS; 0 on old 3DS
+    TABSTEP: 4         # boot default (writable → session-dependent)
+    SYSBEEP: 1         # boot default TRUE (writable → session-dependent)

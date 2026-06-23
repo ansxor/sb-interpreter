@@ -122,7 +122,7 @@ and name the instructions they cover inline.
 
 #### S-T14 Verify reference tables (vs disassembly + oracle) → O-T4
 - [x] S-T14a Error table — `spec/reference/errors.yaml` vs disasm error strings (@≈0x1E965C) + oracle → O-T5
-- [ ] S-T14b System variables — `spec/reference/sysvars.yaml` vs disasm sysvar addrs + oracle
+- [x] S-T14b System variables — `spec/reference/sysvars.yaml` vs disasm sysvar addrs + oracle
 - [ ] S-T14c Built-in constants — `spec/reference/constants.yaml` vs disasm constant table + oracle
 
 ### S-C — Concept specs (architecture/models; Markdown in `spec/concepts/`, see prd/specs.md)

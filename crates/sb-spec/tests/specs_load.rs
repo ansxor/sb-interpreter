@@ -251,6 +251,140 @@ fn error_table_matches_disassembly() {
     }
 }
 
+// ── System-variable table conformance (S-T14b) ───────────────────────────────────────
+//
+// `spec/reference/sysvars.yaml` is the system-variable table, verified against the binary:
+// every name is a UTF-16LE string in the .rodata keyword/name pool (addr recorded per row),
+// referenced by the keyword table near @0x2c8e00. These are frozen goldens replayed here as
+// a deterministic fixture (the `.bin` is gitignored/absent in CI). The writability split was
+// cross-checked against the sbsave corpus; TRUE/FALSE carry their fixed values. If real
+// SmileBASIC ever disagrees, fix the YAML, not the test.
+
+#[derive(serde::Deserialize)]
+struct SysvarTable {
+    system_variables: Vec<SysvarRow>,
+}
+
+#[derive(serde::Deserialize)]
+struct SysvarRow {
+    name: String,
+    #[serde(rename = "type")]
+    ty: String,
+    writable: bool,
+    addr: String,
+    #[serde(default)]
+    value: Option<i64>,
+}
+
+#[test]
+fn sysvar_table_matches_disassembly() {
+    let path = spec_dir().join("reference/sysvars.yaml");
+    let text = std::fs::read_to_string(&path).expect("sysvars.yaml readable");
+    let table: SysvarTable = serde_yaml::from_str(&text).expect("sysvars.yaml parses");
+
+    // The documented 24-name set, exactly — no additions/drops.
+    assert_eq!(
+        table.system_variables.len(),
+        24,
+        "sysvar table must hold the 24 documented system variables"
+    );
+
+    // Structural soundness of every row: non-empty name, valid type tag, plausible binary
+    // address. TIME$/DATE$ are the only strings; everything else is an Integer.
+    for row in &table.system_variables {
+        assert!(!row.name.is_empty(), "sysvar row has empty name");
+        assert!(
+            row.ty == "i" || row.ty == "s",
+            "{}: type must be i or s, got {:?}",
+            row.name,
+            row.ty
+        );
+        let want_str = row.name.ends_with('$');
+        assert_eq!(
+            row.ty == "s",
+            want_str,
+            "{}: string type iff name ends in $",
+            row.name
+        );
+        let a = row
+            .addr
+            .strip_prefix("0x")
+            .and_then(|h| u64::from_str_radix(h, 16).ok())
+            .unwrap_or_else(|| panic!("{}: addr not 0x-hex: {}", row.name, row.addr));
+        // Names live in the .rodata pool [0x2C8000, 0x2FD000).
+        assert!(
+            (0x2C8000..0x2FD000).contains(&a),
+            "{}: name addr 0x{a:x} outside .rodata pool",
+            row.name
+        );
+    }
+
+    let by_name: std::collections::HashMap<&str, &SysvarRow> = table
+        .system_variables
+        .iter()
+        .map(|r| (r.name.as_str(), r))
+        .collect();
+
+    // Spot-check frozen rows: name → (writable, addr, value). Addresses are the UTF-16LE
+    // string locations read from the binary; writability is docs+corpus; TRUE/FALSE values.
+    for (name, writable, addr, value) in [
+        ("MAINCNT", false, "0x2ef8c4", None),
+        ("VERSION", false, "0x2ef5c8", None),
+        ("HARDWARE", false, "0x2ef1cc", None),
+        ("TABSTEP", true, "0x2ef68c", None), // writable (docs + corpus XCMD.LIB)
+        ("SYSBEEP", true, "0x2ef670", None), // writable (docs + corpus, 237 files)
+        ("CSRX", false, "0x2efa54", None),   // read-only (corpus: only `CSRX==` compares)
+        ("TRUE", false, "0x2ed1f8", Some(1)),
+        ("FALSE", false, "0x2ed00c", Some(0)),
+        ("TIME$", false, "0x2eead8", None),
+        ("DATE$", false, "0x2eeae4", None),
+        ("CALLIDX", false, "0x2efa44", None),
+    ] {
+        let row = by_name
+            .get(name)
+            .unwrap_or_else(|| panic!("sysvar {name} missing"));
+        assert_eq!(row.writable, writable, "{name} writable");
+        assert_eq!(row.addr, addr, "{name} addr");
+        assert_eq!(row.value, value, "{name} value");
+    }
+
+    // Oracle goldens (S-T14b): frozen invariant values for SmileBASIC 3.6.0.
+    #[derive(serde::Deserialize)]
+    struct OracleBlock {
+        oracle: Goldens,
+    }
+    #[derive(serde::Deserialize)]
+    struct Goldens {
+        goldens: std::collections::HashMap<String, i64>,
+    }
+    let ob: OracleBlock = serde_yaml::from_str(&text).expect("oracle block parses");
+    assert_eq!(ob.oracle.goldens.get("TRUE"), Some(&1), "oracle TRUE=1");
+    assert_eq!(ob.oracle.goldens.get("FALSE"), Some(&0), "oracle FALSE=0");
+    assert_eq!(
+        ob.oracle.goldens.get("VERSION"),
+        Some(&50724864), // &H03060000 → 3.6.0
+        "oracle VERSION=&H03060000"
+    );
+    assert_eq!(
+        ob.oracle.goldens.get("CALLIDX"),
+        Some(&0),
+        "oracle CALLIDX=0"
+    );
+
+    // Only TABSTEP and SYSBEEP are writable (the documented + corpus-verified split).
+    let writables: std::collections::BTreeSet<&str> = table
+        .system_variables
+        .iter()
+        .filter(|r| r.writable)
+        .map(|r| r.name.as_str())
+        .collect();
+    assert_eq!(
+        writables,
+        ["SYSBEEP", "TABSTEP"].into_iter().collect(),
+        "exactly TABSTEP and SYSBEEP are writable"
+    );
+}
+
 #[test]
 fn reverted_refs_are_caught() {
     // The exact ref shapes from commit df691b1 (the 14 reverted slices) must be flagged.

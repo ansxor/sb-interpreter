@@ -559,3 +559,16 @@ oracle to confirm exact output and promote to `hw_verified`.
   binary-only 48..55 (Uninitialized variable used / Protected resource / Protected file /
   DLC not found / Incompatible statement / END without call / Array is too large / Too many
   arguments) whose `desc` text is inferred, not from docs.
+
+- S-T14b · system variables — name set verified vs binary keyword/name pool (each name's
+  UTF-16LE addr recorded in spec/reference/sysvars.yaml). Oracle (S-T14b) froze TRUE=1,
+  FALSE=0, VERSION=&H03060000, CALLIDX=0 (goldens) and captured HARDWARE=1/TABSTEP=4/
+  SYSBEEP=1 (environment- or session-dependent, not universal). REMAINING (dynamic, no scalar
+  golden in a warm program-mode session — assumption is the docs description):
+  - CSRX/CSRY/CSRZ cursor position (depends on prior PRINT/LOCATE state).
+  - MAINCNT frame counter (monotonic) + whether `MAINCNT=0` reset assignment is legal
+    (docs list read-only, but real SB is rumored to allow reset — corpus shows only `==`).
+  - FREEMEM (memory-dependent), MICPOS/MICSIZE (no mic), MPCOUNT/MPHOST/MPLOCAL (no session),
+    ERRNUM/ERRLINE/ERRPRG (require a prior error), PRGSLOT/RESULT, TIME$/DATE$ (clock).
+  - Confirm the read-only sysvars actually raise on assignment (which errnum) vs silently
+    no-op — needs a `|err` probe per name.
