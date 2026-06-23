@@ -130,7 +130,7 @@ and name the instructions they cover inline.
 - [~] S-C2 screen-and-color-model — layers/Z/RGBA5551 (exemplar drafted; confirm vs oracle) · governs M2, O-T6
 - [x] S-C3 sprite-bg-model — attributes/animation/collision/tilemaps · governs M3 (`spec/concepts/sprite-bg-model.md`; docs + disassembled instruction specs + hw_verified constant bits; mid-anim bits/SPVAR OOR/Z-tiebreak queued)
 - [x] S-C4 frame-and-timing-model — VSYNC/WAIT/MAINCNT, 60 fps · governs M4 (`spec/concepts/frame-and-timing-model.md`; disassembled: one global frame counter `[0x315ec0]` read by MAINCNT getter + WAIT, per-program lastVsync `[0x315ee8]` for VSYNC, `swi 0xa` frame yield; MAINCNT reset/VSYNC-catchup queued)
-- [ ] S-C5 mml-grammar — the full MML language · governs M5
+- [x] S-C5 mml-grammar — the full MML language · governs M5 (`spec/concepts/mml-grammar.md`; docs SB3 ref+manual, SB4 cross-check; disassembled BGMPLAY handler @0x1a2d54: argcount 1-3 else errnum 4 · MML validate bl 0x1d44d8→0x1d475c fail→errnum 47 · preset BGM 0-42, user 128-255; corpus-surfaced @V velocity + @256+ SFX bank; tick base/T→frames + @V scaling queued)
 - [ ] S-C6 file-and-extdata-format — projects/resources/extdata layout · governs M6, O-T3
 - [ ] S-C7 error-model — errnum/ERRLINE, halt/CONT semantics · governs M1, O-T5
 

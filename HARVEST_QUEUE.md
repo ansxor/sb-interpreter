@@ -607,3 +607,18 @@ oracle to confirm exact output and promote to `hw_verified`.
   - MAINCNT vs displayed-frame alignment under DISPLAY/XSCREEN changes and during FADE
     (assumed: counts every VBlank regardless of what is shown).
   - Confirm there is genuinely no sub-frame / high-resolution timer (none found in disasm).
+
+- S-C5 · mml-grammar concept spec — model authored from docs (SB3 reference + manual,
+  cross-checked vs SB4 mml-guide) + the disassembled BGMPLAY handler (@0x1a2d54: errnum 4 on
+  argcount!=1..3; MML validate bl 0x1d44d8->0x1d475c, fail -> errnum 47; preset BGM 0-42, user
+  128-255) + corpus sweep. Open items the model marks oracle-pending:
+  - Tick base (192/whole-note assumed from L1-L192 divisor set) and the exact tempo T(1-512)
+    -> frames(60fps) conversion — read the synth scheduler disassembly (parser core 0x1d475c).
+  - `@V` velocity: confirm SB3 range 0-127 (documented in SB4, in 196 corpus programs) and how
+    it scales against channel `V` (multiplicative %?).
+  - SFX instrument bank ceiling: corpus uses @256..@287+ (e.g. @267, @275, @281, @287) beyond the
+    single documented @256; and whether @130-@134 extra drum kits exist in SB3 (SB4-only?).
+  - `!` octave-invert effect, `(`/`)` volume step size, and `Q0-8` gate's exact tick formula.
+  - Channel-0 redefinition / channel-order error rules (currently cross-system from SB4).
+  - `/comments/` and `|chords|`: SB3 appears to reject them (errnum 47) — confirm vs oracle.
+  - `$n` assignment range (docs 0-255) and overflow/clamp behavior.
