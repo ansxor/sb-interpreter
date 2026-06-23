@@ -13,26 +13,31 @@
 use sb_core::builtins::StdBuiltins;
 use sb_core::compiler::compile_with;
 use sb_core::{parse, Vm};
+use sb_render::compositor::{compose_top_screen, DEFAULT_BACKDROP};
 use sb_render::Framebuffer;
 
-/// Run `src` to completion and return the final console rendered into a top-screen
-/// framebuffer (RGBA8888). On a SmileBASIC error the partial console is rendered anyway —
-/// the canvas shows whatever the program drew before it halted. Backdrop is opaque black so
-/// the (transparent-by-default) console background blits to a visible surface.
+/// Run `src` to completion and return the final scene composited into a top-screen
+/// framebuffer (RGBA8888): backdrop → GRP display page → console (M2-T4 compositor). On a
+/// SmileBASIC error the partial scene is composited anyway — the canvas shows whatever the
+/// program drew before it halted. Backdrop is opaque black so the (transparent-by-default)
+/// GRP/console pixels blit to a visible surface.
 pub fn render_program(src: &str) -> Framebuffer {
-    let mut fb = Framebuffer::top();
-    fb.clear(0xFF00_0000);
-
     let Ok(ast) = parse(src) else {
-        return fb;
+        return blank();
     };
     let Ok(program) = compile_with(&ast, &StdBuiltins) else {
-        return fb;
+        return blank();
     };
     let mut vm = Vm::new(program);
-    // Ignore the halt result: a halted program's partial console is still worth showing.
+    // Ignore the halt result: a halted program's partial scene is still worth showing.
     let _ = vm.run();
-    vm.console().render(&mut fb);
+    compose_top_screen(vm.grp(), vm.console(), DEFAULT_BACKDROP)
+}
+
+/// An opaque-black top-screen framebuffer (used when the program fails to parse/compile).
+fn blank() -> Framebuffer {
+    let mut fb = Framebuffer::top();
+    fb.clear(DEFAULT_BACKDROP);
     fb
 }
 

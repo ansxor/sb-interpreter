@@ -11,6 +11,7 @@
 //! file I/O (golden PNGs) lives in the `png` encoder + tests only.
 
 pub mod bitmap;
+pub mod compositor;
 pub mod console;
 pub mod font;
 pub mod grp;

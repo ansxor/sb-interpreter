@@ -172,7 +172,7 @@ and name the instructions they cover inline.
 - [x] M2-T1 GRP page model → S-T7
 - [x] M2-T2 Drawing primitives → M2-T1
 - [x] M2-T3 Bitmap ops → M2-T1
-- [ ] M2-T4 Compositor → M2-T2, M2-T3
+- [x] M2-T4 Compositor → M2-T2, M2-T3
 - [ ] M2-T5 Golden PNG harvest + pixel-diff → M2-T4, O-T6
 
 ## M3 — Sprites & BG  (gated on S-T8, S-T9)

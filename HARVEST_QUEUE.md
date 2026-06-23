@@ -329,6 +329,18 @@ oracle to confirm exact output and promote to `hw_verified`.
   (image word = palette index; palette entry read as a 32-bit logical color → device). The corpus confirms the
   syntax is real (`...,CHIP8_PAL,TRUE`); the EXACT palette interpretation (entry format, OOB-index behavior,
   copy_mode interaction) is oracle-pending (needs the framebuffer oracle or a GSPOIT round-trip harvest).
+- [ ] M2-T4 compositor Z model · default per-layer Z values (GRP default GPRIO=0; the console/BG/sprite
+  default Z) and the exact equal-Z tie-break order are oracle-pending — they need the *composite* framebuffer
+  capture (O-T6, screenshot path), not the single-page GRP round-trip (already done). The compositor paints
+  rear→front by Z (smaller draws in front) and breaks an equal-Z tie by the documented layer order
+  GRP<BG<sprite<console (stable slice order); CONSOLE_DEFAULT_Z=0 is an assumption. Harvest a 2-layer overlap
+  (GRP at GPRIO p vs console) at several p to pin the console's true plane + the tie-break.
+- [ ] M2-T4 backdrop / BACKCOLOR composite · the compositor takes an ARGB8888 backdrop (DEFAULT_BACKDROP =
+  opaque black); the exact BACKCOLOR→backdrop mapping and its default are oracle-pending (composite capture,
+  O-T6). Harvest BACKCOLOR c then screenshot an otherwise-empty screen to confirm the backdrop color + default.
+- [ ] M2-T4 partial-alpha composite rule · the device GRP page is 1-bit alpha (compositor uses an alpha-bit key:
+  opaque covers, clear shows through). How 8-bit sprite/console alpha composites over GRP/BG is an O-T6 composite
+  question (queued) — M2 has only the 1-bit key; revisit when sprites/BG land (M3) with composite goldens.
 - [ ] S-T7e color read (GSPOIT · RGB · RGBREAD) · Value/error expects HARVESTED (sb-oracle 2026-06-22 s_t7e):
   GSPOIT off-page -> 0 (NOT -1 as PTC docs claim); RGB clamps channels to 0-255 (RGB(999,999,999)=-1);
   RGB/GSPOIT arg-count errors -> errnum 4. RESOLVED 2026-06-23 (s_c2): (a) GSPOIT post-draw round-trip is

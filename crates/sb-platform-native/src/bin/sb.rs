@@ -32,6 +32,7 @@ mod native {
     use sb_core::builtins::StdBuiltins;
     use sb_core::compiler::compile_with;
     use sb_core::{parse, Vm, VmError};
+    use sb_render::compositor::{compose_top_screen, DEFAULT_BACKDROP};
     use sb_render::Framebuffer;
 
     use winit::application::ApplicationHandler;
@@ -54,16 +55,18 @@ mod native {
     /// the program printed before it halted; the error (if any) is reported alongside.
     fn run_to_framebuffer(src: &str) -> (Framebuffer, Option<SbError>) {
         let mut fb = Framebuffer::top();
-        // Opaque-black backdrop: the console's default background is transparent (index 0),
-        // so a cleared buffer would leave un-blittable garbage — paint black first.
-        fb.clear(0xFF00_0000);
+        // Opaque-black backdrop: GRP/console pixels are transparent by default, so a cleared
+        // buffer would leave un-blittable garbage — paint the backdrop first. On a parse/
+        // compile failure (before any scene exists) this backdrop is what the window shows.
+        fb.clear(DEFAULT_BACKDROP);
 
         let err = run_console(src, &mut fb);
         (fb, err)
     }
 
-    /// Parse → compile → run, painting the resulting console grid into `fb`. Returns the
-    /// SmileBASIC error if any stage raised one (the partial console is still rendered).
+    /// Parse → compile → run, then composite the scene (backdrop → GRP display page →
+    /// console, M2-T4) into `fb`. Returns the SmileBASIC error if any stage raised one (the
+    /// partial scene is still composited).
     fn run_console(src: &str, fb: &mut Framebuffer) -> Option<SbError> {
         let ast = match parse(src) {
             Ok(ast) => ast,
@@ -85,8 +88,8 @@ mod native {
         };
         let mut vm = Vm::new(program);
         let result = vm.run();
-        // Render whatever the program drew, halted or not.
-        vm.console().render(fb);
+        // Composite whatever the program drew, halted or not.
+        *fb = compose_top_screen(vm.grp(), vm.console(), DEFAULT_BACKDROP);
         match result {
             Ok(_) => None,
             Err(VmError::Sb { errnum, line }) => Some(SbError { errnum, line }),
