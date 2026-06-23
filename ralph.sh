@@ -296,7 +296,7 @@ if [ "$INTERACTIVE" = 1 ]; then
   iter=0
   noprogress=0
   while :; do
-    rm -f .ralph/DONE .ralph/STOP
+    rm -f .ralph/DONE .ralph/done .ralph/STOP Ralph.done ralph.done
     [ -f ralph.stop ] && { echo "ralph.stop found — stopping."; rm -f ralph.stop; break; }
     if ! grep -q '^- \[ \] ' PRD.md; then
       echo "🎉 All PRD tasks are checked off. Nothing left to do."; break
@@ -309,12 +309,37 @@ if [ "$INTERACTIVE" = 1 ]; then
     echo "──────── task $iter ── model=$MODEL ── $remaining left ── fresh context ────────"
     before="$(git rev-parse HEAD 2>/dev/null || echo none)"
 
-    # Watcher: when the agent drops .ralph/DONE or .ralph/STOP, terminate THIS wrapper's
-    # claude child (and only that one). $$ is the wrapper PID; $BASHPID is the watcher's own.
+    # Watcher: when the agent drops a done/stop sentinel, terminate THIS wrapper's
+    # Claude child process tree. $$ is the wrapper PID; $BASHPID is the watcher's own.
+    # Accept legacy root-level Ralph.done/ralph.done too, in case Claude writes the
+    # wrong sentinel name; the canonical signal remains .ralph/DONE.
     ( self=$BASHPID
-      while [ ! -f .ralph/DONE ] && [ ! -f .ralph/STOP ]; do sleep 2; done
+      sentinel_seen() {
+        [ -f .ralph/DONE ] || [ -f .ralph/done ] || [ -f .ralph/STOP ] || [ -f Ralph.done ] || [ -f ralph.done ]
+      }
+      kill_tree() {
+        local pid="$1"
+        local child
+        for child in $(pgrep -P "$pid" 2>/dev/null); do
+          kill_tree "$child"
+        done
+        kill -TERM "$pid" 2>/dev/null || true
+      }
+      kill_tree_hard() {
+        local pid="$1"
+        local child
+        for child in $(pgrep -P "$pid" 2>/dev/null); do
+          kill_tree_hard "$child"
+        done
+        kill -KILL "$pid" 2>/dev/null || true
+      }
+      while ! sentinel_seen; do sleep 2; done
       for p in $(pgrep -P $$ 2>/dev/null); do
-        [ "$p" != "$self" ] && kill -TERM "$p" 2>/dev/null
+        [ "$p" != "$self" ] && kill_tree "$p"
+      done
+      sleep 2
+      for p in $(pgrep -P $$ 2>/dev/null); do
+        [ "$p" != "$self" ] && kill_tree_hard "$p"
       done ) &
     watcher=$!
 

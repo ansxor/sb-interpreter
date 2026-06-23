@@ -1,0 +1,51 @@
+id: PRGINS
+kind: statement
+category: Source code manipulation
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — insert before the current line (default).
+  - args:
+      - { name: str, type: string, range: "Source character string to insert. A string containing CHR$(10) inserts multiple lines." }
+    returns: { type: void }
+    note: "PRGINS str$ — insert a line (before the current line) with the given source string."
+  # Form 2 — insert with an explicit position flag.
+  - args:
+      - { name: str, type: string, range: "Source character string to insert (CHR$(10) splits into multiple lines)." }
+      - { name: flag, type: integer, range: "0 = insert before the current line (default if omitted); 1 = insert after the current line.", default: 0 }
+    returns: { type: void }
+    note: "PRGINS str$,flag — insert before (flag 0) or after (flag 1) the current line."
+
+summary: "Inserts a line at the current line (selected by PRGEDIT) with the given source string. The optional second argument is a flag: 0 (or omitted) inserts BEFORE the current line, 1 inserts AFTER it. A source string containing the line-feed code CHR$(10) inserts multiple lines. Calling PRGINS without an active PRGEDIT target raises errnum 38; it takes 1 or 2 arguments, otherwise errnum 4."
+
+semantics:
+  - "Handler @0x1899d0. Requires an active edit target: the PRGEDIT-state global is loaded (ldr r4,[0x189be4] = &0x306C14/ldr r0,[r4,#0x0]) and, if no slot is being edited (cmp r0,#0x0/beq 0x1899fc), raises errnum 38 (Use PRGEDIT before any PRG function: mov r0,#0x26 @0x189a04 -> bl 0x1fffdc). The no-PRGEDIT check is performed FIRST, before the argument check."
+  - "The edit-target global at 0x306C14 is SESSION-PERSISTENT and shared by the whole PRG* family; once any successful PRGEDIT has run in the session it stays non-null, so the errnum-38 guard fires only from a COLD edit state. Oracle note (s_t12d): in a warm session PRGINS with no preceding PRGEDIT returned NOERR. A fresh program with no prior PRGEDIT raises errnum 38; a program that has already PRGEDIT'd does not."
+  - "Takes 1 or 2 arguments: after a type-byte check on the first operand ([r5,#0xc]==0), the arg count [r5,#0x4] must be 1 (cmp r0,#0x1/beq 0x189a68) or 2 (cmp r0,#0x2/beq 0x189a40); any other count raises errnum 4 (Illegal function call: mov r0,#0x4 @0x189a30 -> bl 0x1fffdc)."
+  - "First operand is the source string to insert. With one argument the line is inserted BEFORE the current line (flag defaults to 0)."
+  - "Second operand (flag) selects the insertion position: 0 = before the current line, 1 = after the current line (docs: '1 = Inserts a line after the current line; 0 = Inserts a line before the current line (If omitted = 0, before the current line)'). The flag is read as an integer at @0x189a40 ([r5,#0x8])."
+  - "A source string that contains the line-feed code CHR$(10) inserts multiple lines (docs: 'For a character string including the line feed code CHR$(10), multiple lines will be inserted'). An empty string inserts a blank line."
+  - "The operand is any string expression (corpus: `PRGINS COPY$`, `PRGINS \"DATA \"+DQ$+R$[I]+DQ$`, `PRGINS CHR$(10)+\"All set!\"`), and the flag any integer expression."
+
+errors:
+  - { errnum: 38, name: "Use PRGEDIT before any PRG function", when: "PRGINS is called without an active PRGEDIT edit target" }
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is not 1 or 2, or the first operand is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/prgins.md (1 form: `PRGINS \"Character string\" [,Flag]`. 'Inserts a line in the current line. For a character string including the line feed code CHR$(10), multiple lines will be inserted.' Flag: '1 = Inserts a line after the current line; 0 = Inserts a line before the current line (If omitted = 0, before the current line).' Example `PRGINS \"PRINT \"+CHR$(34)+\"HELLO\"+CHR$(34)`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst PRGINS handler @0x1899d0: no-PRGEDIT guard ldr r4,[0x189be4]/ldr r0,[r4,#0x0]/cmp r0,#0x0/beq 0x1899fc -> errnum 38 (mov r0,#0x26 @0x189a04 -> bl 0x1fffdc), checked first; first-operand type-byte check ldr r0,[r5,#0xc]/cmp r0,#0x0/beq 0x189a0c; arg-count guard ldr r0,[r5,#0x4]/cmp r0,#0x1/beq 0x189a68 (1 arg) /cmp r0,#0x2/beq 0x189a40 (2 args), else errnum 4 (mov r0,#0x4 @0x189a30 -> bl 0x1fffdc); 2-arg path @0x189a40 reads the flag [r5,#0x8]; insert path @0x189a68 scans the source string (ldrb r12,[r2,#0x2] type byte) and writes lines", confidence: disassembled }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bPRGINS\\b', 111 files): both forms real. 1-arg `PRGINS COPY$` (1BWX7ENV/TXT/AND-OS), concatenation `PRGINS \"DATA \"+DQ$+R$[I]+DQ$` (24CVA3L4/TXT/PRG), empty `PRGINS \"\"` (4RC3D24V/TXT/-DATAADDER). 2-arg flag=1 (after) `PRGINS \"_UNTRACE\",1` (2383C3HE/TXT/LOWERDASH_C), `PRGINS C$,1`. Multi-line via CHR$(10): `PRGINS CHR$(10),1` and `PRGINS CHR$(10)+\"All set!\"` (53383XCF/TXT/EXECUTE). Syntax legal (shipped programs); inserted-line result has no scalar golden (oracle-pending)." }
+  - { type: community, ref: "osb/SMILEBASIC/program.d PRG* edit family (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-23 (s_t12d): `PRGEDIT 1:PRGINS \"A\",1,2` (three arguments, edit target active) -> errnum 4 errline 1 (Illegal function call), confirming the 1-or-2-arg guard. The no-PRGEDIT errnum-38 guard could not be reconfirmed for PRGINS this run because the SB session was warm (shared edit-target global at 0x306C14 non-null), so `PRGINS \"X\"` returned NOERR; the errnum-38 path is cold-state-only (body-pinned; cold confirmation queued). The inserted-line result is program-slot state with no scalar golden (queued)." }
+
+# Top-level hw_verified: the 1-or-2-arg guard (errnum 4) is oracle-confirmed and body-pinned
+# (@0x1899d0). The no-PRGEDIT guard (errnum 38) is body-pinned but SESSION-STATEFUL — it fires
+# only from a cold edit state; a warm session returns NOERR (queued for a cold harvest). The
+# inserted line is slot state with no scalar golden.
+confidence: hw_verified
+
+tests:
+  # errnum 4 (too many args) is hw_verified (s_t12d). PRGEDIT 1 establishes the edit target.
+  - { name: too_many_args, code: 'PRGEDIT 1:PRGINS "A",1,2', expect: { error: { errnum: 4 } } }
+  # Cold-state no-PRGEDIT raises errnum 38 (body-pinned @0x189a04; cold confirmation queued).
+  - { name: no_prgedit_errors, code: 'PRGINS "X"', expect: { error: { errnum: 38 } } }

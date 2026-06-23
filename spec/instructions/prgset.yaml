@@ -1,0 +1,44 @@
+id: PRGSET
+kind: statement
+category: Source code manipulation
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: str, type: string, range: "Character string to substitute for the current line. Any string expression (literal, variable, array element, concatenation, function result)." }
+    returns: { type: void }
+    note: "PRGSET str$ — replace the current line (selected by PRGEDIT) with the given string."
+
+summary: "Substitutes the contents of the current line — the slot/line selected by a prior PRGEDIT — with the specified string. If the current line is past the end of the program (the position where PRGGET$ returns an empty string), a new line is added instead. Calling PRGSET without an active PRGEDIT target raises errnum 38; it takes exactly one string argument, otherwise errnum 4. A string containing the line-feed code CHR$(10) writes the line text through that point."
+
+semantics:
+  - "Handler @0x189c30. Requires an active edit target: the PRGEDIT-state global is loaded (ldr r4,[0x189dfc] = &0x306C14/ldr r1,[r4,#0x0]) and, if no slot is being edited (cmp r1,#0x0/beq 0x189c6c), raises errnum 38 (Use PRGEDIT before any PRG function: mov r0,#0x26 @0x189c74 -> bl 0x1fffdc). This no-PRGEDIT check is performed FIRST, before the argument check (same ordering as PRGGET$)."
+  - "The edit-target global at 0x306C14 is SESSION-PERSISTENT, shared by the whole PRG* family (PRGGET$/PRGSET/PRGINS/PRGDEL all load the same address). Once ANY successful PRGEDIT has run in the SB session it stays non-null, so the errnum-38 guard fires only from a COLD edit state (no PRGEDIT ever issued). Oracle note (s_t12d): in a warm session — after earlier PRGEDIT cases — PRGSET/PRGINS/PRGDEL AND PRGGET$ all returned NOERR for the no-PRGEDIT form; the errnum-38 path is reachable only cold (confirmed cold for PRGGET$ in s_t12c). A fresh program run with no prior PRGEDIT therefore raises errnum 38; a program that has already PRGEDIT'd does not."
+  - "Takes exactly one string argument: the arg count [r0,#0x4] must be 1 and the operand type byte [r0,#0xc] must be 0 (string) (cmp r1,#0x1/ldreq r1,[r0,#0xc]/cmpeq r1,#0x0/beq 0x189c7c). A wrong argument count or a non-string operand raises errnum 4 (Illegal function call: mov r0,#0x4 @0x189c60 -> bl 0x1fffdc)."
+  - "Substitutes the current line with the operand string: the line text at the current edit position is replaced by the supplied characters."
+  - "If the current line is past the end of the program (PRGGET$ would return an empty string at this position), a new line is appended instead of replacing one (docs: 'If PRGGET$ has returned an empty string, a line will be added')."
+  - "The operand is any string expression, not just a literal (corpus: `PRGSET I$`, `PRGSET STRNCRYPT(PRGGET$(),PASS)`, `PRGSET \"'\"+STR$(L)+\"-\"+STR$(L+4)`). The replacement text may include the line-feed code CHR$(10) (the handler scans the source string)."
+
+errors:
+  - { errnum: 38, name: "Use PRGEDIT before any PRG function", when: "PRGSET is called without an active PRGEDIT edit target" }
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is not exactly 1, or the operand is not a string" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/prgset.md (1 form: `PRGSET \"Character string\"`. 'Substitutes the contents of the current line with the specified string. If PRGGET$ has returned an empty string, a line will be added.' Argument: 'Character string to substitute the current line with.' Example `PRGSET \"'Comment\"`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst PRGSET handler @0x189c30: no-PRGEDIT guard ldr r4,[0x189dfc]/ldr r1,[r4,#0x0]/cmp r1,#0x0/beq 0x189c6c -> errnum 38 (mov r0,#0x26 @0x189c74 -> b 0x189c64 -> bl 0x1fffdc), checked before the arg check; arg-count/type guard ldr r1,[r0,#0x4]/cmp r1,#0x1/ldreq r1,[r0,#0xc]/cmpeq r1,#0x0/beq 0x189c7c (else errnum 4: mov r0,#0x4 @0x189c60 -> bl 0x1fffdc); line write path @0x189c7c reads the operand string ([r0,#0x8]) and scans it (ldrb r12,[r2,#0x2] type byte; bl 0x1e7c30 select line; bl 0x1ec160 with cmp r0,#0x100/cmp r0,#0x40000000)", confidence: disassembled }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bPRGSET\\b', ~117 occurrences): always a single string operand. String variable `PRGSET I$` (43LEDEAE/TXT/XCMD.LIB), array element `PRGSET ARRAY$[I]`, function result `PRGSET STRNCRYPT(PRGGET$(),PASS)` (9K23N33F/TXT/STRNCRYPT), and concatenation `PRGSET \"'\"+STR$(L)+...` (2E3E43GJ/TXT/LEX). No multi-argument form seen. Syntax legal (shipped programs); the resulting line content has no scalar golden (oracle-pending)." }
+  - { type: community, ref: "osb/SMILEBASIC/program.d PRG* edit family (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-23 (s_t12d): `PRGEDIT 1:PRGSET \"A\",\"B\"` (two arguments, edit target active) -> errnum 4 errline 1 (Illegal function call), confirming the exactly-one-arg guard. The no-PRGEDIT errnum-38 guard could NOT be reconfirmed for PRGSET this run because the SB session was warm (a prior PRGEDIT left the shared edit-target global at 0x306C14 non-null), so `PRGSET \"X\"` with no preceding PRGEDIT returned NOERR; the errnum-38 path is cold-state-only (body-pinned; cold confirmation queued). The substituted-line / append-on-EOF result is program-slot state with no scalar golden (queued)." }
+
+# Top-level hw_verified: the single-string-arg guard (errnum 4) is oracle-confirmed and
+# body-pinned (@0x189c30). The no-PRGEDIT guard (errnum 38) is body-pinned but SESSION-STATEFUL
+# — it fires only from a cold edit state (no prior PRGEDIT); a warm session returns NOERR
+# (queued for a cold harvest). The line substitution is slot state with no scalar golden.
+confidence: hw_verified
+
+tests:
+  # errnum 4 (too many args) is hw_verified (s_t12d, warm session). PRGEDIT 1 selects a
+  # non-running slot to establish the edit target so the arg-count guard is reached.
+  - { name: too_many_args, code: 'PRGEDIT 1:PRGSET "A","B"', expect: { error: { errnum: 4 } } }
+  # Cold-state no-PRGEDIT raises errnum 38 (body-pinned @0x189c74; cold confirmation queued).
+  - { name: no_prgedit_errors, code: 'PRGSET "X"', expect: { error: { errnum: 38 } } }

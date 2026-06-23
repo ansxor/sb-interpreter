@@ -1,0 +1,49 @@
+id: PRGEDIT
+kind: statement
+category: Source code manipulation
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — slot only: the current line becomes the first line of the slot.
+  - args:
+      - { name: slot, type: integer, range: "0-3: program SLOT to manipulate. Specifying the currently-running slot raises errnum 4." }
+    returns: { type: void }
+    note: "PRGEDIT slot — select the program slot to edit; the current line is set to the first line."
+  # Form 2 — slot + line: select an explicit current line (-1 = last line).
+  - args:
+      - { name: slot, type: integer, range: "0-3: program SLOT to manipulate (running slot -> errnum 4)" }
+      - { name: line, type: integer, range: "Line number to make current. -1 = the last line. Out of range (past the program) raises errnum 10." }
+    returns: { type: void }
+    note: "PRGEDIT slot,line — select the slot and the current line. line=-1 selects the last line."
+
+summary: "Selects the program SLOT (0-3) to manipulate with the PRG* edit family, and sets the current line. With one argument the current line becomes the first line (line 0); with two arguments the second argument is the current line number, where -1 selects the last line. Selecting the slot that is currently running raises errnum 4; an out-of-range line number raises errnum 10. PRGEDIT establishes the edit target that every other PRG instruction (PRGGET$/PRGSET/PRGINS/PRGDEL/PRGNAME$/PRGSIZE) requires."
+
+semantics:
+  - "Handler @0x18a12c. Argument count is the first guard: the count [r0,#0x4] must be 1 or 2 (cmp r5,#0x0/ble; cmp r5,#0x2 with a type-byte check ldrle r0,[r4,#0xc]/cmpeq r0,#0x0); 0 args or more than 2 args (or a string operand) -> errnum 4 (Illegal function call: mov r0,#0x4 @0x18a15c -> bl 0x1fffdc)."
+  - "Slot range check: the slot value [sp,#0x0] must be 0..3 (cmp r0,#0x0/blt 0x18a1e4; cmp r0,#0x3/ble 0x18a19c). A slot < 0 or > 3 raises errnum 10 (Out of range: mov r0,#0xa @0x18a1ec -> bl 0x1fffdc)."
+  - "Running-slot guard: for a valid slot the handler loads the slot's run state (ldr r0,[...,#0x154] @0x18a1b4; cmp r0,#0x0; ble 0x18a200) and, if the slot is currently running (state > 0), raises errnum 4 (mov r0,#0x4 @0x18a1c8 -> bl 0x18a25c). You cannot PRGEDIT the slot you are executing. (Docs: 'Specifying the SLOT currently running will give an error.')"
+  - "Current line: with one argument the current line is set to the first line (line 0; the documented 'If this is omitted, the first line will be the current line')."
+  - "With two arguments the second argument is the current line. A value of -1 selects the last line (cmn r0,#0x1/beq 0x18a268 short-circuits the range check @0x18a234; docs: 'If -1 is specified for the line number, the current line will be the last line'). Otherwise the line is range-checked against the program length (sub r0,r0,#0x1; cmp r0,r1; bcc 0x18a268 @0x18a240); a line past the program raises errnum 10 (Out of range: mov r0,#0xa @0x18a258 -> bl 0x1fffdc)."
+  - "Both the slot and the line accept any integer expression (corpus: variable slots `PRGEDIT S`, arithmetic lines `PRGEDIT 2,COPYLINE-3`), not just literals."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is 0 or > 2 (or a string operand is given), or the target slot is the currently-running program slot" }
+  - { errnum: 10, name: "Out of range", when: "the slot is not 0..3, or an explicit line number (other than -1) is past the end of the program" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/prgedit.md (1 form: `PRGEDIT Program SLOT [,Line number]`. 'Specifies the program SLOT to manipulate, and the current line.' Program SLOT 0-3; 'Specifying the SLOT currently running will give an error.' Line number: current line; 'If this is omitted, the first line will be the current line'; 'If -1 is specified for the line number, the current line will be the last line.' Example `PRGEDIT 0`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst PRGEDIT handler @0x18a12c: arg-count guard cmp r5,#0x0/ble 0x18a154 + cmp r5,#0x2 with type-byte check ldrle r0,[r4,#0xc]/cmple r0,#0x0/beq 0x18a16c (bad count/string -> errnum 4: mov r0,#0x4 @0x18a15c -> bl 0x1fffdc); slot range guard cmp r0,#0x0/blt 0x18a1e4 + cmp r0,#0x3/ble 0x18a19c (out of range -> errnum 0xa @0x18a1ec -> bl 0x1fffdc); running-slot guard ldr r0,[...,#0x154] @0x18a1b4/cmp r0,#0x0/ble 0x18a200 (running -> errnum 4 @0x18a1c8 -> bl 0x18a25c); line guard cmn r0,#0x1/beq 0x18a268 (-1 = last line) else sub r0,r0,#0x1/cmp r0,r1/bcc 0x18a268 (past end -> errnum 0xa: mov r0,#0xa @0x18a258 -> bl 0x1fffdc)", confidence: disassembled }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bPRGEDIT\\b', 260 files): both forms are real. 1-arg `PRGEDIT 1`/`PRGEDIT S` (variable slot, 2E3E43GJ/TXT/LEX). 2-arg with literal `PRGEDIT 1,1` (1BWX7ENV/TXT/AND-OS), with expression `PRGEDIT 2,COPYLINE-3` (2383C3HE/TXT/LOWERDASH_C), and the last-line form `PRGEDIT 3,-1` (25XS34J/TXT/LOWERDASH_C, 45W372QE/TXT/LDC). Slots 1-3 most common in shipped programs. Syntax legal; the resulting current-line state has no scalar golden (oracle-pending)." }
+  - { type: community, ref: "osb/SMILEBASIC/program.d PRG* edit family (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-23 (s_t12d): `PRGEDIT 4` -> errnum 10 errline 1 and `PRGEDIT -1` -> errnum 10 (slot out of range — note -1 is out of range as a SLOT even though it is the valid 'last line' value for the second argument); `PRGEDIT 0,0,0` (3 args) -> errnum 4 errline 1 (Illegal function call). Confirms the slot-range (errnum 10) and arg-count (errnum 4) guards. The running-slot guard (errnum 4) and the line-range/-1 logic raise state that is not separable as a scalar golden in a warm session (queued)." }
+
+# Top-level hw_verified: the slot-range guard (errnum 10) and the arg-count guard (errnum 4)
+# are oracle-confirmed and body-pinned (@0x18a12c). The running-slot guard (errnum 4) and the
+# -1=last-line / line-range (errnum 10) logic are body-pinned but their goldens depend on a
+# loaded/running slot (queued in HARVEST_QUEUE.md).
+confidence: hw_verified
+
+tests:
+  - { name: slot_too_high, code: "PRGEDIT 4", expect: { error: { errnum: 10 } } }
+  - { name: slot_negative, code: "PRGEDIT -1", expect: { error: { errnum: 10 } } }
+  - { name: too_many_args, code: "PRGEDIT 0,0,0", expect: { error: { errnum: 4 } } }

@@ -1,0 +1,51 @@
+id: PRGDEL
+kind: statement
+category: Source code manipulation
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — no argument: delete one line (the current line).
+  - args: []
+    returns: { type: void }
+    note: "PRGDEL — delete the current line (one line)."
+  # Form 2 — explicit count.
+  - args:
+      - { name: count, type: integer, range: "Number of lines to delete starting at the current line. Omitted = 1. A negative value deletes all (remaining) lines. 0 raises errnum 10." }
+    returns: { type: void }
+    note: "PRGDEL count — delete `count` lines; negative deletes all remaining lines."
+
+summary: "Deletes lines starting at the current line (selected by PRGEDIT). With no argument one line is deleted; with a count argument that many lines are deleted. A negative count deletes all remaining lines. A count of 0 raises errnum 10, as does a positive count beyond the program length. Calling PRGDEL without an active PRGEDIT target raises errnum 38; supplying more than one argument raises errnum 4."
+
+semantics:
+  - "Handler @0x189700. Requires an active edit target: the PRGEDIT-state global is loaded (ldr r4,[0x18996c] = &0x306C14/ldr r1,[r4,#0x0]) and, if no slot is being edited (cmp r1,#0x0/beq 0x189724), raises errnum 38 (Use PRGEDIT before any PRG function: mov r0,#0x26 @0x18972c -> bl 0x1fffdc). The no-PRGEDIT check is performed FIRST, before the argument check."
+  - "The edit-target global at 0x306C14 is SESSION-PERSISTENT and shared by the whole PRG* family; once any successful PRGEDIT has run in the session it stays non-null, so the errnum-38 guard fires only from a COLD edit state. Oracle note (s_t12d): in a warm session PRGDEL / PRGDEL 1 with no preceding PRGEDIT returned NOERR. A fresh program with no prior PRGEDIT raises errnum 38; a program that has already PRGEDIT'd does not."
+  - "Argument count [r0,#0x4]: 0 args -> the count defaults to 1 (streq r1,#1 -> [sp,#0x0]=1 @0x189744, then proceeds to delete); 1 arg -> the operand is read as the count; more than 1 arg -> errnum 4 (Illegal function call: mov r0,#0x4 @0x18975c -> bl 0x1fffdc)."
+  - "Count range: the count value [sp,#0x0] is checked — a count of 0 raises errnum 10 (Out of range: cmp r0,#0x0/beq 0x1897a4 -> mov r0,#0xa @0x1897ac -> bl 0x1fffdc). A positive count is range-checked against the program length (ldr r1,[0x189974]/cmp r0,r1/ble 0x1897b4): a count greater than the available lines raises errnum 10."
+  - "A negative count deletes all (remaining) lines: a negative value fails the `==0` test and, being <= the line-count limit (signed ble), proceeds to the delete path (docs: 'If a negative value is specified, all lines will be deleted'). The corpus-dominant idiom is `PRGDEL -1`."
+  - "The deletion starts at the current line set by PRGEDIT and removes lines downward. The count is any integer expression (corpus: `PRGDEL DBMAX`, `PRGDEL PRGSIZE(1)`), not just a literal."
+
+errors:
+  - { errnum: 38, name: "Use PRGEDIT before any PRG function", when: "PRGDEL is called without an active PRGEDIT edit target" }
+  - { errnum: 4, name: "Illegal function call", when: "more than one argument is supplied" }
+  - { errnum: 10, name: "Out of range", when: "the count is 0, or a positive count exceeds the number of remaining lines" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/prgdel.md (1 form: `PRGDEL [Number of lines to delete]`. 'Deletes the current line.' Argument: 'Number of lines to delete (If omitted, one line will be deleted). If a negative value is specified, all lines will be deleted.' Example `PRGDEL`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst PRGDEL handler @0x189700: no-PRGEDIT guard ldr r4,[0x18996c]/ldr r1,[r4,#0x0]/cmp r1,#0x0/beq 0x189724 -> errnum 38 (mov r0,#0x26 @0x18972c -> bl 0x1fffdc), checked first; arg-count branch ldr r2,[r0,#0x4]/cmp r2,#0x0/streq r1(=1),[sp,#0x0] (0 args -> count 1) /cmp r2,#0x1/beq 0x189764 (1 arg), else errnum 4 (mov r0,#0x4 @0x18975c); count range guard ldr r0,[sp,#0x0]/cmp r0,#0x0/beq 0x1897a4 (count 0) + ldr r1,[0x189974]/cmp r0,r1/ble 0x1897b4 (else -> errnum 0xa: mov r0,#0xa @0x1897ac -> bl 0x1fffdc); negative count passes the ==0 test and (signed) ble -> delete path @0x1897b4", confidence: disassembled }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bPRGDEL\\b', 190 files): `PRGDEL -1` (delete all) is dominant (208 hits, e.g. 1BWX7ENV/TXT/AND-OS); bare `PRGDEL` (delete 1, ~25); positive literal `PRGDEL 1`/`PRGDEL 2` (45W372QE/TXT/LDC); variable/expression `PRGDEL DBMAX`, `PRGDEL PRGSIZE` (43AE1XG3/TXT/AXE). Syntax legal (shipped programs); the resulting program state has no scalar golden (oracle-pending)." }
+  - { type: community, ref: "osb/SMILEBASIC/program.d PRG* edit family (3.5.0 structural cross-check only)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-23 (s_t12d): `PRGEDIT 1:PRGDEL 1,2` (two arguments, edit target active) -> errnum 4 errline 1 (Illegal function call), confirming the >1-arg guard; `PRGEDIT 1:PRGDEL 0` (count 0) -> errnum 10 errline 1 (Out of range), confirming the count-0 guard. The no-PRGEDIT errnum-38 guard could not be reconfirmed for PRGDEL this run because the SB session was warm (shared edit-target global at 0x306C14 non-null), so `PRGDEL` / `PRGDEL 1` returned NOERR; the errnum-38 path is cold-state-only (body-pinned; cold confirmation queued). The deletion result is program-slot state with no scalar golden (queued)." }
+
+# Top-level hw_verified: the >1-arg guard (errnum 4) and the count-0 guard (errnum 10) are
+# oracle-confirmed and body-pinned (@0x189700). The no-PRGEDIT guard (errnum 38) is body-pinned
+# but SESSION-STATEFUL — it fires only from a cold edit state; a warm session returns NOERR
+# (queued for a cold harvest). The deletion is slot state with no scalar golden.
+confidence: hw_verified
+
+tests:
+  # errnum 4 (too many args) and errnum 10 (count 0) are hw_verified (s_t12d). PRGEDIT 1
+  # establishes the edit target so the count/arg guards are reached.
+  - { name: too_many_args, code: "PRGEDIT 1:PRGDEL 1,2", expect: { error: { errnum: 4 } } }
+  - { name: count_zero_out_of_range, code: "PRGEDIT 1:PRGDEL 0", expect: { error: { errnum: 10 } } }
+  # Cold-state no-PRGEDIT raises errnum 38 (body-pinned @0x18972c; cold confirmation queued).
+  - { name: no_prgedit_errors, code: "PRGDEL", expect: { error: { errnum: 38 } } }

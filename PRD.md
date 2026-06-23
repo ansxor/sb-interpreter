@@ -113,7 +113,7 @@ and name the instructions they cover inline.
 - [x] S-T12a File I/O — LOAD · SAVE · FILES · DELETE
 - [x] S-T12b File management — CHKFILE · RENAME · USE · EXEC
 - [x] S-T12c Source read — PRGGET$ · PRGNAME$ · PRGSIZE
-- [ ] S-T12d Source edit — PRGSET · PRGINS · PRGDEL · PRGEDIT
+- [x] S-T12d Source edit — PRGSET · PRGINS · PRGDEL · PRGEDIT
 - [ ] S-T12e DIRECT-mode — RUN · CONT · NEW · CLEAR · LIST · BACKTRACE · PROJECT
 
 #### S-T13 Wireless (8) → S-T0

@@ -489,3 +489,20 @@ oracle to confirm exact output and promote to `hw_verified`.
     PRGSIZE returned counts for type 0 (lines) / 1 (characters) / 2 (free characters) and the
     no-arg last-run-slot count. These need a known program loaded into a slot to produce a
     stable expected value (M6-T4 source-edit harness).
+
+- S-T12d Source edit (PRGEDIT/PRGSET/PRGINS/PRGDEL): the arg/range guards ARE hw_verified
+    (batch 2026-06-23, s_t12d): PRGEDIT 4 / PRGEDIT -1 -> errnum 10 (slot out of range; -1 is
+    out of range as a SLOT though valid as the 'last line' value of the 2nd arg); PRGEDIT 0,0,0
+    -> errnum 4; PRGEDIT 1:PRGDEL 0 -> errnum 10 (count 0); PRGEDIT 1:PRGSET "A","B" /
+    PRGEDIT 1:PRGINS "A",1,2 / PRGEDIT 1:PRGDEL 1,2 -> errnum 4 (too many args).
+    DISCOVERY (session-persistent edit target): the no-PRGEDIT errnum-38 guard is shared across
+    the whole PRG* family via ONE global (0x306C14). It fires only from a COLD edit state — once
+    ANY PRGEDIT succeeds in the SB session the global stays non-null, so in a warm session
+    PRGGET$()/PRGSET/PRGINS/PRGDEL with no preceding PRGEDIT all returned NOERR (this run),
+    refining the T12c PRGGET$ errnum-38 result (which was harvested cold). UNHARVESTED:
+    (1) COLD-state errnum 38 for PRGSET/PRGINS/PRGDEL (needs a fresh SB session with no prior
+    PRGEDIT — restart Azahar/SB, run the no-PRGEDIT case FIRST). (2) The stateful results with no
+    scalar golden: PRGEDIT running-slot guard (errnum 4) + line-range (errnum 10) + -1=last-line;
+    PRGSET line-substitution + append-on-EOF; PRGINS inserted line + flag(before/after) +
+    CHR$(10) multi-line split; PRGDEL deletion + negative=delete-all. All need a known program
+    loaded into a slot (M6-T4 source-edit harness).
