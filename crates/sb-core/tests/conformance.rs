@@ -101,6 +101,16 @@ const IN_SCOPE_DATA_OPS: &[&str] = &["READ", "RESTORE", "OPTION", "REM"];
 const IN_SCOPE_GRAPHICS: &[&str] = &[
     "RGB", "RGBREAD", "GPAGE", "GCLS", "GCOLOR", "GPRIO", "GCLIP",
 ];
+/// `Screen control` instructions whose builtins `sb-core` implements (M1-T8: the console
+/// draw-state reset + screen background-color round-trip) and whose inline `tests:` are
+/// deterministic + checkable (M1-T14 increment 2026-06-23): `ACLS` (reset console/draw
+/// state — 0 or 3 args ok, 1/2 args → errnum 4) and `BACKCOLOR` (set the screen background
+/// color; the no-arg statement and the multi-arg form both → errnum 4). The rendered color
+/// itself is screen state with no scalar golden, so the assertable behavior is the call-shape
+/// / arg-count guard (both hw_verified via sb-oracle batch s_t11d). The rest of the category
+/// stays excluded: `DISPLAY`/`FADE`/`FADECHK`/`VISIBLE`/`XSCREEN` are display-config / frame
+/// effects (M4) and aren't implemented yet. Listed by id.
+const IN_SCOPE_SCREEN: &[&str] = &["ACLS", "BACKCOLOR"];
 
 #[derive(Debug, Deserialize)]
 struct CaseFile {
@@ -248,6 +258,7 @@ fn in_scope_instruction_specs_pass() {
     let in_scope_console: BTreeSet<&str> = IN_SCOPE_CONSOLE.iter().copied().collect();
     let in_scope_data_ops: BTreeSet<&str> = IN_SCOPE_DATA_OPS.iter().copied().collect();
     let in_scope_graphics: BTreeSet<&str> = IN_SCOPE_GRAPHICS.iter().copied().collect();
+    let in_scope_screen: BTreeSet<&str> = IN_SCOPE_SCREEN.iter().copied().collect();
 
     let mut fails = Vec::new();
     let mut count = 0usize;
@@ -266,7 +277,8 @@ fn in_scope_instruction_specs_pass() {
             || in_scope_dac.contains(spec.id.as_str())
             || in_scope_console.contains(spec.id.as_str())
             || in_scope_data_ops.contains(spec.id.as_str())
-            || in_scope_graphics.contains(spec.id.as_str());
+            || in_scope_graphics.contains(spec.id.as_str())
+            || in_scope_screen.contains(spec.id.as_str());
         if !in_scope {
             continue;
         }
