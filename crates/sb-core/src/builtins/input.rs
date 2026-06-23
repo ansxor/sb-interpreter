@@ -26,8 +26,8 @@
 //!   the official 0..47 error table — kept out of the deterministic golden (queued).
 
 use super::{illegal, out_of_range};
-use crate::input::InputState;
-use crate::value::{RuntimeError, Value};
+use crate::input::{InputState, KEY_SLOTS};
+use crate::value::{RuntimeError, SbStr, Value};
 
 /// errnum 52 — the undocumented wireless "Communication error" (`spec/instructions/
 /// button.yaml`); raised when a terminal ID is read with no active multiplayer session.
@@ -149,4 +149,79 @@ pub fn brepeat(
     };
     input.set_repeat(id as usize, start as u32, interval as u32);
     Ok(vec![])
+}
+
+/// `TOUCH [terminal] OUT STTM,TX,TY` — read the lower-screen touch panel into exactly three
+/// OUT variables (`spec/instructions/touch.yaml`). The handler requires the requested return
+/// count to be exactly 3 (else errnum 4) and an argument count of 0 (local terminal) or 1 (a
+/// wireless terminal ID, which hits the comms path → errnum 52 here, no active multiplayer).
+/// STTM is the touch-time counter (0 = not touched); TX,TY are the touch coordinates.
+pub fn touch(
+    input: &InputState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 3 {
+        return Err(illegal());
+    }
+    match args {
+        [] => {
+            let (sttm, tx, ty) = input.touch();
+            Ok(vec![Value::Int(sttm), Value::Int(tx), Value::Int(ty)])
+        }
+        [terminal] => {
+            // Wireless terminal form: comms inactive on a single machine (errnum 52); the ID
+            // is read (type-checked) before the comms-state flag is tested.
+            let _ = terminal.to_int()?;
+            Err(communication_error())
+        }
+        _ => Err(illegal()),
+    }
+}
+
+/// `KEY number,"text"` (statement) / `S$=KEY(number)` (undocumented function form) — bind or
+/// read the string on function-key slot `number` (1..5) (`spec/instructions/key.yaml`). The
+/// handler branches on the requested return count: 0 → statement (requires exactly 2 args,
+/// binds the string), 1 → function (requires exactly 1 arg, returns the bound string); any
+/// other shape is errnum 4. `number` is range-checked 1..5 via an unsigned `number-1 < 5`
+/// compare (so `< 1` wraps and also fails → errnum 10); the statement value must be a string
+/// (else errnum 8).
+pub fn key(
+    input: &mut InputState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    match ret_count {
+        // Statement form: KEY number,"text" — exactly two arguments.
+        0 => {
+            let [number, text] = args else {
+                return Err(illegal());
+            };
+            let slot = key_slot(number.to_int()?)?;
+            let text = text.as_str()?.clone();
+            input.set_key_binding(slot, text);
+            Ok(vec![])
+        }
+        // Function form: KEY(number) — exactly one argument, returns the bound string.
+        1 => {
+            let [number] = args else {
+                return Err(illegal());
+            };
+            let slot = key_slot(number.to_int()?)?;
+            Ok(vec![Value::Str(SbStr::from(input.key_binding(slot)))])
+        }
+        _ => Err(illegal()),
+    }
+}
+
+/// Validate a 1-based `KEY` function-key number and map it to a 0-based slot. The handler
+/// computes `number-1` and unsigned-compares it against `KEY_SLOTS` (5), so any `number < 1`
+/// wraps to a huge unsigned value and fails alongside `number > 5` → errnum 10.
+fn key_slot(number: i32) -> Result<usize, RuntimeError> {
+    let slot = number.wrapping_sub(1) as u32;
+    if (slot as usize) < KEY_SLOTS {
+        Ok(slot as usize)
+    } else {
+        Err(out_of_range())
+    }
 }

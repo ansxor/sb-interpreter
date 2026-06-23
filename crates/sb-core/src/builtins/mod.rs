@@ -138,6 +138,12 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "STICK",
     "STICKEX",
     "BREPEAT",
+    // Touch panel + function keys (M4-T2): TOUCH reads the lower-screen touch state into 3
+    // OUT vars; KEY binds/reads a function-key string. Both read/mutate the VM-owned
+    // `InputState`, so the VM routes them directly. (INKEY$ stays registered under Console
+    // I/O above but now drains the InputState keyboard queue.)
+    "TOUCH",
+    "KEY",
     // Graphics — GRP page model + color helpers (M2-T1). The page-state commands mutate
     // the VM-owned `GrpState`, so the VM routes them directly (like the console builtins);
     // they are registered here so the compiler treats them as builtins, not variables.

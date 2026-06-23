@@ -18,8 +18,8 @@
 //! - `COLOR fg[,bg]` — 1 or 2 slots (else errnum 4); each index 0..15 (else errnum 10).
 //! - `CLS` — no arguments (else errnum 4).
 //! - `ACLS` — 0 or 3 arguments (else errnum 4); resets the console draw state.
-//! - `INKEY$()` — no arguments (else errnum 4); returns one buffered key or `""` (always
-//!   `""` headless: there is no live keyboard buffer here).
+//! - `INKEY$()` — no arguments (else errnum 4); drains one UTF-16 code unit from the
+//!   VM-owned `InputState` keyboard queue (M4-T2), or `""` when the queue is empty.
 //! - `CHKCHR(x,y)` — function only, exactly 2 args (else errnum 4); returns the cell's
 //!   UTF-16 code, or 0 for an empty / out-of-bounds coordinate (no error).
 //!
@@ -30,6 +30,7 @@ use sb_render::console::{Console, DEFAULT_BG, DEFAULT_FG};
 
 use super::{illegal, out_of_range, type_mismatch};
 use crate::array::ArrayRef;
+use crate::input::InputState;
 use crate::value::{RuntimeError, SbStr, Value};
 
 /// `LOCATE [x],[y][,z]` — move the text cursor. X/Y are integer cells, Z a float depth;
@@ -114,14 +115,17 @@ pub fn acls(console: &mut Console, args: &[Value], wants_value: bool) -> Result<
     Ok(())
 }
 
-/// `INKEY$()` — pop one key from the keyboard buffer without waiting. Headless there is no
-/// live buffer, so this always returns the empty string (the documented no-key result).
-/// Any argument raises errnum 4.
-pub fn inkey(args: &[Value]) -> Result<Value, RuntimeError> {
+/// `INKEY$()` — pop one UTF-16 code unit from the keyboard queue without waiting (`inkey.yaml`,
+/// hw_verified). Returns a 1-character string when a key is queued, or the empty string when
+/// the queue is empty (the documented no-key result). Any argument raises errnum 4.
+pub fn inkey(input: &mut InputState, args: &[Value]) -> Result<Value, RuntimeError> {
     if !args.is_empty() {
         return Err(illegal());
     }
-    Ok(Value::Str(SbStr::new()))
+    Ok(Value::Str(match input.pop_key() {
+        Some(unit) => vec![unit],
+        None => SbStr::new(),
+    }))
 }
 
 /// `CHKCHR(x,y)` — read the UTF-16 code of the glyph currently displayed at console cell
@@ -486,8 +490,22 @@ mod tests {
 
     #[test]
     fn inkey_empty_and_arg_guard() {
-        assert_eq!(inkey(&[]).unwrap(), Value::Str(SbStr::new()));
-        assert_eq!(inkey(&[Value::Int(1)]).unwrap_err().errnum, 4);
+        let mut input = InputState::new();
+        // Empty queue -> empty string; an argument -> errnum 4.
+        assert_eq!(inkey(&mut input, &[]).unwrap(), Value::Str(SbStr::new()));
+        assert_eq!(inkey(&mut input, &[Value::Int(1)]).unwrap_err().errnum, 4);
+        // A queued key is drained one code unit at a time, in order.
+        input.push_key('A' as u16);
+        input.push_key('B' as u16);
+        assert_eq!(
+            inkey(&mut input, &[]).unwrap(),
+            Value::Str(vec!['A' as u16])
+        );
+        assert_eq!(
+            inkey(&mut input, &[]).unwrap(),
+            Value::Str(vec!['B' as u16])
+        );
+        assert_eq!(inkey(&mut input, &[]).unwrap(), Value::Str(SbStr::new()));
     }
 
     #[test]

@@ -602,20 +602,23 @@ impl Parser {
     /// The `OUT lvalue, lvalue, …` tail of a call (the `OUT` keyword already eaten).
     fn parse_out_args(&mut self) -> PResult<Vec<Expr>> {
         let mut out_args: Vec<Expr> = Vec::new();
+        // `OUT` with no targets at all yields an empty list (no slot).
+        if self.at_arg_end() {
+            return Ok(out_args);
+        }
+        // Comma-separated slots, any of which may be omitted (e.g. `TOUCH OUT TM,,` keeps only
+        // the touch time): N commas denote N+1 slots, so a leading/trailing/interior gap is a
+        // `Void` placeholder that still counts toward the call's OUT count.
         loop {
-            if self.is(&TokenKind::Comma) {
+            if self.is(&TokenKind::Comma) || self.at_arg_end() {
                 out_args.push(Expr::new(ExprKind::Void, self.cur_loc()));
-                self.advance();
-                continue;
+            } else {
+                let e = self.parse_expr()?;
+                if !e.is_lvalue() {
+                    return Err(self.syntax_error("OUT argument must be an lvalue"));
+                }
+                out_args.push(e);
             }
-            if self.at_arg_end() {
-                break;
-            }
-            let e = self.parse_expr()?;
-            if !e.is_lvalue() {
-                return Err(self.syntax_error("OUT argument must be an lvalue"));
-            }
-            out_args.push(e);
             if self.is(&TokenKind::Comma) {
                 self.advance();
                 continue;

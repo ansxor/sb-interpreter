@@ -28,8 +28,14 @@
 //! are not deterministically harvestable (no input injection in the oracle); repeat is
 //! modelled OFF until `BREPEAT` sets it and queued in `HARVEST_QUEUE.md`.
 
+use crate::value::SbStr;
+use std::collections::VecDeque;
+
 /// The number of button bits SmileBASIC tracks (b00..b12). Bit 10 is unused.
 pub const BUTTON_BITS: usize = 13;
+
+/// Number of `KEY` function-key slots (F1..F5). `KEY`/`KEY()` index these 1..5.
+pub const KEY_SLOTS: usize = 5;
 
 /// Bit index of the single unused button bit (b10).
 pub const UNUSED_BIT: u32 = 10;
@@ -65,6 +71,18 @@ pub struct InputState {
     stick: (f64, f64),
     /// Circle Pad Pro (right stick) axes, same convention.
     stickex: (f64, f64),
+    /// `TOUCH` state: a touch-time counter (0 while not touched, increments while held) and
+    /// the last touch coordinates. The platform calls [`advance_touch`](Self::advance_touch)
+    /// once per frame; the `TOUCH` builtin reads these three values.
+    touch_time: i32,
+    touch_x: i32,
+    touch_y: i32,
+    /// Keyboard character queue drained one code unit at a time by `INKEY$` (UTF-16,
+    /// non-blocking — empty queue → empty string). The platform enqueues typed characters.
+    key_queue: VecDeque<u16>,
+    /// `KEY` function-key bindings (F1..F5 = index 0..4); each a UTF-16 string. Persists
+    /// across frames (not a per-frame snapshot), like the repeat config.
+    key_bindings: [SbStr; KEY_SLOTS],
 }
 
 impl Default for InputState {
@@ -87,6 +105,11 @@ impl InputState {
             repeat: [RepeatCfg::default(); BUTTON_BITS],
             stick: (0.0, 0.0),
             stickex: (0.0, 0.0),
+            touch_time: 0,
+            touch_x: 0,
+            touch_y: 0,
+            key_queue: VecDeque::new(),
+            key_bindings: std::array::from_fn(|_| SbStr::new()),
         }
     }
 
@@ -158,6 +181,49 @@ impl InputState {
     /// The Circle Pad Pro (right stick) axes, same convention as [`stick`](Self::stick).
     pub fn stickex(&self) -> (f64, f64) {
         self.stickex
+    }
+
+    /// Advance one frame of touch state. While `touched` the touch-time counter increments
+    /// (it is 0 on the first touched frame's predecessor, then 1,2,… — `STTM` reads nonzero
+    /// while touched) and the coordinates track the contact point; on release the counter
+    /// resets to 0 (the documented "no touch" `STTM`) and the last coordinates are retained.
+    pub fn advance_touch(&mut self, touched: bool, x: i32, y: i32) {
+        if touched {
+            self.touch_time = self.touch_time.saturating_add(1);
+            self.touch_x = x;
+            self.touch_y = y;
+        } else {
+            self.touch_time = 0;
+        }
+    }
+
+    /// The current `TOUCH` result triple `(STTM, TX, TY)`: the touch-time counter (0 = not
+    /// touched) and the touch X/Y coordinates.
+    pub fn touch(&self) -> (i32, i32, i32) {
+        (self.touch_time, self.touch_x, self.touch_y)
+    }
+
+    /// Enqueue one UTF-16 code unit of keyboard input (the platform calls this for each typed
+    /// character; `INKEY$` drains them in order).
+    pub fn push_key(&mut self, unit: u16) {
+        self.key_queue.push_back(unit);
+    }
+
+    /// Pop the oldest queued keyboard code unit for `INKEY$`, or `None` if the queue is empty.
+    pub fn pop_key(&mut self) -> Option<u16> {
+        self.key_queue.pop_front()
+    }
+
+    /// Bind a UTF-16 string to a `KEY` function-key slot (`slot` is a validated index in
+    /// `0..KEY_SLOTS`; the caller maps the 1-based `KEY` number).
+    pub fn set_key_binding(&mut self, slot: usize, text: SbStr) {
+        self.key_bindings[slot] = text;
+    }
+
+    /// The UTF-16 string currently bound to a `KEY` function-key slot (`slot` in
+    /// `0..KEY_SLOTS`), as read by the undocumented `KEY(number)` function form.
+    pub fn key_binding(&self, slot: usize) -> &[u16] {
+        &self.key_bindings[slot]
     }
 }
 
@@ -279,5 +345,44 @@ mod tests {
         s.advance_frame(0, (2.0, -3.0), (0.5, f64::NAN));
         assert_eq!(s.stick(), (1.0, -1.0));
         assert_eq!(s.stickex(), (0.5, 0.0));
+    }
+
+    #[test]
+    fn touch_time_counts_while_held_and_resets() {
+        let mut s = InputState::new();
+        // Default (no touch): STTM 0.
+        assert_eq!(s.touch(), (0, 0, 0));
+        // Touch held: STTM increments, coords track the contact point.
+        s.advance_touch(true, 100, 50);
+        assert_eq!(s.touch(), (1, 100, 50));
+        s.advance_touch(true, 120, 60);
+        assert_eq!(s.touch(), (2, 120, 60));
+        // Release: STTM back to 0, last coords retained.
+        s.advance_touch(false, 0, 0);
+        assert_eq!(s.touch(), (0, 120, 60));
+    }
+
+    #[test]
+    fn key_queue_drains_in_order() {
+        let mut s = InputState::new();
+        assert_eq!(s.pop_key(), None);
+        s.push_key(b'A' as u16);
+        s.push_key(b'B' as u16);
+        assert_eq!(s.pop_key(), Some(b'A' as u16));
+        assert_eq!(s.pop_key(), Some(b'B' as u16));
+        assert_eq!(s.pop_key(), None);
+    }
+
+    #[test]
+    fn key_bindings_default_empty_and_round_trip() {
+        let mut s = InputState::new();
+        // All five slots start empty.
+        for slot in 0..KEY_SLOTS {
+            assert!(s.key_binding(slot).is_empty());
+        }
+        s.set_key_binding(0, vec![b'H' as u16, b'I' as u16]);
+        assert_eq!(s.key_binding(0), &[b'H' as u16, b'I' as u16]);
+        // Other slots remain untouched.
+        assert!(s.key_binding(1).is_empty());
     }
 }

@@ -1020,7 +1020,7 @@ impl Vm {
                 self.tabstep = 4;
                 Ok(Some(Value::Void))
             }
-            "INKEY$" => Ok(Some(cons::inkey(&args)?)),
+            "INKEY$" => Ok(Some(cons::inkey(&mut self.input, &args)?)),
             "CHKCHR" => Ok(Some(cons::chkchr(&self.console, &args, wants_value)?)),
             "BACKCOLOR" => Ok(Some(self.backcolor(&args, wants_value)?)),
             "ATTR" => {
@@ -1219,6 +1219,8 @@ impl Vm {
             "STICK" => inp::stick(&self.input, &args, ret_count),
             "STICKEX" => inp::stickex(&self.input, &args, ret_count),
             "BREPEAT" => inp::brepeat(&mut self.input, &args, ret_count),
+            "TOUCH" => inp::touch(&self.input, &args, ret_count),
+            "KEY" => inp::key(&mut self.input, &args, ret_count),
             _ => return Ok(false),
         };
         for v in results.map_err(sb)? {
@@ -3327,5 +3329,95 @@ H$=HEX$(255)"#);
             run_b_err("A=BUTTON(0,1)"),
             VmError::Sb { errnum: 52, .. }
         ));
+    }
+
+    // ---- touch + keyboard (TOUCH/KEY/INKEY$, M4-T2) ----
+
+    #[test]
+    fn touch_writes_three_out_vars_through_vm() {
+        let vm = run_b_input("TOUCH OUT TM,TX,TY\nPRINT TM;\",\";TX;\",\";TY", |i| {
+            i.advance_touch(true, 100, 50); // STTM 1, coords 100,50
+        });
+        assert_eq!(vm.console_text(), "1,100,50");
+    }
+
+    #[test]
+    fn touch_no_touch_baseline_is_zero() {
+        // Headless / no touch: STTM reads 0 (the documented no-touch value).
+        let vm = run_b_input("TOUCH OUT TM,TX,TY\nPRINT TM", |_| {});
+        assert_eq!(vm.console_text(), "0");
+    }
+
+    #[test]
+    fn touch_empty_out_slots_discard_results() {
+        // `TOUCH OUT TM,,` keeps only the touch time; the two omitted slots still count.
+        let vm = run_b_input("TOUCH OUT TM,,\nPRINT TM", |i| {
+            i.advance_touch(true, 7, 9);
+        });
+        assert_eq!(vm.console_text(), "1");
+        // `TOUCH OUT ,TX,TY` discards the time, keeps the coordinates.
+        let vm = run_b_input("TOUCH OUT ,TX,TY\nPRINT TX;\",\";TY", |i| {
+            i.advance_touch(true, 7, 9);
+        });
+        assert_eq!(vm.console_text(), "7,9");
+    }
+
+    #[test]
+    fn touch_wrong_out_count_is_errnum_4() {
+        assert!(matches!(
+            run_b_err("TOUCH OUT TM,TX"),
+            VmError::Sb { errnum: 4, .. }
+        ));
+    }
+
+    #[test]
+    fn touch_wireless_terminal_is_comms_error() {
+        assert!(matches!(
+            run_b_err("TOUCH 1 OUT TM,TX,TY"),
+            VmError::Sb { errnum: 52, .. }
+        ));
+    }
+
+    #[test]
+    fn key_assign_and_function_read_round_trip() {
+        // KEY 1,"HI" binds slot 1; the undocumented KEY(1) function form reads it back.
+        let vm = run_b_input("KEY 1,\"HI\"\nPRINT KEY(1)", |_| {});
+        assert_eq!(vm.console_text(), "HI");
+    }
+
+    #[test]
+    fn key_unset_slot_reads_empty() {
+        let vm = run_b_input("PRINT LEN(KEY(5))", |_| {});
+        assert_eq!(vm.console_text(), "0");
+    }
+
+    #[test]
+    fn key_number_out_of_range_is_errnum_10() {
+        assert!(matches!(
+            run_b_err("KEY 6,\"X\""),
+            VmError::Sb { errnum: 10, .. }
+        ));
+        assert!(matches!(
+            run_b_err("KEY 0,\"X\""),
+            VmError::Sb { errnum: 10, .. }
+        ));
+    }
+
+    #[test]
+    fn key_nonstring_value_is_errnum_8() {
+        assert!(matches!(
+            run_b_err("KEY 3,5"),
+            VmError::Sb { errnum: 8, .. }
+        ));
+    }
+
+    #[test]
+    fn inkey_drains_queued_keys_through_vm() {
+        // INKEY$ pops one queued code unit per call; the empty queue yields "".
+        let vm = run_b_input("PRINT INKEY$();INKEY$();LEN(INKEY$())", |i| {
+            i.push_key(b'A' as u16);
+            i.push_key(b'B' as u16);
+        });
+        assert_eq!(vm.console_text(), "AB0");
     }
 }

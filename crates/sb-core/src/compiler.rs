@@ -1295,6 +1295,11 @@ impl<'a> Compiler<'a> {
     /// Compile storing a value (already on the stack, below) into an lvalue.
     fn compile_pop_target(&mut self, expr: &Expr) -> CResult<()> {
         match &expr.kind {
+            // An omitted OUT slot (e.g. `TOUCH OUT TM,,`): the result is produced but has no
+            // receiver, so discard it. The slot still counts toward the call's OUT count.
+            ExprKind::Void => {
+                self.emit(Op::Pop);
+            }
             ExprKind::Var(name) => {
                 let v = self.resolve_scalar(name)?;
                 self.emit(Op::PopVar(v));

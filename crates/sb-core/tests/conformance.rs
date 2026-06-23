@@ -206,7 +206,12 @@ const IN_SCOPE_BG: &[&str] = &[
 /// all hw_verified; the repeat *timing* surfaces only through `BUTTON` feature 1 under live
 /// input, exercised by the `input.rs` scripted-timeline unit tests, not the inline cases).
 /// Listed by id.
-const IN_SCOPE_INPUT: &[&str] = &["BUTTON", "STICK", "STICKEX", "BREPEAT"];
+/// M4-T2 adds `TOUCH` (the no-touch STTM=0 baseline + the empty-OUT-slot form, both
+/// deterministic for a headless interpreter; the exactly-3-OUT-var guard → errnum 4 is
+/// hw_verified — live touch coordinates need input injection, queued) and `KEY` (the 1..5
+/// range guard → errnum 10 and the non-string-value → errnum 8 guard, both hw_verified; the
+/// undocumented `KEY()` function-form value is oracle-pending, exercised by VM unit tests).
+const IN_SCOPE_INPUT: &[&str] = &["BUTTON", "STICK", "STICKEX", "BREPEAT", "TOUCH", "KEY"];
 /// Specs `sb-core` implements only **partially** in M1: each is in scope, but the named
 /// cases listed here are EXCLUDED because they block on a later milestone or the
 /// console-text oracle. Everything else in the spec — the deterministic, hw_verified
