@@ -20,7 +20,7 @@ errors:
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/wend.md (end of a WHILE loop); errnum 25 from spec/reference/errors.yaml (WEND without WHILE)" }
   - { type: disassembled, ref: "cia_3.6.0.lst WEND is a parser keyword (token @0x2ed608), not in the builtin dispatch table; compiled as the back-jump of the WHILE loop" }
-  - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: WEND closes the WHILE (WHILE C<3 ... WEND runs exactly 3x). The bare-WEND errnum 25 capture flaked this run (queued); the sibling UNTIL-without-REPEAT=23 was confirmed live, corroborating the errors table." }
+  - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: WEND closes the WHILE (WHILE C<3 ... WEND runs exactly 3x). The bare-WEND errnum 25 capture was confirmed live 2026-06-23 (sb-oracle structural-error |err probe): a stray WEND with no open WHILE raises errnum 25 (WEND without WHILE) — not generic Syntax error 3." }
 
 confidence: hw_verified
 

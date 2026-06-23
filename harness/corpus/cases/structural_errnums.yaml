@@ -1,0 +1,19 @@
+# Block-structure mismatch errnums — hw_verified via the sb-oracle skill (real SB 3.6.0),
+# structural-error |err probe 2026-06-23. Unmatched control-flow keywords raise their
+# DEDICATED errnum from the error table (spec/reference/errors.yaml, @0x3054f8) — NOT the
+# generic Syntax error 3. Two families:
+#   stray CLOSER  (no matching opener) : NEXT->21, WEND->25, UNTIL->23
+#   unterminated OPENER (no closer, EOF first) : FOR->20, WHILE->24, REPEAT->22, DEF->29
+# All seven match sb-core's parser (Parser::structural_error). The earlier batch run reported
+# errnum 0 for a lone NEXT as the batch's first case — a bisect artifact; a focused re-probe
+# (NEXT, NEXT I, ?1:NEXT, NEXT:NEXT) all returned errnum 21 errline 1, confirming the spec.
+cases:
+  # stray closing keywords
+  - { name: next_without_for,    code: "NEXT",              expect: { error: { errnum: 21 } } }
+  - { name: wend_without_while,  code: "WEND",              expect: { error: { errnum: 25 } } }
+  - { name: until_without_repeat, code: "UNTIL 1",          expect: { error: { errnum: 23 } } }
+  # unterminated opening keywords (block ends / EOF before the closer)
+  - { name: for_without_next,    code: "FOR I=0 TO 3\nPRINT I", expect: { error: { errnum: 20 } } }
+  - { name: while_without_wend,  code: "WHILE 1\nPRINT 1",  expect: { error: { errnum: 24 } } }
+  - { name: repeat_without_until, code: "REPEAT\nPRINT 1",  expect: { error: { errnum: 22 } } }
+  - { name: def_without_end,     code: "DEF F\nA=1",        expect: { error: { errnum: 29 } } }

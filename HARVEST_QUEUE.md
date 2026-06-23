@@ -844,16 +844,20 @@ oracle to confirm exact output and promote to `hw_verified`.
   (`A%=1:B#=2.34567:SWAP A%,B# -> A%=2,B#=1`); folded into swap.yaml + harness/corpus/cases/
   swap.yaml. This advanced otya line 127 → 207 (`CALL "SPDEF"`, sprite — M3, the next blocker).
 
-## M1-T14 / block-structure mismatch errnums — queued 2026-06-23
-- Parser now raises dedicated structural errnums (was generic Syntax error 3) for unmatched
-  control-flow keywords, per the **disassembled** error table (`errors.yaml`, errnum→string
-  ptr table @0x3054f8): NEXT without FOR=21, WEND without WHILE=25, UNTIL without REPEAT=23,
+## M1-T14 / block-structure mismatch errnums — RESOLVED 2026-06-23
+- Parser raises dedicated structural errnums (was generic Syntax error 3) for unmatched
+  control-flow keywords, per the error table (`errors.yaml`, errnum→string ptr table
+  @0x3054f8): NEXT without FOR=21, WEND without WHILE=25, UNTIL without REPEAT=23,
   FOR without NEXT=20, WHILE without WEND=24, REPEAT without UNTIL=22, DEF without END=29.
-  The errnum NAMES are disassembled; that real SB raises THESE (and not 3) for each
-  malformed form is **not yet oracle-confirmed** — grounded only in the error-table names.
-  Queue: oracle `|err` probes for each (`NEXT`, `WEND`, `UNTIL 1`, `FOR I=0 TO 3`+no NEXT,
-  `WHILE 1`+no WEND, `REPEAT`+no UNTIL, `DEF F`+no END). Assumption: errnum = table name.
-  ENDIF/ELSE/THEN stray (28/27/26) left as generic 3 — unspecced, also queue if probing.
+- **All seven CONFIRMED hw_verified** via sb-oracle structural-error `|err` probes 2026-06-23:
+  `NEXT`→21, `WEND`→25, `UNTIL 1`→23, `FOR I=0 TO 3`(no NEXT)→20, `WHILE 1`(no WEND)→24,
+  `REPEAT`(no UNTIL)→22, `DEF F`(no END)→29. Every one matches the disassembled table AND
+  sb-core, so real SB raises THESE (not generic 3). (The batch's first case `NEXT` reported
+  errnum 0 once — a bisect artifact; a focused re-probe of `NEXT`/`NEXT I`/`?1:NEXT`/`NEXT:NEXT`
+  all returned 21 errline 1.) Sources raised to `hw_verified` in for/while/repeat/wend.yaml
+  (next/until/def were already hw_verified for these); consolidated fixture
+  `harness/corpus/cases/structural_errnums.yaml` (7 cases) replays them in the hermetic gate.
+- Still queued: stray ENDIF/ELSE/THEN (28/27/26) — left as generic 3, unspecced; probe if needed.
 
 ## M1-T14 / array-element references — RESOLVED 2026-06-23
 - Fixed: `Op::PushArrayRef` is now wired in the VM (was `VmError::Unsupported`). A new

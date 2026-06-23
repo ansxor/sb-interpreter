@@ -21,6 +21,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/repeat.md, until.md (executes the process before determining the condition; exits when the condition is satisfied)" }
   - { type: disassembled, ref: "cia_3.6.0.lst REPEAT/UNTIL are parser keywords (tokens REPEAT @0x2ed588, UNTIL @0x2ed574), not in the builtin dispatch table; compiled to body + bottom-of-loop test + back-jump" }
   - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: REPEAT ... UNTIL 1 runs the body once (bottom-tested); REPEAT ... UNTIL C>=3 (incrementing C) runs exactly 3x. See [[until]]." }
+  - { type: hw_verified, ref: "sb-oracle structural-error probe 2026-06-23 (|err): an unterminated REPEAT (REPEAT with no UNTIL) raises errnum 22 (REPEAT without UNTIL) — not generic Syntax error 3. See [[until]]." }
 
 confidence: hw_verified
 

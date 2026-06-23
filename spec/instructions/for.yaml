@@ -29,6 +29,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/for.md, to.md, step.md (FOR var=init TO end [STEP inc]; 'may not be executed at all'; STEP default 1)" }
   - { type: disassembled, ref: "cia_3.6.0.lst FOR/TO/STEP/NEXT are parser keywords (not in builtin dispatch table); tokens in the compiler keyword table (NEXT @0x2ed6e0, STEP @0x2ee638); compiled to an init + top-of-loop compare + body + increment + back-jump" }
   - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22 (error-as-signal, : -chained programs): FOR I=1 TO 3 runs 3x (S==3) and leaves I=4; FOR I=0 TO 9 STEP 2 runs 5x and leaves I=10; FOR I=5 TO 1 (default +1) runs 0x (top-checked); FOR I=5 TO 1 STEP -1 runs (counts down, leaves I=0); FOR I=1 TO 5 STEP -1 runs 0x. STEP default 1 confirmed." }
+  - { type: hw_verified, ref: "sb-oracle structural-error probe 2026-06-23 (|err): an unterminated FOR (FOR I=0 TO 3 with no NEXT) raises errnum 20 (FOR without NEXT) — not generic Syntax error 3. See [[next]]." }
 
 confidence: hw_verified
 

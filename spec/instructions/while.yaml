@@ -23,6 +23,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/while.md (repeats up to WEND while satisfied; same conditions as IF)" }
   - { type: disassembled, ref: "cia_3.6.0.lst WHILE/WEND are parser keywords (tokens WHILE @0x2ed708, WEND @0x2ed608), not in the builtin dispatch table; compiled to a top-of-loop test + body + back-jump" }
   - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22 (error-as-signal): WHILE 0 runs 0x (top-tested); WHILE C<3 (incrementing C) runs exactly 3x. See [[wend]]." }
+  - { type: hw_verified, ref: "sb-oracle structural-error probe 2026-06-23 (|err): an unterminated WHILE (WHILE 1 with no WEND) raises errnum 24 (WHILE without WEND) — not generic Syntax error 3. See [[wend]]." }
 
 confidence: hw_verified
 
