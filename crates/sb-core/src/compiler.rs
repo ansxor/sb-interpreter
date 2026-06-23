@@ -60,6 +60,7 @@ type CResult<T> = Result<T, CompileError>;
 const ERR_SYNTAX: u32 = 3;
 const ERR_UNDEFINED_LABEL: u32 = 14;
 const ERR_UNDEFINED_VARIABLE: u32 = 15;
+const ERR_DUPLICATE_VARIABLE: u32 = 18;
 
 /// A predicate naming the builtin functions/commands known to the compiler, so a
 /// bare-name use (`PI`) or paren call (`RND(8)`) of a builtin is compiled as a call
@@ -144,6 +145,9 @@ struct FuncScope {
     out_params: Vec<Name>,
     returns_value: bool,
     is_common: bool,
+    /// Names explicitly declared via `DIM`/`VAR` in this function scope, to reject a
+    /// second declaration of the same name → errnum 18 (Duplicate variable).
+    declared: HashSet<Name>,
 }
 
 /// A loop's break/continue backpatch targets.
@@ -166,6 +170,9 @@ struct Compiler<'a> {
     user_funcs: HashSet<String>,
     /// The function body currently being compiled, if any.
     func: Option<FuncScope>,
+    /// Names explicitly declared via `DIM`/`VAR` at top level, to reject a second
+    /// declaration of the same name → errnum 18 (Duplicate variable).
+    declared_global: HashSet<Name>,
     /// Per-scope label table + pending references (reset for each function).
     labels: Vec<(String, usize)>,
     fixups: Vec<LabelFixup>,
@@ -189,6 +196,7 @@ impl<'a> Compiler<'a> {
             options: OptionFlags::default(),
             user_funcs: HashSet::new(),
             func: None,
+            declared_global: HashSet::new(),
             labels: Vec::new(),
             fixups: Vec::new(),
             loops: Vec::new(),
@@ -473,6 +481,26 @@ impl<'a> Compiler<'a> {
         VarRef::Global((self.globals.len() - 1) as u32)
     }
 
+    /// Record an explicit `DIM`/`VAR` declaration of `name` in the current scope. A
+    /// second explicit declaration of the same name (the suffix is part of identity,
+    /// so `A` and `A%` are distinct) raises errnum 18 (Duplicate variable) at compile
+    /// time — hw_verified (sb-oracle 2026-06-22 s_t4a: `VAR Q=1:VAR Q=2` → 18). Only
+    /// `DIM`/`VAR` declarations are tracked here; params and auto-declared
+    /// (plain-reference) names are not, so re-declaring over them does not trip 18.
+    fn note_declaration(&mut self, name: &Name) -> CResult<()> {
+        let fresh = match &mut self.func {
+            Some(fs) => fs.declared.insert(name.clone()),
+            None => self.declared_global.insert(name.clone()),
+        };
+        if !fresh {
+            return Err(self.err(
+                ERR_DUPLICATE_VARIABLE,
+                format!("duplicate variable {}", canonical(name)),
+            ));
+        }
+        Ok(())
+    }
+
     fn err(&self, errnum: u32, msg: String) -> CompileError {
         CompileError {
             loc: self.cur_loc,
@@ -730,6 +758,8 @@ impl<'a> Compiler<'a> {
         for item in items {
             match item {
                 DimItem::Scalar { name, init } => {
+                    // A second explicit declaration of the same name → errnum 18.
+                    self.note_declaration(name)?;
                     // A VAR declaration binds the name in the current scope (local inside
                     // a DEF, shadowing any global; see `declare_decl`).
                     let v = self.declare_decl(name, false);
@@ -739,6 +769,8 @@ impl<'a> Compiler<'a> {
                     }
                 }
                 DimItem::Array { name, dims } => {
+                    // A second explicit declaration of the same name → errnum 18.
+                    self.note_declaration(name)?;
                     for d in dims {
                         self.compile_expr(d)?;
                     }
@@ -997,6 +1029,7 @@ impl<'a> Compiler<'a> {
             out_params: def.out_params.clone(),
             returns_value: def.returns_value,
             is_common: def.is_common,
+            declared: HashSet::new(),
         });
 
         let address = self.here();
@@ -1470,6 +1503,35 @@ mod tests {
     fn option_strict_undeclared_is_errnum_15() {
         let e = comp_err("OPTION STRICT\nX=1");
         assert_eq!(e.errnum, 15);
+    }
+
+    #[test]
+    fn duplicate_var_declaration_is_errnum_18() {
+        // hw_verified (sb-oracle 2026-06-22 s_t4a): `VAR Q=1:VAR Q=2` → 18.
+        assert_eq!(comp_err("VAR Q=1\nVAR Q=2").errnum, 18);
+        // DIM is interchangeable with VAR; a re-DIM is also a duplicate.
+        assert_eq!(comp_err("DIM A[3]\nDIM A[5]").errnum, 18);
+        // Two items on one line collide too.
+        assert_eq!(comp_err("VAR A=1,A=2").errnum, 18);
+    }
+
+    #[test]
+    fn distinct_suffix_is_not_a_duplicate() {
+        // The suffix is part of identity, so `A` and `A%` are different variables.
+        let p = comp("VAR A=1\nVAR A%=2");
+        assert!(p.global_index(&Name::new("A", Suffix::None)).is_some());
+        assert!(p.global_index(&Name::new("A", Suffix::Int)).is_some());
+    }
+
+    #[test]
+    fn redeclaration_is_scoped_per_function() {
+        // A global `VAR A` and a DEF-local `VAR A` do not collide (separate scopes);
+        // the DEF-local shadows the global. A duplicate *within* the DEF still → 18.
+        let p = comp("VAR A=1\nDEF F\nVAR A=2\nEND");
+        assert!(p.global_index(&Name::new("A", Suffix::None)).is_some());
+        assert_eq!(comp_err("DEF F\nVAR A=1\nVAR A=2\nEND").errnum, 18);
+        // A param is not a tracked declaration, so a body `VAR` over it does not trip 18.
+        let _ = comp("DEF F A\nVAR B=A\nEND");
     }
 
     #[test]

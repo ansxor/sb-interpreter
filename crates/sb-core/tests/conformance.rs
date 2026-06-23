@@ -48,12 +48,14 @@ const IN_SCOPE_CONTROL: &[&str] = &[
 /// `sb-core` fully implements — including the array-element reference forms (`SWAP A[i],A[j]`,
 /// `INC A[i]`, `DEC A[i]`) now that [`Op::PushArrayRef`] is wired (M1-T14 increment). Their
 /// inline `tests:` are deterministic + `console_text()`-comparable. NOT taken wholesale: the
-/// not-yet-built `COPY`/`FILL` (M7) are excluded by omission, and `VAR` is held back pending
-/// its duplicate-declaration errnum (18) — both queued in `HARVEST_QUEUE.md`. The `Data
-/// operations` (DATA named-const items) and `Console` (LOCATE cursor-positioned scrape, LINPUT
-/// function-form errnum) categories fold in with their own increments. Listed by id.
+/// not-yet-built `COPY`/`FILL` (M7) are excluded by omission. `VAR` is now in scope: its
+/// duplicate-declaration errnum (18) landed (M1-T14 increment 2026-06-23), so its inline
+/// `tests:` (incl. the `duplicate_error` 18 case) replay green. The `Data operations` (DATA
+/// named-const items) and `Console` (LOCATE cursor-positioned scrape, LINPUT function-form
+/// errnum) categories fold in with their own increments — queued in `HARVEST_QUEUE.md`.
+/// Listed by id.
 const IN_SCOPE_DATA_ARRAY_CONSOLE: &[&str] = &[
-    "DIM", "SORT", "RSORT", "PUSH", "POP", "SHIFT", "UNSHIFT", "SWAP", "INC", "DEC",
+    "DIM", "VAR", "SORT", "RSORT", "PUSH", "POP", "SHIFT", "UNSHIFT", "SWAP", "INC", "DEC",
 ];
 
 #[derive(Debug, Deserialize)]

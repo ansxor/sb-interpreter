@@ -858,10 +858,15 @@ oracle to confirm exact output and promote to `hw_verified`.
 ## M1-T14 / conformance widening — surfaced gaps queued 2026-06-23
 - Widening the conformance allowlist to the full Variables/Data/Console categories surfaced
   these (currently EXCLUDED from `IN_SCOPE_DATA_ARRAY_CONSOLE`; the array-mutation set is in):
-  - **VAR duplicate declaration** (`VAR Q=1` then `VAR Q=2`): var.yaml hw_verified expects
-    Duplicate variable (errnum 18); sb-core currently allows the re-declaration silently.
-    Fix: the compiler's `declare_decl` must reject a second `VAR`/`DIM` of the same name in
-    the same scope → 18.
+  - **VAR duplicate declaration** — RESOLVED 2026-06-23. The compiler now tracks names
+    explicitly declared via `DIM`/`VAR` per scope (`Compiler::note_declaration`, a per-scope
+    `HashSet<Name>` — `declared_global` + `FuncScope::declared`) and a second declaration of
+    the same name (suffix is part of identity) raises errnum 18 (Duplicate variable) at
+    compile time. Params and auto-declared (plain-reference) names are NOT tracked, so they
+    don't trip it; scopes are independent (a DEF-local `VAR A` doesn't collide with a global
+    `VAR A`). hw_verified anchor: sb-oracle 2026-06-22 s_t4a `VAR Q=1:VAR Q=2` → 18. `VAR` is
+    now in the conformance allowlist (`IN_SCOPE_DATA_ARRAY_CONSOLE`); var.yaml's inline
+    `tests:` (incl. `duplicate_error`) replay green. 3 new compiler unit tests.
   - **LINPUT used as a function** (`A=LINPUT("X")`): linput.yaml hw_verified expects Syntax
     error (3); sb-core raises 16 (the compiler treats it as an undefined call). Fix: parser
     should reject LINPUT in expression position → 3, like INPUT already does.
