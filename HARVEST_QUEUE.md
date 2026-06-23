@@ -762,3 +762,19 @@ oracle to confirm exact output and promote to `hw_verified`.
   type-mismatch-per-directive are oracle-pending (see format.yaml). Harvest a directive sweep.
 - **PI()/EXP()/CLASSIFY with-arg-count errors**: arg-count guards (PI with an arg → 4,
   CLASSIFY inf→1/NaN→2) follow the disassembly; harvest to raise to hw_verified.
+
+## M1-T10 — Console model + render (sb-render)
+- **Text palette exact ARGB (16 colors)**: `crates/sb-render/src/console.rs TEXT_PALETTE` is
+  the documented 16-color set cross-checked vs osb `consoleColor`, quantized to SB 3.6.0's
+  hw_verified 5-bit `<<3` device precision (white = `0xF8F8F8` matches hw_verified `#WHITE`).
+  The exact per-index text-layer ARGB on 3.6.0 (esp. whether the half-tones are `0x78` like
+  the quantized osb `0x7F`, and whether text bypasses 5-bit quantization) is unverified —
+  harvest via O-T6 composite screenshot capture (draw a COLOR ramp, screenshot, sample cells).
+- **ATTR rotation direction + compose order**: `attr_map` uses clockwise rotation then H/V
+  invert. Bit meanings are documented+disassembled (attr.yaml) but the rotation *direction*
+  (CW vs CCW) and rotate-then-flip vs flip-then-rotate ordering are oracle-pending — harvest
+  by PRINTing an asymmetric glyph under each `#TROT*`/`#TREVH`/`#TREVV` combo and screenshotting.
+- **Console font ROM glyphs**: `crates/sb-render/src/font.rs` is a self-contained placeholder
+  8×8 font (ASCII subset, lowercase folds to uppercase, no kana/kanji). The real SB glyphs are
+  a firmware ROM asset — harvest the font sheet (O-T6) so console goldens can be pixel-matched
+  against the emulator instead of being self-consistent only.
