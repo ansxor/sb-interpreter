@@ -896,8 +896,20 @@ oracle to confirm exact output and promote to `hw_verified`.
     guard (baked table == constants.yaml) + VM/parser unit tests. (Exact errnum for an
     UNDEFINED `#const` — e.g. `#NOTACONST` — is still oracle-pending; currently it falls
     through to the undeclared-variable path → 0.)
-  - **LOCATE stdout cases** (`LOCATE 20,15:PRINT "X"`): the inline `basic_xy`/`x_edge_50_ok`
-    cases `expect.stdout: "X"`, but `console_text()` scrapes the full grid, so the cursor
-    position prepends newlines/spaces. These are smoke cases (NOT hw_verified — the hw_verified
-    LOCATE cases are the bounds/errnum ones). Either rewrite the expectation to the positioned
-    scrape or compare a trimmed/cursor-relative view; decide when Console folds into scope.
+  - **Console output builtins folded in** (M1-T14 increment 2026-06-23): `PRINT`/`COLOR`/
+    `CLS`/`INKEY$` (the implemented `Console input/output` builtins, M1-T8) are now in the
+    conformance allowlist (`IN_SCOPE_CONSOLE`); their inline `tests:` (origin-printed stdout +
+    fg/bg range errnums + empty-INKEY$) replay green. Still EXCLUDED, each its own future
+    increment:
+    - **LOCATE positioned stdout** (`LOCATE 20,15:PRINT "X"` → `basic_xy`/`x_edge_50_ok`,
+      `expect.stdout: "X"`): `console_text()` scrapes the full grid, so the cursor position
+      prepends `\n`/spaces — `basic_xy` scrapes to `"\n"*15 + " "*20 + "X"`, and `x_edge_50_ok`
+      (`LOCATE 50,0`) scrapes to `"\nX"` because column 50 (a valid LOCATE x — max is 50, not
+      49) is past the 50-wide grid's last column (0–49) so the `PRINT` wraps to the next row.
+      The column-50 line-wrap is plausible but UNVERIFIED; the value-oracle captures VALUE not
+      console text (S-T5a), so neither the positioned whitespace nor the wrap has a golden.
+      Harvest the console-grid scrape (screenshot/console-memory path) to confirm, then bake
+      the exact positioned expectations and add `LOCATE` to `IN_SCOPE_CONSOLE`.
+    - **ATTR/CHKCHR/FONTDEF/SCROLL/WIDTH builtins** (S-T5c) are not implemented in sb-core yet;
+      their inline `tests:` (incl. hw_verified errnum 4/10/31 + `CHKCHR`/`WIDTH` value cases)
+      fold into `IN_SCOPE_CONSOLE` once those builtins land.

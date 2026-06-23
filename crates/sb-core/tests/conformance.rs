@@ -14,10 +14,14 @@
 //!    **Mathematics** and **Strings** (M1-T7), the bit/logic operators `AND/OR/XOR/DIV/MOD`
 //!    (M1-T6 / S-T6a), and the implemented **Control** flow (M1-T8 + parser/compiler:
 //!    IF/FOR/WHILE/REPEAT/GOTO/GOSUB/ON/… — see `IN_SCOPE_CONTROL`; `CALL`/`COMMON`/`XON`/
-//!    `XOFF` are later-milestone and excluded). These produce a comparable `console_text()`
-//!    (or a checkable errnum). Console/graphics/etc. instructions are intentionally out of
-//!    scope here (their behavior is grid/page state, exercised by the VM unit tests + corpus
-//!    cases) and are folded in as their milestones land.
+//!    `XOFF` are later-milestone and excluded), the array/variable mutation set (`DIM`/`VAR`/
+//!    `DATA`/`SORT`/`SWAP`/`INC`/… — see `IN_SCOPE_DATA_ARRAY_CONSOLE`), and the implemented
+//!    **Console input/output** output builtins (`PRINT`/`COLOR`/`CLS`/`INKEY$` — see
+//!    `IN_SCOPE_CONSOLE`; `LOCATE`'s positioned scrape + the `ATTR`/`CHKCHR`/`FONTDEF`/
+//!    `SCROLL`/`WIDTH` builtins fold in with their own increments). These produce a comparable
+//!    `console_text()` (or a checkable errnum). Graphics/sprite/BG/etc. instructions are
+//!    intentionally out of scope here (their behavior is page/layer state, exercised by the VM
+//!    unit tests + corpus cases) and are folded in as their milestones land.
 //!
 //! Self-checking `ASSERT__` programs are replayed by [`assert_programs_pass`] below.
 
@@ -62,6 +66,16 @@ const IN_SCOPE_DATA_ARRAY_CONSOLE: &[&str] = &[
     "DIM", "VAR", "DATA", "SORT", "RSORT", "PUSH", "POP", "SHIFT", "UNSHIFT", "SWAP", "INC", "DEC",
     "INPUT", "LINPUT",
 ];
+/// `Console input/output` instructions whose builtins `sb-core` implements (M1-T8) and whose
+/// inline `tests:` are deterministic + `console_text()`-comparable: `PRINT` (formatting),
+/// `COLOR` (fg/bg set + range errnums), `CLS` (clears the grid), and `INKEY$` (empty-buffer
+/// `""`). The category is NOT taken wholesale by id: `LOCATE`'s *positioned*-output smoke
+/// cases (`LOCATE 20,15:PRINT "X"`) scrape to leading-whitespace/`\n`-prefixed text and its
+/// `x_edge_50` case exposes a column-50 line-wrap, both oracle-pending (the value-oracle
+/// captures VALUE, not console text — see S-T5a / `HARVEST_QUEUE.md`); `ATTR`/`CHKCHR`/
+/// `FONTDEF`/`SCROLL`/`WIDTH` builtins are not implemented yet (S-T5c). Those fold in with
+/// their own increments. Listed by id.
+const IN_SCOPE_CONSOLE: &[&str] = &["PRINT", "COLOR", "CLS", "INKEY$"];
 
 #[derive(Debug, Deserialize)]
 struct CaseFile {
@@ -206,6 +220,7 @@ fn in_scope_instruction_specs_pass() {
     let in_scope_ops: BTreeSet<&str> = IN_SCOPE_OPERATORS.iter().copied().collect();
     let in_scope_control: BTreeSet<&str> = IN_SCOPE_CONTROL.iter().copied().collect();
     let in_scope_dac: BTreeSet<&str> = IN_SCOPE_DATA_ARRAY_CONSOLE.iter().copied().collect();
+    let in_scope_console: BTreeSet<&str> = IN_SCOPE_CONSOLE.iter().copied().collect();
 
     let mut fails = Vec::new();
     let mut count = 0usize;
@@ -221,7 +236,8 @@ fn in_scope_instruction_specs_pass() {
             .is_some_and(|c| in_scope_cats.contains(c))
             || in_scope_ops.contains(spec.id.as_str())
             || in_scope_control.contains(spec.id.as_str())
-            || in_scope_dac.contains(spec.id.as_str());
+            || in_scope_dac.contains(spec.id.as_str())
+            || in_scope_console.contains(spec.id.as_str());
         if !in_scope {
             continue;
         }
