@@ -54,10 +54,13 @@ const IN_SCOPE_CONTROL: &[&str] = &[
 /// items (numbers, strings, const-exprs, `&H` hex, and `#NAME` named constants — the
 /// `data_named_const` case `DATA #L` → 256) all parse/fold (M1-T14 increment, `#NAME`
 /// resolution via `sb_core::consts`). Still folding in with their own increments: the
-/// `Console` LOCATE cursor-positioned scrape + LINPUT function-form errnum — queued in
-/// `HARVEST_QUEUE.md`. Listed by id.
+/// `Console` LOCATE cursor-positioned scrape — queued in `HARVEST_QUEUE.md`. `INPUT`/`LINPUT`
+/// are in scope for their *error* inline tests only (the literal-receiver / function-form
+/// Syntax error 3, both hw_verified); their read forms block on live input and have no
+/// deterministic golden. Listed by id.
 const IN_SCOPE_DATA_ARRAY_CONSOLE: &[&str] = &[
     "DIM", "VAR", "DATA", "SORT", "RSORT", "PUSH", "POP", "SHIFT", "UNSHIFT", "SWAP", "INC", "DEC",
+    "INPUT", "LINPUT",
 ];
 
 #[derive(Debug, Deserialize)]

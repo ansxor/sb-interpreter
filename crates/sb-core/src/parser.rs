@@ -1358,6 +1358,16 @@ impl Parser {
 
     fn parse_primary(&mut self) -> PResult<Expr> {
         let loc = self.cur_loc();
+        // A statement-only command keyword (PRINT/INPUT/LINPUT/FOR/…) can never be
+        // a value: SmileBASIC rejects it in expression position with a Syntax error
+        // (errnum 3) *before* the handler runs — e.g. `A=LINPUT("X")` is errnum 3,
+        // not the undefined-call errnum 16 it would get if parsed as `Call{LINPUT}`
+        // (hw_verified: sb-oracle s_t5b 2026-06-22, linput.yaml). The same predicate
+        // that ends an abutting statement marks exactly these keywords; `VAR(x)` and
+        // the word operators are deliberately excluded (see `cur_starts_statement`).
+        if self.cur_starts_statement() {
+            return Err(self.syntax_error("expected an expression, found a command keyword"));
+        }
         match self.cur_kind().clone() {
             TokenKind::Int(n) => {
                 self.advance();
@@ -2140,6 +2150,33 @@ mod tests {
         ] {
             let err = parse(src).expect_err(&format!("`{src}` should fail"));
             assert_eq!(err.errnum, want, "`{src}` errnum");
+        }
+    }
+
+    /// A statement-only command keyword used in expression position is a Syntax error
+    /// (errnum 3), raised before any handler runs — NOT the undefined-call errnum 16 it
+    /// would get if parsed as a `Call`. `A=LINPUT("X")`→3 is hw_verified (sb-oracle s_t5b
+    /// 2026-06-22, linput.yaml); `INPUT` is the symmetric form (oracle-pending).
+    #[test]
+    fn command_keyword_in_expression_position_is_syntax_error() {
+        for src in [
+            r#"A=LINPUT("X")"#, // LINPUT as a function (hw_verified → 3, was 16)
+            r#"A=INPUT("X")"#,  // INPUT as a function (symmetric)
+            "A=PRINT",          // a bare statement keyword as a value
+            "B=1+FOR",          // statement keyword mid-expression
+        ] {
+            let err = parse(src).expect_err(&format!("`{src}` should fail"));
+            assert_eq!(err.errnum, 3, "`{src}` should be Syntax error (3)");
+        }
+    }
+
+    /// The guard must not swallow legitimate expression forms that share a name with a
+    /// command: `VAR(x)` is a by-reference expression, and the word operators are not
+    /// statement keywords (`cur_starts_statement` excludes both).
+    #[test]
+    fn expression_lookalikes_still_parse() {
+        for src in ["A=VAR(B)", "A=1 AND 2", "A=NOT 0", "A=3 MOD 2"] {
+            parse(src).unwrap_or_else(|e| panic!("`{src}` should parse, got errnum {}", e.errnum));
         }
     }
 

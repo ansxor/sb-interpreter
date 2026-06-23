@@ -1,0 +1,17 @@
+# INPUT / LINPUT — rejected in expression position (Syntax error, errnum 3).
+# A statement-only command keyword can never be a value: SmileBASIC raises errnum 3
+# at parse time, BEFORE the handler's own argument-shape guard (errnum 4) runs — so
+# `A=LINPUT("X")` is 3, not the undefined-call errnum 16 it would get if parsed as a
+# call. linput.yaml hw_verified (sb-oracle s_t5b 2026-06-22: `A=LINPUT("X")` → 3);
+# input.yaml hw_verified for the literal-receiver statement form (`INPUT "X";1` → 3).
+# The INPUT *function* form (`A=INPUT("X")`) is the symmetric case — oracle-pending.
+cases:
+  - name: linput_as_function_is_syntax_error
+    code: 'A=LINPUT("X")'
+    expect: { error: { errnum: 3 } }
+  - name: input_literal_receiver_is_syntax_error
+    code: 'INPUT "X";1'
+    expect: { error: { errnum: 3 } }
+  - name: input_as_function_is_syntax_error
+    code: 'A=INPUT("X")'
+    expect: { error: { errnum: 3 } }

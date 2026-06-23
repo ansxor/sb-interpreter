@@ -874,9 +874,17 @@ oracle to confirm exact output and promote to `hw_verified`.
     `VAR A`). hw_verified anchor: sb-oracle 2026-06-22 s_t4a `VAR Q=1:VAR Q=2` → 18. `VAR` is
     now in the conformance allowlist (`IN_SCOPE_DATA_ARRAY_CONSOLE`); var.yaml's inline
     `tests:` (incl. `duplicate_error`) replay green. 3 new compiler unit tests.
-  - **LINPUT used as a function** (`A=LINPUT("X")`): linput.yaml hw_verified expects Syntax
-    error (3); sb-core raises 16 (the compiler treats it as an undefined call). Fix: parser
-    should reject LINPUT in expression position → 3, like INPUT already does.
+  - **LINPUT used as a function** (`A=LINPUT("X")`) — RESOLVED 2026-06-23. `parse_primary`
+    now rejects any statement-only command keyword in expression position with a Syntax error
+    (3) before the handler runs (the `cur_starts_statement` predicate already marks exactly
+    these keywords; `VAR(x)` + word operators are excluded). This fixes `A=LINPUT("X")` → 3
+    (was 16; linput.yaml hw_verified s_t5b 2026-06-22) AND the symmetric `A=INPUT("X")` → 3.
+    `INPUT`/`LINPUT` are now in the conformance allowlist (`IN_SCOPE_DATA_ARRAY_CONSOLE`) for
+    their error inline tests. New `harness/corpus/cases/input_linput.yaml` (3 cases) + 2 parser
+    unit tests (`command_keyword_in_expression_position_is_syntax_error`,
+    `expression_lookalikes_still_parse`). **Still oracle-pending:** the INPUT *function* form
+    `A=INPUT("X")` → 3 is implemented by symmetry but NOT hw_verified (only the literal-receiver
+    statement form `INPUT "X";1` → 3 is); confirm `A=INPUT("X")` on the oracle to raise it.
   - **DATA named-constant items** (`DATA #L` → 256) — RESOLVED 2026-06-23. Implemented
     `#NAME` named-constant resolution: the parser now folds every built-in `#NAME` to its
     inline Integer value via a new baked table `sb_core::consts` (all 79 values from the
