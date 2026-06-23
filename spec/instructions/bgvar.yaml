@@ -1,0 +1,57 @@
+id: BGVAR
+kind: statement
+category: BG
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — write an internal variable (statement, no OUT).
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+      - { name: variable_number, type: integer, range: "0..7", desc: "Which of the layer's eight internal variables to write." }
+      - { name: value, type: number, range: "any", desc: "Numerical value to store. Stored as a double in the layer record." }
+    note: "BGVAR layer, varnum, value — write one of the layer's eight internal variables."
+  # Form 2 — read an internal variable as a function.
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+      - { name: variable_number, type: integer, range: "0..7", desc: "Which internal variable to read." }
+    returns: { type: number, desc: "The value previously stored with BGVAR (0 if never written)." }
+    note: "value = BGVAR(layer, varnum) — read an internal variable (function form, return-count 1)."
+  # Form 3 — read an internal variable into an OUT variable.
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+      - { name: variable_number, type: integer, range: "0..7", desc: "Which internal variable to read." }
+    out:
+      - { name: value, type: number, desc: "Receives the value of the internal variable." }
+    note: "BGVAR layer, varnum OUT value — read an internal variable into a variable (out-count 1)."
+
+summary: "Reads or writes one of a BG layer's eight per-layer internal variables (numbered 0-7). Each BG layer carries eight scratch variables for the program's own use; they are stored as doubles and are independent of the layer's transform/animation state. Three forms: a setter `BGVAR L,n,v`, a function reader `v=BGVAR(L,n)`, and an OUT reader `BGVAR L,n OUT v`. Variable 7 is also the channel used by BGANIM target \"V\"."
+
+semantics:
+  - "Argument-count gate: argcount = [r4,#0x4] (r0) must be >= 1; cmp r0,#0x1 / blt 0x164a5c — a bare BGVAR with no arguments raises errnum 4 (Illegal function call) via the shared error path mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / bl 0x1fffdc @0x164a5c-0x164a68 (errline -1)."
+  - "Form selection is driven by the OUT/return count [r4,#0xc] (r1): with 0 (r1==0) the call is the setter (form 1), which additionally requires argcount==3 (cmp r0,#0x3 / beq 0x164a74 @0x164a54); with a result count (r1==1) AND argcount==2 the call is a reader (cmp r1,#0x1 / cmpeq r0,#0x2 / beq 0x164b68 @0x164a44-0x164a4c) — this single (argcount==2, result-count==1) shape covers BOTH the function form `v=BGVAR(L,n)` and the OUT form `BGVAR L,n OUT v` (the handler cannot distinguish them). Any other shape falls through to errnum 4."
+  - "Layer is evaluated and range-checked by the shared BG-layer getter FUN_001e2504 (bl 0x1e2504 @0x164a84); a value < 0 or >= 4 raises errnum 10 (Out of range). The setter path then evaluates the variable number and value as integers/doubles via the operand getters (blx [obj,#0x40] / [obj,#0x44] @0x164aa4/@0x164ad4)."
+  - "Variable-number range IS explicitly guarded (unlike sprite SPVAR): for the setter, ldr r0,[sp,#0x0] / cmp r0,#0x0 / blt 0x164b24 / cmp r0,#0x7 / ble 0x164ac0 @0x164b10-0x164b20; a variable number < 0 or > 7 raises errnum 10 (Out of range) (mov r0,#0xa / bl 0x1fffdc @0x164b2c)."
+  - "The eight internal variables are stored as consecutive doubles in the layer record. The slot address is base[[0x315d60]+0x5c] + (layer + ...) with the per-layer stride 0xe3*8 (mov r1,#0xe3 / mul / add r0,r6,r0,lsl#0x3 @0x164aec-0x164b04). Writing variable 7 specifically clears layer flag bit 0x20 (cmp r2,#0x7 / bic r1,r1,#0x20 [layer+0x0] @0x164af0/@0x164b44) before the strd of the value — i.e. variable 7 doubles as the BGANIM \"V\" channel marker. Variables 0-6 just store/load the double."
+  - "Like sprite SPVAR, BGVAR has no BGSCREEN/setup requirement: the eight variables exist for every layer 0..3 and can be read or written at any time (default 0). The third literal pool slot is a per-layer flag-table pointer used by the var-7 special case (literals [0x164c24]/[0x164c28]/[0x164c2c])."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "no arguments are supplied, or the argument/result-count shape matches none of the three forms (setter needs 3 args + no result; reader needs 2 args + 1 result)" }
+  - { errnum: 10, name: "Out of range", when: "the layer is not in 0..3, or the variable number is not in 0..7" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgvar.md (3 forms: `BGVAR Layer,varnum,value` write; `V=BGVAR(Layer,varnum)` function read; `BGVAR Layer,varnum OUT V` read. 'User variables; there are eight variables for each BG layer'; Layer 0-3; Internal variable number 0-7)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGVAR handler @0x164a14: argcount gate cmp r0,#0x1 blt 0x164a5c (r0=[r4,#0x4]); error path mov r2,#0x0 mvn r1,#0x0 mov r0,#0x4 bl 0x1fffdc @0x164a5c (errnum 4 errline -1); form select on result-count r1=[r4,#0xc] — setter r1==0 + argcount==3 @0x164a54, reader r1==1 + argcount==2 @0x164a44 (covers both function and OUT forms); layer via FUN_001e2504 bl 0x1e2504 @0x164a84 (errnum 10 out of range); var-number range guard cmp r0,#0 blt @0x164b24 / cmp r0,#0x7 ble @0x164ac0 else mov r0,#0xa bl 0x1fffdc errnum 10 @0x164b2c; slot base [[0x315d60]+0x5c] stride mov r1,#0xe3 mul lsl#3 add r0,r6,r0,lsl#0x3 @0x164b04; var 7 special cmp r2,#0x7 bic r1,r1,#0x20 [layer+0x0] @0x164b44. Literals [0x164c24]/[0x164c28]/[0x164c2c]." }
+  - { type: community, ref: "osb/SMILEBASIC/bg.d BG per-layer user variables (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGVAR'): 14 files, 166 lines — all three forms appear. Setter `BGVAR 0,7,&H7FFFFFFF` (DK384E4S/TXT/GAME) and `BGVAR 0,_XY,(TX<<16)OR TY` (EDD3E3GJ/TXT/HNZRDJ); function read `Y=BGVAR(I%,cBG_VY%)-BGVAR(I%,cBG_DY%)` and `IF BGVAR(2,cBG_ST%)<0 THEN RETURN` (2XVV233J/TXT/GAME.PRG); variable layer/slot operands `BGVAR I%,cBG_VY%,Y`, `BGVAR _I%,_J%,0` (DK384E4S/TXT/GAME). Variable numbers are constants/vars resolving to 0-7; no var number >= 8 and no layer > 3 observed. Proves the syntax of all three forms is legal." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9d): BGVAR(0,0) -> 0 (default zero, readable with no BGSCREEN setup — confirms layers 0..3 exist by default); BGVAR 4,0,1 -> errnum 10 (layer out of range); BGVAR 0,8,1 -> errnum 10 (variable number out of range, confirming the disassembled 0..7 guard). All errlines 1. The write-then-read round-trip (setter persistence) is oracle-pending — the value harvester evaluates a single expression and cannot run the BGVAR setter statement first; queued in HARVEST_QUEUE.md." }
+
+confidence: disassembled
+
+tests:
+  # Default-zero read + range errors hw_verified (sb-oracle s_t9d). Round-trip setter persistence is oracle-pending (queued) but follows directly from the disassembled strd/ldrd of a double.
+  - { name: read_default_zero, code: "PRINT BGVAR(0,0)", expect: { stdout: "0\n" } }
+  - { name: write_basic, code: "BGSCREEN 0,32,32\nBGVAR 0,7,1", expect: { stdout: "" } }
+  - { name: write_read_roundtrip, code: "BGSCREEN 0,32,32\nBGVAR 0,3,7\nPRINT BGVAR(0,3)", expect: { stdout: "7\n" } }
+  - { name: out_read, code: "BGSCREEN 0,32,32\nBGVAR 0,5,42\nBGVAR 0,5 OUT V\nPRINT V", expect: { stdout: "42\n" } }
+  - { name: layer_out_of_range, code: "BGVAR 4,0,1", expect: { error: { errnum: 10 } } }
+  - { name: varnum_out_of_range, code: "BGSCREEN 0,32,32\nBGVAR 0,8,1", expect: { error: { errnum: 10 } } }

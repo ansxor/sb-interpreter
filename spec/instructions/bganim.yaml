@@ -1,0 +1,61 @@
+id: BGANIM
+kind: statement
+category: BG
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — animation data supplied in a numeric array.
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+      - { name: target, type: any, desc: "Animation target: a number or the matching string. 0/\"XY\" XY-coords, 1/\"Z\" Z-coord, 4/\"R\" rotation, 5/\"S\" magnification XY, 6/\"C\" display color, 7/\"V\" BG internal variable 7. Add 8 to the number (or suffix the string with \"+\") to make the values RELATIVE to the runtime value. (Unlike sprites, BG has NO UV(2) or definition-I(3) channel.)" }
+      - { name: data, type: num_array, desc: "1-D numeric array holding the keyframes in the order Time1,Item1[,Item2],Time2,Item1[,Item2],... (XY/S take 2 items per keyframe; Z/R/C/V take 1). Up to 32 keyframes." }
+      - { name: loop, type: integer, optional: true, default: 1, desc: "Loop count (1+). 0 means loop endlessly." }
+    note: "BGANIM layer, target, data_array [,loop] — animate from an array."
+  # Form 2 — animation data read from DATA statements via an @label string.
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+      - { name: target, type: any, desc: "Animation target (see form 1)." }
+      - { name: label, type: string, desc: "\"@Label\" string naming the first DATA line of the animation. The first DATA value is the keyframe count, then Time,Item[,Item] per keyframe." }
+      - { name: loop, type: integer, optional: true, default: 1, desc: "Loop count (1+). 0 means endless." }
+    note: "BGANIM layer, target, \"@LABEL\" [,loop] — animate from DATA."
+  # Form 3 — animation data given inline as a variable-length argument list.
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+      - { name: target, type: any, desc: "Animation target (see form 1)." }
+      - { name: keyframes, type: varargs, desc: "Inline keyframes: Time1,Item1[,Item2][,Time2,Item1[,Item2]]... Up to 32 keyframes." }
+      - { name: loop, type: integer, optional: true, default: 1, desc: "Loop count (1+). 0 means endless." }
+    note: "BGANIM layer, target, Time,Item[,Item],... [,loop] — animate inline."
+
+summary: "Defines and starts a BG-layer animation: a sequence of up to 32 keyframes that vary one target channel (XY position, Z, rotation R, magnification S, color C, or internal variable V) over time. Each keyframe is a Time followed by 1 or 2 Items; a POSITIVE time holds for that many frames, a NEGATIVE time linearly interpolates over that many frames (smooth). Adding 8 to the numeric target (or suffixing the string target with \"+\") makes the items RELATIVE to the layer's current runtime value. Data can come from a numeric array, an \"@label\" pointing at DATA lines, or an inline argument list. The animation begins on the frame after BGANIM. Requires at least 3 arguments and returns nothing; a layer outside 0..3 raises an error."
+
+semantics:
+  - "Argument-count / return-count gate: r5=argcount [r0,#0x4], the return count is [r7,#0xc]. The handler requires argcount>=3 AND return-count==0 (cmp r5,#0x3 / ldrge r0,[r7,#0xc] / cmpge r0,#0x0 / beq @0x164c78); anything else raises errnum 4 (Illegal function call) with errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / bl 0x1fffdc @0x164c60-0x164c6c)."
+  - "Layer is evaluated and range-checked by the shared BG-layer getter FUN_001e2504 (bl 0x1e2504 @0x164c88); a value < 0 or >= the live BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) with errline 1 (mov r0,#0xa inside FUN_001e2504 @0x1e2560). Unlike sprites there is NO active-bit / BGSCREEN guard — BG layers 0..3 always exist."
+  - "Target may be a number OR a string. The handler reads the target operand's type byte (ldr r3,[r7,#0x8] / ldr r0,[r3,#0x10] / ldrb r1,[r0,#0x0] @0x164c98-0x164ca4): type 0 or 1 is a number (branch @0x164cd0), type 4 or 5 is a string (branch @0x164cfc). Any other type raises errnum 8 (Type mismatch) with errline 1 (mov r2,#0x0 / mov r1,#0x1 / mov r0,#0x8 @0x164cc0-0x164cc8). A string target ('XY','Z','R','S','C','V', optionally with a trailing '+') is parsed to a number via FUN_001836cc (bl 0x1836cc @0x164d30) — the SAME target-name parser sprites use."
+  - "The resolved target is validated non-negative: ldr r1,[sp,#0x2c] / cmp r1,#0x0 / bge @0x164d78; a negative result raises errnum 4 with errline 1 (mov r1,#0x1 / mov r0,#0x4 / bl 0x1fffdc @0x164d44-0x164d50)."
+  - "Relative flag and channel: and r0,r1,#0x7 masks the target to the channel 0..7 (str [sp,#0x2c] @0x164d7c-0x164d80); mov r12,r1, lsl #0x1c isolates bit 3 (the +8 / '+' relative flag) and cmp r0,#0x8 tests the relative add (@0x164d90-0x164d9c). A per-channel switch builds the keyframe list for the chosen channel and sets that channel's anim-active flag in the layer record."
+  - "Keyframe data is read from the variadic/array/DATA source for the chosen channel (XY/S = 2 items per keyframe, Z/R/C/V = 1) using each layer's current runtime value as the base for relative animation. Up to 32 keyframes per target (documented cap). Time is the per-keyframe duration: positive = hold that many frames, negative = linear interpolation over |time| frames. The per-layer record stride is 0xe3*8 bytes from base [[0x315d60]+0x5c] (mov r3,#0xe3 / mul / ... @0x164d8c-0x164da0)."
+  - "The animation starts on the frame FOLLOWING the BGANIM call (documented), and runs once unless a Loop count is given; Loop 0 means loop endlessly. BGSTOP pauses it and BGSTART resumes it (they toggle the layer-record stop bit 0x40, see [[bgstop]]/[[bgstart]]); BGCHK reads which channels are running ([[bgchk]])."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "fewer than 3 arguments are given, the call is used in a return context, or the resolved target number is negative" }
+  - { errnum: 8, name: "Type mismatch", when: "the target argument is neither a number nor a valid target string" }
+  - { errnum: 10, name: "Out of range", when: "the layer is not in 0..3" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bganim.md (3 forms: array / \"@label\" DATA / inline; Layer 0-3; target 0|XY,1|Z,4|R,5|S,6|C,7|V; '+8' or trailing '+' = relative; data order Time,Item[,Item]; up to 32 keyframes; negative time = linear interpolation; Loop 1- with 0 = endless; 'Animation starts from the frame following BGANIM')" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGANIM handler @0x164c40: gate argcount>=3 && ret==0 cmp r5,#0x3 ldrge r0,[r7,#0xc] cmpge r0,#0x0 beq @0x164c78 else mov r2,#0x0 mvn r1,#0x0 mov r0,#0x4 bl 0x1fffdc errline -1 @0x164c60; layer eval+range via FUN_001e2504 bl 0x1e2504 @0x164c88 (errnum 10 @0x1e2560, layer<0 or >=[[0x315d60]+0x60]); target type byte ldr r3,[r7,#0x8] ldr r0,[r3,#0x10] ldrb r1,[r0,#0x0] @0x164ca0, 0/1 number @0x164cd0, 4/5 string @0x164cfc, else errnum 8 mov r0,#0x8 mov r1,#0x1 @0x164cc0; string target parse bl 0x1836cc @0x164d30; negative target cmp r1,#0 bge @0x164d78 else mov r1,#0x1 mov r0,#0x4 bl 0x1fffdc errnum 4 @0x164d44; channel mask and r0,r1,#0x7 @0x164d7c, relative bit mov r12,r1,lsl#0x1c cmp r0,#0x8 @0x164d9c; per-layer stride mov r3,#0xe3 mul lsl#3 base [[0x315d60]+0x5c] @0x164d8c. State ptr literal [0x164fe4]." }
+  - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer animation state/data (3.5.0 structural cross-check only); SpriteAnimTarget-equivalent enum shared with the sprite path." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGANIM '): 123 files, 568 lines. Confirms numeric target `BGANIM 0,7,-120,0.75,1` (2XVV233J/TXT/GAME.PRG), string target `BGANIM 0,\"XY\",-60,BX[0],BY[0],1` (1DVK34J/TXT/HNZHS), RELATIVE string targets `BGANIM 0,\"R+\",-T,-ANG,1` (1DVK34J/TXT/HNZHS) and `BGANIM 0,\"XY+\",-120,-16,0,0` (1233728E/TXT/MG_DOG), color animation `BGANIM 0,\"C\",1,RGB(0,255,0),-180/2,...` (1DVENVAE/TXT/PICS_R1_1V), inline multi-keyframe `BGANIM 1,\"XY\",7,15,15,1,0,0,-120,15,15,0` (1DVK34J/TXT/HNZTL), variable layer `BGANIM I,\"XY\",-T,X*16,Y*16` (43AE1XG3/TXT/@BACKUP.PRG) — proving these forms are LEGAL syntax. Exact interpolation output is oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9d): BGANIM 0,\"XY\" (2 args) -> errnum 4; BGANIM 4,\"XY\",10,0,0 -> errnum 10; BGANIM -1,\"XY\",10,0,0 -> errnum 10. All errline 1. Runtime interpolation output is oracle-pending (no BG framebuffer harvest, O-T6)." }
+
+confidence: disassembled
+
+tests:
+  # Error / no-error cases derived from the disassembly gates; runtime animation output is oracle-pending (no BG framebuffer harvest, O-T6).
+  - { name: anim_string_target, code: "BGSCREEN 0,32,32\nBGANIM 0,\"XY\",-60,200,100,-30,50,20", expect: { stdout: "" } }
+  - { name: anim_numeric_target, code: "BGSCREEN 0,32,32\nBGANIM 0,4,-10,0", expect: { stdout: "" } }
+  - { name: anim_relative_suffix, code: "BGSCREEN 0,32,32\nBGANIM 0,\"R+\",-30,90", expect: { stdout: "" } }
+  - { name: too_few_args, code: "BGSCREEN 0,32,32\nBGANIM 0,\"XY\"", expect: { error: { errnum: 4 } } }
+  - { name: layer_out_of_range, code: "BGANIM 4,\"XY\",10,0,0", expect: { error: { errnum: 10 } } }
+  - { name: layer_negative, code: "BGANIM -1,\"XY\",10,0,0", expect: { error: { errnum: 10 } } }

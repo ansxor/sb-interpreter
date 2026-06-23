@@ -1,0 +1,41 @@
+id: BGFUNC
+kind: statement
+category: BG
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — assign a callback to a BG layer (label literal or string).
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+      - { name: label, type: string, desc: "Name of the process to call: an @Label, or a process defined with DEF. Written as `@Label`, a `\"string literal\"`, or a string variable/expression — all resolve to the same label-name lookup." }
+    note: "BGFUNC layer, @Label — bind a callback process to the BG layer (invoked by CALL BG; inside it, CALLIDX = the layer number)."
+
+summary: "Binds a user callback process (an @Label or a DEF-defined process, by name) to a BG layer. The bound processes are invoked together by `CALL BG`; inside the callback the system variable CALLIDX holds the layer number, letting one process drive several layers. The label operand is resolved by name, so it accepts an @Label token, a string literal, or a string variable. An advanced instruction used when callback processing is required."
+
+semantics:
+  - "Argument gate: the handler requires argcount == 2 with return-count == 0 — cmp r0,#0x2 / ldreq r0,[r5,#0xc] / cmpeq r0,#0x0 / bne 0x1656a0 (error). A wrong argument count (or a return context) raises errnum 4 (Illegal function call) with errline -1 via the shared error path (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / bl 0x1fffdc @0x1656a0)."
+  - "Layer is evaluated and range-checked by the shared BG-layer getter FUN_001e2504 (bl 0x1e2504 @0x165598); a value < 0 or >= 4 raises errnum 10 (Out of range). The resolved slot index is layer + [[0x315d60]+0x5c] (ldr r0,[r0,#0x5c] / add r0,r0,r1 @0x1655b4-0x1655b8)."
+  - "The label argument is fetched and inspected by type (ldr r12,[r0,#0x10] / ldrb r0,[r12,#0x2] @0x1655cc-0x1655d0). When it is a string-type operand (the non-zero branch) the name string is read (blx [r12,#0x50] @0x1655e4) and looked up: bl 0x1ede08 @0x165604 finds an @Label, falling back to bl 0x28e4fc @0x165674 for a DEF-defined process. A non-string operand takes the @0x165634 branch and raises errnum 8 (Type mismatch) with errline 1 (mov r1,#0x1 / mov r0,#0x8 / bl 0x1fffdc @0x165638-0x16563c) — i.e. the label must be a string/label, not a number."
+  - "On a successful lookup the resolved target is recorded for the layer: the callback-kind byte is written strb r2,[r5,r1] (=2 for @Label @0x16565c, =1 for a DEF process @0x16568c) and the target pointer str r0,[r6,r1,lsl#2] (@0x165660/@0x165690), indexed by the layer number — so each layer has its own bound process. If the named label/DEF cannot be resolved (cmn r0,#0x1 / beq 0x1656a0 @0x165678) it raises errnum 4."
+  - "The bound process is NOT called by BGFUNC itself; it runs only when the program later executes CALL BG. Inside the process the layer number is read from CALLIDX (documented). The same process name may be bound to several layers. There is NO BGSCREEN/setup guard at bind time (every layer 0..3 exists). Literals: state [0x1656b8]=0x00315D60, @Label table [0x1656bc]=0x00305614, callback-kind table [0x1656c0]=0x00306A88, callback-target table [0x1656c4]=0x019A5BB0."
+  - "BGFUNC mirrors the sprite SPFUNC handler exactly (same @Label lookup FUN_001ede08, same DEF lookup FUN_0028e4fc, same kind/target table layout) but is indexed by BG layer 0..3 instead of a sprite management number. See [[spfunc]]."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is not 2 (or a return context), or the named label/process cannot be resolved" }
+  - { errnum: 8, name: "Type mismatch", when: "the label operand is not a string/label (e.g. a number is given)" }
+  - { errnum: 10, name: "Out of range", when: "the layer is not in 0..3" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgfunc.md (`BGFUNC Layer, @Label` — 'Assigns a callback process to a BG layer'; Layer 0-3; 'All BG layer processes are executed with CALL BG'; 'Instead of @Label, a user process defined using DEF can also be specified'; 'a management number can be obtained using a CALLIDX system variable'; example `BGFUNC 0,@LAYERSUB0`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGFUNC handler @0x165568: arg gate cmp r0,#0x2 ldreq r0,[r5,#0xc] cmpeq r0,#0x0 bne 0x1656a0 @0x165578 (errnum 4 errline -1 mov r2,#0x0 mvn r1,#0x0 mov r0,#0x4 @0x1656a0); layer via FUN_001e2504 bl 0x1e2504 @0x165598 (errnum 10); slot index layer+[[0x315d60]+0x5c] add r0,r0,r1 @0x1655b8; label type probe ldrb r0,[r12,#0x2] @0x1655d0 -> non-string branch errnum 8 mov r1,#0x1 mov r0,#0x8 bl 0x1fffdc @0x165638; @Label lookup bl 0x1ede08 @0x165604, DEF lookup bl 0x28e4fc @0x165674, unresolved cmn r0,#0x1 beq 0x1656a0 @0x165678 (errnum 4); record kind strb r2,[r5,r1]=2/1 @0x16565c/@0x16568c and target ptr str r0,[r6,r1,lsl#0x2] @0x165660/@0x165690. Literals state [0x1656b8]=0x00315D60, @Label table [0x1656bc]=0x00305614, kind table [0x1656c0]=0x00306A88, target table [0x1656c4]=0x019A5BB0." }
+  - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer callback binding (3.5.0 structural cross-check only); shares the sprite callback table layout (see osb sprite.d)." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGFUNC '): 16 files, 20 lines — string-label form `BGFUNC 2,\"BGSCROLL\"` (2XVV233J/TXT/GAME.PRG), `BGFUNC 0,\"UPDATEBG\"` (B2B43VHE/TXT/BGTEST); @Label form `BGFUNC 0,@BGMOVE` (YK28XX8X/TXT/MAIN); string-variable/expression label `BGFUNC BN,\"BG\"` (SRK35K8V/TXT/PRG). Confirms the label is resolved by name from any string and the layer arg is any integer expression." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9d): BGFUNC 4,@P -> errnum 10 errline 1 (layer out of range). Callback dispatch (CALL BG + CALLIDX) and the errnum 4/8 label-resolution paths remain oracle-pending." }
+
+confidence: disassembled
+
+tests:
+  # Bind-time contract from the disassembly gates; callback dispatch (CALL BG + CALLIDX) belongs to M3 BG-core execution (oracle-pending).
+  - { name: bind_label, code: "BGSCREEN 0,32,32\nBGFUNC 0,@P\nEND\n@P", expect: { stdout: "" } }
+  - { name: bind_string, code: "BGSCREEN 0,32,32\nBGFUNC 0,\"@P\"\nEND\n@P", expect: { stdout: "" } }
+  - { name: layer_out_of_range, code: "BGFUNC 4,@P\nEND\n@P", expect: { error: { errnum: 10 } } }

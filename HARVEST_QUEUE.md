@@ -328,3 +328,18 @@ oracle to confirm exact output and promote to `hw_verified`.
   - BGFILL/BGCOPY rectangle semantics: inclusive corners, reversed start/end ordering, out-of-bounds
     coordinate clamp vs error (no errnum seen in the handler), and BGCOPY overlapping src/dst.
   - BGCLIP clip rectangle visible effect and the internal layer-id (layer+2) mapping.
+
+- [ ] S-T9d BG animation/state — render/side-effect harvests (error + default-read cases already
+  hw_verified, s_t9d batch 2026-06-22: BGANIM 2-arg -> errnum 4 / layer-oob & neg -> errnum 10;
+  BGSTART/BGSTOP/BGFUNC layer-oob -> errnum 10; BGVAR layer-oob & varnum-oob(8) -> errnum 10;
+  BGVAR(0,0) -> 0; BGCHK(0)/BGCHK(3) -> 0; BGCHK layer-oob & neg -> errnum 10; all errline 1).
+  Still oracle-pending (need a way to run setup statements before a value read, and the BG
+  framebuffer oracle O-T6):
+  - BGVAR write-then-read round-trip persistence: BGVAR 0,3,7 then BGVAR(0,3) -> expect 7; var 7
+    special-case (clears flag bit 0x20) observable effect; BGVAR ... OUT V form value.
+  - BGCHK mid-animation #CHK* bit values while a BGANIM channel runs (which bit per XY/Z/R/S/C/V),
+    and confirm BG omits #CHKUV(4)/#CHKI(8); confirm BGSTOP-then-BGCHK reads 0 on a running anim.
+  - BGANIM interpolation output (positive hold vs negative linear interp), Loop 0 endless, the
+    "@label" DATA form and relative "+" semantics against rendered layer transform.
+  - BGFUNC callback dispatch via CALL BG (CALLIDX = layer number); errnum 4/8 for unresolvable /
+    non-string labels (handler shows errnum 8 for a numeric label, errnum 4 for unresolved @Label).

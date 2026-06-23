@@ -1,0 +1,42 @@
+id: BGSTART
+kind: statement
+category: BG
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — start all layers' animations.
+  - args: []
+    note: "BGSTART — resume animation of ALL BG layers (0 args)."
+  # Form 2 — start one layer's animation.
+  - args:
+      - { name: layer, type: integer, range: "0..3", desc: "Target BG layer number." }
+    note: "BGSTART layer — resume animation of one BG layer (1 arg)."
+
+summary: "Starts (resumes) BG animation that was paused by BGSTOP. With no argument it resumes animation for ALL layers; with a layer number it resumes just that one layer. BGSTART clears the per-layer 'animation stopped' flag (bit 0x40); a freshly BGANIM'd layer is already running, so BGSTART is only needed after BGSTOP. Returns nothing."
+
+semantics:
+  - "Return-count gate: the return count [r0,#0xc] must be 0 (cmp r1,#0 / bne @0x16688c -> errnum 4); BGSTART is a statement, never a function."
+  - "Form is chosen by argcount r1=[r0,#0x4]: 0 -> start-all (beq @0x1668a4), 1 -> start-one (cmp r1,#1 / beq @0x1668f4), any other count raises errnum 4 (Illegal function call) with errline -1 (mov r2,#0x0 / mvn r1,#0x0 / mov r0,#0x4 / bl 0x1fffdc @0x16688c-0x166898)."
+  - "Start-all (no arg) iterates every BG layer: it loads the BG state [r5,#0x0] and the layer count [r1,#0x60] (= 4), and for each layer clears the stop flag bit 0x40 in the layer record's first word (bic r3,r3,#0x40 / str @0x16628c... here BGSTART uses bic r3,r3,#0x40 @0x1668d4). It raises NO error — no range checks — it simply walks the existing layers. The per-layer record base is [r1,#0x5c] with stride 0xe3*8 (mov r2,#0xe3 / mul / add r2,r4,r2,lsl#0x3 @0x1668bc-0x1668cc)."
+  - "Start-one resolves the layer via the shared BG-layer getter FUN_001e2504 (bl 0x1e2504 @0x166900); a layer < 0 or >= 4 raises errnum 10 (Out of range). It then clears the stop bit 0x40 in that layer's record word (bic r1,r1,#0x40 / str @0x166930-0x166934). There is NO active-bit / BGSCREEN guard — every layer 0..3 exists, so the single-layer form cannot raise 'used before setup' (unlike SPSTART)."
+  - "The stop flag bit 0x40 is shared with BGSTOP, which SETS it to pause; BGSTART CLEARS it to resume. BG state pointer literal [0x166944]=0x00315D60, layer-record base [0x166948]=0x019A2F50. See [[bgstop]]."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "more than one argument is given, or the call is used in a return context" }
+  - { errnum: 10, name: "Out of range", when: "the single-layer form's layer is not in 0..3" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/bgstart.md (`BGSTART [Layer]` — 'Starts BG animation'; Layer 0-3; 'If the layer is omitted, animation of all layers will be started')" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGSTART handler @0x16685c: ret-count [r0,#0xc] must be 0 cmp r1,#0 bne @0x16688c; argcount [r0,#0x4] 0->all @0x1668a4, 1->one @0x1668f4, else errln -1 mov r2,#0x0 mvn r1,#0x0 mov r0,#0x4 bl 0x1fffdc errnum 4 @0x16688c; all-form layer count ldr r2,[r1,#0x60], per-layer bic r3,r3,#0x40 [layer+0x0] @0x1668d4 (clear stop bit, no error), stride mov r2,#0xe3 mul lsl#3 base [r1,#0x5c] @0x1668bc; one-form layer via bl 0x1e2504 @0x166900 (errnum 10 @0x1e2560), bic r1,r1,#0x40 @0x166930; NO active-bit guard. State ptr [0x166944]=0x00315D60, layer base [0x166948]=0x019A2F50." }
+  - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer animation run/stop flag (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGSTART\\b'): 27 files, 72 lines — both the bare all-layers form `BGSTART` (e.g. NDNYH3J4/TXT/HNZSCSR) and the per-layer form `BGSTART 0` / `BGSTART 1` (43KNQEA6/TXT/3DENGINE, 515XV3C4/TXT/BBZH) and variable layer `BGSTART ID%` (735YW3L4/TXT/GIVERS_APP) — proving both forms are LEGAL syntax." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9d): BGSTART 4 -> errnum 10 errline 1 (single-layer form, layer out of range). Resume-side effect on a running animation is oracle-pending (no BG framebuffer harvest, O-T6)." }
+
+confidence: disassembled
+
+tests:
+  # Error / no-error cases derived from the disassembly gates; runtime animation output is oracle-pending (no BG framebuffer harvest, O-T6).
+  - { name: start_all_no_arg, code: "BGSCREEN 0,32,32\nBGSTART", expect: { stdout: "" } }
+  - { name: start_one, code: "BGSCREEN 0,32,32\nBGSTOP 0\nBGSTART 0", expect: { stdout: "" } }
+  - { name: layer_out_of_range, code: "BGSTART 4", expect: { error: { errnum: 10 } } }
+  - { name: layer_negative, code: "BGSTART -1", expect: { error: { errnum: 10 } } }
