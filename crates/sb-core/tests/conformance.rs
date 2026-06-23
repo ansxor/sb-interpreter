@@ -252,6 +252,16 @@ const IN_SCOPE_SOUND: &[&str] = &[
 const IN_SCOPE_FILES: &[&str] = &[
     "SAVE", "LOAD", "FILES", "DELETE", "RENAME", "CHKFILE", "PROJECT",
 ];
+/// The source-code-manipulation family (M6-T4): `PRGEDIT` selects the edit target, the four
+/// current-line mutators (`PRGGET$`/`PRGSET`/`PRGINS`/`PRGDEL`) act on it, and `PRGNAME$`/
+/// `PRGSIZE` report a slot's file name / counts, over the VM-owned program-slot source. Each
+/// spec's inline cases are the hw_verified arg-shape (→ 4) / slot-or-type range (→ 10) /
+/// count-0 (→ 10) / no-PRGEDIT cold-state (→ 38) guards. The edited line *content* + the
+/// line/char/free counts have no scalar golden in a warm session (oracle-pending), so the
+/// round-trip behaviour is exercised by `vm.rs` unit tests, not the inline spec cases.
+const IN_SCOPE_PRG: &[&str] = &[
+    "PRGEDIT", "PRGGET$", "PRGSET", "PRGINS", "PRGDEL", "PRGNAME$", "PRGSIZE",
+];
 /// Specs `sb-core` implements only **partially** in M1: each is in scope, but the named
 /// cases listed here are EXCLUDED because they block on a later milestone or the
 /// console-text oracle. Everything else in the spec — the deterministic, hw_verified
@@ -427,6 +437,7 @@ fn spec_in_scope(id: &str, category: Option<&str>) -> bool {
         || IN_SCOPE_INPUT.contains(&id)
         || IN_SCOPE_SOUND.contains(&id)
         || IN_SCOPE_FILES.contains(&id)
+        || IN_SCOPE_PRG.contains(&id)
         || IN_SCOPE_PARTIAL.iter().any(|(pid, _)| *pid == id)
 }
 

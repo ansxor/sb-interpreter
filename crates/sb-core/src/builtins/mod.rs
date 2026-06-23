@@ -34,6 +34,7 @@ pub(crate) mod files;
 pub(crate) mod graphics;
 pub(crate) mod input;
 mod math;
+pub(crate) mod prg;
 pub(crate) mod screen;
 pub(crate) mod sound;
 pub(crate) mod sprite;
@@ -311,6 +312,18 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "RENAME",
     "CHKFILE",
     "PROJECT",
+    // Source-code manipulation (M6-T4): PRGEDIT selects the edit target (slot + current
+    // line); PRGGET$/PRGSET/PRGINS/PRGDEL read/replace/insert/delete the current line;
+    // PRGNAME$/PRGSIZE report a slot's file name / line-char-free counts. They read/mutate
+    // the VM-owned program-slot source + edit-target state, so the VM routes them via
+    // `call_prg` rather than the stateless `dispatch`.
+    "PRGEDIT",
+    "PRGGET$",
+    "PRGSET",
+    "PRGINS",
+    "PRGDEL",
+    "PRGNAME$",
+    "PRGSIZE",
     // Test-mode assertion (M1-T14): the VM handles it directly (a false condition halts
     // with `VmError::Assert`), so it is not in the stateless `dispatch`.
     "ASSERT__",

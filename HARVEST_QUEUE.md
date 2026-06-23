@@ -1260,3 +1260,28 @@ VM-owned in-memory `Storage`. Items to confirm / extend:
 - **SYSBEEP write effect** — sb-core stores the flag and exposes it to the platform UI; whether
   any nonzero is TRUE or only 1 toggles the beep, and whether ACLS resets it, is unconfirmed
   (no audible golden, O-T7). Confirm the truthiness + ACLS-reset behavior on the oracle.
+
+### M6-T4 Source-edit (PRG*) — oracle-pending content + model notes
+- **Edited line content + returned text** — PRGEDIT/PRGGET$/PRGSET/PRGINS/PRGDEL round-trip a
+  slot's source as a `Vec` of lines in sb-core, verified by vm.rs unit tests. The arg-shape (4),
+  slot/type range (10), count-0 (10) and cold-state no-PRGEDIT (38) guards are hw_verified
+  (s_t12c/s_t12d); the actual line *text* PRGGET$ returns, the PRGSET append-on-EOF case, and
+  the post-op current-line position have no scalar golden in a warm session. Harvest by editing
+  a known second slot then SAVEing PRGGET$ output (the PRG* family edits a NON-running slot, so
+  a 2-slot oracle program can read it back).
+- **PRGSIZE type 1/2 + SLOT_CAPACITY** — type 0 (line count) is faithful; type 1 (characters)
+  is modelled as `sum(line.len()+1)` (line text + one LF terminator each) and type 2 (free) as
+  `SLOT_CAPACITY - chars` with `SLOT_CAPACITY = 524288` (a placeholder constant). The real
+  per-slot character capacity, whether the char count includes line terminators, and the exact
+  free-char formula are unconfirmed. Harvest `PRGSIZE(s,1)`/`PRGSIZE(s,2)` on a slot with a
+  known source (e.g. `"ABC"+CHR$(10)+"DE"`) to pin the char model + capacity.
+- **PRGEDIT -1 / explicit-line bounds** — sb-core treats line `-1` as the last line, allows an
+  explicit line in `[0,len]` (len = the append position) and raises errnum 10 past that. The
+  exact ARM line-range boundary (the `sub r0,r0,#1; cmp r0,r1; bcc` guard @0x18a240) and the
+  empty-slot `-1` result are body-pinned but lack a scalar golden. Confirm on the oracle.
+- **PRGNAME$ running/last-run slot name** — the no-arg form reads the running slot's file name
+  (current_slot, 0 in single-slot M6). The last-run-slot freeze (STOP/error) and the real LOAD/
+  SAVE-set names depend on multi-slot launch (M6-T6); confirm the names a running program reads.
+- **Running-slot PRGEDIT guard (errnum 4)** — sb-core raises errnum 4 for `PRGEDIT current_slot`
+  (you cannot edit the running slot). Body-pinned (@0x18a1c8) but the warm-session oracle could
+  not isolate it as a scalar; confirm `PRGEDIT 0` from a slot-0 program → errnum 4 on the oracle.

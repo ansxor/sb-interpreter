@@ -74,15 +74,18 @@ pub const CALL_STACK_LIMIT: usize = 8192;
 const DEFAULT_FREEMEM: i32 = 8_314_876;
 
 // errnums used directly by the VM (names per `spec/reference/errors.yaml`).
+const ERR_ILLEGAL_FUNCTION_CALL: u32 = 4;
 const ERR_STACK_OVERFLOW: u32 = 5;
 const ERR_STACK_UNDERFLOW: u32 = 6;
 const ERR_DIVIDE_BY_ZERO: u32 = 7;
 const ERR_TYPE_MISMATCH: u32 = 8;
+const ERR_OUT_OF_RANGE: u32 = 10;
 const ERR_OUT_OF_DATA: u32 = 13;
 const ERR_UNDEFINED_LABEL: u32 = 14;
 const ERR_UNDEFINED_FUNCTION: u32 = 16;
 const ERR_RETURN_WITHOUT_GOSUB: u32 = 30;
 const ERR_SUBSCRIPT: u32 = 31;
+const ERR_USE_PRGEDIT: u32 = 38;
 
 /// How a run ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -234,6 +237,13 @@ pub struct Vm {
     /// The running program slot (0..3). A bare resource name (`SAVE "NAME"`) targets this
     /// slot's `TXT` namespace. Single-slot in M6-T2 (always 0); multi-slot is M6-T6.
     current_slot: u8,
+    /// The four program SLOTs' editable source (M6-T4), edited by the `PRG*` family. Slot 0
+    /// is the running program; a host/test can seed any slot via [`Vm::set_slot_source`].
+    prg_slots: [crate::builtins::prg::PrgSlot; 4],
+    /// The active `PRGEDIT` edit target: `(slot, current line index)`. `None` is the *cold*
+    /// state — no PRGEDIT has run, so `PRGGET$`/`PRGSET`/`PRGINS`/`PRGDEL` raise errnum 38.
+    /// In real SB this state is session-persistent (a shared global, see the `prgset` spec).
+    prg_edit: Option<(u8, usize)>,
 }
 
 impl Vm {
@@ -276,6 +286,17 @@ impl Vm {
             storage: Box::new(MemStorage::new()),
             current_project: DEFAULT_PROJECT.to_string(),
             current_slot: 0,
+            prg_slots: Default::default(),
+            prg_edit: None,
+        }
+    }
+
+    /// Seed a program SLOT's source + file name (M6-T4). A host/test loads a slot here so the
+    /// `PRG*` family can read/edit it; `slot` is clamped to 0..3, out-of-range is ignored.
+    pub fn set_slot_source(&mut self, slot: u8, name: &str, source: &str) {
+        if let Some(s) = self.prg_slots.get_mut(slot as usize) {
+            s.name = name.encode_utf16().collect();
+            s.set_source(&source.encode_utf16().collect::<Vec<u16>>());
         }
     }
 
@@ -977,6 +998,12 @@ impl Vm {
         if self.call_files(name, &args, out_argc, wants_value)? {
             return Ok(());
         }
+        // Source-edit family (PRGEDIT/PRGGET$/PRGSET/PRGINS/PRGDEL/PRGNAME$/PRGSIZE, M6-T4)
+        // read/mutate the VM-owned program-slot source + edit-target state, and the function
+        // forms push their own value, so they bypass the stateless dispatch.
+        if self.call_prg(name, &args, wants_value)? {
+            return Ok(());
+        }
         let ret = crate::builtins::dispatch(name, args).map_err(sb)?;
         if wants_value {
             self.stack.push(ret);
@@ -1312,6 +1339,231 @@ impl Vm {
             return Err(RuntimeError::new(ERR_CANT_USE_IN_PROGRAM));
         }
         Err(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL))
+    }
+
+    /// Route the source-edit family (M6-T4: `PRGEDIT`/`PRGGET$`/`PRGSET`/`PRGINS`/`PRGDEL`/
+    /// `PRGNAME$`/`PRGSIZE`). Returns `Ok(true)` if `name` is a PRG command (and was handled,
+    /// pushing any function value), `Ok(false)` to fall through to the stateless dispatch.
+    fn call_prg(&mut self, name: &str, args: &[Value], wants_value: bool) -> Result<bool, VmError> {
+        let args: Vec<Value> = args.iter().map(|v| v.deref()).collect();
+        match name {
+            "PRGEDIT" => self.prg_edit_cmd(&args).map_err(sb)?,
+            "PRGGET$" => {
+                let s = self.prg_get(&args).map_err(sb)?;
+                if wants_value {
+                    self.stack.push(Value::Str(s));
+                }
+            }
+            "PRGSET" => self.prg_set(&args).map_err(sb)?,
+            "PRGINS" => self.prg_ins(&args).map_err(sb)?,
+            "PRGDEL" => self.prg_del(&args).map_err(sb)?,
+            "PRGNAME$" => {
+                let s = self.prg_name(&args).map_err(sb)?;
+                if wants_value {
+                    self.stack.push(Value::Str(s));
+                }
+            }
+            "PRGSIZE" => {
+                let n = self.prg_size(&args).map_err(sb)?;
+                if wants_value {
+                    self.stack.push(Value::Int(n));
+                }
+            }
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
+    /// Validate `slot` (0..3 else errnum 10) and reject the currently-running slot (errnum 4)
+    /// — the running-slot guard shared by `PRGEDIT` (you cannot edit the slot you are
+    /// executing). Returns the slot as a `usize` index.
+    fn prg_validate_edit_slot(&self, slot: i32) -> Result<usize, RuntimeError> {
+        if !(0..=3).contains(&slot) {
+            return Err(RuntimeError::new(ERR_OUT_OF_RANGE));
+        }
+        if slot as u8 == self.current_slot {
+            return Err(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL));
+        }
+        Ok(slot as usize)
+    }
+
+    /// `PRGEDIT slot [,line]` — select the edit target. Arg count must be 1 or 2 (else errnum
+    /// 4); the slot is range-checked to 0..3 and may not be the running slot. With one
+    /// argument the current line is the first line (0); with two, the second argument is the
+    /// current line, where `-1` selects the last line and a value past the program → errnum 10.
+    fn prg_edit_cmd(&mut self, args: &[Value]) -> Result<(), RuntimeError> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL));
+        }
+        let slot = self.prg_validate_edit_slot(args[0].to_int()?)?;
+        let len = self.prg_slots[slot].lines.len();
+        let line = match args.get(1) {
+            None => 0usize,
+            Some(v) => {
+                let l = v.to_int()?;
+                if l == -1 {
+                    // Last line; an empty slot has no lines, so clamp to 0.
+                    len.saturating_sub(1)
+                } else if l < 0 || (l as usize) > len {
+                    return Err(RuntimeError::new(ERR_OUT_OF_RANGE));
+                } else {
+                    l as usize
+                }
+            }
+        };
+        self.prg_edit = Some((slot as u8, line));
+        Ok(())
+    }
+
+    /// Resolve the active `(slot, line)` edit target, or errnum 38 (`Use PRGEDIT before any
+    /// PRG function`) when none is set — the cold-state guard the four current-line mutators
+    /// share, checked before their argument count.
+    fn prg_target(&self) -> Result<(usize, usize), RuntimeError> {
+        match self.prg_edit {
+            Some((s, l)) => Ok((s as usize, l)),
+            None => Err(RuntimeError::new(ERR_USE_PRGEDIT)),
+        }
+    }
+
+    /// `PRGGET$()` — the current line's source text (LF terminator already stripped), or the
+    /// empty string when the current line is past the end of the program. Requires an active
+    /// PRGEDIT target (errnum 38, checked first); any argument → errnum 4.
+    fn prg_get(&self, args: &[Value]) -> Result<SbStr, RuntimeError> {
+        let (slot, line) = self.prg_target()?;
+        if !args.is_empty() {
+            return Err(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL));
+        }
+        Ok(self.prg_slots[slot]
+            .lines
+            .get(line)
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    /// `PRGSET str$` — replace the current line with `str$`. A string containing `CHR$(10)`
+    /// writes multiple lines; when the current line is past the end (PRGGET$ would be empty)
+    /// the line(s) are appended instead. Requires PRGEDIT (errnum 38, first); exactly one
+    /// string argument, else errnum 4.
+    fn prg_set(&mut self, args: &[Value]) -> Result<(), RuntimeError> {
+        let (slot, line) = self.prg_target()?;
+        if args.len() != 1 {
+            return Err(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL));
+        }
+        // A non-string operand is an Illegal function call (4), not a Type mismatch (8).
+        let text = args[0]
+            .as_str()
+            .map_err(|_| RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL))?;
+        let segs = crate::builtins::prg::split_separated(text);
+        let lines = &mut self.prg_slots[slot].lines;
+        if line >= lines.len() {
+            lines.extend(segs);
+        } else {
+            lines.splice(line..line + 1, segs);
+        }
+        Ok(())
+    }
+
+    /// `PRGINS str$ [,flag]` — insert line(s) at the current line: flag 0/omitted before it,
+    /// flag 1 after it. A `CHR$(10)` in `str$` inserts multiple lines; an empty string inserts
+    /// one blank line. Requires PRGEDIT (errnum 38, first); 1 or 2 arguments with a string
+    /// first operand, else errnum 4.
+    fn prg_ins(&mut self, args: &[Value]) -> Result<(), RuntimeError> {
+        let (slot, line) = self.prg_target()?;
+        if args.is_empty() || args.len() > 2 {
+            return Err(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL));
+        }
+        let text = args[0]
+            .as_str()
+            .map_err(|_| RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL))?;
+        let after = match args.get(1) {
+            Some(v) => v.to_int()? == 1,
+            None => false,
+        };
+        let segs = crate::builtins::prg::split_separated(text);
+        let lines = &mut self.prg_slots[slot].lines;
+        let at = if after {
+            (line + 1).min(lines.len())
+        } else {
+            line.min(lines.len())
+        };
+        lines.splice(at..at, segs);
+        Ok(())
+    }
+
+    /// `PRGDEL [count]` — delete `count` lines from the current line (default 1). A negative
+    /// count deletes all remaining lines; a count of 0, or a positive count past the remaining
+    /// lines, → errnum 10. Requires PRGEDIT (errnum 38, first); more than one argument → 4.
+    fn prg_del(&mut self, args: &[Value]) -> Result<(), RuntimeError> {
+        let (slot, line) = self.prg_target()?;
+        if args.len() > 1 {
+            return Err(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL));
+        }
+        let count = match args.first() {
+            Some(v) => v.to_int()?,
+            None => 1,
+        };
+        if count == 0 {
+            return Err(RuntimeError::new(ERR_OUT_OF_RANGE));
+        }
+        let lines = &mut self.prg_slots[slot].lines;
+        let remaining = lines.len().saturating_sub(line);
+        if count < 0 {
+            // Delete all remaining lines from the current line down.
+            lines.truncate(line.min(lines.len()));
+        } else {
+            let n = count as usize;
+            if n > remaining {
+                return Err(RuntimeError::new(ERR_OUT_OF_RANGE));
+            }
+            lines.drain(line..line + n);
+        }
+        Ok(())
+    }
+
+    /// `PRGNAME$([slot])` — the file name last handled by LOAD/SAVE for a slot. No argument →
+    /// the running slot; one argument is range-checked 0..3 (errnum 10). 2+ args → errnum 4.
+    fn prg_name(&self, args: &[Value]) -> Result<SbStr, RuntimeError> {
+        if args.len() > 1 {
+            return Err(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL));
+        }
+        let slot = match args.first() {
+            None => self.current_slot as i32,
+            Some(v) => v.to_int()?,
+        };
+        if !(0..=3).contains(&slot) {
+            return Err(RuntimeError::new(ERR_OUT_OF_RANGE));
+        }
+        Ok(self.prg_slots[slot as usize].name.clone())
+    }
+
+    /// `PRGSIZE([slot[,type]])` — a slot's size: type 0 lines (default), 1 characters, 2 free
+    /// characters. No argument → the running slot. Slot is range-checked 0..3 and type 0..2
+    /// (errnum 10); 3+ args → errnum 4.
+    fn prg_size(&self, args: &[Value]) -> Result<i32, RuntimeError> {
+        if args.len() > 2 {
+            return Err(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL));
+        }
+        let slot = match args.first() {
+            None => self.current_slot as i32,
+            Some(v) => v.to_int()?,
+        };
+        if !(0..=3).contains(&slot) {
+            return Err(RuntimeError::new(ERR_OUT_OF_RANGE));
+        }
+        let ty = match args.get(1) {
+            None => 0,
+            Some(v) => v.to_int()?,
+        };
+        if !(0..=2).contains(&ty) {
+            return Err(RuntimeError::new(ERR_OUT_OF_RANGE));
+        }
+        let s = &self.prg_slots[slot as usize];
+        let n = match ty {
+            0 => s.lines.len(),
+            1 => s.char_count(),
+            _ => s.free_count(),
+        };
+        Ok(n as i32)
     }
 
     /// Handle the RNG builtins against the VM-owned [`Rng`](crate::rng::Rng). Returns
@@ -4314,5 +4566,121 @@ H$=HEX$(255)"#);
         );
         // A non-array WAVSETA source is Type mismatch (8).
         assert_eq!(run_b_err("WAVSETA 224,0,95,100,20,12345").errnum(), Some(8));
+    }
+
+    // ---- Source-code manipulation: PRG* family (M6-T4) ----
+
+    /// Read a slot's lines as Strings (test helper over the private slot model).
+    fn slot_lines(vm: &Vm, slot: usize) -> Vec<String> {
+        vm.prg_slots[slot]
+            .lines
+            .iter()
+            .map(|l| String::from_utf16_lossy(l))
+            .collect()
+    }
+
+    #[test]
+    fn prg_round_trip_edits_a_slot() {
+        // Edit slot 1 (not the running slot 0): insert before, insert after, replace, read.
+        let vm = run_b(
+            r#"PRGEDIT 1
+PRGINS "PRINT 1"
+PRGINS "PRINT 2",1
+PRGEDIT 1,0
+PRGSET "REM HEAD"
+A$=PRGGET$()
+PRINT A$
+PRINT PRGSIZE(1)"#,
+        );
+        assert_eq!(slot_lines(&vm, 1), ["REM HEAD", "PRINT 2"]);
+        // PRGGET$ returns the current (first) line; PRGSIZE(1) is the 2-line count.
+        assert_eq!(vm.console_text(), "REM HEAD\n2");
+    }
+
+    #[test]
+    fn prg_del_removes_lines() {
+        // Build three lines (insert-before at line 0 prepends), then PRGDEL the middle one.
+        let vm = run_b(
+            r#"PRGEDIT 2
+PRGINS "C"
+PRGINS "B"
+PRGINS "A"
+PRGEDIT 2,1
+PRGDEL"#,
+        );
+        assert_eq!(slot_lines(&vm, 2), ["A", "C"]); // deleted the middle line "B"
+        let vm2 = run_b(
+            r#"PRGEDIT 2
+PRGINS "B"
+PRGINS "A"
+PRGEDIT 2,0
+PRGDEL -1"#,
+        );
+        assert!(slot_lines(&vm2, 2).is_empty()); // negative count deletes all remaining
+    }
+
+    #[test]
+    fn prg_multiline_insert_splits_on_lf() {
+        // A CHR$(10) in the inserted string adds multiple lines.
+        let vm = run_b("PRGEDIT 3\nPRGINS \"X\"+CHR$(10)+\"Y\"");
+        assert_eq!(slot_lines(&vm, 3), ["X", "Y"]);
+    }
+
+    #[test]
+    fn prg_seeded_slot_reads_size_and_name() {
+        // A host-seeded slot is readable by PRGSIZE / PRGNAME$ without PRGEDIT.
+        let ast = parse("PRINT PRGSIZE(1);PRGNAME$(1)").expect("parse");
+        let program = {
+            use crate::compiler::compile_with;
+            compile_with(&ast, &crate::builtins::StdBuiltins).expect("compile")
+        };
+        let mut vm = Vm::new(program);
+        vm.set_slot_source(1, "MYPRG", "PRINT 1\nPRINT 2\nEND");
+        vm.run().expect("run");
+        assert_eq!(vm.console_text(), "3MYPRG"); // 3 lines, file name MYPRG
+    }
+
+    #[test]
+    fn prg_cold_state_needs_prgedit() {
+        // The four current-line mutators raise errnum 38 from a cold edit state.
+        assert_eq!(run_b_err("A$=PRGGET$()").errnum(), Some(38));
+        assert_eq!(run_b_err(r#"PRGSET "X""#).errnum(), Some(38));
+        assert_eq!(run_b_err(r#"PRGINS "X""#).errnum(), Some(38));
+        assert_eq!(run_b_err("PRGDEL").errnum(), Some(38));
+    }
+
+    #[test]
+    fn prg_no_prgedit_check_precedes_arg_check() {
+        // Cold state → 38 even with a bad arg (the 38 guard is checked first).
+        assert_eq!(run_b_err("A$=PRGGET$(0)").errnum(), Some(38));
+        // Warm (after PRGEDIT) → the arg-count guard is reached (errnum 4).
+        assert_eq!(run_b_err("PRGEDIT 1:A$=PRGGET$(0)").errnum(), Some(4));
+    }
+
+    #[test]
+    fn prgedit_guards() {
+        assert_eq!(run_b_err("PRGEDIT 4").errnum(), Some(10)); // slot out of range
+        assert_eq!(run_b_err("PRGEDIT -1").errnum(), Some(10)); // negative slot
+        assert_eq!(run_b_err("PRGEDIT 0,0,0").errnum(), Some(4)); // too many args
+        assert_eq!(run_b_err("PRGEDIT 0").errnum(), Some(4)); // running slot (0)
+    }
+
+    #[test]
+    fn prg_mutator_arg_and_range_guards() {
+        // Edit target active (slot 1), then trip each guard.
+        assert_eq!(run_b_err(r#"PRGEDIT 1:PRGSET "A","B""#).errnum(), Some(4));
+        assert_eq!(run_b_err(r#"PRGEDIT 1:PRGINS "A",1,2"#).errnum(), Some(4));
+        assert_eq!(run_b_err("PRGEDIT 1:PRGDEL 1,2").errnum(), Some(4));
+        assert_eq!(run_b_err("PRGEDIT 1:PRGDEL 0").errnum(), Some(10)); // count 0
+    }
+
+    #[test]
+    fn prgname_and_prgsize_guards() {
+        assert_eq!(run_b_err("A$=PRGNAME$(4)").errnum(), Some(10));
+        assert_eq!(run_b_err("A$=PRGNAME$(-1)").errnum(), Some(10));
+        assert_eq!(run_b_err("A$=PRGNAME$(0,1)").errnum(), Some(4));
+        assert_eq!(run_b_err("A=PRGSIZE(4)").errnum(), Some(10));
+        assert_eq!(run_b_err("A=PRGSIZE(0,3)").errnum(), Some(10)); // type out of range
+        assert_eq!(run_b_err("A=PRGSIZE(0,0,0)").errnum(), Some(4));
     }
 }
