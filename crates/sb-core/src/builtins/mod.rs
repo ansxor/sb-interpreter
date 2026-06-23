@@ -30,6 +30,7 @@
 pub(crate) mod bg;
 pub(crate) mod console;
 pub(crate) mod data;
+pub(crate) mod device;
 pub(crate) mod files;
 pub(crate) mod graphics;
 pub(crate) mod input;
@@ -324,6 +325,32 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "PRGDEL",
     "PRGNAME$",
     "PRGSIZE",
+    // Faithful limitation stubs (M6-T5): the special-hardware feature gate (XON/XOFF), the
+    // microphone (MIC*), the motion sensors (GYRO*/ACCEL), wireless multiplayer (MP*) and the
+    // DIALOG modal box. None of the underlying hardware exists in the headless interpreter, so
+    // the VM routes them via `call_device` to reproduce their *observable* behavior — the
+    // arg-shape / range / type guards and the XON-MIC / XON-MOTION availability errors (36/37)
+    // — rather than the device itself. (XON/XOFF are also recognised by the parser's keyword
+    // form `XON feature`; registering them here keeps `is_builtin` consistent.)
+    "XON",
+    "XOFF",
+    "MICSTART",
+    "MICSTOP",
+    "MICDATA",
+    "MICSAVE",
+    "GYROA",
+    "GYROV",
+    "GYROSYNC",
+    "ACCEL",
+    "MPSTART",
+    "MPEND",
+    "MPSET",
+    "MPSTAT",
+    "MPSEND",
+    "MPRECV",
+    "MPGET",
+    "MPNAME$",
+    "DIALOG",
     // Test-mode assertion (M1-T14): the VM handles it directly (a false condition halts
     // with `VmError::Assert`), so it is not in the stateless `dispatch`.
     "ASSERT__",

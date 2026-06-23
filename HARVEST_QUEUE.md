@@ -1285,3 +1285,30 @@ VM-owned in-memory `Storage`. Items to confirm / extend:
 - **Running-slot PRGEDIT guard (errnum 4)** — sb-core raises errnum 4 for `PRGEDIT current_slot`
   (you cannot edit the running slot). Body-pinned (@0x18a1c8) but the warm-session oracle could
   not isolate it as a scalar; confirm `PRGEDIT 0` from a slot-0 program → errnum 4 on the oracle.
+
+### M6-T5 Faithful limitation stubs (XON/MIC/MOTION/MP/DIALOG) — oracle-pending live behavior
+The arg-shape (4) / range (10) / type (8) / syntax (3) guards and the XON-MIC (36) / XON-MOTION
+(37) availability errors are hw_verified (s_t11b/c, s_t4f) and replay in the conformance gate.
+The *live device* outputs have no headless golden — sb-core returns faithful neutral stubs:
+- **MICDATA / MICSAVE waveform** — MICDATA returns 0 (8-bit silence ≈ 128 / 16-bit ≈ 0 are the
+  documented bases — confirm which a reachable read gives) and MICSAVE writes nothing; with no
+  recorded samples a positive MICSAVE count/position raises errnum 10 (count > recorded 0). The
+  real sampled values need mic hardware; the in-range vs loop-wrap (errnum 10) split and the
+  comms-active errnum 52 path are not headless-harvestable.
+- **GYROA/GYROV/ACCEL axes** — sb-core writes 0.0 to all three OUT vars when XON MOTION is on.
+  The live radian/G axis values (and the GYROSYNC recalibration) need motion hardware.
+- **MP session semantics** — the `@0x305612` restriction flag is treated as 0 (MP reachable in
+  DIRECT/program mode, per the oracle running every MP command past it to its arg-count guard).
+  Offline (no peers): MPSTART leaves RESULT 0, MPSTAT() = 0, MPRECV = SID -1 / "", and the
+  peer-indexed reads (MPSTAT(id)/MPGET/MPNAME$) raise errnum 10 (0 connected terminals). The
+  real RESULT/0-1/string values, MPSEND delivery + errnum 41/42 (String too long / buffer
+  overflow), and MPRECV/MPNAME$ errnum 11 (Out of memory) need real wireless peers. Also confirm
+  whether MPSET truncates or rejects a Double value, and the corpus `MPSET a,b,c` / `MPRECV SID
+  OUT RCV$` word-order anomalies (treated as latent program bugs).
+- **DIALOG interactive outcome** — headless there is no Touch Screen, so sb-core resolves the
+  statement/confirm forms to RESULT 0 (Time out) and the file-name input form to RESULT -1 /
+  "" (Canceled). The real 1/-1/0 confirm values, the 128..140 button-detect codes, and the
+  entered file-name string need a live Touch Screen (not oracle-harvestable headless).
+- **XON confirmation dialog + EXPAD RESULT** — XON shows a one-time confirmation on real SB;
+  sb-core flips the feature flag silently and (for EXPAD) sets RESULT TRUE. Confirm the
+  already-on no-dialog case and whether XOFF EXPAD clears RESULT.

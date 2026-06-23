@@ -425,6 +425,7 @@ impl Parser {
             "INC" | "DEC" => self.parse_inc_dec(loc, kw == "DEC"),
             "SWAP" => self.parse_swap(loc),
             "OPTION" => self.parse_option(loc),
+            "XON" | "XOFF" => self.parse_xon(loc, kw == "XOFF"),
             "USE" => {
                 self.advance();
                 let e = self.parse_expr()?;
@@ -1226,6 +1227,30 @@ impl Parser {
         };
         self.advance();
         Ok(Stmt::new(StmtKind::Option(arg), loc))
+    }
+
+    /// `XON feature` / `XOFF feature` (M6-T5) — enable/disable a special hardware feature.
+    /// The feature is a bareword keyword (MOTION / EXPAD / MIC), like `OPTION STRICT`, so we
+    /// lower it to a `XON`/`XOFF` command call carrying a synthetic integer feature code
+    /// (0=MOTION, 1=EXPAD, 2=MIC) that the VM's `call_device` interprets.
+    fn parse_xon(&mut self, loc: SourceLoc, is_off: bool) -> PResult<Stmt> {
+        self.advance(); // XON / XOFF
+        let code = match self.cur_keyword() {
+            Some("MOTION") => 0,
+            Some("EXPAD") => 1,
+            Some("MIC") => 2,
+            _ => return Err(self.syntax_error("expected MOTION, EXPAD or MIC after XON/XOFF")),
+        };
+        self.advance();
+        let name = Name::new(if is_off { "XOFF" } else { "XON" }, Suffix::None);
+        Ok(Stmt::new(
+            StmtKind::Call {
+                name,
+                args: vec![Expr::constant(Lit::Int(code), loc)],
+                out_args: Vec::new(),
+            },
+            loc,
+        ))
     }
 
     // ----- shared helpers -----

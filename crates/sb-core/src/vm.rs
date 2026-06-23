@@ -244,6 +244,10 @@ pub struct Vm {
     /// state — no PRGEDIT has run, so `PRGGET$`/`PRGSET`/`PRGINS`/`PRGDEL` raise errnum 38.
     /// In real SB this state is session-persistent (a shared global, see the `prgset` spec).
     prg_edit: Option<(u8, usize)>,
+    /// The special-hardware feature enable flags (M6-T5), toggled by `XON`/`XOFF`. Until the
+    /// matching feature is enabled, the microphone / motion instructions raise errnum 36 / 37.
+    /// All boot disabled — a fresh program has declared no special feature.
+    device: crate::builtins::device::DeviceState,
 }
 
 impl Vm {
@@ -288,6 +292,7 @@ impl Vm {
             current_slot: 0,
             prg_slots: Default::default(),
             prg_edit: None,
+            device: Default::default(),
         }
     }
 
@@ -1002,6 +1007,13 @@ impl Vm {
         // read/mutate the VM-owned program-slot source + edit-target state, and the function
         // forms push their own value, so they bypass the stateless dispatch.
         if self.call_prg(name, &args, wants_value)? {
+            return Ok(());
+        }
+        // Faithful limitation stubs (M6-T5): XON/XOFF feature gate, the microphone (MIC*),
+        // motion sensors (GYRO*/ACCEL), wireless multiplayer (MP*) and DIALOG. They read/mutate
+        // the VM-owned `DeviceState` + `RESULT`, push their own value/OUT results, and reproduce
+        // the disassembled arg-shape / range / availability (36/37) guards.
+        if self.call_device(name, &args, out_argc, wants_value)? {
             return Ok(());
         }
         let ret = crate::builtins::dispatch(name, args).map_err(sb)?;
@@ -2034,6 +2046,99 @@ impl Vm {
         };
         for v in results.map_err(sb)? {
             self.stack.push(v);
+        }
+        Ok(true)
+    }
+
+    /// Route a faithful "limitation stub" builtin (M6-T5): the `XON`/`XOFF` feature gate, the
+    /// microphone (`MICSTART`/`MICSTOP`/`MICDATA`/`MICSAVE`), the motion sensors (`GYROA`/
+    /// `GYROV`/`GYROSYNC`/`ACCEL`), wireless multiplayer (`MPSTART`/`MPEND`/`MPSET`/`MPSTAT`/
+    /// `MPSEND`/`MPRECV`/`MPGET`/`MPNAME$`), and `DIALOG`. Returns `Ok(true)` when handled
+    /// (pushing the function/OUT results itself), `Ok(false)` otherwise (the caller falls
+    /// through to the stateless dispatch). None of the underlying hardware exists headless, so
+    /// each reproduces its disassembled arg-shape / range / type guards and the XON-MIC /
+    /// XON-MOTION availability errors (36/37) rather than the device. The MP commands run as if
+    /// wireless is reachable (the `@0x305612` restriction flag is 0 in DIRECT/program mode) but
+    /// with no peers, so peer-indexed reads are out of range and `MPRECV` yields no data.
+    fn call_device(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        out_argc: u8,
+        wants_value: bool,
+    ) -> Result<bool, VmError> {
+        use crate::builtins::device as dev;
+        let ret_count = if wants_value { 1 } else { out_argc as usize };
+        let args: Vec<Value> = args.iter().map(|v| v.deref()).collect();
+        match name {
+            // XON/XOFF: the parser emits a synthetic feature-code operand (0=MOTION, 1=EXPAD,
+            // 2=MIC). Enabling EXPAD sets RESULT TRUE (xon.yaml).
+            "XON" | "XOFF" => {
+                let code = args.first().map(Value::to_int).transpose().map_err(sb)?;
+                let feature = code
+                    .and_then(dev::Feature::from_code)
+                    .ok_or_else(|| sb(crate::builtins::syntax_error()))?;
+                let on = name == "XON";
+                self.device.set(feature, on);
+                if on && feature == dev::Feature::Expad {
+                    self.result = 1; // XON EXPAD -> RESULT TRUE
+                }
+            }
+            "MICSTART" => dev::micstart(&self.device, &args, wants_value).map_err(sb)?,
+            "MICSTOP" => dev::micstop(&self.device, &args, wants_value).map_err(sb)?,
+            "MICDATA" => {
+                let v = dev::micdata(&self.device, &args, wants_value).map_err(sb)?;
+                if wants_value {
+                    self.stack.push(v);
+                }
+            }
+            "MICSAVE" => dev::micsave(&args, wants_value).map_err(sb)?,
+            "GYROA" | "GYROV" | "ACCEL" => {
+                for v in dev::motion_read(&self.device, &args, ret_count).map_err(sb)? {
+                    self.stack.push(v);
+                }
+            }
+            "GYROSYNC" => dev::gyrosync(&self.device, &args, ret_count).map_err(sb)?,
+            "MPSTART" => {
+                dev::mpstart(&args, wants_value).map_err(sb)?;
+                self.result = 0; // offline: no session established -> RESULT FALSE
+            }
+            "MPEND" => dev::mpend(&args, wants_value).map_err(sb)?,
+            "MPSET" => dev::mpset(&args, wants_value).map_err(sb)?,
+            "MPSTAT" => {
+                let v = dev::mpstat(&args, wants_value).map_err(sb)?;
+                if wants_value {
+                    self.stack.push(v);
+                }
+            }
+            "MPSEND" => dev::mpsend(&args, wants_value).map_err(sb)?,
+            "MPRECV" => {
+                for v in dev::mprecv(&args, ret_count).map_err(sb)? {
+                    self.stack.push(v);
+                }
+            }
+            "MPGET" => {
+                let v = dev::mpget(&args, wants_value).map_err(sb)?;
+                if wants_value {
+                    self.stack.push(v);
+                }
+            }
+            "MPNAME$" => {
+                let v = dev::mpname(&args, wants_value).map_err(sb)?;
+                if wants_value {
+                    self.stack.push(v);
+                }
+            }
+            "DIALOG" => {
+                let outcome = dev::dialog(&args, wants_value).map_err(sb)?;
+                self.result = outcome.result;
+                if let Some(v) = outcome.push {
+                    if wants_value {
+                        self.stack.push(v);
+                    }
+                }
+            }
+            _ => return Ok(false),
         }
         Ok(true)
     }
@@ -4682,5 +4787,74 @@ PRGDEL -1"#,
         assert_eq!(run_b_err("A=PRGSIZE(4)").errnum(), Some(10));
         assert_eq!(run_b_err("A=PRGSIZE(0,3)").errnum(), Some(10)); // type out of range
         assert_eq!(run_b_err("A=PRGSIZE(0,0,0)").errnum(), Some(4));
+    }
+
+    // ---- M6-T5: faithful limitation stubs (XON/MIC/MOTION/MP/DIALOG) ----
+
+    #[test]
+    fn xon_mic_enables_then_mic_commands_run() {
+        // Without XON MIC the mic commands raise errnum 36 (hw_verified s_t11c).
+        assert_eq!(run_b_err("MICSTART 0,0,1").errnum(), Some(36));
+        // After XON MIC they run (no real sampler — a faithful no-op).
+        let vm = run_b("XON MIC\nMICSTART 0,0,1\nMICSTOP\nPRINT \"OK\"");
+        assert_eq!(vm.console_text(), "OK");
+        assert!(vm.device.mic);
+        // MICDATA reads 0 once the mic is on (live waveform needs hardware).
+        let vm = run_b("XON MIC\nV=MICDATA(0)\nPRINT V");
+        assert_eq!(vm.console_text(), "0");
+        // XOFF MIC disables again.
+        let vm = run_b("XON MIC\nXOFF MIC");
+        assert!(!vm.device.mic);
+    }
+
+    #[test]
+    fn xon_motion_enables_then_sensors_run() {
+        // Without XON MOTION the sensor reads raise errnum 37 (hw_verified s_t11b).
+        assert_eq!(run_b_err("GYROA OUT P,R,Y").errnum(), Some(37));
+        assert_eq!(run_b_err("ACCEL OUT X,Y,Z").errnum(), Some(37));
+        assert_eq!(run_b_err("GYROSYNC").errnum(), Some(37));
+        // After XON MOTION the OUT vars receive zeroed axes (live values need hardware).
+        let vm = run_b("XON MOTION\nGYROA OUT P,R,Y\nGYROSYNC\nPRINT P;R;Y");
+        assert_eq!(vm.console_text(), "000");
+        assert!(vm.device.motion);
+    }
+
+    #[test]
+    fn xon_expad_sets_result_true() {
+        // XON EXPAD sets RESULT to TRUE (1) per the docs; XON MOTION leaves it untouched.
+        let vm = run_b("XON EXPAD\nPRINT RESULT");
+        assert_eq!(vm.console_text(), "1");
+        assert!(vm.device.expad);
+    }
+
+    #[test]
+    fn dialog_sets_result_and_returns_headless_outcome() {
+        // Statement form -> RESULT = 0 (Time out, no user headless).
+        let vm = run_b("DIALOG \"hi\"\nPRINT RESULT");
+        assert_eq!(vm.console_text(), "0");
+        // Confirm function form -> returns 0, RESULT 0.
+        let vm = run_b("R=DIALOG(\"ok?\",1)\nPRINT R;RESULT");
+        assert_eq!(vm.console_text(), "00");
+        // File-name input form (string 2nd arg) -> RESULT -1, empty string.
+        let vm = run_b("S$=DIALOG(\"\",\"Name?\")\nPRINT LEN(S$);RESULT");
+        assert_eq!(vm.console_text(), "0-1");
+        // Too many arguments -> Syntax error (3) (hw_verified, s_t4f).
+        assert_eq!(run_b_err("A=DIALOG(\"a\",0,\"b\",0,9)").errnum(), Some(3));
+    }
+
+    #[test]
+    fn mp_offline_session_reads() {
+        // No wireless peers: the whole-session status is 0 and MPSTART leaves RESULT FALSE.
+        let vm = run_b("MPSTART 2,\"ROOM\"\nPRINT RESULT;MPSTAT()");
+        assert_eq!(vm.console_text(), "00");
+        // MPRECV yields no data: sender id -1, empty string.
+        let vm = run_b("MPRECV OUT SID,RCV$\nPRINT SID;LEN(RCV$)");
+        assert_eq!(vm.console_text(), "-10");
+        // A peer-indexed read is out of range with 0 terminals connected.
+        assert_eq!(run_b_err("N=MPGET(0,0)").errnum(), Some(10));
+        assert_eq!(run_b_err("A$=MPNAME$(0)").errnum(), Some(10));
+        // MPSEND/MPEND validate and no-op offline.
+        let vm = run_b("MPSEND \"HI\"\nMPEND\nPRINT \"OK\"");
+        assert_eq!(vm.console_text(), "OK");
     }
 }

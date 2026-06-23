@@ -262,6 +262,21 @@ const IN_SCOPE_FILES: &[&str] = &[
 const IN_SCOPE_PRG: &[&str] = &[
     "PRGEDIT", "PRGGET$", "PRGSET", "PRGINS", "PRGDEL", "PRGNAME$", "PRGSIZE",
 ];
+/// The faithful "limitation stub" family (M6-T5): the microphone (`MIC*`), motion sensors
+/// (`GYRO*`/`ACCEL`), wireless multiplayer (`MP*`) and `DIALOG`, plus the `XON`/`XOFF` feature
+/// gate. None of the underlying hardware exists in the headless interpreter, so each spec is
+/// in scope for its *observable* contract: the disassembled arg-shape (→ 4) / range (→ 10) /
+/// type (→ 8) / syntax (→ 3) guards and the XON-MIC / XON-MOTION availability errors (36/37),
+/// all hw_verified via the oracle (s_t11b/c, 2026-06-23). The *live* device output (waveform
+/// samples, sensor axes, peer payloads, the interactive DIALOG return) has no headless golden
+/// (oracle-pending), so no inline case asserts it — the cases expect only an errnum (or, for
+/// the reachable forms, are absent). Listed by id (the categories also hold not-yet-scoped
+/// specs). `XON`/`XOFF` carry no inline tests, so they fold in as a no-op.
+const IN_SCOPE_DEVICE: &[&str] = &[
+    "XON", "XOFF", "MICSTART", "MICSTOP", "MICDATA", "MICSAVE", "GYROA", "GYROV", "GYROSYNC",
+    "ACCEL", "MPSTART", "MPEND", "MPSET", "MPSTAT", "MPSEND", "MPRECV", "MPGET", "MPNAME$",
+    "DIALOG",
+];
 /// Specs `sb-core` implements only **partially** in M1: each is in scope, but the named
 /// cases listed here are EXCLUDED because they block on a later milestone or the
 /// console-text oracle. Everything else in the spec — the deterministic, hw_verified
@@ -438,6 +453,7 @@ fn spec_in_scope(id: &str, category: Option<&str>) -> bool {
         || IN_SCOPE_SOUND.contains(&id)
         || IN_SCOPE_FILES.contains(&id)
         || IN_SCOPE_PRG.contains(&id)
+        || IN_SCOPE_DEVICE.contains(&id)
         || IN_SCOPE_PARTIAL.iter().any(|(pid, _)| *pid == id)
 }
 
