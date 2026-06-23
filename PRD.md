@@ -118,7 +118,7 @@ and name the instructions they cover inline.
 
 #### S-T13 Wireless (8) → S-T0
 - [x] S-T13a Session — MPSTART · MPEND · MPSET · MPSTAT
-- [ ] S-T13b Messaging — MPSEND · MPRECV · MPGET · MPNAME$
+- [x] S-T13b Messaging — MPSEND · MPRECV · MPGET · MPNAME$
 
 #### S-T14 Verify reference tables (vs disassembly + oracle) → O-T4
 - [ ] S-T14a Error table — `spec/reference/errors.yaml` vs disasm error strings (@≈0x1E965C) + oracle → O-T5

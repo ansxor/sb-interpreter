@@ -1,0 +1,41 @@
+id: MPNAME$
+kind: function
+category: Wireless communication
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: terminal_id, type: integer, range: "0-3: ID of another terminal in the wireless communication session (range-checked against the number of connected terminals)" }
+    returns: { type: string, range: "the terminal (player) name string of the specified terminal" }
+    note: "MPNAME$(terminal_id) — returns the user/terminal name string of a peer in the active session."
+
+summary: "Gets the terminal (player) name string of a specified terminal in the active wireless communication session. The argument selects the terminal (0-3, range-checked against the connected terminals). Returns that terminal's name as a string. Communication is dropped if the system enters sleep mode."
+
+semantics:
+  - "MPNAME$ takes exactly one value argument and returns one value: the handler requires value-arg-count (dispatch block +0x4) == 1 AND return-count (+0xc) == 1 — `ldr r0,[r0,#0x4]`/`cmp r0,#0x1` @0x183bc0..0x183bc4 then `ldreq r0,[r4,#0xc]`/`cmpeq r0,#0x1` @0x183bc8..0x183bcc; any other shape falls through to errnum 4 (Illegal function call) -> `mov r0,#0x4` @0x183bdc."
+  - "MP-restriction guard: the global byte flag @0x305612 is tested next; when it is non-zero MPNAME$ raises errnum 52 (Incompatible statement) — `ldr r0,[0x183d10]` (literal-pool word = 0x00305612)/`ldrb r0,[r0,#0x0]`/`cmp r0,#0x0` @0x183bec..0x183bf4 -> `mov r0,#0x34` @0x183c04. Same flag as the other MP commands."
+  - "terminal_id is range-checked against the number of connected terminals: the session count is loaded from `[[0x316194]+0x3c4]` and r7 = count-1 (`sub r7,r0,#0x1` @0x183c30); the supplied id `[sp,#0x0]` must satisfy 0 <= id <= count-1 (`cmp r0,#0x0`/`cmpge r7,r0`/`bge 0x183c5c` @0x183cd0..0x183cdc) else errnum 10 (Out of range) -> `mov r0,#0xa` @0x183ce8. Docs give the user-facing range as 0-3."
+  - "On success the name string is fetched from the terminal record (`bl 0x001a5e48` @0x183c6c), its length is measured by scanning UTF-16 code units to the NUL terminator (`ldrh r3,[r0,#0x2]!`/`add r1,r1,#0x1`/`cmp r3,#0x0` loop @0x183c88..0x183c94), a result string buffer is allocated (`bl 0x001ed8a8` @0x183c9c), and on allocation failure errnum 11 (Out of memory) is raised (`moveq r0,#0xb` @0x183cb0). If the session/name record is empty the result is an empty string (@0x183cfc)."
+  - "Communication is dropped if the console enters sleep mode (docs)."
+
+errors:
+  - { errnum: 4,  name: "Illegal function call", when: "the call is not exactly one value argument with one return slot" }
+  - { errnum: 52, name: "Incompatible statement", when: "MP is unavailable in the current context (global MP-restriction flag @0x305612 is non-zero)" }
+  - { errnum: 10, name: "Out of range", when: "terminal_id is outside 0..(connected-terminals-1)" }
+  - { errnum: 11, name: "Out of memory", when: "a string buffer for the name could not be allocated" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/mpname.md (1 form: `String variable = MPNAME$( Terminal ID )`. 'Gets the terminal name of a specified terminal in a wireless communication session'; Terminal ID '0-3: ID of another terminal in the wireless communication session'; Return Values 'Terminal name string'; 'Communication will be terminated if the system goes into sleep mode'. Example `NAME$=MPNAME$( 3 )`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst MPNAME$ handler @0x183bb4: argcount!=1 or retcount!=1 -> errnum 4 (`cmp r0,#0x1` @0x183bc4, `cmpeq r0,#0x1` @0x183bcc, `mov r0,#0x4` @0x183bdc); MP-restriction byte @0x305612 (literal-pool word @0x183d10) non-zero -> errnum 52 (`mov r0,#0x34` @0x183c04); terminal_id range vs count-1 (`sub r7,r0,#0x1` @0x183c30 from [[0x316194]+0x3c4]; `cmp r0,#0x0`/`cmpge r7,r0`/`bge 0x183c5c` @0x183cd0) -> errnum 10 (`mov r0,#0xa` @0x183ce8); name fetch `bl 0x001a5e48` @0x183c6c, UTF-16 length scan `ldrh r3,[r0,#0x2]!` @0x183c88, string alloc `bl 0x001ed8a8` @0x183c9c with errnum 11 (`moveq r0,#0xb` @0x183cb0) on failure, empty-record path @0x183cfc. errnum 52 string @0x2e9a38 = 'Incompatible statement' (error pointer table base @0x3054f8, entry 52 @0x3055c8)." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bMPNAME\\$', 34 files): the documented 1-arg form dominates with literal and expression operands — literals (`MPNAME$(0)`, `MPNAME$(1)`, `MPNAME$(3)`), variable (`MPNAME$(I)`, `MPNAME$(SENDER)`, `MPNAME$(ID%)`), and constant (`MPNAME$(MPLOCAL)` 73ANN3KP/TXT/RGEN); commonly concatenated into chat lines (`MPNAME$(SENDER)+\": \"+MSG$` 43N3J3J3/TXT/SIMPLE_CHAT). Confirms the 1-arg + expression-operand form is legal; the returned name strings are oracle-pending (need a real session)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar), 2026-06-23: `A$=MPNAME$()` (0 args) -> errnum 4, errline 1; `A$=MPNAME$(0,1)` (2 args) -> errnum 4, errline 1. Confirms the value-arg-count!=1 guard raises errnum 4 before any networking (argcount check @0x183bc4 precedes the MP-restriction flag @0x183bec). The returned name string + range errnum 10 need a real session (oracle-pending)." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d MPNAME$ (3.5.0 structural cross-check only)" }
+
+# Body-pinned argcount/restriction/range/OOM errnums (4/52/10/11) are `disassembled`. The
+# returned name strings need real wireless peers and are oracle-pending (HARVEST_QUEUE.md),
+# so the top-level confidence stays disassembled.
+confidence: disassembled
+
+tests:
+  - { name: no_args, code: 'A$=MPNAME$()', expect: { error: { errnum: 4 } } }
+  - { name: too_many_args, code: 'A$=MPNAME$(0,1)', expect: { error: { errnum: 4 } } }

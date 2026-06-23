@@ -23,6 +23,20 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   results documented-only. NOTE: MPSTART/MPEND attempt real networking — harvest cautiously
   (connection dialogs may hang the oracle); the pre-network validation errors (errnum 4/10/8)
   are the safe cases to harvest first.
+- [ ] S-T13b (MPSEND/MPRECV/MPGET/MPNAME$) · Messaging behaviors are body-pinned for validation
+  (arg/return-count errnum 4, MP-restriction errnum 52 via flag @0x305612, MPSEND non-string
+  errnum 8 / empty-string errnum 4 / >128-codeunit errnum 41 "String too long" / send-overflow
+  errnum 42 "Communication buffer overflow", MPGET/MPNAME$ terminal-id & MPGET mgmt-num errnum
+  10, MPRECV/MPNAME$ alloc errnum 11) but the actual messaging effects need ≥2 real wireless
+  peers (single Azahar oracle can't form a session). Open questions: (a) MPSEND delivery delay +
+  the burst rate that triggers errnum 42; (b) MPRECV SID/RCV$ values + the -1 no-data sentinel
+  in practice; (c) MPGET returned slot value (peer-set via MPSET) per management number 0-8;
+  (d) MPNAME$ returned terminal-name string; (e) CORPUS WORD-ORDER QUESTION: 3 shipped programs
+  use `MPRECV SID OUT RCV$` (var before OUT) — 4KY3343D/ANROI-DS+@BACKUP.PRG, Q3XPAE83/
+  QUICKTOOL_PLUS, QDH3J37D/ANDROI-DS — printing SID as the sender afterward, yet the handler's
+  value-arg-count==0 guard @0x183e98 would reject a value arg with errnum 4. Does 3.6.0 accept
+  this alternate parse, or are these latent bugs? · assumption: validation errnums per
+  disassembly; messaging payloads documented-only.
 - [ ] S-T4d (RESTORE) · Confirm RESTORE to an undefined @Label -> errnum 14 (Undefined label),
   and the cross-slot form RESTORE "1:@Label" after USE 1 (needs a 2nd slot loaded — single-slot
   oracle can't easily test). · assumption: errnum 14 per docs/error-table; cross-slot per docs.

@@ -1,0 +1,42 @@
+id: MPGET
+kind: function
+category: Wireless communication
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: terminal_id, type: integer, range: "0-3: ID of another terminal in the wireless communication session (range-checked against the number of connected terminals)" }
+      - { name: management_number, type: integer, range: "0-8: internal management number of the target user-defined data slot" }
+    returns: { type: integer, range: "the integer value stored in the specified data slot" }
+    note: "MPGET(terminal_id, management_number) — reads one of a peer's 9 user-defined integer data slots (set on the peer side with MPSET)."
+
+summary: "Gets a user-defined integer value from a specified terminal in the active wireless communication session. The first argument selects the terminal (0-3, range-checked against the connected terminals); the second selects which of the 9 management slots (0-8) to read. Returns the integer value of that slot. Communication is dropped if the system enters sleep mode."
+
+semantics:
+  - "MPGET takes exactly two value arguments and returns one value: the handler requires value-arg-count (dispatch block +0x4) == 2 AND return-count (+0xc) == 1 — `ldr r0,[r0,#0x4]`/`cmp r0,#0x2` @0x1838cc..0x1838d0 then `ldreq r0,[r4,#0xc]`/`cmpeq r0,#0x1` @0x1838d4..0x1838d8; any other shape falls through to errnum 4 (Illegal function call) -> `mov r0,#0x4` @0x1838e8."
+  - "MP-restriction guard: the global byte flag @0x305612 is tested next; when it is non-zero MPGET raises errnum 52 (Incompatible statement) — `ldr r0,[0x183a2c]` (literal-pool word = 0x00305612)/`ldrb r0,[r0,#0x0]`/`cmp r0,#0x0` @0x1838f0..0x1838f8 -> `mov r0,#0x34` @0x183908. Same flag as the other MP commands."
+  - "terminal_id is range-checked against the number of connected terminals: the session count is loaded from `[[0x316194]+0x3c4]` and r8 = count-1 (`sub r8,r0,#0x1` @0x183934); the supplied id `[sp,#0x0]` must satisfy 0 <= id <= count-1 (`cmp r0,#0x0`/`cmpge r8,r0`/`bge 0x183960` @0x1839d0..0x1839dc) else errnum 10 (Out of range) -> `mov r0,#0xa` @0x1839e8. Docs give the user-facing range as 0-3."
+  - "management_number must be in 0..8 inclusive: `cmp r0,#0x0`/`blt 0x183a10` then `cmp r0,#0x8`/`ble 0x18398c` @0x1839fc..0x183a0c; outside that range raises errnum 10 (Out of range) -> `mov r0,#0xa` @0x183a18."
+  - "On success the integer in the selected slot is loaded (`ldr r1,[r0,#0xa04]` @0x1839b4 after indexing the per-terminal data table) and returned; the value is whatever a peer last stored there with MPSET (default 0)."
+  - "Communication is dropped if the console enters sleep mode (docs)."
+
+errors:
+  - { errnum: 4,  name: "Illegal function call", when: "the call is not exactly two value arguments with one return slot" }
+  - { errnum: 52, name: "Incompatible statement", when: "MP is unavailable in the current context (global MP-restriction flag @0x305612 is non-zero)" }
+  - { errnum: 10, name: "Out of range", when: "terminal_id is outside 0..(connected-terminals-1), or management_number is outside 0-8" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/mpget.md (1 form: `Variable=MPGET( Terminal ID, Internal management number )`. 'Gets user-defined data from a specified terminal in a wireless communication session'; Terminal ID '0-3: ID of another terminal in the wireless communication session'; Internal management number '0-8: Management number of the target data'; Return Values 'Numerical value (integer) of the specified data'; 'Communication will be terminated if the system goes into sleep mode'. Example `RET=MPGET( 0, 5 )`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst MPGET handler @0x1838c0 (FUN_001838c0): argcount!=2 or retcount!=1 -> errnum 4 (`cmp r0,#0x2` @0x1838d0, `cmpeq r0,#0x1` @0x1838d8, `mov r0,#0x4` @0x1838e8); MP-restriction byte @0x305612 (literal-pool word @0x183a2c) non-zero -> errnum 52 (`mov r0,#0x34` @0x183908); terminal_id range vs count-1 (`sub r8,r0,#0x1` @0x183934 from [[0x316194]+0x3c4]; `cmp r0,#0x0`/`cmpge r8,r0`/`bge 0x183960` @0x1839d0) -> errnum 10 (`mov r0,#0xa` @0x1839e8); management_number 0..8 (`blt 0x183a10`/`cmp r0,#0x8`/`ble 0x18398c` @0x1839fc) -> errnum 10 (`mov r0,#0xa` @0x183a18); slot value load `ldr r1,[r0,#0xa04]` @0x1839b4. errnum 52 string @0x2e9a38 = 'Incompatible statement' (error pointer table base @0x3054f8, entry 52 @0x3055c8)." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bMPGET\\b', 33 files): both operands are routinely expressions — literal pairs (`MPGET(0,0)`, `MPGET(1,8)`), variable terminal (`MPGET(MPHOST,0)` D3X8V5KP/TXT/PACCHASE; `MPGET(I,5)`), and arithmetic (`MPGET(1-ID,8)` 227YK34J/TXT/JINTRI102). Confirms the 2-arg form and 0-8 management range are exercised across the slot space (0..8 all appear); the returned values are oracle-pending (need a real session)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar), 2026-06-23: `A=MPGET(0)` (1 arg) -> errnum 4, errline 1; `A=MPGET(0,0,0)` (3 args) -> errnum 4, errline 1. Confirms the value-arg-count!=2 guard raises errnum 4 before any networking (argcount check @0x1838d0 precedes the MP-restriction flag @0x1838f0). The returned slot values + range errnum 10 need a real session (oracle-pending)." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d MPGET (3.5.0 structural cross-check only)" }
+
+# Body-pinned argcount/restriction/range errnums (4/52/10) are `disassembled`. The returned
+# slot values need real wireless peers (peer-set via MPSET) and are oracle-pending
+# (HARVEST_QUEUE.md), so the top-level confidence stays disassembled.
+confidence: disassembled
+
+tests:
+  - { name: too_few_args, code: 'A=MPGET(0)', expect: { error: { errnum: 4 } } }
+  - { name: too_many_args, code: 'A=MPGET(0,0,0)', expect: { error: { errnum: 4 } } }

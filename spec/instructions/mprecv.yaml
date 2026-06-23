@@ -1,0 +1,42 @@
+id: MPRECV
+kind: statement
+category: Wireless communication
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args: []
+    out:
+      - { name: sid, type: integer, desc: "Receives the sender's connection ID (0-3) of the terminal the string came from; set to -1 when there is no data to receive." }
+      - { name: rcv, type: string, desc: "String variable that receives the data sent by a peer's MPSEND; empty when there is no data." }
+    note: "MPRECV OUT SID,RCV$ — pops one queued message: SID receives the sender ID (-1 if none), RCV$ receives the string. Exactly 0 value args and 2 OUT variables."
+
+summary: "Receives one queued string sent by a peer's MPSEND in the active wireless session, writing the sender's connection ID into the first OUT variable (SID) and the received string into the second (RCV$). If there is no data to receive, SID is set to -1. Communication is dropped if the system enters sleep mode."
+
+semantics:
+  - "MPRECV takes no value arguments and writes exactly two OUT variables: the handler requires value-arg-count (dispatch block +0x4) == 0 AND return-count (+0xc) == 2 — `ldr r0,[r0,#0x4]`/`cmp r0,#0x0` @0x183e90..0x183e98 then `ldreq r0,[r5,#0xc]`/`cmpeq r0,#0x2` @0x183e9c..0x183ea0; any other shape falls through to errnum 4 (Illegal function call) -> `mov r0,#0x4` @0x183eb0."
+  - "MP-restriction guard: the global byte flag @0x305612 is tested next; when it is non-zero MPRECV raises errnum 52 (Incompatible statement) — `ldr r0,[0x183f84]` (literal-pool word = 0x00305612)/`ldrb r0,[r0,#0x0]`/`cmp r0,#0x0` @0x183ec0..0x183ec8 -> `mov r0,#0x34` @0x183ed8. Same flag as the other MP commands."
+  - "The handler pulls the next message from the receive queue (`bl 0x001a5fd4` @0x183f00) yielding the sender ID in r4; a negative result (no data) is detected by `cmp r4,#0x0`/`bge 0x183f4c` @0x183f28..0x183f2c and takes the no-data path @0x183f30 which stores -1 into the SID OUT variable (matching the doc: 'If there is no data to receive, the sender ID will contain the value -1')."
+  - "When data is present (sender ID >= 0) the received bytes are turned into a SmileBASIC string: a string buffer is allocated (`bl 0x001ed8a8` @0x183f58) and, if allocation fails, errnum 11 (Out of memory) is raised (`moveq r0,#0xb` @0x183f70 -> raise). On success the sender ID is written to SID and the string to RCV$."
+  - "Communication is dropped if the console enters sleep mode (docs)."
+
+errors:
+  - { errnum: 4,  name: "Illegal function call", when: "the call is not exactly zero value arguments with two OUT variables" }
+  - { errnum: 52, name: "Incompatible statement", when: "MP is unavailable in the current context (global MP-restriction flag @0x305612 is non-zero)" }
+  - { errnum: 11, name: "Out of memory", when: "a string buffer for the received data could not be allocated" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/mprecv.md (1 form: `MPRECV OUT SID,RCV$`. 'Receives data from MPSEND'; SID '0-3: Connection destination number from which the string will be sent'; RCV$ 'String variable to store the received data'; 'If there is no data to receive, the sender ID will contain the value -1'; 'Communication will be terminated if the system goes into sleep mode'. Example `MPRECV OUT SID,RCV$` then `PRINT SID;\":\";RCV$`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst MPRECV handler @0x183e88 (FUN_00183e88): argcount!=0 or retcount!=2 -> errnum 4 (`cmp r0,#0x0` @0x183e98, `cmpeq r0,#0x2` @0x183ea0, `mov r0,#0x4` @0x183eb0); MP-restriction byte @0x305612 (literal-pool word @0x183f84) non-zero -> errnum 52 (`mov r0,#0x34` @0x183ed8); receive `bl 0x001a5fd4` @0x183f00 -> sender id r4, no-data path on `cmp r4,#0x0`/`bge 0x183f4c` @0x183f28 stores -1; string alloc `bl 0x001ed8a8` @0x183f58, alloc failure -> errnum 11 (`moveq r0,#0xb` @0x183f70). errnum 52 string @0x2e9a38 = 'Incompatible statement' (error pointer table base @0x3054f8, entry 52 @0x3055c8)." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bMPRECV\\b', 50 files): the documented `MPRECV OUT <sid>,<str$>` form dominates with varied OUT names (`MPRECV OUT SID,RCV$` 227YK34J/TXT/JINTRI102; `MPRECV OUT U,R$`; `MPRECV OUT SENDER,MSG$`; `MPRECV OUT ID%,RECV$`; array-element output `MPRECV OUT E,PN$[E]`). A second word-order form `MPRECV SID OUT RCV$` appears in 3 distinct programs (4KY3343D/TXT/ANROI-DS + @BACKUP.PRG, Q3XPAE83/TXT/QUICKTOOL_PLUS, QDH3J37D/TXT/ANDROI-DS), each printing SID afterward as the sender — this places one variable BEFORE `OUT`, which the @0x183e98 value-arg-count==0 guard would reject (errnum 4); whether 3.6.0 accepts it (alternate parse) or these are latent bugs is a QUESTION for the oracle, NOT a confirmed signature. Runtime SID/RCV$ values are oracle-pending (need real wireless peers)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar), 2026-06-23: `MPRECV` (0 OUT vars) -> errnum 4, errline 1; `MPRECV OUT SID` (1 OUT var) -> errnum 4, errline 1. Confirms the value-arg-count==0 && return-count==2 guard raises errnum 4 before any networking (argcount check @0x183e98 precedes the MP-restriction flag @0x183ec0). The SID/RCV$ payload values + the corpus `SID OUT RCV$` word-order question need real peers (oracle-pending)." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d MPRECV (3.5.0 structural cross-check only)" }
+
+# Body-pinned argcount/restriction/OOM errnums (4/52/11) and the -1 no-data sentinel are
+# `disassembled`. The runtime SID/RCV$ values and the corpus `MPRECV SID OUT RCV$` word-order
+# question need real wireless peers and are oracle-pending (HARVEST_QUEUE.md), so the
+# top-level confidence stays disassembled.
+confidence: disassembled
+
+tests:
+  - { name: missing_out_vars, code: 'MPRECV', expect: { error: { errnum: 4 } } }
+  - { name: one_out_var, code: 'MPRECV OUT SID', expect: { error: { errnum: 4 } } }

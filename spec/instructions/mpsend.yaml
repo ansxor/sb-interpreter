@@ -1,0 +1,45 @@
+id: MPSEND
+kind: statement
+category: Wireless communication
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: data, type: string, range: "1-256 bytes (1-128 UTF-16 code units): the character string to broadcast", desc: "Character string of up to 256 bytes (= 128 UTF-16 code units). May be any string expression (variable, literal, array element, concatenation)." }
+    returns: { type: void }
+    note: 'MPSEND "string" — broadcasts one string to every participant in the active wireless session. The operand may be any string expression (corpus). Delivery is guaranteed but delayed.'
+
+summary: 'Sends a character string to all participants in the active local-wireless communication session. The payload is a string of up to 256 bytes (128 UTF-16 code units). Delivery of sent data is guaranteed but arrives with a delay; issuing many MPSEND calls in a short period overflows the send buffer and raises a communication error. The peer side reads the data with MPRECV. Communication is dropped if the system enters sleep mode.'
+
+semantics:
+  - "MPSEND takes exactly one value argument and returns nothing: the handler requires value-arg-count (dispatch block +0x4) == 1 AND return-count (+0xc) == 0 — `ldr r1,[r0,#0x4]`/`cmp r1,#0x1` @0x183f98..0x183f9c then `ldreq r1,[r0,#0xc]`/`cmpeq r1,#0x0` @0x183fa0..0x183fa4; any other shape falls through to errnum 4 (Illegal function call) -> `mov r0,#0x4` @0x183fb4."
+  - "MP-restriction guard: a global byte flag @0x305612 is tested next; when it is non-zero MPSEND raises errnum 52 (Incompatible statement) — `ldr r1,[0x1840a0]` (the literal pool word @0x1840a0 = 0x00305612), `ldrb r1,[r1,#0x0]`/`cmp r1,#0x0` @0x183fc4..0x183fc8 -> `mov r0,#0x34` @0x183fd8. Same flag gates every MP command (MPSTART/MPEND/MPSET/MPSTAT/MPSEND/MPRECV/MPGET/MPNAME$)."
+  - "The argument must be a string: a type-tag byte is checked (`ldrb r12,[r3,#0x2]`/`cmp r12,#0x0`/`beq 0x184030` @0x183ff0..0x183ff8) and a non-string raises errnum 8 (Type mismatch) -> `mov r0,#0x8` @0x184034."
+  - "An empty string (length 0) is rejected: after fetching the string the length at `[sp,#0x0]` is tested (`cmp r1,#0x0`/`beq 0x18404c` @0x184010..0x184014) and length 0 raises errnum 4 (Illegal function call) -> `mov r0,#0x4` @0x184054."
+  - "The string length must not exceed 128 UTF-16 code units (= 256 bytes): `cmp r1,#0x80`/`bls 0x184060` @0x184018..0x18401c proceeds only when length <= 128; a longer string raises errnum 41 (String too long) -> `mov r0,#0x29` @0x184028."
+  - "When the checks pass the payload is handed to the wireless send routine (`bl 0x001a5a6c` @0x184078, char count passed via `uxth r1` @0x184064); a failed/overflowing send (return 0, `beq 0x184090` @0x184084) raises errnum 42 (Communication buffer overflow) -> `mov r0,#0x2a` @0x184098. A successful send returns no value and produces no console output."
+  - "Delivery of sent data is guaranteed but delayed; a burst of MPSEND calls overflows the send buffer (errnum 42). Communication is dropped if the console enters sleep mode (docs)."
+
+errors:
+  - { errnum: 4,  name: "Illegal function call", when: "the call is not exactly one value argument with no return slot, or the string is empty (length 0)" }
+  - { errnum: 52, name: "Incompatible statement", when: "MP is unavailable in the current context (global MP-restriction flag @0x305612 is non-zero)" }
+  - { errnum: 8,  name: "Type mismatch", when: "the argument is not a string" }
+  - { errnum: 41, name: "String too long", when: "the string exceeds 128 UTF-16 code units (256 bytes)" }
+  - { errnum: 42, name: "Communication buffer overflow", when: "the send buffer overflows (e.g. many MPSEND calls in a short period)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/mpsend.md (1 form: `MPSEND \"Character string to send\"`. 'Sends data to all participants in a wireless communication session'; argument 'Character string of up to 256 bytes'; 'Delivery of sent data is guaranteed, but with a delay'; 'A large number of MPSEND calls in a short period will result in an error * Communication buffer overflow'; 'Communication will be terminated if the system goes into sleep mode'. Example `MPSEND \"HELLO!\"`)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst MPSEND handler @0x183f94 (FUN_00183f94): argcount!=1 or retcount!=0 -> errnum 4 (`cmp r1,#0x1` @0x183f9c, `cmpeq r1,#0x0` @0x183fa4, `mov r0,#0x4` @0x183fb4); MP-restriction byte @0x305612 (literal-pool word @0x1840a0) non-zero -> errnum 52 (`mov r0,#0x34` @0x183fd8); non-string arg (`ldrb r12,[r3,#0x2]`/`beq 0x184030`) -> errnum 8 (`mov r0,#0x8` @0x184034); empty string (`cmp r1,#0x0`/`beq 0x18404c` @0x184010) -> errnum 4 (`mov r0,#0x4` @0x184054); length>128 code units (`cmp r1,#0x80`/`bls 0x184060` @0x184018) -> errnum 41 (`mov r0,#0x29` @0x184028); send via `bl 0x001a5a6c` @0x184078, send failure (`beq 0x184090`) -> errnum 42 (`mov r0,#0x2a` @0x184098). errnum 52 string @0x2e9a38 = 'Incompatible statement' (error pointer table base @0x3054f8, entry 52 @0x3055c8)." }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bMPSEND\\b', 50 files): the documented 1-arg form dominates; the operand is routinely any string expression — string variable (`MPSEND P$`, `MPSEND LOAD$`; `MPSEND MSG$` 227YK34J/TXT/JINTRI102), string literal (`MPSEND \"End of chat\"` 43N3J3J3/TXT/SIMPLE_CHAT), array element (`MPSEND PN$[PID]` 43F51EZ3/TXT/AGAR), and concatenation (`MPSEND ...\"+...` B1VNK3NJ/TXT/ORBITZ_). Syntax legal (shipped programs); runtime delivery/overflow behavior is oracle-pending (needs real wireless peers)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar), 2026-06-23: `MPSEND \"A\",\"B\"` (2 args) -> errnum 4, errline 1. Confirms the value-arg-count!=1 guard raises errnum 4 before any networking (argcount check @0x183f9c precedes the MP-restriction flag @0x183fc4). The data-delivery / errnum-41/42 payload behaviors need real peers (oracle-pending)." }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d MPSEND (3.5.0 structural cross-check only)" }
+
+# Body-pinned arg-count/restriction/type/length/overflow errnums (4/52/8/41/42) are
+# `disassembled`. The runtime delivery + buffer-overflow timing need real wireless peers and
+# are oracle-pending (queued in HARVEST_QUEUE.md), so the top-level confidence stays disassembled.
+confidence: disassembled
+
+tests:
+  - { name: wrong_argcount, code: 'MPSEND "A","B"', expect: { error: { errnum: 4 } } }
+  - { name: not_a_string, code: 'MPSEND 99', expect: { error: { errnum: 8 } } }
+  - { name: empty_string, code: 'MPSEND ""', expect: { error: { errnum: 4 } } }
