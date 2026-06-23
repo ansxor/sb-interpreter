@@ -1,0 +1,12 @@
+[package]
+name = "sb-core"
+description = "SmileBASIC 3.6.0 interpreter core: lexer, parser, compiler, VM. I/O- and GUI-free so it builds for wasm32; platform concerns live in the sb-platform-* crates."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

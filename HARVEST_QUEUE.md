@@ -10,6 +10,14 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] M1-T1 (lexer identifier class) · What is the exact SmileBASIC 3.6.0 identifier
+  character class — which non-ASCII chars are legal in a name (kana/kanji/full-width latin/
+  full-width digits?), and the leading-char rule (can a name start with a digit, `_`, or a
+  full-width digit?)? Also confirm names are case-insensitive (ASCII fold to upper) and
+  whether full-width letters fold too. · assumption: start = Unicode `is_alphabetic()` or `_`;
+  continue = Unicode `is_alphanumeric()` or `_`; ASCII case-folded to upper, non-ASCII left
+  as-is. Probe e.g. `Ａ=1:?Ａ` (full-width A), `１A=1` (full-width-digit lead), `あ=1:?あ`.
+
 - [ ] S-T13a (MPSTART/MPEND/MPSET/MPSTAT) · Wireless-session behaviors are body-pinned for
   validation (arg-count errnum 4, MP-restriction errnum 52 "Incompatible statement" via flag
   @0x305612, range errnum 10, MPSTART non-string identifier errnum 8) but the actual NETWORK

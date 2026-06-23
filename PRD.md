@@ -153,7 +153,7 @@ and name the instructions they cover inline.
 - [x] M0-T6 CI (deterministic replay only) + git
 
 ## M1 — Core VM + a real window  (gated on S; the existing lexer/AST predate the spec-first pivot — rewrite/validate, don't trust)
-- [ ] M1-T1 Lexer (token.rs + lexer.rs) — ⚠ existing code is an osb-port (ASCII-only idents); redo spec-first, verify identifier rules vs disassembly/oracle
+- [x] M1-T1 Lexer (token.rs + lexer.rs) — spec-first rewrite in fresh `crates/sb-core` (`token.rs`+`lexer.rs`); Unicode-letter identifiers (full-width/kana, NOT osb's ASCII-only), case-folded; `$`/`%`/`#` suffixes; `@label`/`#const`; `&H`/`&B` i32-wrap; `.`-leading/trailing reals + i32→Double promotion; tolerant strings; `'`/`REM` comments; two-char ops; TRUE/FALSE→1/0; SourceLoc across `:`/newlines/CRLF; 17 unit tests. Exact identifier class + leading-digit rule queued for oracle (HARVEST_QUEUE).
 - [ ] M1-T2 AST (ast.rs) — exists from the pre-pivot attempt; revalidate against the parser + specs → M1-T1
 - [ ] M1-T3 Parser — recursive descent + precedence + const folding → M1-T2, S-T6
 - [ ] M1-T4 Value/Array completion (1–4D, refs, coercion)

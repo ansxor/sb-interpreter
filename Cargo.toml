@@ -1,9 +1,10 @@
 # SmileBASIC 3.6.0 spec suite — Rust workspace.
-# Only sb-spec remains: it loads + validates the YAML instruction specs under spec/
-# and reports confidence coverage. The interpreter crates were removed (pre-pivot).
+# sb-spec loads + validates the YAML instruction specs under spec/; sb-core is the
+# spec-first interpreter core (lexer/parser/compiler/VM), rebuilt after the pivot.
 [workspace]
 resolver = "2"
 members = [
+    "crates/sb-core",
     "crates/sb-spec",
 ]
 
