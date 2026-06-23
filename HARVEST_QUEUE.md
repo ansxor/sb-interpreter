@@ -622,3 +622,19 @@ oracle to confirm exact output and promote to `hw_verified`.
   - Channel-0 redefinition / channel-order error rules (currently cross-system from SB4).
   - `/comments/` and `|chords|`: SB3 appears to reject them (errnum 47) — confirm vs oracle.
   - `$n` assignment range (docs 0-255) and overflow/clamp behavior.
+
+- S-C6 · file-and-extdata-format concept spec — model authored from docs (manual
+  managing-projects-files + save/load/files/chkfile/project/gsave/gload) + the disassembled
+  SAVE handler (@0x18e7d4: argcount guard -> errnum 3; shared resource-name parser @0x1d6d6c
+  with type code <=0xe; unknown resource -> errnum 4 @0x18e898; page-range guard -> errnum 10
+  @0x18e8f8; resource-type switch @0x18e930 cases 0..6) + the hw_verified extdata container
+  (sb_extdata.py round-trip O-T3/O-T4) and PCBN GRP layout (sb_grp.py pixel-exact O-T6) +
+  PETC corpus container (extract_sbsave.py, community 915/915). Open items oracle-pending:
+  - DAT numeric-array PCBN tagging: how int vs double vs ushort element type and array
+    dimensions are encoded in the PCBN header for SAVE"DAT:"/LOAD"DAT:" (only GRP image
+    layout is pixel-verified).
+  - GRPF font page: confirm same 512x512 PCBN layout as GRP0-5 (assumed) vs distinct size.
+  - Header date field @0x0C: what real SB stamps on save (injector uses fixed DF 07 0A 0F);
+    whether SB validates it on load.
+  - errnum 35 (illegal format) vs 46 (load failed): which corruption modes raise which on
+    real hardware (bad footer, wrong PCBN magic, truncated body).
