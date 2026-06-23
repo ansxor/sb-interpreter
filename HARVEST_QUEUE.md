@@ -1191,3 +1191,23 @@ a live SB 3.6.0 read:
   playback, -1 when stopped (the documented value). The live value mid-tune is unconfirmed.
 - **BGMVOL / 3-arg BGMPLAY volume + fade** — the audible mix level / `BGMSTOP track,fade` fade curve
   have no scalar golden.
+
+### M5-T4 SFX / voice — oracle-pending + interpreter-gap notes (no deterministic golden, O-T7)
+The call shapes / arg ranges / error conditions are disassembled + tested; the items below are
+either unverifiable audio output (O-T7) or a broader interpreter gap to revisit:
+- **TALKCHK bare-statement → errnum 3** — a bare `TALKCHK()` used as a statement is rejected at
+  parse time with Syntax error (3) on real SB 3.6.0 (function-as-statement). sb-core does not yet
+  track function-vs-statement kind, so its handler raises Illegal function call (4) instead. The
+  `talkchk.yaml` `bare_statement_syntax_error` case is excluded from the conformance gate via
+  `IN_SCOPE_PARTIAL` until function-as-statement parse rejection lands (a parser/compiler feature,
+  not M5-specific).
+- **WAVSET `[`/`]` repeat groups** — the disassembled hex parser honours bracketed repeat markers
+  inside the waveform string (`@0x1a2308`). `decode_waveform` does not expand them (no committed
+  case, semantics unverified) and treats a `[`/`]` as a non-hex char → errnum 4. Confirm the exact
+  repeat semantics on real SB and implement if a corpus form needs it.
+- **BEEP/EFC/WAVSET audible output** — the preset SFX PCM, the reverb preset/raw parameters' audible
+  effect, the per-source wet mix, the TTS voice, and the user-instrument waveform synthesis have no
+  scalar golden (real-time audio; O-T7). sb-core models only the deterministic state each command sets.
+- **WAVSETA reference-pitch / start / end range errors + end<start** — need a live array operand
+  (the array-type check precedes them); harvest the errnum for each via the oracle (sb-core: 10/10/10
+  for ranges, 4 for end<start, per the disassembly).

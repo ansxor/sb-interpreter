@@ -227,8 +227,20 @@ const IN_SCOPE_INPUT: &[&str] = &["BUTTON", "STICK", "STICKEX", "BREPEAT", "TOUC
 /// is excluded — it has no matching `DATA` block, so `sb-core` faithfully raises Undefined
 /// label (errnum 14, the RESTORE-shared lookup) rather than the spec's assumed empty stdout
 /// (oracle-pending — queued in `HARVEST_QUEUE.md`). Listed by id.
+/// The SFX / voice commands (M5-T4) extend the in-scope set: `BEEP` (preset sound effect),
+/// `TALK`/`TALKCHK`/`TALKSTOP` (speech transport), `EFCSET`/`EFCON`/`EFCOFF`/`EFCWET` (the
+/// music effector over `EffectState`), and `WAVSET`/`WAVSETA` (user MML instruments
+/// `@224`–`@255`). Each is in scope for its disassembled arg-shape / range / type contract;
+/// the *audible* output has no deterministic golden (O-T7), so the inline cases assert only
+/// empty `stdout`, a `0`/`1` boolean (`TALKCHK`), or an errnum. `TALKCHK`'s
+/// `bare_statement_syntax_error` case is folded PARTIALLY (excluded below): a bare
+/// `TALKCHK()` statement is rejected at parse-time with errnum 3 on real SB, but `sb-core`
+/// does not yet track function-vs-statement kind, so the handler raises errnum 4 instead
+/// (function-as-statement parse rejection is a broader feature — queued in
+/// `HARVEST_QUEUE.md`).
 const IN_SCOPE_SOUND: &[&str] = &[
-    "BGMPLAY", "BGMSTOP", "BGMCHK", "BGMVAR", "BGMVOL", "BGMSET", "BGMSETD", "BGMCLEAR",
+    "BGMPLAY", "BGMSTOP", "BGMCHK", "BGMVAR", "BGMVOL", "BGMSET", "BGMSETD", "BGMCLEAR", "BEEP",
+    "TALK", "TALKCHK", "TALKSTOP", "EFCSET", "EFCON", "EFCOFF", "EFCWET", "WAVSET", "WAVSETA",
 ];
 /// Specs `sb-core` implements only **partially** in M1: each is in scope, but the named
 /// cases listed here are EXCLUDED because they block on a later milestone or the
@@ -242,8 +254,11 @@ const IN_SCOPE_SOUND: &[&str] = &[
 /// `IN_SCOPE_GRAPHICS`.) `CHKCHR`: `read_printed_char` now folds in with the
 /// harness scrape `"A65"` (the setup glyph stays on the grid); its empty-cell/OOB/arg-count
 /// cases fold in now. Tuples are `(spec id, &[excluded case names])`.
-const IN_SCOPE_PARTIAL: &[(&str, &[&str])] =
-    &[("LOCATE", &["x_edge_50_ok"]), ("BGMSETD", &["basic"])];
+const IN_SCOPE_PARTIAL: &[(&str, &[&str])] = &[
+    ("LOCATE", &["x_edge_50_ok"]),
+    ("BGMSETD", &["basic"]),
+    ("TALKCHK", &["bare_statement_syntax_error"]),
+];
 
 #[derive(Debug, Deserialize)]
 struct CaseFile {

@@ -41,6 +41,7 @@ mod string;
 use crate::value::{RuntimeError, SbStr, Value};
 
 // errnums shared across the builtins (names per `spec/reference/errors.yaml`).
+pub(crate) const ERR_SYNTAX: u32 = 3;
 pub(crate) const ERR_ILLEGAL_FUNCTION_CALL: u32 = 4;
 pub(crate) const ERR_TYPE_MISMATCH: u32 = 8;
 pub(crate) const ERR_OVERFLOW: u32 = 9;
@@ -48,6 +49,10 @@ pub(crate) const ERR_OUT_OF_RANGE: u32 = 10;
 const ERR_UNDEFINED_FUNCTION: u32 = 16;
 pub(crate) const ERR_SUBSCRIPT_OUT_OF_RANGE: u32 = 31;
 
+/// Build a `Syntax error` (errnum 3) — e.g. the `EFC*` commands' wrong-arg-count gate.
+pub(crate) fn syntax_error() -> RuntimeError {
+    RuntimeError::new(ERR_SYNTAX)
+}
 /// Build an `Illegal function call` (errnum 4) — a wrong argument count.
 pub(crate) fn illegal() -> RuntimeError {
     RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL)
@@ -280,6 +285,20 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "BGMSET",
     "BGMSETD",
     "BGMCLEAR",
+    // SFX / voice (M5-T4): BEEP plays a preset sound effect; TALK/TALKCHK/TALKSTOP drive
+    // synthesized speech; EFCSET/EFCON/EFCOFF/EFCWET control the music effector; WAVSET/
+    // WAVSETA define user MML instruments (@224-255). They route over `AudioState`, so they
+    // are registered here for the compiler to treat as builtins rather than variables.
+    "BEEP",
+    "TALK",
+    "TALKCHK",
+    "TALKSTOP",
+    "EFCSET",
+    "EFCON",
+    "EFCOFF",
+    "EFCWET",
+    "WAVSET",
+    "WAVSETA",
     // Test-mode assertion (M1-T14): the VM handles it directly (a false condition halts
     // with `VmError::Assert`), so it is not in the stateless `dispatch`.
     "ASSERT__",

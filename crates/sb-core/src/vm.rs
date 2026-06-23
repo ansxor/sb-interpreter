@@ -1148,6 +1148,23 @@ impl Vm {
                 }
             }
             "BGMSETD" => self.call_bgmsetd(&args, wants_value)?,
+            // SFX / voice (M5-T4): preset sound effects, synthesized speech, the music
+            // effector and user MML instruments, all over `AudioState`.
+            "BEEP" => self.audio.beep(&args, wants_value).map_err(sb)?,
+            "TALK" => self.audio.talk(&args, wants_value).map_err(sb)?,
+            "TALKSTOP" => self.audio.talkstop(&args, wants_value).map_err(sb)?,
+            "TALKCHK" => {
+                let v = self.audio.talkchk(&args, wants_value).map_err(sb)?;
+                if wants_value {
+                    self.stack.push(v);
+                }
+            }
+            "EFCSET" => self.audio.efcset(&args, wants_value).map_err(sb)?,
+            "EFCON" => self.audio.efcon(&args, wants_value).map_err(sb)?,
+            "EFCOFF" => self.audio.efcoff(&args, wants_value).map_err(sb)?,
+            "EFCWET" => self.audio.efcwet(&args, wants_value).map_err(sb)?,
+            "WAVSET" => self.audio.wavset(&args, wants_value).map_err(sb)?,
+            "WAVSETA" => self.audio.wavseta(&args, wants_value).map_err(sb)?,
             _ => return Ok(false),
         }
         Ok(true)
@@ -3747,5 +3764,59 @@ H$=HEX$(255)"#);
         // BGMSET / BGMPLAY of a string both surface the MML parser's Illegal MML (47).
         assert_eq!(run_b_err(r#"BGMSET 128,"+R""#).errnum(), Some(47));
         assert_eq!(run_b_err(r#"BGMPLAY "+R""#).errnum(), Some(47));
+    }
+
+    // ---- SFX / voice: BEEP/TALK/TALKCHK/TALKSTOP/EFC*/WAVSET/WAVSETA (M5-T4) ----
+
+    #[test]
+    fn beep_runs_and_skips_args() {
+        // The bare form, a full form, and the empty-comma skip all run without error.
+        run_b("BEEP:BEEP 20:BEEP 9,,80:BEEP 9,0,80,64");
+    }
+
+    #[test]
+    fn beep_sound_gap_is_out_of_range() {
+        // The 134..223 gap and >383 are Out of range (10); a function context is errnum 4.
+        assert_eq!(run_b_err("BEEP 134").errnum(), Some(10));
+        assert_eq!(run_b_err("BEEP 0,0,0,0,0").errnum(), Some(4));
+    }
+
+    #[test]
+    fn talk_then_talkchk_then_stop() {
+        // Idle TALKCHK is 0; after TALK it reports playing; TALKSTOP clears it.
+        let vm = run_b(r#"A=TALKCHK():TALK "HELLO":B=TALKCHK():TALKSTOP:C=TALKCHK()"#);
+        assert_eq!(int(&vm, "A"), 0);
+        assert_eq!(int(&vm, "B"), 1);
+        assert_eq!(int(&vm, "C"), 0);
+    }
+
+    #[test]
+    fn talk_in_value_context_is_errnum_4() {
+        assert_eq!(run_b_err(r#"X=TALK("HI")"#).errnum(), Some(4));
+    }
+
+    #[test]
+    fn effector_set_on_off_wet() {
+        // EFCSET preset + EFCON/EFCOFF + EFCWET all run; a bad arg count is Syntax error (3),
+        // an out-of-range wet value is Out of range (10).
+        run_b("EFCSET 2:EFCON:EFCWET 0,100,64:EFCOFF");
+        assert_eq!(run_b_err("EFCSET 4").errnum(), Some(10));
+        assert_eq!(run_b_err("EFCON 1").errnum(), Some(3));
+        assert_eq!(run_b_err("EFCWET 0,0").errnum(), Some(3));
+        assert_eq!(run_b_err("EFCWET 0,0,200").errnum(), Some(10));
+    }
+
+    #[test]
+    fn wavset_defines_user_instrument() {
+        // The hex-string form registers a user instrument (@224); the array form (WAVSETA)
+        // reads a numeric sample array. A defnum outside 224..255 is Out of range (10).
+        run_b(r#"WAVSET 224,3,10,30,5,"7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF""#);
+        run_b("DIM SMP[16]:WAVSETA 255,120,0,127,124,SMP,45,0,15");
+        assert_eq!(
+            run_b_err(r#"WAVSET 223,3,10,30,5,"7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF""#).errnum(),
+            Some(10)
+        );
+        // A non-array WAVSETA source is Type mismatch (8).
+        assert_eq!(run_b_err("WAVSETA 224,0,95,100,20,12345").errnum(), Some(8));
     }
 }

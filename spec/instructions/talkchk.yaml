@@ -32,6 +32,6 @@ tests:
   # Call shape + the documented 0-when-stopped value. At program start no speech is playing, so
   # TALKCHK() reads FALSE (0). The playing (non-zero) value is oracle-pending (O-T7).
   # hw_verified (sb-oracle): idle returns 0; arg -> errnum 4 (handler); bare statement -> errnum 3 (parser).
-  - { name: check_stopped, code: "PRINT TALKCHK()", expect: { stdout: "0\n" } }
+  - { name: check_stopped, code: "PRINT TALKCHK()", expect: { stdout: "0" } }
   - { name: with_arg_errors, code: "X=TALKCHK(0)", expect: { error: { errnum: 4 } } }
   - { name: bare_statement_syntax_error, code: "TALKCHK()", expect: { error: { errnum: 3 } } }

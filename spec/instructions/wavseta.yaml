@@ -45,12 +45,12 @@ confidence: disassembled
 tests:
   # Argument shape, ranges and error conditions read from the handler body. Audio output is not
   # deterministically harvestable (O-T7); these pin the statement contract.
-  - { name: define_6args, code: "DIM SMP(16):WAVSETA 224,0,95,100,20,SMP", expect: { stdout: "" } }
-  - { name: define_9args, code: "DIM SMP(16):WAVSETA 255,120,0,127,124,SMP,45,0,15", expect: { stdout: "" } }
-  - { name: defnum_below_range, code: "DIM SMP(16):WAVSETA 223,0,95,100,20,SMP", expect: { error: { errnum: 10 } } }
-  - { name: defnum_above_range, code: "DIM SMP(16):WAVSETA 256,0,95,100,20,SMP", expect: { error: { errnum: 10 } } }
-  - { name: decay_out_of_range, code: "DIM SMP(16):WAVSETA 224,0,128,100,20,SMP", expect: { error: { errnum: 10 } } }
-  - { name: ref_pitch_out_of_range, code: "DIM SMP(16):WAVSETA 224,0,95,100,20,SMP,128", expect: { error: { errnum: 10 } } }
+  - { name: define_6args, code: "DIM SMP[16]:WAVSETA 224,0,95,100,20,SMP", expect: { stdout: "" } }
+  - { name: define_9args, code: "DIM SMP[16]:WAVSETA 255,120,0,127,124,SMP,45,0,15", expect: { stdout: "" } }
+  - { name: defnum_below_range, code: "DIM SMP[16]:WAVSETA 223,0,95,100,20,SMP", expect: { error: { errnum: 10 } } }
+  - { name: defnum_above_range, code: "DIM SMP[16]:WAVSETA 256,0,95,100,20,SMP", expect: { error: { errnum: 10 } } }
+  - { name: decay_out_of_range, code: "DIM SMP[16]:WAVSETA 224,0,128,100,20,SMP", expect: { error: { errnum: 10 } } }
+  - { name: ref_pitch_out_of_range, code: "DIM SMP[16]:WAVSETA 224,0,95,100,20,SMP,128", expect: { error: { errnum: 10 } } }
   - { name: source_not_array, code: "WAVSETA 224,0,95,100,20,12345", expect: { error: { errnum: 8 } } }
-  - { name: end_before_start, code: "DIM SMP(16):WAVSETA 224,0,95,100,20,SMP,69,10,5", expect: { error: { errnum: 4 } } }
-  - { name: bad_arg_count_5, code: "DIM SMP(16):WAVSETA 224,0,95,100,20", expect: { error: { errnum: 4 } } }
+  - { name: end_before_start, code: "DIM SMP[16]:WAVSETA 224,0,95,100,20,SMP,69,10,5", expect: { error: { errnum: 4 } } }
+  - { name: bad_arg_count_5, code: "DIM SMP[16]:WAVSETA 224,0,95,100,20", expect: { error: { errnum: 4 } } }

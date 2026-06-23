@@ -3,6 +3,8 @@
 //! - [`mml`] — the **MML parser** (M5-T1): a `BGMPLAY`-style MML string → a deterministic
 //!   per-channel note-event stream ([`mml::Song`]).
 //! - [`instruments`] — oscillator/wavetable + ADSR-envelope model (M5-T2).
+//! - [`effects`] — the music-effector ([`effects::EffectState`]) and user-instrument
+//!   ([`effects::UserInstrument`]) models for the M5-T4 SFX/voice commands.
 //! - [`synth`] — the **synth engine** (M5-T2): renders a [`mml::Song`] to interleaved stereo
 //!   PCM16 through a 3DS-DSP-style voice/resampler/mixer ([`synth::Synth`]).
 //!
@@ -15,6 +17,7 @@
 //! (`prd/oracle.md` O-T7) — not e2e-verifiable; the testable contract is MML→events and
 //! deterministic, structurally-correct PCM.
 
+pub mod effects;
 pub mod instruments;
 pub mod mml;
 pub mod synth;
