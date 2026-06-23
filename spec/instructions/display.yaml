@@ -1,0 +1,45 @@
+id: DISPLAY
+kind: statement
+category: Screen control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — statement: SELECT the screen to manipulate.
+  - args:
+      - { name: screen_id, type: integer, range: "0 or 1", desc: "Target screen: 0 = Upper screen, 1 = Touch Screen. 1 is only valid when XSCREEN 2 or 3 (or the combined modes) make the Touch Screen available." }
+    note: "DISPLAY screen_id — select which screen subsequent console/graphics output targets."
+  # Form 2 — function: GET the screen currently selected.
+  - args: []
+    returns: { type: integer, desc: "The screen ID currently being used: 0 = Upper screen, 1 = Touch Screen." }
+    note: "a = DISPLAY() — read the currently selected screen ID."
+
+summary: "Selects (statement) or reads (function) which of the two 3DS screens subsequent screen operations target. `DISPLAY 0` targets the Upper screen; `DISPLAY 1` targets the Touch Screen and is only valid when the current XSCREEN mode makes the Touch Screen available (modes 2 and 3). `a = DISPLAY()` returns the screen ID currently selected (0 or 1). The command cannot be executed in DIRECT mode — doing so raises errnum 43 (Can't use from DIRECT mode)."
+
+semantics:
+  - "DIRECT-mode guard FIRST: the handler loads the program-mode flag [[0x305611]] (ldr r1,[0x14c41c] / ldrb r1,[r1,#0x0] @0x14c2fc-0x14c304); if it is 0 (DIRECT mode) it raises errnum 43 (Can't use from DIRECT mode: mov r0,#0x2b @0x14c338 -> bl 0x1fffdc) before any other check. This matches the documented 'This command cannot be directly executed in DIRECT mode.'"
+  - "Form selection by call shape: result count [r0,#0xc] (ldr r1,[r0,#0xc] @0x14c310) ==0 -> beq @0x14c344 (SET/statement) ; ==1 with argcount [r0,#0x4]==0 (cmp r1,#0x1 / ldreq r1,[r0,#0x4] / cmpeq r1,#0x0 @0x14c31c) -> beq @0x14c400 (GET/function) ; otherwise errnum 4 (Illegal function call: mov r0,#0x4 @0x14c358 -> b @0x14c3c0 -> bl 0x1fffdc)."
+  - "SET path (@0x14c344): argcount must be exactly 1 (cmp r1,#0x1 @0x14c348 / beq @0x14c360) else errnum 4. The operand is evaluated to sp[0] (blx [r2,#0x40] @0x14c374). The screen id is then range-checked AGAINST THE CURRENT XSCREEN MODE read from [[0x315d49]] (ldrb @0x14c38c): modes 0 and 1 (single-screen) and mode 4 (combined) require id==0 — any id!=0 raises errnum 10 (Out of range: mov r0,#0xa @0x14c3bc -> bl 0x1fffdc); modes 2 and 3 (Touch Screen used) require id<2, i.e. 0 or 1, else errnum 10 (cmp id,#0x2 / bcc ok @0x14c3b0). So DISPLAY 1 is legal only under XSCREEN 2 or 3 — exactly the documented rule. On success the display target is set (bl 0x1e991c @0x14c3f4) and the handler returns 0."
+  - "GET path (@0x14c400): the current screen id is read through the device vtable ([r0,#0x10] -> [+0x14], blx @0x14c414) and delivered through the result slot — returning 0 (Upper) or 1 (Touch)."
+  - "The selected target governs which physical screen console text and graphics go to; the screen contents themselves have no scalar golden. What is pinned here is the DIRECT-mode errnum-43 guard, the SET/GET call-shape selection, the exactly-1-arg SET guard, and the XSCREEN-mode-dependent errnum-10 range check (DISPLAY 1 needs XSCREEN 2/3)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the call shape is neither (statement, exactly 1 argument) nor (function, 0 arguments)" }
+  - { errnum: 10, name: "Out of range", when: "the screen id is not valid for the current XSCREEN mode — id!=0 under modes 0/1/4, or id not in 0..1 under modes 2/3 (e.g. DISPLAY 1 while XSCREEN 0 or 1)" }
+  - { errnum: 43, name: "Can't use from DIRECT mode", when: "DISPLAY is executed in DIRECT mode (the program-mode flag is clear)" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/display.md (Form 1 `DISPLAY Screen ID` — 'Selects the screen to manipulate (Upper or Touch)'; Screen ID '0: Upper screen, 1: Touch Screen'; 'DISPLAY 1 can be specified when XSCREEN 2 or 3 is used'; 'This command cannot be directly executed in DIRECT mode.'. Form 2 `Variable=DISPLAY()` — 'Gets the Screen ID that is currently being used'; returns 'Screen ID (0: Upper screen, 1: Touch Screen)'; examples DISPLAY 0 / A=DISPLAY())" }
+  - { type: disassembled, ref: "cia_3.6.0.lst DISPLAY handler @0x14c2fc: DIRECT-mode flag [[0x305611]] (ldr r1,[0x14c41c] / ldrb @0x14c304) ==0 -> mov r0,#0x2b errnum 43 (@0x14c338 -> bl 0x1fffdc); result [r0,#0xc] ==0 -> SET @0x14c344 / ==1 & argcount [r0,#0x4]==0 -> GET @0x14c400 / else mov r0,#0x4 errnum 4 (@0x14c354 -> @0x14c3c0); SET argcount==1 guard (@0x14c348) else errnum 4; arg eval blx [r2,#0x40] @0x14c374 -> sp[0]; XSCREEN mode [[0x315d49]] (ldrb @0x14c38c) switch: mode 0 (@0x14c3e4)/mode 1 (@0x14c3d4)/mode 4 (@0x14c3c8) require id==0 else mov r0,#0xa errnum 10 (@0x14c3bc); modes 2/3 require id<2 (cmp #0x2 / bcc @0x14c3f0) else errnum 10; set target bl 0x1e991c @0x14c3f4, return 0; GET via [r0,#0x10]->[+0x14] blx @0x14c414. literals [0x14c41c]=0x305611, [0x14c420]=0x305628, [0x14c424]=0x315d49, [0x14c428]" }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d DISPLAY (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bDISPLAY\\b'): SET form `DISPLAY 0` (~7000 hits) and `DISPLAY 1` (~6100 hits) are ubiquitous; GET form `DISPLAY()` real (~750 hits). 1-arg SET and 0-arg GET only (other apparent matches like DISPLAY$ / DISPLAYD are identifier substrings, discarded). DISPLAY 1 appears alongside XSCREEN 2/3 usage, consistent with the mode-dependent range rule." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11d): `DISPLAY 0,1` (2 args) raises errnum 4 (Illegal function call, errline 1), confirming the SET path requires exactly 1 argument; `XSCREEN 0:DISPLAY 1` raises errnum 10 (Out of range, errline 1), confirming DISPLAY 1 is rejected when XSCREEN 0 leaves the Touch Screen unavailable. (Programs run via RUN, i.e. program mode, so the errnum-43 DIRECT-mode guard is not exercised here.)" }
+
+confidence: disassembled
+
+tests:
+  # Which physical screen is targeted has no scalar golden. The assertable behaviors are
+  # the misuse guard (errnum 4) and — when XSCREEN keeps the Touch Screen unavailable — the
+  # DISPLAY 1 range error (errnum 10), both hw_verified via sb-oracle batch s_t11d. The
+  # DIRECT-mode errnum 43 needs a DIRECT-mode harness (queued).
+  - { name: two_args_err, code: "DISPLAY 0,1", expect: { error: { errnum: 4 } } }
+  - { name: touch_unavailable_err, code: "XSCREEN 0:DISPLAY 1", expect: { error: { errnum: 10 } } }

@@ -1,0 +1,41 @@
+id: BACKCOLOR
+kind: statement
+category: Screen control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — statement: SET the background color.
+  - args:
+      - { name: color, type: integer, desc: "Background color code: an 8-bit-per-channel RGB value, usually built with RGB(r,g,b). May be given as a direct numeric color code." }
+    note: "BACKCOLOR color — set the background (border/clear) color."
+  # Form 2 — function: GET the current background color.
+  - args: []
+    returns: { type: integer, desc: "The color code of the background color currently set (same 8-bit-per-channel RGB encoding as the setter accepts)." }
+    note: "c = BACKCOLOR() — read the current background color code."
+
+summary: "Sets or reads the screen background color (the color shown behind/around the console, graphics, BG and sprite layers). The statement form `BACKCOLOR color` sets it from an RGB color code — usually built with RGB(r,g,b), e.g. BACKCOLOR RGB(64,128,128) — or a direct numeric value with an 8-bit channel for each of R, G and B. The function form `c = BACKCOLOR()` returns the color code currently set, in the same encoding. The form is chosen by call shape: a statement with one argument writes; a zero-argument function call reads."
+
+semantics:
+  - "Form selection by call shape: the handler reads the result count [r4,#0xc] (ldr r0,[r0,#0xc] @0x14ccdc). result==0 -> beq @0x14cd0c (statement/SET path); result==1 with argcount [r4,#0x4]==0 (cmp r0,#0x1 / ldreq r0,[r4,#0x4] / cmpeq r0,#0x0 @0x14cce8) -> beq @0x14cd80 (function/GET path); any other shape raises errnum 4 (Illegal function call: mov r0,#0x4 @0x14cd04 -> b 0x1fffdc @0x14cd08)."
+  - "SET path (@0x14cd0c): the argument count must be exactly 1 (cmp r0,#0x1 @0x14cd10 / beq @0x14cd2c), else errnum 4 (mov r0,#0x4 @0x14cd20 -> bl 0x1fffdc). The single operand is evaluated via the arg vtable (blx [r2,#0x40] @0x14cd40) into sp[0]; an eval continuation (r0!=0) stores 0 and returns (strne @0x14cd4c). The color code is then byte-reordered into the hardware's internal channel order — r0 is split into byte lanes (lsl #8/#16/#24, lsr #24/#8, orr @0x14cd54-0x14cd70) — and handed to the setter (bl 0x14ed64 @0x14cd74); the handler returns 0 (mov r0,#0x0 @0x14cd78)."
+  - "GET path (@0x14cd80): the current color is fetched from the getter (bl 0x14ed3c @0x14cd84) and byte-reordered back (and r1,r0,#0xff00 / and r2,r0,#0xff / lsl #8 / orr @0x14cd88-0x14cd98) into the user-facing 8-bit-per-channel RGB color code before being delivered through the result slot. So `BACKCOLOR()` round-trips the same encoding `BACKCOLOR color` accepts: e.g. after BACKCOLOR RGB(64,128,128), BACKCOLOR() returns RGB(64,128,128)."
+  - "The reorder steps are an internal RGBA<->ABGR (or equivalent) channel swap; user-visible values are the standard SmileBASIC color codes produced by RGB(). The actual rendered border/clear color is screen state (no scalar golden); what is pinned here is the SET/GET call-shape selection, the exactly-1-arg SET guard, the errnum-4 misuse guard, and the encoding round-trip."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the call shape is neither (statement, exactly 1 argument) nor (function, 0 arguments) — e.g. BACKCOLOR with no argument as a statement, BACKCOLOR with 2+ arguments, or BACKCOLOR() used with arguments" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/backcolor.md (Form 1 `BACKCOLOR Background color code` — 'Specifies a background color'; 'Usually specified with the RGB function, e.g., BACKCOLOR RGB(64,128,128)'; 'To specify a numerical value directly, a color code consisting of an 8-bit value for each RGB element should be specified'. Form 2 `Variable=BACKCOLOR()` — 'Specifies the current background color'; returns 'Color code of the background color currently set'; example C=BACKCOLOR())" }
+  - { type: disassembled, ref: "cia_3.6.0.lst BACKCOLOR handler @0x14ccd4: result [r4,#0xc] (ldr @0x14ccdc) ==0 -> beq @0x14cd0c (SET) / ==1 & argcount [r4,#0x4]==0 (cmp r0,#0x1 / ldreq r0,[r4,#0x4] / cmpeq r0,#0x0 @0x14cce8) -> beq @0x14cd80 (GET) / else mov r0,#0x4 errnum 4 (@0x14cd04 -> b 0x1fffdc @0x14cd08); SET argcount==1 guard (cmp r0,#0x1 @0x14cd10) else errnum 4 (mov r0,#0x4 @0x14cd20); arg eval blx [r2,#0x40] @0x14cd40 -> sp[0], byte reorder (lsl#8/#16/#24, lsr#24/#8, orr @0x14cd54-0x14cd70) -> setter bl 0x14ed64 @0x14cd74, return 0 (@0x14cd78); GET getter bl 0x14ed3c @0x14cd84, reorder (and #0xff00 / and #0xff / lsl#8 / orr @0x14cd88-0x14cd98). literals [0x14cdb4], [0x14cdb0]" }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d BACKCOLOR (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBACKCOLOR\\b'): SET form dominant with RGB() (BACKCOLOR RGB(0,0,0), BACKCOLOR RGB(255,255,255)), direct numeric (BACKCOLOR 0), and named color constants (BACKCOLOR BLACK, BACKCOLOR BLUE — integer constants). GET form real: `C=BACKCOLOR()` / `BACKCOLOR(`. All SET uses are exactly one operand; GET is always zero-arg — consistent with the call-shape guard. No 2-arg form found." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11d): `BACKCOLOR` as a statement with no argument and `BACKCOLOR 0,1` (2 args) both raise errnum 4 (Illegal function call, errline 1), confirming the SET path requires exactly 1 argument. The set/returned color value round-trip has no scalar golden yet (queued)." }
+
+confidence: disassembled
+
+tests:
+  # The rendered color is screen state (no scalar golden). The assertable behavior is the
+  # call-shape / arg-count guard: a no-argument BACKCOLOR statement and a multi-argument
+  # form both raise errnum 4 (hw_verified via sb-oracle batch s_t11d).
+  - { name: no_arg_statement_err, code: "BACKCOLOR", expect: { error: { errnum: 4 } } }
+  - { name: two_args_err, code: "BACKCOLOR 0,1", expect: { error: { errnum: 4 } } }

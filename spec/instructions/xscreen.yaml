@@ -1,0 +1,49 @@
+id: XSCREEN
+kind: statement
+category: Screen control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — mode only (sprite/BG allocations take per-mode defaults).
+  - args:
+      - { name: mode, type: integer, range: "0..4", desc: "Screen mode. 0: Upper 3D, Touch unused (default). 1: Upper 2D, Touch unused. 2: Upper 3D, Touch used (keyboard on INPUT). 3: Upper 2D, Touch used. 4: Upper+Touch combined (Upper 2D; INPUT and DIRECT mode not allowed)." }
+    note: "XSCREEN mode — set the screen mode; sprite/BG allocations default per mode."
+  # Form 2 — mode + explicit sprite and BG allocations.
+  - args:
+      - { name: mode, type: integer, range: "0..4", desc: "Screen mode (see Form 1)." }
+      - { name: sprites, type: integer, range: "0..512", desc: "Number of sprites to assign to the upper screen (0-512). The Touch Screen receives 512 minus this count." }
+      - { name: bg, type: integer, range: "0..4", desc: "Number of BG layers to assign to the upper screen (0-4). The Touch Screen receives 4 minus this count." }
+    note: "XSCREEN mode, sprites, bg — set the screen mode and explicitly split the 512 sprites / 4 BG layers between the upper and touch screens."
+
+summary: "Sets the screen mode (0-4), choosing whether the upper screen is 3D or 2D and whether the Touch Screen is used as a second graphics screen. Modes 0/1 use only the upper screen; modes 2/3 add the Touch Screen (a keyboard is shown during INPUT); mode 4 combines both into one tall screen (upper 2D; INPUT and DIRECT mode not allowed). The optional second and third arguments split the 512 sprites and 4 BG layers between the two screens; when omitted they default per mode (single-screen modes give the upper screen all 512 sprites / 4 BG; dual-screen modes 2/3 give it 256 sprites / 2 BG). XSCREEN takes 1 or 3 arguments — never 2."
+
+semantics:
+  - "XSCREEN takes 1 or 3 arguments and never returns a value: with argcount [r4,#0x4]>=1 and result count [r4,#0xc]!=0 the handler raises errnum 4 (cmp r6,#0x1 / ldrge r0,[r4,#0xc] / cmpge r0,#0x0 / bne @0x14cba4 -> mov r0,#0x4 errnum 4 @0x14cbac). The mode operand is evaluated first to sp[8] (blx [r2,#0x40] @0x14cb10)."
+  - "Mode 4 is rejected in DIRECT mode: if the program-mode flag [[0x14ccc8]] is 0 and mode==4, errnum 43 (Can't use from DIRECT mode: ldrb @0x14cb28 / cmp #0 / ldreq mode / cmpeq #4 / beq @0x14cb60 -> mov r0,#0x2b @0x14cb68 -> bl 0x1fffdc). Matches the documented 'INPUT and DIRECT mode not allowed' for the combined screen."
+  - "Mode is range-checked 0..4 by a jump table (cmp mode,#0x5 / ldrcc pc,[pc,mode,lsl #2] @0x14cb40); any mode>=5 (and the table's default) raises errnum 10 (Out of range: mov r0,#0xa @0x14cbb4 -> bl 0x1fffdc @0x14cbb0 path). The table maps mode 0/1/4 to the single-screen defaults and mode 2/3 to the dual-screen defaults."
+  - "Per-mode allocation defaults: single-screen modes 0/1/4 default to sprites=512 (mov r8,#0x200 @0x14cae8 / str @0x14cb7c) and BG=4 (mov r0,#0x4 @0x14cb78); dual-screen modes 2/3 default to sprites=256 (mov r0,#0x100 @0x14cb84) and BG=2 (mov r0,#0x2 @0x14cb8c). These defaults are written to sp[0]/sp[4] and used when only the mode is given."
+  - "Argument-count branch after the mode (@0x14cb90): argcount==1 -> beq @0x14cc80 (apply with defaults); argcount==3 -> beq @0x14cbc4 (read explicit allocations); any other count (i.e. 2) -> errnum 4 (mov r0,#0x4 @0x14cba8 -> bl 0x1fffdc). The 3-arg path evaluates the sprite count to sp[0] and range-checks 0..512 (blt @0x14cc34 if <0 / cmp #0x200 / ble ok @0x14cc30, else mov r0,#0xa errnum 10 @0x14cc3c-0x14cc40), then the BG count to sp[4] range-checked 0..4 (blt @0x14cc64 if <0 / cmp #0x4 / ble ok @0x14cc60, else errnum 10 @0x14cc6c-0x14cc70)."
+  - "On success the mode and the (upper-screen) sprite/BG counts are applied (ldmia sp,{r1,r2} / bl 0x14ee30 @0x14cc88) — the Touch Screen receives the remainder (512 - sprites, 4 - bg), as documented. The handler then re-validates and returns 0. The screen reconfiguration itself has no scalar golden; what is pinned here is the 1-or-3 arg rule (2 -> errnum 4), the mode 0..4 range (>=5 -> errnum 10), the sprite 0..512 / BG 0..4 ranges (-> errnum 10), the mode-4 DIRECT-mode errnum 43, and the per-mode allocation defaults."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is 2 (only 1 or 3 are allowed), or XSCREEN is used where a return value is expected" }
+  - { errnum: 10, name: "Out of range", when: "mode is not 0..4, the sprite count is not 0..512, or the BG count is not 0..4" }
+  - { errnum: 43, name: "Can't use from DIRECT mode", when: "XSCREEN 4 (combined screen) is executed in DIRECT mode" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/xscreen.md ('Sets a screen mode'; format `XSCREEN Screen mode [,Number of sprite assignments ,Number of BG assignments]`; mode 0 'Upper 3D, Touch not used (Default)' / 1 'Upper 2D, Touch not used' / 2 'Upper 3D, Touch used (Keyboard during INPUT)' / 3 'Upper 2D, Touch used' / 4 'Upper and Touch combined (Upper 2D; INPUT and DIRECT mode not allowed)'; sprite assignments 'Number of sprites to assign to the upper screen: 0-512', Touch '512 - number of SPs on the upper screen'; BG 'Number of BG layers to assign to the upper screen: 0-4', Touch '4 - number of BG layers on the upper screen'; 'Screen modes 2 and 3 can also be used in DIRECT mode, but the Touch Screen will be switched to a keyboard'; example XSCREEN 2,128,4)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst XSCREEN handler @0x14cad8: argcount [r4,#0x4]=r6, sprite default mov r8,#0x200; (argcount>=1 & result [r4,#0xc]!=0) -> bne @0x14cba4 errnum 4 (mov r0,#0x4 @0x14cbac); mode -> sp[8] (blx [r2,#0x40] @0x14cb10); DIRECT flag [[0x14ccc8]]==0 & mode==4 -> mov r0,#0x2b errnum 43 (@0x14cb68); mode range cmp #0x5 / ldrcc pc,[pc,mode,lsl#2] @0x14cb40 jump table, default -> mov r0,#0xa errnum 10 (@0x14cbb4); defaults mode 0/1/4 sprites=512/BG=4 (mov r8/#0x4 @0x14cb78) vs mode 2/3 sprites=256/BG=2 (mov #0x100/#0x2 @0x14cb84-@0x14cb8c); argcount==1 -> @0x14cc80 / ==3 -> @0x14cbc4 / else mov r0,#0x4 errnum 4 (@0x14cba8); sprite sp[0] range 0..512 (blt @0x14cc34 / cmp #0x200 / ble @0x14cc30 / else mov r0,#0xa @0x14cc3c); BG sp[4] range 0..4 (blt @0x14cc64 / cmp #0x4 / ble @0x14cc60 / else mov r0,#0xa @0x14cc6c); apply ldmia sp,{r1,r2} / bl 0x14ee30 @0x14cc88. literals [0x14ccc4], [0x14ccc8], [0x14cccc], [0x14ccd0]" }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d XSCREEN / Hardware enum (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bXSCREEN\\b'): 1-arg form XSCREEN 0/1/2/3/4 and 3-arg form XSCREEN m,sprites,bg are both ubiquitous — e.g. XSCREEN 3,512,4 (90+), XSCREEN 2,512,4 (54), XSCREEN 2,128,4 (the doc example), XSCREEN 2,256,2 (the dual-screen default split). No 2-arg form appears, consistent with the 1-or-3 arg guard. Sprite splits 512/256/128 and BG splits 4/3/2 all observed within 0..512 / 0..4." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11d): `XSCREEN 2,128` (2 args) raises errnum 4 (Illegal function call, errline 1), confirming only 1 or 3 arguments are accepted; `XSCREEN 5` (mode out of range), `XSCREEN 2,513,4` (sprites > 512), and `XSCREEN 2,256,5` (BG > 4) all raise errnum 10 (Out of range, errline 1), confirming the mode 0..4 / sprites 0..512 / BG 0..4 bounds. Programs run via RUN (program mode), so the mode-4 DIRECT-mode errnum-43 guard is not exercised here (queued)." }
+
+confidence: disassembled
+
+tests:
+  # The screen reconfiguration has no scalar golden. The assertable behaviors are the
+  # arg-count rule (2 args -> errnum 4) and the range checks (mode 0..4, sprites 0..512,
+  # BG 0..4 -> errnum 10), all hw_verified via sb-oracle batch s_t11d.
+  - { name: two_args_err, code: "XSCREEN 2,128", expect: { error: { errnum: 4 } } }
+  - { name: mode_out_of_range, code: "XSCREEN 5", expect: { error: { errnum: 10 } } }
+  - { name: sprites_out_of_range, code: "XSCREEN 2,513,4", expect: { error: { errnum: 10 } } }
+  - { name: bg_out_of_range, code: "XSCREEN 2,256,5", expect: { error: { errnum: 10 } } }

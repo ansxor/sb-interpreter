@@ -106,7 +106,7 @@ and name the instructions they cover inline.
 - [x] S-T11a Buttons & sticks — BUTTON · BREPEAT · STICK · STICKEX
 - [x] S-T11b Touch & motion — TOUCH · ACCEL · GYROA · GYROV · GYROSYNC
 - [x] S-T11c Microphone — MICSTART · MICSTOP · MICDATA · MICSAVE
-- [ ] S-T11d Screen control — ACLS · BACKCOLOR · DISPLAY · VISIBLE · XSCREEN
+- [x] S-T11d Screen control — ACLS · BACKCOLOR · DISPLAY · VISIBLE · XSCREEN
 - [ ] S-T11e Fade — FADE · FADECHK
 
 #### S-T12 Files + Source-manip + DIRECT-mode (22) → S-T0

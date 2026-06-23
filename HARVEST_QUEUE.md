@@ -434,3 +434,12 @@ oracle to confirm exact output and promote to `hw_verified`.
     multiplayer session. All the no-XON-MIC (errnum 36), arg-count (errnum 4) and array-type
     (errnum 8) guards are already hw_verified (s_t11c). The recording algorithm is pinned from
     the disassembly (buffer 0x01B20000, ~261760-byte cap, state struct 0x315C18).
+  - S-T11d Screen control (ACLS/BACKCOLOR/DISPLAY/VISIBLE/XSCREEN): the arg-count guards
+    (errnum 4) and range checks (XSCREEN mode/sprites/BG and DISPLAY-1-without-touch errnum 10)
+    are hw_verified (s_t11d). UNHARVESTED — all screen-state, no scalar oracle golden:
+    ACLS no-arg full reset vs the undocumented 3-arg selective reset (per-flag bitmask meaning
+    of `ACLS f1,f2,f3` — bits 0x2/0x4/0x8 into worker 0x14f10c — is unknown); BACKCOLOR set/get
+    color-code round-trip (the exact RGB()/alpha encoding `BACKCOLOR()` returns); DISPLAY/VISIBLE
+    actual targeted-screen and layer-visibility effects. DIRECT-MODE-ONLY (RUN harness can't reach
+    these, run in program mode): DISPLAY in DIRECT mode -> errnum 43, and XSCREEN 4 in DIRECT mode
+    -> errnum 43 — both pinned from the disassembly but need a DIRECT-mode oracle path.

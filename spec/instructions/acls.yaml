@@ -1,0 +1,43 @@
+id: ACLS
+kind: statement
+category: Screen control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  # Form 1 — documented: reset every draw setting.
+  - args: []
+    note: "ACLS — reset all draw settings to their power-on (BASIC-start) state."
+  # Form 2 — undocumented but real (sbsave corpus): three selector flags.
+  - args:
+      - { name: flag1, type: integer, desc: "Selector flag 1 (treated as a boolean: nonzero sets mask bit 0x2). Exact subsystem undocumented." }
+      - { name: flag2, type: integer, desc: "Selector flag 2 (treated as a boolean: nonzero sets mask bit 0x4). Exact subsystem undocumented." }
+      - { name: flag3, type: integer, desc: "Selector flag 3 (treated as a boolean: nonzero sets mask bit 0x8). Exact subsystem undocumented." }
+    note: "ACLS flag1, flag2, flag3 — undocumented 3-arg selective-reset form (corpus-verified syntax; per-flag meaning oracle-pending)."
+
+summary: "Resets the draw settings to the state they had when BASIC started — equivalent to the long reset sequence shown after END in the official example (XSCREEN 0, reload DEFSP/DEFBG, FONTDEF/SPDEF, DISPLAY/BACKCOLOR/FADE/WIDTH/COLOR/LOCATE/ATTR/CLS for both screens, GPAGE/GCLS, SPPAGE/SPCLR, BGPAGE/BGCLR, VISIBLE 1,1,1,1). Sound settings such as BGM are NOT affected. The documented form takes no arguments. An undocumented 3-argument form `ACLS f1, f2, f3` also exists (seen in real programs, e.g. ACLS 1,1,0) — it passes a selector bitmask to the same reset worker; its precise per-flag meaning is not determinable from the disassembly and is oracle-pending."
+
+semantics:
+  - "Argument count is checked at [r5,#0x4] (ldr r0,[r0,#0x4] @0x14cde8): 0 args -> beq @0x14ceac (full-reset path, mask r4=0); 3 args -> beq @0x14ce18 (selective form); any other count raises errnum 4 (Illegal function call: mov r0,#0x4 @0x14ce08 -> bl 0x1fffdc @0x14ce0c)."
+  - "The reset is driven by a bitmask passed to the shared worker FUN_0014f10c (cpy r0,r4 / bl 0x14f10c @0x14ceb0). The no-arg form passes mask 0 (mov r4,#0x0 @0x14cdec), which the worker treats as the complete reset (tst r0,#0x1 is false -> beq @0x14f144 takes the full console/graphics reset path; bit 0x1 is never set by ACLS itself)."
+  - "The 3-arg form (@0x14ce18) evaluates the three operands to sp[0]/sp[4]/sp[8] via the arg vtable (blx [r2,#0x40]), tracking the arg index in r7 (0,1,2) so a mid-eval continuation is re-entrant (str r7,[r6] @0x14ce7c). It then folds each operand into the mask r4 by truthiness: sp[0]!=0 -> r4=0x2 (movne r4,#0x2 @0x14ce94), sp[4]!=0 -> r4|=0x4 (orrne @0x14cea0), sp[8]!=0 -> r4|=0x8 (orrne @0x14cea8). Because the mask uses bits 0x2/0x4/0x8 (never bit 0x1), the worker still runs its main reset path; the higher bits gate later sections whose exact subsystem mapping is undocumented (oracle-pending)."
+  - "ACLS is a statement returning nothing (the handler always returns 0 via mov r0,#0x0 @0x14ceb8). It does not touch BGM/sound state (documented). The full visual effect (font/sprite/BG reload, screen clears, palette/fade reset) is screen state with no scalar oracle golden; what is pinned here is the accepted arg counts (0 or 3), the errnum-4 guard, and the mask construction."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is not 0 or 3 (e.g. ACLS with 1 or 2 arguments), or ACLS is used where a return value is expected" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/acls.md ('Resets the draw settings to their settings when BASIC was started'; 'The same operations as those shown after END in the Examples should be executed'; 'Sound settings such as BGM will not be affected'; format `ACLS` with the long XSCREEN 0 / LOAD DEFSP/DEFBG / FONTDEF / SPDEF / DISPLAY / BACKCOLOR / FADE / WIDTH / COLOR / LOCATE / ATTR / CLS / GPAGE / GCLS / SPPAGE / SPCLR / BGPAGE / BGCLR / VISIBLE 1,1,1,1 reset sequence as the documented equivalent)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst ACLS handler @0x14cddc: argcount [r5,#0x4] (ldr @0x14cde8) ==0 -> beq @0x14ceac / ==3 -> beq @0x14ce18 / else mov r0,#0x4 errnum 4 (@0x14ce08 -> bl 0x1fffdc @0x14ce0c); no-arg mask mov r4,#0x0 (@0x14cdec); 3-arg eval to sp[0]/sp[4]/sp[8] (blx [r2,#0x40], r7=arg index, str r7,[r6] @0x14ce7c) then mask fold movne r4,#0x2 (@0x14ce94) / orrne r4,#0x4 (@0x14cea0) / orrne r4,#0x8 (@0x14cea8); cpy r0,r4 / bl 0x14f10c reset worker (@0x14ceb0); return 0 (mov r0,#0x0 @0x14ceb8). literal [0x14cec0]=0x305628" }
+  - { type: disassembled, ref: "cia_3.6.0.lst ACLS reset worker FUN_0014f10c @0x14f10c: tst r0,#0x1 (@0x14f110) — bit 0 (never set by ACLS) gates an alternate path; beq @0x14f144 takes the full reset, storing console size {0x200,4} (stmia @0x14f150), clearing flags strb r0,[r6,#0x4]/[r6,#0x5], and resetting the draw-state block at [0x14f524] (str r5,[r4,#0x9c]/[r4,#0xfc]/[r4,#0x100]/[r4,#0x10c], strb r5,[r4,#0xf8]/[r4,#0xf9] @0x14f194-0x14f1bc) — confirming the mask-0 no-arg form performs the documented full reset" }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d ACLS reset sequence (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bACLS\\b[ ]+[0-9]'): the undocumented 3-arg form is real and common — `ACLS 1,1,0` (TB53F344/TXT/IO.LIB), `ACLS 1,1,1` (TXCX43JJ/TXT/FREEBGM_RWI-), `ACLS 1,0,0` (QRY34XVD/TXT/-MAP_EDIT-, QRY34XVD/TXT/-SCR_EDIT-). The bare `ACLS` no-arg form is the overwhelming majority. No 1- or 2-arg form appears (consistent with the errnum-4 guard). Per-flag meaning unproven (no oracle): queued." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11d): `ACLS 1` (1 arg) and `ACLS 1,1` (2 args) both raise errnum 4 (Illegal function call, errline 1), confirming the handler accepts only 0 or 3 arguments. The no-arg full reset and the 3-arg selective-reset effect are screen state with no scalar golden (queued)." }
+
+confidence: disassembled
+
+tests:
+  # The no-arg form and the corpus-verified 3-arg form are accepted; the visual reset
+  # itself has no scalar golden, so the assertable behavior is the arg-count guard:
+  # 1 or 2 args -> errnum 4 (hw_verified via sb-oracle batch s_t11d).
+  - { name: one_arg_err, code: "ACLS 1", expect: { error: { errnum: 4 } } }
+  - { name: two_args_err, code: "ACLS 1,1", expect: { error: { errnum: 4 } } }

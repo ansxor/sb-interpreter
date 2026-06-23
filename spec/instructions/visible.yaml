@@ -1,0 +1,37 @@
+id: VISIBLE
+kind: statement
+category: Screen control
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
+
+signatures:
+  - args:
+      - { name: console, type: integer, desc: "Console layer visibility — treated as a boolean: 0 = hide (#OFF), nonzero = show (#ON)." }
+      - { name: graphic, type: integer, desc: "Graphic layer visibility — 0 = hide (#OFF), nonzero = show (#ON)." }
+      - { name: bg, type: integer, desc: "BG layer visibility — 0 = hide (#OFF), nonzero = show (#ON)." }
+      - { name: sprite, type: integer, desc: "Sprite layer visibility — 0 = hide (#OFF), nonzero = show (#ON)." }
+    note: "VISIBLE console, graphic, bg, sprite — set the on/off visibility of the four display layers (exactly 4 arguments)."
+
+summary: "Switches the four display-layer elements of the current screen ON or OFF: Console, Graphic, BG and Sprite. Takes exactly four arguments, each a flag where 0 hides the layer (#OFF) and nonzero shows it (#ON) — e.g. VISIBLE 1,1,1,1 shows all layers, VISIBLE 0,0,0,0 hides them all. The flags are applied to whichever screen is currently selected by DISPLAY."
+
+semantics:
+  - "VISIBLE requires EXACTLY 4 arguments and no result: the handler checks argcount [r4,#0x4]==4 AND result count [r4,#0xc]==0 (cmp r0,#0x4 / ldreq r0,[r4,#0xc] / cmpeq r0,#0x0 @0x14c8ec-0x14c8f4 / beq @0x14c914); any other shape raises errnum 4 (Illegal function call: mov r0,#0x4 @0x14c904 -> bl 0x1fffdc @0x14c908)."
+  - "The four operands are evaluated in order via the arg vtable into sp[0]/sp[4]/sp[8]/sp[0xc] (blx [r2,#0x40], arg index tracked in r6 = 0,1,2,3 for re-entrant continuation: str r6,[r5] @0x14c934/@0x14c960/@0x14c98c/@0x14c9b8). Each operand is then reduced to a strict boolean by truthiness — nonzero -> 1, zero -> 0 (cmp #0 / movne #1 / moveq #0, e.g. r3 from sp[0xc] @0x14c9d4-0x14c9d8, r2 from sp[4] @0x14c9e4-0x14c9e8) — so any nonzero argument shows the layer and zero hides it; there is no numeric range error."
+  - "The four resulting booleans are handed to the layer-visibility setter for the screen currently selected by [[display]]. The actual on-screen result is screen state with no scalar golden; what is pinned here is the exactly-4-argument requirement, the errnum-4 guard, and the nonzero=ON / zero=OFF per-flag semantics. Layer order is Console, Graphic, BG, Sprite (documented and matching the sp[0..0xc] evaluation order)."
+
+errors:
+  - { errnum: 4, name: "Illegal function call", when: "the argument count is not exactly 4, or VISIBLE is used where a return value is expected" }
+
+sources:
+  - { type: documented, ref: "sb-docs/smilebasic-3/visible.md ('Switches screen display elements ON/OFF'; format `VISIBLE Console,Graphic,BG,sprite`; each argument '0: Hide (#OFF), 1: Display (#ON)' for Console / Graphic / BG / sprite respectively; example VISIBLE 1,1,1,1)" }
+  - { type: disassembled, ref: "cia_3.6.0.lst VISIBLE handler @0x14c8dc: argcount [r4,#0x4]==4 & result [r4,#0xc]==0 (cmp r0,#0x4 / ldreq r0,[r4,#0xc] / cmpeq r0,#0x0 @0x14c8ec) -> beq @0x14c914 else mov r0,#0x4 errnum 4 (@0x14c904 -> bl 0x1fffdc @0x14c908); four args eval blx [r2,#0x40] -> sp[0]/sp[4]/sp[8]/sp[0xc] with index r6=0..3 (str r6,[r5] @0x14c934/@0x14c960/@0x14c98c/@0x14c9b8); booleanize cmp #0 / movne #1 / moveq #0 (@0x14c9cc-0x14c9f0). literal [0x14cad4]" }
+  - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d VISIBLE (3.5.0 structural cross-check only)" }
+  - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bVISIBLE\\b'): always exactly 4 args — literals VISIBLE 1,1,1,1 / VISIBLE 0,0,0,0 / VISIBLE 1,0,0,0 / VISIBLE 1,1,1,0 etc., and variable flags VISIBLE T%,G%,1,S% (mixing var and literal). No 1/2/3-arg or 5-arg form appears, consistent with the exactly-4 guard. Nonzero non-1 flag values are accepted as ON (booleanized)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11d): `VISIBLE 1,1,1` (3 args) and `VISIBLE 1,1,1,1,1` (5 args) both raise errnum 4 (Illegal function call, errline 1), confirming the exactly-4-argument requirement. The on-screen layer visibility itself has no scalar golden (queued)." }
+
+confidence: disassembled
+
+tests:
+  # On-screen layer visibility has no scalar golden. The assertable behavior is the
+  # exactly-4-argument guard (hw_verified via sb-oracle batch s_t11d).
+  - { name: too_few_args, code: "VISIBLE 1,1,1", expect: { error: { errnum: 4 } } }
+  - { name: too_many_args, code: "VISIBLE 1,1,1,1,1", expect: { error: { errnum: 4 } } }
