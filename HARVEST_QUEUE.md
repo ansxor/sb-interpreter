@@ -10,6 +10,31 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] M3-T2 (SPANIM runtime interpolation) · The exact per-frame value of the GRAPHICAL
+  animation channels (XY/Z/UV/I/R/S/C) is not framebuffer-harvested. assumption: documented
+  model — a positive `time` HOLDS the keyframe item value for that many frames, a negative
+  `time` LINEARLY interpolates from the segment start to the item over `|time|` frames
+  (`cur = start + (end-start)*frame/|time|`); the channel starts at the sprite's value at
+  SPANIM time; relative (`+8`/`"+"`) adds that captured base; loop N then stop / loop 0
+  endless. Integer channels (UV/I/C) round-to-nearest on write. Deterministically tested via
+  the V channel (`SPVAR(m,7)` round-trips the value exactly — `harness/corpus/cases/sprite_anim.yaml`)
+  but the graphical channels' rounding + the "starts on the frame AFTER SPANIM" timing offset
+  are oracle-pending.
+- [ ] M3-T2 (SPANIM form-2 DATA count) · The DATA-`@label` form's first value: docs say it is
+  the KEYFRAME count; disassembly builder @0x163cf0 reads it as the TOTAL item count and
+  requires divisibility by the stride. assumption: code follows the docs (first value =
+  keyframe count, reads count*stride items via `read_anim_data`); set_anim still caps >32 → 39.
+- [ ] M3-T2 (SPANIM non-numeric data errnum) · A non-numeric keyframe data value: builder
+  @0x163d98 raises errnum 8 (type mismatch) but other builders have errnum-40 sites.
+  assumption: the VM's `values_to_f64` raises errnum 8.
+- [ ] M3-T2 (SPVAR variable number > 7) · The handler computes slot+0x58+n*8 with no visible
+  0..7 guard (any bound is inside FUN_001eec7c). assumption: code rejects n∉0..7 with errnum 10.
+- [ ] M3-T2 (SPFUNC dispatch + unresolved label) · `CALL SPRITE` invocation of the bound
+  process (with CALLIDX = management number) is not yet implemented (M3-T6); the errnum for a
+  label/process that does not resolve is errnum 4 per disassembly but unconfirmed.
+  assumption: bind records the resolved name; an unresolvable name raises errnum 4; CALL SPRITE
+  dispatch is deferred.
+
 - [ ] M2-T2 (drawing-primitive pixel coverage) · GPSET/GLINE/GBOX/GFILL/GCIRCLE/GTRI/GPAINT
   are IMPLEMENTED in sb-core (`crates/sb-render/src/raster.rs`) with deterministic integer
   rasterizers (Bresenham line/box, midpoint circle, edge-function triangle fill, stack flood

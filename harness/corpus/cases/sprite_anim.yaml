@@ -1,0 +1,47 @@
+# M3-T2 — sprite animation / link / vars end-to-end (deterministic, frame-driven).
+# Animation output is read back through the V channel (SPANIM target 7 writes the sprite's
+# internal variable 7, which SPVAR(mgmt,7) reads), so the frame clock (VSYNC/WAIT) advances
+# the animation deterministically with no framebuffer. Exact interpolation rounding for the
+# graphical channels (XY/UV/scale/color) is oracle-pending (HARVEST_QUEUE.md); the V channel
+# is an exact double round-trip. The errnum 39/40 data gates are disassembled
+# (spanim.yaml @0x163a00/@0x1639e4).
+cases:
+  # A hold keyframe snaps the channel to its item value on the first advanced frame.
+  - name: anim_hold_applies_on_frame
+    code: "SPSET 0,0\nSPANIM 0,\"V\",5,42\nVSYNC 1\nPRINT SPVAR(0,7)"
+    expect: { stdout: "42" }
+  # No frame advanced yet -> the animation has not been applied (value still 0).
+  - name: anim_not_applied_before_vsync
+    code: "SPSET 0,0\nSPANIM 0,\"V\",5,42\nPRINT SPVAR(0,7)"
+    expect: { stdout: "0" }
+  # Linear interpolation (negative time) reaches the half-way value at half the frames.
+  - name: anim_interpolates_linearly
+    code: "SPSET 0,0\nSPANIM 0,\"V\",-4,100\nVSYNC 2\nPRINT SPVAR(0,7)"
+    expect: { stdout: "50" }
+  # ...and the exact target after all the frames.
+  - name: anim_interpolation_reaches_target
+    code: "SPSET 0,0\nSPANIM 0,\"V\",-4,100\nVSYNC 4\nPRINT SPVAR(0,7)"
+    expect: { stdout: "100" }
+  # A relative animation adds the sprite's current channel value as the base.
+  - name: anim_relative_adds_base
+    code: "SPSET 0,0\nSPVAR 0,7,30\nSPANIM 0,\"V+\",3,5\nVSYNC 1\nPRINT SPVAR(0,7)"
+    expect: { stdout: "35" }
+  # SPSTOP pauses advancement; SPSTART resumes it.
+  - name: anim_stop_pauses
+    code: "SPSET 0,0\nSPANIM 0,\"V\",10,77\nSPSTOP 0\nVSYNC 5\nPRINT SPVAR(0,7)"
+    expect: { stdout: "0" }
+  - name: anim_start_resumes
+    code: "SPSET 0,0\nSPANIM 0,\"V\",10,77\nSPSTOP 0\nVSYNC 5\nSPSTART 0\nVSYNC 1\nPRINT SPVAR(0,7)"
+    expect: { stdout: "77" }
+  # WAIT advances the frame clock too (so it drives animation just like VSYNC).
+  - name: anim_advances_on_wait
+    code: "SPSET 0,0\nSPANIM 0,\"V\",5,9\nWAIT 1\nPRINT SPVAR(0,7)"
+    expect: { stdout: "9" }
+  # The undocumented SPLINK() getter returns the parent (or -1) — see splink.yaml.
+  - name: splink_getter_chain
+    code: "SPSET 0,0\nSPSET 1,0\nSPLINK 1,0\nPRINT SPLINK(1)"
+    expect: { stdout: "0" }
+  # More than 32 keyframes is "Animation is too long" (errnum 39).
+  - name: anim_too_long
+    code: "SPSET 0,0\nSPANIM 0,\"Z\",1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0"
+    expect: { error: { errnum: 39 } }

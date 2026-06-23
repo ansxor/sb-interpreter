@@ -924,6 +924,7 @@ impl Vm {
             }
             _ => return Ok(None),
         };
+        let before = self.frame_count;
         match name {
             "WAIT" => {
                 self.frame_count = self.frame_count.saturating_add(count);
@@ -936,6 +937,8 @@ impl Vm {
             }
             _ => {}
         }
+        // Sprite animations advance one step per displayed frame (M3-T2).
+        self.sprites.tick(self.frame_count - before);
         Ok(Some(Value::Void))
     }
 
@@ -1051,18 +1054,162 @@ impl Vm {
         use crate::builtins::sprite as spr;
         let ret_count = if wants_value { 1 } else { out_argc as usize };
         let args: Vec<Value> = args.iter().map(|v| v.deref()).collect();
+        // SPANIM and SPFUNC need the program (DATA pool / @label resolution), so the VM
+        // orchestrates them; the rest are pure over the sprite table.
+        if name == "SPANIM" {
+            self.do_spanim(&args, ret_count)?;
+            return Ok(true);
+        }
+        if name == "SPFUNC" {
+            self.do_spfunc(&args, ret_count)?;
+            return Ok(true);
+        }
         let results = match name {
             "SPSET" => spr::spset(&mut self.sprites, &args, ret_count),
             "SPCLR" => spr::spclr(&mut self.sprites, &args, ret_count),
             "SPSHOW" => spr::spshow(&mut self.sprites, &args, ret_count),
             "SPHIDE" => spr::sphide(&mut self.sprites, &args, ret_count),
             "SPUSED" => spr::spused(&self.sprites, &args, ret_count),
+            "SPVAR" => spr::spvar(&mut self.sprites, &args, ret_count),
+            "SPSTART" => spr::spstart(&mut self.sprites, &args, ret_count),
+            "SPSTOP" => spr::spstop(&mut self.sprites, &args, ret_count),
+            "SPLINK" => spr::splink(&mut self.sprites, &args, ret_count),
+            "SPUNLINK" => spr::spunlink(&mut self.sprites, &args, ret_count),
             _ => return Ok(false),
         };
         for v in results.map_err(sb)? {
             self.stack.push(v);
         }
         Ok(true)
+    }
+
+    /// `SPANIM mgmt, target, data[, loop]` — define and start a sprite animation. The form
+    /// is chosen by the third operand: a numeric **array** (form 1), an `"@label"` **string**
+    /// pointing at DATA (form 2), or an inline numeric **argument list** (form 3). After the
+    /// shared argcount>=3 / return-count==0 gate (errnum 4), the data is flattened to a
+    /// `Time,Item[,Item],…` list and handed to [`spr::spanim`] (which checks mgmt/active/
+    /// target and builds the keyframes). For the inline form the optional `loop` is the
+    /// trailing value left over after a whole number of keyframes (the documented
+    /// disambiguation by items-per-keyframe).
+    fn do_spanim(&mut self, args: &[Value], ret_count: usize) -> Result<(), VmError> {
+        use crate::builtins::data::read_values;
+        use crate::builtins::sprite as spr;
+        // Gate: a return value, or fewer than 3 arguments, is Illegal function call (4).
+        if ret_count != 0 || args.len() < 3 {
+            return Err(sb(crate::builtins::illegal()));
+        }
+        let mgmt_v = &args[0];
+        let target_v = &args[1];
+        // The channel (resolved from the target) gives items-per-keyframe for flattening.
+        let (channel, _relative) = spr::parse_target(target_v).map_err(sb)?;
+        let stride = 1 + spr::anim_items(channel);
+
+        let (data, loop_count): (Vec<f64>, i32) = match &args[2] {
+            // Form 1 — keyframes in a numeric array; an explicit trailing loop arg.
+            Value::IntArray(_) | Value::RealArray(_) => {
+                let len = crate::builtins::data::elem_count(&args[2]).map_err(sb)?;
+                let vals = read_values(&args[2], 0, len).map_err(sb)?;
+                let data = values_to_f64(&vals).map_err(sb)?;
+                let loop_count = match args.get(3) {
+                    Some(v) => v.to_int().map_err(sb)?,
+                    None => 1,
+                };
+                if args.len() > 4 {
+                    return Err(sb(crate::builtins::illegal()));
+                }
+                (data, loop_count)
+            }
+            // Form 2 — keyframes from DATA via "@label"; first DATA value is the count.
+            Value::Str(label) => {
+                let data = self.read_anim_data(label, stride)?;
+                let loop_count = match args.get(3) {
+                    Some(v) => v.to_int().map_err(sb)?,
+                    None => 1,
+                };
+                if args.len() > 4 {
+                    return Err(sb(crate::builtins::illegal()));
+                }
+                (data, loop_count)
+            }
+            // Form 3 — inline keyframes; a leftover trailing value (after whole keyframes) is
+            // the loop count.
+            _ => {
+                let vals = values_to_f64(&args[2..]).map_err(sb)?;
+                if vals.len() % stride == 1 {
+                    let (kf, last) = vals.split_at(vals.len() - 1);
+                    (kf.to_vec(), last[0] as i32)
+                } else {
+                    (vals, 1)
+                }
+            }
+        };
+        spr::spanim(&mut self.sprites, mgmt_v, target_v, &data, loop_count).map_err(sb)
+    }
+
+    /// Read `SPANIM` form-2 keyframe data from the DATA sequence named by `@label`: the
+    /// first DATA value is the keyframe count, then `stride` values (`Time,Item[,Item]`) per
+    /// keyframe. Returns the flattened `Time,Item,…` list (without the count). An undefined
+    /// label raises errnum 14; running off the DATA pool raises errnum 13.
+    fn read_anim_data(&self, label: &[u16], stride: usize) -> Result<Vec<f64>, VmError> {
+        let name = String::from_utf16_lossy(label)
+            .trim_start_matches('@')
+            .to_ascii_uppercase();
+        let idx = self
+            .program
+            .data_labels
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, i)| *i)
+            .ok_or(VmError::Sb {
+                errnum: ERR_UNDEFINED_LABEL,
+                line: 0,
+            })?;
+        let read_one = |k: usize| -> Result<f64, VmError> {
+            let c = self.program.data.get(idx + k).ok_or(VmError::Sb {
+                errnum: ERR_OUT_OF_DATA,
+                line: 0,
+            })?;
+            const_to_value(c).to_real().map_err(sb)
+        };
+        let count = read_one(0)? as i32;
+        let count = count.max(0) as usize;
+        let mut out = Vec::with_capacity(count * stride);
+        for k in 0..count * stride {
+            out.push(read_one(1 + k)?);
+        }
+        Ok(out)
+    }
+
+    /// `SPFUNC mgmt, @Label` — bind a callback process name to a sprite. Requires exactly 2
+    /// arguments (errnum 4); mgmt ∉ 0..511 is errnum 10; a non-string label operand is
+    /// errnum 8; an unresolvable label/process is errnum 4. Binding does NOT require the
+    /// slot to be `SPSET`. The bound process runs later via `CALL SPRITE` (oracle-pending).
+    fn do_spfunc(&mut self, args: &[Value], ret_count: usize) -> Result<(), VmError> {
+        if ret_count != 0 || args.len() != 2 {
+            return Err(sb(crate::builtins::illegal()));
+        }
+        let slot = {
+            let i = args[0].to_int().map_err(sb)?;
+            if !SpriteState::in_range(i) {
+                return Err(sb(crate::builtins::out_of_range()));
+            }
+            i as usize
+        };
+        let label = match &args[1] {
+            Value::Str(s) => s.clone(),
+            _ => return Err(sb(crate::builtins::type_mismatch())),
+        };
+        let name = String::from_utf16_lossy(&label)
+            .trim_start_matches('@')
+            .to_ascii_uppercase();
+        // The name must resolve to a code @label or a DEF-defined process; else errnum 4.
+        let resolves = self.program.code_labels.iter().any(|(n, _)| *n == name)
+            || self.program.functions.iter().any(|f| f.name.ident == name);
+        if !resolves {
+            return Err(sb(crate::builtins::illegal()));
+        }
+        self.sprites.set_func(slot, Some(name));
+        Ok(())
     }
 
     /// `ASSERT__ condition[, message$]` — the test-mode assertion (M1-T14). A truthy
@@ -1356,6 +1503,12 @@ fn const_to_value(c: &Const) -> Value {
         Const::Real(r) => Value::Real(*r),
         Const::Str(s) => Value::Str(s.clone()),
     }
+}
+
+/// Convert a slice of numeric [`Value`]s to `f64` (SPANIM keyframe data); a non-numeric
+/// value is a Type mismatch (8).
+fn values_to_f64(vals: &[Value]) -> Result<Vec<f64>, RuntimeError> {
+    vals.iter().map(|v| v.to_real()).collect()
 }
 
 /// Wrap a [`RuntimeError`] (no line yet) as a [`VmError::Sb`]; the run loop fills the

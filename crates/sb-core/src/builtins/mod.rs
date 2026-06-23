@@ -163,6 +163,17 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "SPSHOW",
     "SPHIDE",
     "SPUSED",
+    // Sprite animation / link / vars (M3-T2): SPANIM defines+starts a keyframe animation;
+    // SPSTART/SPSTOP resume/pause it; SPFUNC binds a CALL SPRITE callback; SPVAR reads/writes
+    // the 8 internal variables; SPLINK/SPUNLINK parent-link sprites (SPLINK also has a
+    // function form). All route over the VM-owned `SpriteState`.
+    "SPANIM",
+    "SPSTART",
+    "SPSTOP",
+    "SPFUNC",
+    "SPVAR",
+    "SPLINK",
+    "SPUNLINK",
     // Array data-ops (M1-T14): SORT/RSORT mutate their array arguments in place, so the
     // VM routes them to `data::sort` rather than the value-returning `dispatch`.
     "SORT",

@@ -38,13 +38,16 @@ semantics:
   - "The animation starts on the frame FOLLOWING the SPANIM call (documented), and runs once unless a Loop count is given; Loop 0 means loop endlessly. SPSTOP pauses it and SPSTART resumes it (they toggle the 0x2000000 stop bit, see [[spstop]]/[[spstart]])."
 
 errors:
-  - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET, fewer than 3 arguments are given, the call is used in a return context, or the resolved target number is negative" }
-  - { errnum: 8, name: "Type mismatch", when: "the target argument is neither a number nor a valid target string" }
-  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
+  - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET, fewer than 3 arguments are given, fewer than one keyframe's worth of data is supplied for the channel, the call is used in a return context, or the resolved target number is negative" }
+  - { errnum: 8, name: "Type mismatch", when: "the target argument is neither a number nor a valid target string, or a keyframe data value is not numeric" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511, or a keyframe time/item is outside the ±32768 fixed-point range" }
+  - { errnum: 39, name: "Animation is too long", when: "more than 32 keyframes are supplied for the target" }
+  - { errnum: 40, name: "Illegal animation data", when: "a keyframe has a zero duration (time == 0)" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/spanim.md (3 forms: array / \"@label\" DATA / inline; mgmt 0-511; target 0|XY,1|Z,2|UV,3|I,4|R,5|S,6|C,7|V; '+8' or trailing '+' = relative; data order Time,Item[,Item]; up to 32 keyframes; negative time = linear interpolation; Loop 1- with 0 = endless; 'animation starts from the frame following SPANIM'; 'If used before SPSET, an error will occur')" }
   - { type: disassembled, ref: "cia_3.6.0.lst SPANIM handler @0x141f80: gate argcount>=3 && ret==0 cmp r6,#0x3 cmpge r0,#0x0 beq @0x141fc0 else mov r0,#0x4 bl 0x1fffdc errline -1 @0x141fb0; mgmt via FUN_001eece0 bl 0x1eece0 @0x141fd0 (errnum 10); slot base[0x1423b8]+(mgmt+[0x44])*0x48 @0x141ff8; active-bit guard tst r0,#0x80000000 [r4,#0x4] @0x14200c beq -> mov r0,#0x4 bl 0x1fffdc errnum 4 @0x142054 (used before SPSET); string target parse bl 0x1836cc @0x1420a8, bad type mov r0,#0x8 bl 0x1fffdc errnum 8 @0x1420d8; negative target mov r1,#1 mov r0,#0x4 errnum 4 @0x1420bc; relative bit mov r1,r0,lsl#0x1c lsr#0x1f and r0,r0,#0x7 @0x1420ec; channel switch switchD @0x142118 table @0x142120 sets anim-active flags orr #0x20000/#0x40000 [r4,#0x4]; keyframe build bl 0x1ee360 / bl 0x1ee1a8, data count r6-2 sub r1,r6,#0x2 @0x142178; state ptr 0x315d60 [0x1423b4], sprite-base [0x1423b8]." }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPANIM keyframe builders (M3-T2): inline/array builder FUN @0x163a00 — fewer than one keyframe's data cmp r6,#0x3 / bge @0x163a20 else mov r0,#0x4 @0x163a34 (errnum 4); keyframe count r4=data/stride cmp r4,#0x20 / ble else mov r0,#0x27 @0x163a68 (errnum 39 too long); the per-keyframe store loop @0x1638e0-0x1639d0 sxth-truncates each time/item to 16 bits and range-checks ±32768 -> mov r0,#0xa @0x163960 (errnum 10), and a zero time cmp r1,#0 / beq @0x1639d4 -> mov r0,#0x28 @0x1639e4 (errnum 40 illegal animation data); the relative add (add r0,r0,parent_xy @0x1639a8) confirms the +8 base. DATA-form builder FUN @0x163cf0 — count must be a whole number of keyframes cmn r1,r0 / beq else mov r0,#0x4 @0x163d38, >32 mov r0,#0x27 @0x163d54, bad item type mov r0,#0x8 @0x163d98." }
   - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteAnimState/SpriteAnimData, SpriteAnimTarget enum (XY..V, .relative flag), setAnimation(loop) (3.5.0 structural cross-check only)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8c): SPCLR:SPANIM 5,\"XY\",10,0,0 -> errnum 4 (used before SPSET); SPSET 0,0:SPANIM 0,\"XY\" -> errnum 4 (fewer than 3 args); SPSET 0,0:SPANIM 512,\"XY\",10,0,0 -> errnum 10 (mgmt out of range)." }
   - { type: community, ref: "sbsave corpus: SPANIM used heavily. Confirms numeric targets `SPANIM 254,6,-10,0` (e.g. ______LAUNCHER), string targets `SPANIM 0,\"UV\",8,...`, RELATIVE string target `SPANIM SPN%,\"XY+\"` and `SPANIM 250,\"I+\",\"@_WALK10\"`, the DATA-label form `SPANIM 115,3,\"@ANIM_M1\"`, inline-vararg form `SPANIM 0,\"XY\",-60,200,100,-30,50,20`, negative time (smooth) `SPANIM 0,\"UV\",-1,0+UGH,72`, fractional items `SPANIM 0,5,-15,.8,.8`, and array-element values `SPANIM 10,6,30,0,-10,CYMA_THMSCH%[12]` — proving these forms are LEGAL syntax. Exact interpolation output is oracle-pending." }
@@ -58,3 +61,6 @@ tests:
   - { name: before_spset, code: "SPCLR\nSPANIM 5,\"XY\",10,0,0", expect: { error: { errnum: 4 } } }
   - { name: too_few_args, code: "SPSET 0,0\nSPANIM 0,\"XY\"", expect: { error: { errnum: 4 } } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPANIM 512,\"XY\",10,0,0", expect: { error: { errnum: 10 } } }
+  # Data-build errnums confirmed in the keyframe builders (disassembled @0x163a00/@0x1639e4).
+  - { name: zero_time_illegal, code: "SPSET 0,0\nSPANIM 0,\"XY\",0,100,50", expect: { error: { errnum: 40 } } }
+  - { name: bad_target_string, code: "SPSET 0,0\nSPANIM 0,\"ZZ\",10,5", expect: { error: { errnum: 4 } } }

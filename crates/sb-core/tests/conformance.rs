@@ -140,11 +140,20 @@ const IN_SCOPE_SCREEN: &[&str] = &["ACLS", "BACKCOLOR"];
 /// arg-count errnums hw_verified, OUT/function allocation returning a slot ≥ 0), `SPCLR`
 /// (release one/all, range errnum), `SPSHOW`/`SPHIDE` (display toggle + the used-before-SPSET
 /// errnum 4 guard, both hw_verified), and `SPUSED` (TRUE=1/FALSE=0, hw_verified). The
-/// category is NOT taken wholesale: the transform/animation/collision instructions
-/// (`SPOFS`/`SPCHR`/`SPANIM`/`SPCOL`/…) land with M3-T2/T3 and the visible-render side-effects
+/// category is NOT taken wholesale: the transform/collision instructions
+/// (`SPOFS`/`SPCHR`/`SPCOL`/…) land with M3-T3 and the visible-render side-effects
 /// (a sprite at the right place/orientation) block on the framebuffer oracle (O-T6 / M3-T6,
-/// queued). Listed by id.
-const IN_SCOPE_SPRITES: &[&str] = &["SPSET", "SPCLR", "SPSHOW", "SPHIDE", "SPUSED"];
+/// queued). M3-T2's animation/link/vars commands fold in here for their deterministic
+/// contract: `SPANIM` (form/argcount/target/data errnums 4/8/10/39/40 — runtime
+/// interpolation output is oracle-pending and exercised by sb-render/corpus tests, not the
+/// inline spec cases), `SPSTART`/`SPSTOP` (all/one forms + errnums), `SPFUNC` (callback bind
+/// — the `CALL SPRITE` dispatch is M3-T6/oracle-pending), `SPVAR` (read/write the 8 internal
+/// variables, hw_verified), and `SPLINK`/`SPUNLINK` (parent link + the undocumented
+/// `=SPLINK(mgmt)` getter, hw_verified). Listed by id.
+const IN_SCOPE_SPRITES: &[&str] = &[
+    "SPSET", "SPCLR", "SPSHOW", "SPHIDE", "SPUSED", "SPANIM", "SPSTART", "SPSTOP", "SPFUNC",
+    "SPVAR", "SPLINK", "SPUNLINK",
+];
 /// Specs `sb-core` implements only **partially** in M1: each is in scope, but the named
 /// cases listed here are EXCLUDED because they block on a later milestone or the
 /// console-text oracle. Everything else in the spec — the deterministic, hw_verified

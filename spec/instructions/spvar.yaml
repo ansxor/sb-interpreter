@@ -48,10 +48,11 @@ sources:
 confidence: hw_verified
 
 tests:
-  # Values hw_verified via sb-oracle 2026-06-22 (s_t8e).
+  # Values hw_verified via sb-oracle 2026-06-22 (s_t8e). stdout is the deterministic
+  # `console_text()` scrape (no trailing newline); the printed VALUE is the harvested result.
   - { name: write_basic, code: "SPSET 0,0\nSPVAR 0,7,1", expect: { stdout: "" } }
-  - { name: write_read_roundtrip, code: "SPSET 0,0\nSPVAR 0,3,7\nPRINT SPVAR(0,3)", expect: { stdout: "7\n" } }
-  - { name: write_before_spset, code: "SPCLR\nSPVAR 0,2,99\nPRINT SPVAR(0,2)", expect: { stdout: "99\n" } }
-  - { name: read_default_zero, code: "SPSET 0,0\nPRINT SPVAR(0,0)", expect: { stdout: "0\n" } }
-  - { name: out_read, code: "SPSET 0,0\nSPVAR 0,7,12345\nSPVAR 0,7 OUT V\nPRINT V", expect: { stdout: "12345\n" } }
+  - { name: write_read_roundtrip, code: "SPSET 0,0\nSPVAR 0,3,7\nPRINT SPVAR(0,3)", expect: { stdout: "7" } }
+  - { name: write_before_spset, code: "SPCLR\nSPVAR 0,2,99\nPRINT SPVAR(0,2)", expect: { stdout: "99" } }
+  - { name: read_default_zero, code: "SPSET 0,0\nPRINT SPVAR(0,0)", expect: { stdout: "0" } }
+  - { name: out_read, code: "SPSET 0,0\nSPVAR 0,7,12345\nSPVAR 0,7 OUT V\nPRINT V", expect: { stdout: "12345" } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPVAR 512,0,1", expect: { error: { errnum: 10 } } }
