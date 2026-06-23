@@ -19,6 +19,7 @@ pub mod bytecode;
 pub mod clock;
 pub mod compiler;
 pub mod consts;
+pub mod host_input;
 pub mod input;
 pub mod lexer;
 pub mod parser;

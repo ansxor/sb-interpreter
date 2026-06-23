@@ -19,7 +19,7 @@ under `prd/` (start at `prd/README.md`). Task IDs here match those docs.
 | M1 | Core VM + a real window | `prd/M1.md` | ✅ done (T1–T14; conformance gate green, native + wasm) |
 | M2 | Graphics (GRP + compositor) | `prd/M2.md` | ✅ done (T1–T5; GRP model, primitives, bitmap ops, compositor, hw_verified golden pixel-diff) |
 | M3 | Sprites & BG | `prd/M3.md` | ✅ done (T1–T6; sprite/BG state + collision/anim/transforms, full compositor stack with Z-interleaving; composite pixel-exactness queued O-T6) |
-| M4 | Input & timing | `prd/M4.md` | ⬜ gated on S |
+| M4 | Input & timing | `prd/M4.md` | ✅ done (T1–T5; input state + 60fps clock + host keymap wired native + wasm; live-program input awaits the frame-yielding model) |
 | M5 | Audio (MML) | `prd/M5.md` | ⬜ gated on S |
 | M6 | Files, projects, system, stubs | `prd/M6.md` | ⬜ gated on S |
 | M7 | Hardening | `prd/M7.md` | ⬜ |
@@ -188,7 +188,7 @@ and name the instructions they cover inline.
 - [x] M4-T2 Touch/keyboard → S-T11
 - [x] M4-T3 Frame timing (VSYNC/WAIT/MAINCNT) → S-T4
 - [x] M4-T4 Display config → S-T11
-- [ ] M4-T5 Host input mapping → M4-T1, M4-T2
+- [x] M4-T5 Host input mapping → M4-T1, M4-T2
 
 ## M5 — Audio (MML)  (gated on S-T10)
 > **⚠ Audio output accuracy can't be e2e-verified — no audio test setup (see O-T7).** MML

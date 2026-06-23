@@ -34,6 +34,35 @@ use std::collections::VecDeque;
 /// The number of button bits SmileBASIC tracks (b00..b12). Bit 10 is unused.
 pub const BUTTON_BITS: usize = 13;
 
+/// Button mask bit weights — the values `BUTTON 0` returns and the `#UP`…`#ZL` named
+/// constants resolve to (`spec/reference/constants.yaml`, hw_verified). The host keymap
+/// (M4-T5) builds a held mask from these so the platform layer never re-hardcodes the
+/// layout. Note `#ZR == &H0800` (2048, b11) and `#ZL == &H1000` (4096, b12) — the docs had
+/// these two swapped; the disassembled keyword table is authoritative.
+pub const BTN_UP: u16 = 0x0001;
+/// `#DOWN` — b01.
+pub const BTN_DOWN: u16 = 0x0002;
+/// `#LEFT` — b02.
+pub const BTN_LEFT: u16 = 0x0004;
+/// `#RIGHT` — b03.
+pub const BTN_RIGHT: u16 = 0x0008;
+/// `#A` — b04.
+pub const BTN_A: u16 = 0x0010;
+/// `#B` — b05.
+pub const BTN_B: u16 = 0x0020;
+/// `#X` — b06.
+pub const BTN_X: u16 = 0x0040;
+/// `#Y` — b07.
+pub const BTN_Y: u16 = 0x0080;
+/// `#L` — b08.
+pub const BTN_L: u16 = 0x0100;
+/// `#R` — b09.
+pub const BTN_R: u16 = 0x0200;
+/// `#ZR` — b11 (`&H0800`).
+pub const BTN_ZR: u16 = 0x0800;
+/// `#ZL` — b12 (`&H1000`).
+pub const BTN_ZL: u16 = 0x1000;
+
 /// Number of `KEY` function-key slots (F1..F5). `KEY`/`KEY()` index these 1..5.
 pub const KEY_SLOTS: usize = 5;
 
