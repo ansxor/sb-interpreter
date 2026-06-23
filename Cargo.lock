@@ -64,6 +64,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sb-platform-native"
+version = "0.0.1"
+dependencies = [
+ "sb-core",
+]
+
+[[package]]
 name = "sb-render"
 version = "0.0.1"
 

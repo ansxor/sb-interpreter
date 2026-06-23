@@ -163,7 +163,7 @@ and name the instructions they cover inline.
 - [x] M1-T8 Control-flow + console builtins → M1-T7, M1-T10, S-T3, S-T5
 - [x] M1-T9 TinyMT RNG (RND/RNDF/RANDOMIZE) → M1-T7, S-T1
 - [x] M1-T10 Console model + render → framebuffer → (M0 sb-render)
-- [ ] M1-T11 Headless runner `sb-run` → M1-T8
+- [x] M1-T11 Headless runner `sb-run` — new `sb-platform-native` crate (`src/bin/sb-run.rs`): loads a `.sb3` (plain UTF-8 source), runs it through sb-core (`parse → compile_with(StdBuiltins) → Vm::run`) headless, dumps `console_text()` to stdout; on a SmileBASIC error prints `ERRNUM`/`ERRLINE` to stderr. Exit codes: 0 success/STOP, 1 SB error (parse errnum 3 / compile / runtime e.g. SQR(-1)→10), 2 usage/unreadable-file. This is the `target/debug/sb-run` that `harness/diff/replay.py` shells out to. 4 bin tests (fizzbuzz fixture, console text, runtime/parse errnum). → M1-T8
 - [ ] M1-T12 Window (native winit + wasm canvas) → M1-T10
 - [ ] M1-T13 Error model + ERRNUM/ERRLINE → M1-T6, S-T14
 - [ ] M1-T14 Conformance wiring (run spec/tests + corpus; ASSERT__; otya_test) → M1-T11

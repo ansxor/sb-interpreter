@@ -5,6 +5,7 @@
 resolver = "2"
 members = [
     "crates/sb-core",
+    "crates/sb-platform-native",
     "crates/sb-render",
     "crates/sb-spec",
 ]

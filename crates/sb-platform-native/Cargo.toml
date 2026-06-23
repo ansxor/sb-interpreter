@@ -1,0 +1,19 @@
+[package]
+name = "sb-platform-native"
+description = "Native platform layer for the SmileBASIC interpreter: the headless `sb-run` runner (and, later, the windowed `sb` host). I/O lives here so sb-core stays wasm-safe."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sb-core = { path = "../sb-core" }
+
+# The headless runner the deterministic replay gate (harness/diff/replay.py) shells out to.
+[[bin]]
+name = "sb-run"
+path = "src/bin/sb-run.rs"
