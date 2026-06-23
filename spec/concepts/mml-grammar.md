@@ -8,7 +8,8 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/manual/sound-instructions.md (BGMPLAY MML intro; simplified ranges T1-240/@1-127/O0-8)" }
   - { type: documented, ref: "sb-docs/smilebasic-4/mml-guide.md (cross-system: @V velocity 0-127; tie '&len' short form; valid length divisors; portamento; chords '|..|' — SB4-only, flagged below)" }
   - { type: disassembled, ref: "cia_3.6.0.lst BGMPLAY handler @0x1a2d54: argcount at [r0,#0xc]; 0 args -> mov r0,#0x4 (errnum 4) @0x1a2d74; (argcount-1) >= 3 -> mov r0,#0x4 @0x1a2d9c (so 1..3 args legal); string arg path bl 0x1d44d8 (MML validate -> 0x1d475c) @0x1a2e20, on failure bl 0x1d450c (build '^' caret context, 0x5e='^') then mov r0,#0x2f -> errnum 47 Illegal MML @0x1a2e3c; number arg path @0x1a2e5c: sub r1,r0,#0x80 / cmp #0x7f -> 128..255 = user BGM, else cmp #0x2a (42) -> 0..42 = preset BGM, >42 -> error", confidence: disassembled }
-  - { type: community, ref: "sbsave corpus: @V velocity in 196 programs (e.g. 1DVENVAE/TXT/PICS_R1, 2D7X32KV/TXT/BGM); SFX instruments @256..@287+ (e.g. @267 1624x, @275, @281, @287) beyond the documented single @256; PSG @144-@149 + @D detune + @E envelope + Q gate + {macro}/$var forms all attested" }
+  - { type: community, ref: "sbsave corpus: @V velocity in 196 programs (e.g. 1DVENVAE/TXT/PICS_R1, 2D7X32KV/TXT/BGM); SFX instruments @256..@287+ (e.g. @267 1624x, @275, @281, @287) beyond the documented single @256, and even higher @400-@411 attested; PSG @144-@149 + @D detune + @E envelope + Q gate + {macro}/$var forms all attested" }
+  - { type: community, ref: "sbsave corpus (M5-T1 parser sweep, 541/550 complete BGM* literals parse): (a) VOLUME STEP WITH OPERAND `(N`/`)N` — docs show only operand-less `(`/`)`, but `)80`/`)24`/`(3`/`)5` pervasive (20+ programs, e.g. 4KHEPXW3/TXT/3DPARKOUR `C&)16C&(16`, BGMSET 222 `{CD=)24D&(3D…}`); read as change-volume-by-N-steps, bare = 1. (b) CASE-SENSITIVE MACRO LABELS — programs define BOTH `{r=…}` and `{R=…}` as distinct macros (e.g. 4KHEPXW3 has {r},{R},{c},{C0},{b},{B0},{a},{A0}), so MML is NOT globally upper-cased the way the docs imply; notes/commands stay case-insensitive. (c) DOTTED DEFAULT LENGTH `L<n>.` — `L2.`/`L8.` set a dotted default (7+ programs, e.g. L2.C ×117). (d) LEADING ACCIDENTALS `+B`/`#F`/`-C` before a note — 62+ programs (e.g. EK3E9F/TXT/PARKOUR BGMSET 145 `A8.B8.+B8`). All output-unproven → oracle-pending (HARVEST_QUEUE M5-T1)." }
 confidence: disassembled
 related:
   - BGMPLAY
@@ -60,8 +61,11 @@ parser rejects is illegal MML; any byte sequence it accepts is legal even if the
 
 ## Lexical rules
 
-- **Case-insensitive.** `cdefg` ≡ `CDEFG`; SmileBASIC upper-cases the source. (Note the SB4
-  caveat: `Cb` is `C` then `B`, *not* C-flat — flats are written `C-`.)
+- **Case-insensitive *for notes and commands*.** `cdefg` ≡ `CDEFG`. (Note the SB4
+  caveat: `Cb` is `C` then `B`, *not* C-flat — flats are written `C-`.) **Macro labels are
+  case-SENSITIVE**, however: the corpus has programs defining both `{r=…}` and `{R=…}` as
+  distinct macros, so MML is not globally upper-cased the way "SmileBASIC upper-cases the
+  source" implies — only command/note dispatch folds case (community, oracle-pending).
 - **Whitespace** (spaces) between commands is ignored and may be used freely for readability
   (`":0 @7 V80 O4 G16C16E8"` is attested in the corpus).
 - A command is a letter (or `@`/symbol) followed, where applicable, by its numeric operand
@@ -87,7 +91,7 @@ an error; channels may otherwise be defined in any order, once each. **Global** 
 | Token | Range | Meaning |
 |-------|-------|---------|
 | `T`*n* | **1–512** (reference) | Tempo in beats (quarter notes) per minute. *(The e-manual's simplified intro says 1–240; the reference table and corpus `T512`/`T500`/`T501` confirm the true ceiling is 512.)* |
-| `L`*n* | 1–192 | Default note length = a 1/*n* note; applies to all later notes until changed. |
+| `L`*n*`[.]` | 1–192 | Default note length = a 1/*n* note; applies to all later notes until changed. May be **dotted** (`L2.`, `L8.` — corpus, 7+ programs; community, oracle-pending) — a length-less note then inherits the dotted default. |
 | *(len after a note)* `C8` | 1–192 | Per-note length override (`C1`=whole, `C4`=quarter, `C8`=eighth, …). |
 | `.` (after note or length) | — | Dotted note: +½ the base duration. Successive dots add progressively smaller halves (`C..`). |
 | `&` | — | Tie / slur: connect this note to the next. `C4&C8` = one note held for 4+8. Same pitch = tie; different pitch = slur. Short form `C4&8` ≡ `C4&C8` (operand-less second note inherits pitch). |
@@ -107,8 +111,8 @@ T→frames conversion are **hypothesis**, pending a read of the synth scheduler 
 | Token | Range | Meaning |
 |-------|-------|---------|
 | `C D E F G A B` | — | Notes Do Re Mi Fa Sol La Ti. |
-| `#` or `+` (after note) | — | Sharp (semitone up). `C#` ≡ `C+`. |
-| `-` (after note) | — | Flat (semitone down). `C-`. |
+| `#` or `+` (after note) | — | Sharp (semitone up). `C#` ≡ `C+`. **Also legal *before* the note** (`+C` ≡ `C+`, `#F`) — undocumented but in 62+ corpus programs (community, oracle-pending). |
+| `-` (after note) | — | Flat (semitone down). `C-`. Also legal *before* the note (`-C`). |
 | `R` | optional len | Rest (silence). Takes a length like a note: `R4`. |
 | `O`*n* | 0–8 | Set absolute octave. Default **O4**, where `O4C` = key 60 (middle C). |
 | `<` | — | Octave up by one. |
@@ -124,8 +128,8 @@ relative to the current `O` setting, which matters inside repeats/macros.
 | Token | Range | Meaning |
 |-------|-------|---------|
 | `V`*n* | 0–127 | Channel volume. |
-| `(` | — | Volume up one step. |
-| `)` | — | Volume down one step. |
+| `(`*[n]* | — | Volume **up** by *n* steps (bare = 1). The docs show only the operand-less form, but `(N`/`)N` (`(3`, `)24`, `)80`) is pervasive in the corpus (20+ programs); read as change-by-N-steps. Step *size* and N's ceiling are oracle-pending (community). |
+| `)`*[n]* | — | Volume **down** by *n* steps (bare = 1). |
 | `P`*n* | 0–127 | Pan pot. **0–63** = left, **64** = center, **65–127** = right. |
 | `@E`*A*,*D*,*S*,*R* | each 0–127 | ADSR envelope. A = attack time, D = decay time, S = sustain level, R = release time (for A/D/R, *smaller value = slower*). Example `@E127,100,30,100`. |
 | `@ER` | — | Reset/release the envelope to default. |
@@ -246,3 +250,8 @@ timeline. Malformed input anywhere → **errnum 47**, with the byte offset of th
 - Channel-0-redefinition / channel-order rules — confirmed for SB3 (currently cross-system from SB4).
 - `/comments/` and `|chords|` — does SB3 accept them (it appears not), or errnum 47?
 - `$n` value range at assignment (docs say 0–255) and clamping behavior on overflow.
+- **(M5-T1 corpus, oracle-pending)** the four community forms above: `(N`/`)N` step semantics
+  (by-N-units? saturating at 0/127?) + N's ceiling; confirm macro labels are case-sensitive;
+  dotted `L<n>.` semantics when a note adds its own dots; leading accidentals on a note. Also:
+  is an accidental before a **rest** (`+R`, `#R`, seen in 1–2 programs) legal-and-ignored or
+  errnum 47? The parser currently treats it as errnum 47.

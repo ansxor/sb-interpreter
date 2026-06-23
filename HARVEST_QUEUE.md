@@ -1128,3 +1128,25 @@ NOT yet realized / verifiable:
 - **VISIBLE on the Touch screen + DIRECT-mode guards** — screen-1 visibility is stored but
   unrendered; the XSCREEN-4 / DISPLAY errnum-43 DIRECT-mode guards aren't exercised (programs
   run in program mode, matching the oracle capture). Queued for the DIRECT-mode harness.
+
+## M5-T1 — MML parser (corpus-discovered forms, output-unproven → oracle)
+The parser (`crates/sb-audio/src/mml.rs`) accepts these real corpus forms the docs/concept-spec
+omit; syntax is proven legal (shipped programs, 541/550 complete BGM* literals parse) but the
+runtime semantics are NOT — harvest via sb-oracle (BGMPLAY a probe MML + read back state where
+observable, else compare rendered audio by ear / loose spectral per O-T7).
+- **`(N` / `)N` volume step with operand** — assumed "change volume by N steps, bare = 1".
+  Confirm: is N a step *count* (each step = how many V units?) or an absolute delta? Saturating
+  at 0/127? N's ceiling? (`)80` seen.) Seen in 20+ programs (4KHEPXW3/TXT/3DPARKOUR, BGMSET 222).
+- **Case-sensitive macro labels** — programs define both `{r=…}` and `{R=…}`; confirm SB3 treats
+  them as distinct (parser does) vs. case-folding (would be a redefinition error).
+- **Dotted default length `L<n>.`** — `L2.`/`L8.`; confirm a dotted default, and the duration
+  when a length-less note then adds its OWN dots (parser sums the default's dots + the note's).
+- **Leading accidentals `+B` / `#F` / `-C`** — accidental before the note; confirm same pitch as
+  trailing, and whether an accidental before a **rest** (`+R`, `#R`; 1–2 programs) is legal-and-
+  ignored or errnum 47 (parser currently → errnum 47).
+- **Instrument number ceiling** — corpus shows `@256`–`@411`; parser accepts `@0`–`@511`. Confirm
+  the real upper bound and which banks (SFX/drum-kit `@130`–`@134`?) exist in SB3.
+- **Default channel state** — tempo 120 / volume 127 / velocity 127 / pan 64 / gate 8 are the
+  parser's assumed defaults; confirm against the synth (M5-T2 disasm) + oracle.
+- **Tick base** — 192 ticks/whole-note assumed (S-C5); confirm + the T→frames conversion when the
+  synth scheduler is read (M5-T2).

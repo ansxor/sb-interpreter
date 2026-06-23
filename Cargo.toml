@@ -4,6 +4,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/sb-audio",
     "crates/sb-core",
     "crates/sb-platform-native",
     "crates/sb-platform-wasm",

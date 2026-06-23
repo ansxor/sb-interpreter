@@ -196,7 +196,7 @@ and name the instructions they cover inline.
 > docs/disasm); the *rendered sound's* fidelity is practical-only (ear-check / loose spectral)
 > until a real audio e2e harness exists. Treat audio-fidelity claims as unverified; full
 > verification is a deferred refining layer.
-- [ ] M5-T1 MML parser → S-C5  (parse-to-events: deterministically verifiable)
+- [x] M5-T1 MML parser → S-C5  (parse-to-events: deterministically verifiable) — new `sb-audio` crate; `mml.rs` parses an MML string → per-channel `Vec<Event>` timeline (channels, tempo/length/gate/ties/portamento, pitch/octave/key, volume/pan/envelope, instruments, detune/LFOs/modulation, finite-unrolled `[ ]N` repeats + endless-loop markers, `$0`–`$7` vars, case-sensitive `{macro}`s); malformed → errnum 47 with caret offset. 35 unit tests + a 550-string corpus sweep (98.4% of complete real BGM* literals parse). Corpus-surfaced forms folded in as community/oracle-pending (`(N`/`)N` volume steps, dotted `L<n>.`, leading accidentals, case-sensitive labels) — spec S-C5 + HARVEST_QUEUE updated.
 - [ ] M5-T2 Synth engine → M5-T1  (⚠ output fidelity not e2e-verifiable; param tables are)
 - [ ] M5-T3 BGM commands → M5-T2, S-T10
 - [ ] M5-T4 SFX/voice → M5-T2, S-T10

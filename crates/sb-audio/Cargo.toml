@@ -1,0 +1,12 @@
+[package]
+name = "sb-audio"
+description = "SmileBASIC 3.6.0 audio front-end: MML parser (string -> per-channel note-event stream) and (later) synth. I/O- and device-free so it builds for wasm32; backends live in the sb-platform-* crates."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

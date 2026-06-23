@@ -1158,6 +1158,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sb-audio"
+version = "0.0.1"
+
+[[package]]
 name = "sb-core"
 version = "0.0.1"
 dependencies = [
