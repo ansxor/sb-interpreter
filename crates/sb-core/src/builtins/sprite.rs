@@ -1145,18 +1145,23 @@ pub fn sphitinfo(
     }
     let h = &sp.hit;
     let r = Value::Real;
+    // The hit record stores detection-frame positions + velocities + the swept time of
+    // collision; the documented coordinate is `position + velocity * time` (the disasm's
+    // vmla.f32 at read time). Velocities and the time are reported raw.
+    let (x1, y1) = (h.x1 + h.vx1 * h.time, h.y1 + h.vy1 * h.time);
+    let (x2, y2) = (h.x2 + h.vx2 * h.time, h.y2 + h.vy2 * h.time);
     let out = match ret_count {
         1 => vec![r(h.time)],
-        3 => vec![r(h.time), r(h.x1), r(h.y1)],
-        5 => vec![r(h.time), r(h.x1), r(h.y1), r(h.x2), r(h.y2)],
+        3 => vec![r(h.time), r(x1), r(y1)],
+        5 => vec![r(h.time), r(x1), r(y1), r(x2), r(y2)],
         9 => vec![
             r(h.time),
-            r(h.x1),
-            r(h.y1),
+            r(x1),
+            r(y1),
             r(h.vx1),
             r(h.vy1),
-            r(h.x2),
-            r(h.y2),
+            r(x2),
+            r(y2),
             r(h.vx2),
             r(h.vy2),
         ],

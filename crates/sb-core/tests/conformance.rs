@@ -163,11 +163,13 @@ const IN_SCOPE_SCREEN: &[&str] = &["ACLS", "BACKCOLOR", "XSCREEN", "DISPLAY", "V
 /// `=SPLINK(mgmt)` getter, hw_verified). M3-T3's collision + definition-template commands
 /// fold in here for their deterministic contract: `SPCOL` (enable + detection rect/mask,
 /// setter forms + the used-before-SPSET/range errnums hw_verified — `OUT`-getter read-back
-/// values are oracle-pending), `SPCOLVEC` (movement vector, errnums hw_verified), `SPCHK`
+/// values are oracle-pending), `SPCOLVEC` (movement vector — storage + swept effect read back
+/// through SPHITINFO, hw_verified), `SPCHK`
 /// (animation-status bitmask — stopped → 0 hw_verified; mid-anim bit values oracle-pending),
-/// `SPHITSP`/`SPHITRC` (sprite/rect collision — overlapping/non-overlapping hit results +
-/// errnums hw_verified), `SPHITINFO` (read the hit record — TM=0 default + arg-shape errnums
-/// hw_verified; the swept-collision coordinate/velocity values are oracle-pending), and
+/// `SPHITSP`/`SPHITRC` (sprite/rect collision — overlapping/non-overlapping AND swept-approach
+/// hit results + errnums hw_verified), `SPHITINFO` (read the hit record — TM=0 default +
+/// arg-shape errnums + the swept-collision coordinate/velocity values, position+velocity*time,
+/// hw_verified), and
 /// `SPDEF` (definition templates — define/read/reset/copy + the W,H=16/attr=1 defaults and
 /// the U+W>512 range error hw_verified; non-default field read-back oracle-pending). Listed
 /// by id.

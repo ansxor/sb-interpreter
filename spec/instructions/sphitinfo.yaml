@@ -52,11 +52,14 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/sprite.d (3.5.0 structural cross-check only): struct SpriteHitInfo { double time; double x1,y1,vx1,vy1,x2,y2,vx2,vy2; } populated by sphitsp2 with time=0 (osb does no swept math). Confirms the field layout/order (time, then object-1 x,y,vx,vy, then object-2 x,y,vx,vy) but not the 0..1 time value, which comes from docs + disassembly." }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg): the documented 5-var `SPHITINFO OUT TM,X1,Y1,X2,Y2` (e.g. NRQ4B33D/TXT/-MKIILIB `SPHITINFO OUT T,X,Y,D1,D2`, EB2XEEKV/TXT/STSTST `SPHITINFO OUT TM,DMX,DMY,VHX,VHY`) and 9-var `SPHITINFO OUT TM,X1,Y1,VX1,VY1,X2,Y2,VX2,VY2` (e.g. RRWECV3V/TXT/CYBURST, 73383JLY/TXT/SOLIDGUNNER_C) both appear; a leading comma can skip the TM slot, e.g. P343VDDY/TXT/FC_1.1 `SPHITINFO OUT ,X1,Y1,X2,Y2`. No corpus example of the disassembled 3-var form was found (it remains oracle-pending)." }
   - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8d): ACLS:SPSET 0,0:SPHITINFO OUT TM:PRINT TM -> 0; SPCLR:SPHITINFO OUT TM -> NO error before SPSET (returns TM=0); SPSET 0,0:SPHITINFO OUT TM,X1 (2 OUT vars) -> errnum 4 (only 1/3/5/9 OUT vars valid)." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-24 (M7-T2 run 55, harness/harvest/out/spcolvec.tsv): the 9-var collision-coordinate/velocity VALUES after a swept SPHITSP. Two SPCOLVEC'd sprites already overlapping (TM=0) -> X1/Y1/X2/Y2 = the sprites' positions (100/100, 108/100), VX1/VY1/VX2/VY2 = their SPCOLVEC velocities (3/-2, 5/7). For a SWEPT hit (TM=0.7) the coordinate confirms the documented position+velocity*time: sprite 0 @ (100,100) vel (20,0) -> X1 = 100 + 20·0.7 = 114. Object 1 is the tested sprite, object 2 the hit sprite." }
 
 confidence: hw_verified
 
 tests:
-  # Error + default-value cases hw_verified (sb-oracle 2026-06-22 s_t8d). The 3/5/9-var collision-coordinate values remain oracle-pending (need a live swept-collision harvest) — see HARVEST_QUEUE.md.
+  # Error + default-value cases hw_verified (sb-oracle 2026-06-22 s_t8d); the 9-var
+  # collision-coordinate/velocity values hw_verified via a live swept harvest (2026-06-24, run 55).
   - { name: time_after_no_hit, code: "ACLS\nSPSET 0,0\nSPHITINFO OUT TM\nPRINT TM", expect: { stdout: "0" } }
   - { name: before_spset_no_error, code: "SPCLR\nSPHITINFO OUT TM\nPRINT TM", expect: { stdout: "0" } }
   - { name: bad_out_count, code: "SPSET 0,0\nSPHITINFO OUT TM,X1", expect: { error: { errnum: 4 } } }
+  - { name: swept_coord_reconstruction, code: "ACLS\nSPSET 0,0\nSPSET 1,0\nSPOFS 0,100,100\nSPOFS 1,130,100\nSPCOL 0\nSPCOL 1\nSPCOLVEC 0,20,0\nH=SPHITSP(0)\nSPHITINFO OUT TM,X1,Y1,VX1,VY1,X2,Y2,VX2,VY2\nPRINT TM;\",\";X1;\",\";VX1", expect: { stdout: "0.7,114,20" } }

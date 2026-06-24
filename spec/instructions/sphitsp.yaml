@@ -44,12 +44,14 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/sprite.d (3.5.0 structural cross-check only): sphitsp(id) loops `for(start..end) if(id!=start && enableCol && col.detection(...)) return start;` else -1, and fills SpriteHitInfo (time=0, x1/y1/vx1/vy1/x2/y2/vx2/vy2) for SPHITINFO. Confirms the return semantics (mgmt or -1) and that a hit populates hit-info; osb's detection is plain AABB with time=0 (no swept math), so the swept/time behavior comes from docs + disassembly." }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg): all three forms appear — `SPHITSP(m)` vs-all (e.g. 1233728E/TXT/MG_DOG `A=SPHITSP(0)`), `SPHITSP(m,opp)` two-sprite boolean (e.g. 1BWX7ENV/TXT/AND-OS `IF SPHITSP(0,1)==1`), and `SPHITSP(m,first,last)` range (e.g. used as `SPHITSP(I,3,30)`). Confirms the 1/2/3-arg syntax." }
   - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8d): SPSET 0,0:A=SPHITSP(512) -> errnum 10; SPCLR:SPHITSP(5) -> -1 (NO error before SPSET, just no collision); two overlapping SPCOL'd sprites SPHITSP(0,1) -> 1; non-overlapping SPHITSP(0) -> -1." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-24 (M7-T2 run 55, harness/harvest/out/spcolvec.tsv): SWEPT detection uses the SPCOLVEC velocity — two 16×16 sprites NOT overlapping at frame start (100,100 and 130,100, a 14px gap) DO collide when sprite 0 carries SPCOLVEC vel (20,0): SPHITSP(0)=1, collision time TM=0.7 (= gap 14 / closing speed 20). A velocity pointing away (SPCOLVEC 0,-20,0), or the same pair with no velocity, does not collide (-1). See SPCOLVEC/SPHITINFO." }
 
 confidence: hw_verified
 
 tests:
-  # Error + value cases hw_verified (sb-oracle 2026-06-22 s_t8d).
+  # Error + value cases hw_verified (sb-oracle 2026-06-22 s_t8d); swept detection (2026-06-24, run 55).
   - { name: no_collision_all, code: "ACLS\nSPSET 0,0\nSPOFS 0,0,0\nSPCOL 0\nSPCOLVEC 0\nSPSET 1,0\nSPOFS 1,200,200\nSPCOL 1\nSPCOLVEC 1\nPRINT SPHITSP(0)", expect: { stdout: "-1" } }
   - { name: two_sprite_boolean, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0\nSPCOLVEC 0\nSPSET 1,0\nSPOFS 1,100,100\nSPCOL 1\nSPCOLVEC 1\nPRINT SPHITSP(0,1)", expect: { stdout: "1" } }
   - { name: before_spset_no_error, code: "SPCLR\nPRINT SPHITSP(5)", expect: { stdout: "-1" } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nA=SPHITSP(512)", expect: { error: { errnum: 10 } } }
+  - { name: swept_approach_collides, code: "ACLS\nSPSET 0,0\nSPSET 1,0\nSPOFS 0,100,100\nSPOFS 1,130,100\nSPCOL 0\nSPCOL 1\nSPCOLVEC 0,20,0\nPRINT SPHITSP(0)", expect: { stdout: "1" } }

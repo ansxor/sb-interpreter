@@ -539,18 +539,24 @@ oracle to confirm exact output and promote to `hw_verified`.
   - SPCOL OUT getters: after `SPCOL m,sx,sy,w,h,scale,mask`, read back `SPCOL m OUT ...` and confirm the
     stored scale flag (does TRUE store 1? does numeric coerce?), the mask, and the range (esp. the default
     range = sprite W,H when not explicitly set). Forms 4-7 and the leading-comma skip `SPCOL m OUT ,mask`.
-  - SPHITINFO 3/5/9-var collision coordinates + velocities after a REAL swept collision (TM in 0..1, and
-    X1/Y1 = pos + vel*TM). Need a deterministic moving-sprite setup harvested via the oracle.
+  - [x] SPHITINFO 3/5/9-var collision coordinates + velocities after a REAL swept collision — RESOLVED
+    2026-06-24 (M7-T2 run 55, harness/harvest/out/spcolvec.tsv). TM in 0..1, X1/Y1 = pos + vel*TM
+    confirmed (swept sprite @100 vel 20 -> TM 0.7, X1 114). Frozen in spcolvec.yaml/sphitinfo.yaml;
+    sb-render now does swept TOI; SPCOLVEC promoted hw_verified.
   - SPHITINFO undocumented 3-var form `OUT TM,X1,Y1` (seen only in disassembly @0x1440f8) — confirm it is
     accepted and returns TM + object-1 coords (no corpus example found).
-  - SPHITRC mask AND-filtering + swept-movement outcomes; SPHITSP swept-with-SPCOLVEC outcomes (do the
-    movement vectors change a same-frame hit/miss vs the static AABB?).
-  - M3-T3 IMPLEMENTATION NOTES (sb-core, code task — what's modeled vs pending). Implemented as
-    STATIC AABB: SPHITSP/SPHITRC overlap = strict-inequality AABB of the SPCOL detection rect placed
-    at the sprite's SPOFS position (+ SPLINK inheritance), AND-mask filtered; SPHITINFO time is always 0
-    (= "position at detection") and coords are the SPOFS positions. PENDING: (a) the swept/time math
-    (does a non-zero SPCOLVEC/move ever flip a same-frame hit, and what TM?); (b) whether touching edges
-    count as a hit (we say no); (c) the scale-adjust flag — we multiply detection W,H by |SPSCALE|, the
+  - [x] SPHITSP swept-with-SPCOLVEC outcomes — RESOLVED 2026-06-24 (run 55): a non-zero SPCOLVEC DOES flip a
+    same-frame hit. Two non-overlapping sprites (14px gap) approaching at closing-speed 20 collide (TM 0.7);
+    velocity pointing away does not. sb-render `swept_toi` implements the slab-method TOI. STILL PENDING:
+    SPHITRC swept-movement + mask AND-filtering harvest (the rect-vs-sprite analog — sb-core now applies the
+    same swept math but the oracle values are not yet captured).
+  - M3-T3 IMPLEMENTATION NOTES (sb-core, code task — what's modeled vs pending). Now SWEPT: SPHITSP/SPHITRC
+    overlap = the slab-method swept TOI of the SPCOL detection rect (placed at the SPOFS position + SPLINK
+    inheritance) moving by the relative SPCOLVEC velocity over the unit frame, AND-mask filtered; already-
+    overlapping boxes collide at TM=0, an approaching pair at TM = entry-edge time, SPHITINFO reconstructs
+    coords as pos+vel*TM. PENDING: (b) whether touching edges
+    count as a hit for the STATIC t=0 case (we say no; the swept first-contact edge-touch DOES count, hw_verified);
+    (c) the scale-adjust flag — we multiply detection W,H by |SPSCALE|, the
     exact "only affects later SPSCALE" timing is unverified; (d) SPDEF non-default field read-back +
     whether form-2-vs-form-6 (define vs copy) is really disambiguated by a skipped/`,,` arg or argcount
     (we treat argc==2 OR any Void override as the copy form); (e) the real spdef.csv default-template

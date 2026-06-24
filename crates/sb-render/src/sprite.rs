@@ -625,15 +625,16 @@ impl SpriteState {
     }
 
     /// Record a sprite-vs-sprite hit into the shared `SPHITINFO` record (object 1 = the
-    /// tested sprite `a`, object 2 = the sprite it hit `b`); `time` is 0 (static collision —
-    /// the swept time is oracle-pending).
-    fn record_hit_sp(&mut self, a: usize, b: usize) {
+    /// tested sprite `a`, object 2 = the sprite it hit `b`). `time` is the swept time of
+    /// collision (0..1); the stored coordinates are the detection-frame positions and
+    /// velocities, and `SPHITINFO` reconstructs the collision coordinate as `pos+vel*time`.
+    fn record_hit_sp(&mut self, a: usize, b: usize, time: f64) {
         let (ax, ay) = self.display_pos(a);
         let (bx, by) = self.display_pos(b);
         let (avx, avy) = (self.sprites[a].col_vx, self.sprites[a].col_vy);
         let (bvx, bvy) = (self.sprites[b].col_vx, self.sprites[b].col_vy);
         self.hit = HitInfo {
-            time: 0.0,
+            time,
             x1: ax,
             y1: ay,
             vx1: avx,
@@ -646,12 +647,12 @@ impl SpriteState {
     }
 
     /// Record a rectangle-vs-sprite hit (object 1 = the tested rectangle, object 2 = the
-    /// sprite it hit).
-    fn record_hit_rc(&mut self, rect: (f64, f64, f64, f64), mv: (f64, f64), b: usize) {
+    /// sprite it hit). `time` is the swept time of collision (0..1).
+    fn record_hit_rc(&mut self, rect: (f64, f64, f64, f64), mv: (f64, f64), b: usize, time: f64) {
         let (bx, by) = self.display_pos(b);
         let (bvx, bvy) = (self.sprites[b].col_vx, self.sprites[b].col_vy);
         self.hit = HitInfo {
-            time: 0.0,
+            time,
             x1: rect.0,
             y1: rect.1,
             vx1: mv.0,
@@ -686,8 +687,12 @@ impl SpriteState {
             if amask & self.sprites[opp].col_mask == 0 {
                 continue;
             }
-            if aabb_overlap(a, b) {
-                self.record_hit_sp(mgmt, opp);
+            let rv = (
+                self.sprites[mgmt].col_vx - self.sprites[opp].col_vx,
+                self.sprites[mgmt].col_vy - self.sprites[opp].col_vy,
+            );
+            if let Some(t) = swept_toi(a, b, rv) {
+                self.record_hit_sp(mgmt, opp, t);
                 return opp as i32;
             }
         }
@@ -702,8 +707,12 @@ impl SpriteState {
         if self.sprites[mgmt].col_mask & self.sprites[opp].col_mask == 0 {
             return false;
         }
-        if aabb_overlap(a, b) {
-            self.record_hit_sp(mgmt, opp);
+        let rv = (
+            self.sprites[mgmt].col_vx - self.sprites[opp].col_vx,
+            self.sprites[mgmt].col_vy - self.sprites[opp].col_vy,
+        );
+        if let Some(t) = swept_toi(a, b, rv) {
+            self.record_hit_sp(mgmt, opp, t);
             true
         } else {
             false
@@ -732,8 +741,12 @@ impl SpriteState {
             if mask & self.sprites[opp].col_mask == 0 {
                 continue;
             }
-            if aabb_overlap(rect, b) {
-                self.record_hit_rc(rect, mv, opp);
+            let rv = (
+                mv.0 - self.sprites[opp].col_vx,
+                mv.1 - self.sprites[opp].col_vy,
+            );
+            if let Some(t) = swept_toi(rect, b, rv) {
+                self.record_hit_rc(rect, mv, opp, t);
                 return opp as i32;
             }
         }
@@ -755,8 +768,12 @@ impl SpriteState {
         if mask & self.sprites[opp].col_mask == 0 {
             return false;
         }
-        if aabb_overlap(rect, b) {
-            self.record_hit_rc(rect, mv, opp);
+        let rv = (
+            mv.0 - self.sprites[opp].col_vx,
+            mv.1 - self.sprites[opp].col_vy,
+        );
+        if let Some(t) = swept_toi(rect, b, rv) {
+            self.record_hit_rc(rect, mv, opp, t);
             true
         } else {
             false
@@ -805,6 +822,44 @@ impl SpriteState {
 /// count as overlap).
 fn aabb_overlap(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {
     a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
+}
+
+/// Swept time-of-collision for box `a` moving at relative velocity `rv` (= `a`'s `SPCOLVEC`
+/// velocity minus `b`'s) against box `b`, over the unit frame `[0,1]`. Returns the entry time
+/// `t∈[0,1]` of first contact, or `None` if the boxes do not meet within the frame.
+///
+/// Slab method (separating-axis time intervals). Boxes already overlapping at frame start
+/// collide at `t=0`. The first-contact instant is the moment the leading edges touch — real
+/// SmileBASIC reports that edge-touch time, e.g. two 16×16 sprites 14px apart approaching at
+/// a closing speed of 20 collide at `TM = 14/20 = 0.7` (hw_verified, M7-T2). A velocity that
+/// moves the boxes apart, or a contact time outside `[0,1]`, is not a collision.
+fn swept_toi(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64), rv: (f64, f64)) -> Option<f64> {
+    if aabb_overlap(a, b) {
+        return Some(0.0);
+    }
+    // Per-axis entry/exit times. A zero-velocity axis contributes contact only if the boxes
+    // already overlap on that axis (an infinite interval); otherwise they never meet.
+    let axis = |amin: f64, asz: f64, bmin: f64, bsz: f64, v: f64| -> Option<(f64, f64)> {
+        let (amax, bmax) = (amin + asz, bmin + bsz);
+        if v > 0.0 {
+            Some(((bmin - amax) / v, (bmax - amin) / v))
+        } else if v < 0.0 {
+            Some(((bmax - amin) / v, (bmin - amax) / v))
+        } else if amax > bmin && bmax > amin {
+            Some((f64::NEG_INFINITY, f64::INFINITY))
+        } else {
+            None
+        }
+    };
+    let (xe, xx) = axis(a.0, a.2, b.0, b.2, rv.0)?;
+    let (ye, yx) = axis(a.1, a.3, b.1, b.3, rv.1)?;
+    let entry = xe.max(ye);
+    let exit = xx.min(yx);
+    if entry > exit || !(0.0..=1.0).contains(&entry) {
+        None
+    } else {
+        Some(entry)
+    }
 }
 
 #[cfg(test)]
@@ -1102,6 +1157,29 @@ mod tests {
             ),
             -1
         );
+    }
+
+    #[test]
+    fn swept_collision_detects_approach_and_reports_time() {
+        // Two 16×16 sprites: tested sprite 0 @ (100,100), opponent 1 @ (130,100) — a 14px
+        // gap, NOT overlapping at frame start. SPCOLVEC gives sprite 0 a +20 X velocity.
+        // The leading edges (116 vs 130) close at 20/frame, so first contact is at
+        // TM = 14/20 = 0.7 (hw_verified sb-oracle, M7-T2).
+        let mut st = SpriteState::new();
+        place_col(&mut st, 0, 100.0, 100.0);
+        place_col(&mut st, 1, 130.0, 100.0);
+        st.set_colvec(0, Some((20.0, 0.0)));
+        assert_eq!(st.hit_sp_range(0, 0, SPRITE_COUNT - 1), 1);
+        assert_eq!(st.hit.time, 0.7);
+        // The stored coordinate is the detection position; SPHITINFO reconstructs the
+        // collision X as x1 + vx1*time = 100 + 20*0.7 = 114.
+        assert_eq!(st.hit.x1 + st.hit.vx1 * st.hit.time, 114.0);
+        // A velocity pointing AWAY (the contact would be in the past) is not a collision.
+        st.set_colvec(0, Some((-20.0, 0.0)));
+        assert_eq!(st.hit_sp_range(0, 0, SPRITE_COUNT - 1), -1);
+        // With no velocity the same far-apart pair never meets (static behavior preserved).
+        st.set_colvec(0, Some((0.0, 0.0)));
+        assert_eq!(st.hit_sp_range(0, 0, SPRITE_COUNT - 1), -1);
     }
 
     #[test]

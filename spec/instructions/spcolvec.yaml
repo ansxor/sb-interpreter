@@ -23,6 +23,8 @@ semantics:
   - "Sprite must exist: tst r0,#0x80000000 on slot flags [r6,#0x4] @0x143ef4; if the active bit is clear the handler raises errnum 4 (used before SPSET) — mov r0,#0x4 / bl 0x1fffdc @0x143f2c-0x143f38."
   - "Auto-calc branch (argcount == 1, X,Y omitted): cmp r5,#0x1 / beq 0x143f44 -> bl 0x17e458 (@0x143f44-0x143f48). The auto vector is the movement distance from the previous frame when SPANIM \"XY\" linear interpolation is active, else 0,0 (documented)."
   - "Explicit branch (argcount == 3): the two movement amounts are read and stored via a per-sprite setter through the sprite vtable (ldr r0,[r4,#0x8] / ldr r2,[r0,#0x10]! / ldr r2,[r2,#0x60] / blx r2 @0x143f04-0x143f18); this velocity is what swept SPHIT* uses and what SPHITINFO reports as VX/VY. Movement amounts are floats (the collision math is float, see SPHITRC/SPHITINFO)."
+  - "The stored velocity is reported verbatim by SPHITINFO after any SPHIT* collision: the tested sprite (object 1) reports it as VX1/VY1, the sprite it hits (object 2) reports its own SPCOLVEC as VX2/VY2; floats and negatives are preserved exactly, and a sprite never given SPCOLVEC (or the auto-calc 1-arg form on a stationary sprite) reports 0,0 (hw_verified, M7-T2)."
+  - "The velocity drives SWEPT (moving-quadrangle) detection in SPHITSP/SPHITRC: two sprites that do NOT overlap at frame start but whose per-frame movement closes the gap DO collide, at the swept time-of-collision TM = gap/closing-speed — e.g. a 16×16 sprite at (100,100) with SPCOLVEC vel (20,0) approaching a stationary 16×16 sprite at (130,100) (a 14px edge gap) collides at TM = 14/20 = 0.7, and SPHITINFO reconstructs the collision coordinate as position + velocity * TM (X1 = 100 + 20·0.7 = 114). A velocity pointing away (so the boxes only would have met in the past) is not a collision (hw_verified, M7-T2)."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET, or the argument count is not 1 or 3" }
@@ -32,14 +34,29 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/spcolvec.md (`SPCOLVEC mgmt [,mvx,mvy]`; mgmt 0-511; if omitted the amount is auto-calculated = movement distance from the previous frame while SPANIM \"XY\" linear interpolation runs, otherwise 0,0; 'recommended to also call this when setting SPCOL'; 'If used before SPSET, an error will occur')" }
   - { type: disassembled, ref: "cia_3.6.0.lst SPCOLVEC handler @0x143e70: arg gate cmp r5,#0x1 cmpne r5,#0x3 ldreq r0,[r4,#0xc] cmpeq r0,#0x0 beq 0x143eac (r5=[r0,#0x4] argcount, [r4,#0xc] OUT-count); error mov r0,#0x4 mvn r1,#0x0 bl 0x1fffdc @0x143e9c (errnum 4 errline -1); mgmt via FUN_001eece0 bl 0x1eece0 @0x143ebc (errnum 10); slot sprite-base[0x143fa0]+(mgmt+[0x44])*0x48 rsb r1,r0,r0,lsl#5 @0x143ee0; active-bit guard tst r0,#0x80000000 [r6,#0x4] @0x143ef4 beq 0x143f2c (used before SPSET, errnum 4); argcount==1 -> bl 0x17e458 auto-calc @0x143f44; argcount==3 -> velocity setter via vtable [r0,#0x60] blx @0x143f10-0x143f18; state ptr [0x143f9c], sprite-base [0x143fa0], helper [0x143fa4]." }
   - { type: community, ref: "osb/SMILEBASIC/sprite.d (3.5.0 structural cross-check only): SpriteCollision carries `double vx=0, vy=0` populated for SPHITINFO (vx1/vy1/vx2/vy2). osb does not implement SPCOLVEC's swept math (collision is plain AABB, time always 0), so the per-frame velocity + auto-calc behavior is taken from docs + disassembly, not osb." }
-  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8d): SPCLR:SPCOLVEC 5 -> errnum 4 (used before SPSET); SPSET 0,0:SPCOLVEC 512 -> errnum 10 (mgmt out of range). The velocity's effect on swept SPHIT*/SPHITINFO is not yet harvested (queued)." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8d): SPCLR:SPCOLVEC 5 -> errnum 4 (used before SPSET); SPSET 0,0:SPCOLVEC 512 -> errnum 10 (mgmt out of range)." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-24 (M7-T2 run 55, harness/harvest/out/spcolvec.tsv): the velocity's storage + swept effect, read back through SPHITINFO after SPHITSP. Two overlapping 16×16 sprites, SPCOLVEC 0,3,-2 / SPCOLVEC 1,5,7 -> SPHITSP(0)=1; SPHITINFO OUT TM,X1,Y1,VX1,VY1,X2,Y2,VX2,VY2 = TM 0, X1/Y1 100/100, VX1/VY1 3/-2, X2/Y2 108/100, VX2/VY2 5/7 (object 1 = tested sprite, object 2 = hit sprite). Float/negative preserved: SPCOLVEC 0,-1.5,2.5 -> VX1 -1.5, VY1 2.5. No SPCOLVEC, and the auto-calc 1-arg SPCOLVEC 0 on a stationary sprite, both -> 0,0. SWEPT: sprite 0 @ (100,100) vel (20,0) vs stationary sprite 1 @ (130,100) (14px gap) -> SPHITSP(0)=1, TM 0.7, X1 = 100+20·0.7 = 114; SPCOLVEC 0,-20,0 (away) -> -1; far-apart with no velocity -> -1. Resolves the queued velocity-effect question." }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg): both forms are common — `SPCOLVEC id` (auto, 380+ programs, e.g. 4DAXEXWD/TXT/---ATOMIC--- `SPCOLVEC 500`) and `SPCOLVEC id,vx,vy` (40+ programs, e.g. 1DVK34J/TXT/HNZHS `SPCOLVEC I,BVX[I],BVY[I]`, 43Y5P31D/TXT/CAR `SPCOLVEC 0,0,0`); operands are often array/expression values (e.g. `SPCOLVEC N,X*AC#,Y*AC#`). Confirms the 1- and 3-arg syntax; runtime velocity effect is oracle-pending." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Error cases hw_verified (sb-oracle 2026-06-22 s_t8d). Velocity effect on SPHITINFO remains oracle-pending (see HARVEST_QUEUE.md).
-  - { name: auto_vector, code: "SPSET 0,0\nSPCOLVEC 0", expect: { stdout: "" } }
-  - { name: explicit_vector, code: "SPSET 0,0\nSPCOLVEC 0,2,-1", expect: { stdout: "" } }
+  # Velocity storage + swept effect hw_verified (sb-oracle 2026-06-24, M7-T2 run 55), read back
+  # through SPHITINFO after SPHITSP; error cases hw_verified (2026-06-22 s_t8d). The collision
+  # setup uses two 16×16 sprites at the default SPCOL detection rect.
+  # --- Group A: explicit velocity round-trip on an already-overlapping pair (TM=0) ---
+  - { name: explicit_obj1_vel, code: "ACLS\nSPSET 0,0\nSPSET 1,0\nSPOFS 0,100,100\nSPOFS 1,108,100\nSPCOL 0\nSPCOL 1\nSPCOLVEC 0,3,-2\nSPCOLVEC 1,5,7\nH=SPHITSP(0)\nSPHITINFO OUT TM,X1,Y1,VX1,VY1,X2,Y2,VX2,VY2\nPRINT VX1;\",\";VY1", expect: { stdout: "3,-2" } }
+  - { name: explicit_obj2_vel, code: "ACLS\nSPSET 0,0\nSPSET 1,0\nSPOFS 0,100,100\nSPOFS 1,108,100\nSPCOL 0\nSPCOL 1\nSPCOLVEC 0,3,-2\nSPCOLVEC 1,5,7\nH=SPHITSP(0)\nSPHITINFO OUT TM,X1,Y1,VX1,VY1,X2,Y2,VX2,VY2\nPRINT VX2;\",\";VY2", expect: { stdout: "5,7" } }
+  - { name: explicit_tm_coords, code: "ACLS\nSPSET 0,0\nSPSET 1,0\nSPOFS 0,100,100\nSPOFS 1,108,100\nSPCOL 0\nSPCOL 1\nSPCOLVEC 0,3,-2\nSPCOLVEC 1,5,7\nH=SPHITSP(0)\nSPHITINFO OUT TM,X1,Y1,VX1,VY1,X2,Y2,VX2,VY2\nPRINT H;\",\";TM;\",\";X1;\",\";X2", expect: { stdout: "1,0,100,108" } }
+  # --- Group B: float / negative round-trip; sprite 1 has no SPCOLVEC (default 0) ---
+  - { name: float_round_trip, code: "ACLS\nSPSET 0,0\nSPSET 1,0\nSPOFS 0,100,100\nSPOFS 1,108,100\nSPCOL 0\nSPCOL 1\nSPCOLVEC 0,-1.5,2.5\nH=SPHITSP(0)\nSPHITINFO OUT TM,X1,Y1,VX1,VY1,X2,Y2,VX2,VY2\nPRINT VX1;\",\";VY1;\",\";VX2", expect: { stdout: "-1.5,2.5,0" } }
+  # --- Group C: auto-calc form (1-arg, X,Y omitted), stationary -> 0,0 ---
+  - { name: auto_calc_zero, code: "ACLS\nSPSET 0,0\nSPSET 1,0\nSPOFS 0,100,100\nSPOFS 1,108,100\nSPCOL 0\nSPCOL 1\nSPCOLVEC 0\nH=SPHITSP(0)\nSPHITINFO OUT TM,X1,Y1,VX1,VY1,X2,Y2,VX2,VY2\nPRINT VX1;\",\";VY1", expect: { stdout: "0,0" } }
+  # --- Group D: swept detection of a non-overlapping approach (TM = gap/closing-speed) ---
+  - { name: swept_hit_time, code: "ACLS\nSPSET 0,0\nSPSET 1,0\nSPOFS 0,100,100\nSPOFS 1,130,100\nSPCOL 0\nSPCOL 1\nSPCOLVEC 0,20,0\nH=SPHITSP(0)\nSPHITINFO OUT TM,X1,Y1,VX1,VY1,X2,Y2,VX2,VY2\nPRINT H;\",\";TM;\",\";X1", expect: { stdout: "1,0.7,114" } }
+  - { name: swept_away_no_hit, code: "ACLS\nSPSET 0,0\nSPSET 1,0\nSPOFS 0,100,100\nSPOFS 1,130,100\nSPCOL 0\nSPCOL 1\nSPCOLVEC 0,-20,0\nPRINT SPHITSP(0)", expect: { stdout: "-1" } }
+  - { name: far_apart_no_velocity_no_hit, code: "ACLS\nSPSET 0,0\nSPSET 1,0\nSPOFS 0,100,100\nSPOFS 1,130,100\nSPCOL 0\nSPCOL 1\nPRINT SPHITSP(0)", expect: { stdout: "-1" } }
+  # --- error guards ---
   - { name: before_spset, code: "SPCLR\nSPCOLVEC 5", expect: { error: { errnum: 4 } } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPCOLVEC 512", expect: { error: { errnum: 10 } } }
+  - { name: bad_argcount, code: "SPSET 0,0\nSPCOLVEC 0,1,2,3", expect: { error: { errnum: 4 } } }
