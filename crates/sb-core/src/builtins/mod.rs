@@ -210,8 +210,10 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "SPUNLINK",
     // Sprite positioning (M3-T3 glue): SPOFS sets/reads a sprite's screen position — the
     // minimum transform needed to place sprites for collision; the rest of the transform
-    // setters land in a later increment.
+    // setters land in a later increment. SPROT (M7-T2) has a function-form get
+    // (`A=SPROT(mgmt)`), so it must be a known builtin to compile as a call, not a variable.
     "SPOFS",
+    "SPROT",
     // Sprite collision + definition templates (M3-T3): SPCOL/SPCOLVEC configure a sprite's
     // collision rect/mask/velocity; SPHITSP/SPHITRC test for collisions; SPHITINFO reads the
     // result; SPCHK reads the animation-status bitmask; SPDEF manages the definition-template
@@ -646,6 +648,6 @@ mod tests {
         assert!(b.is_builtin("SPOFS")); // M3-T3 (positioning glue for collision)
         assert!(b.is_builtin("SPHITSP")); // M3-T3
         assert!(b.is_builtin("SPDEF")); // M3-T3
-        assert!(!b.is_builtin("SPROT")); // later increment (transform setters)
+        assert!(b.is_builtin("SPROT")); // M7-T2 (function-form get A=SPROT(mgmt))
     }
 }

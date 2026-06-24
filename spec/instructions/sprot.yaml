@@ -7,7 +7,7 @@ signatures:
   # Form 1 — set the rotation angle.
   - args:
       - { name: management_number, type: integer, range: "0..511", desc: "Management number of the target sprite." }
-      - { name: angle, type: number, range: "0..360 (clockwise; convention only — not enforced)", desc: "Rotation angle in degrees, clockwise. Truncated to a signed 16-bit integer and stored VERBATIM — negative, >360, and fractional inputs are kept as-is (NOT wrapped into 0..360)." }
+      - { name: angle, type: number, range: "0..360 (clockwise; convention only — not enforced)", desc: "Rotation angle in degrees, clockwise. Truncated toward zero to an integer, then stored as a SIGNED 16-bit value (low 16 bits, sign-extended) and read back VERBATIM — negative, >360, and fractional inputs are kept as-is (NOT wrapped into 0..360). Magnitudes beyond ±32767 wrap mod 2^16 (hw_verified: 40000->-25536, 65536->0, 70000->4464)." }
     note: "SPROT mgmt, angle — set the rotation angle (2 args, no return)."
   # Form 2 — read the rotation angle (statement / OUT).
   - args:
@@ -30,6 +30,7 @@ semantics:
   - "SET form (0 returns) requires exactly 2 arguments (mgmt, angle): cmp r6,#0x2 / beq @0x1414f8; any other count raises errnum 4 with errline -1 (mvn r1,#0 / mov r0,#0x4 / bl 0x1fffdc @0x141504). The angle clears the rotation flag bit 0x200000 of [r4,#0x4] (bic r0,r0,#0x200000 @0x141548) and is applied via FUN_0017eaa4 (bl 0x17eaa4 @0x141558)."
   - "GET form (1 return) requires argcount 1: cmp r7,#1 / cmpeq r6,#1 / beq @0x141574; it reads the stored angle as a SIGNED 16-bit value — ldrsh r1,[r4,#0x28] @0x141578 — and returns it. The OUT form (`SPROT 23 OUT DR`) and the function form (`A=SPROT(23)`) share this path."
   - "Angle storage is a signed halfword [r4,#0x28]: the input is truncated toward zero to an integer and stored VERBATIM with NO normalization. hw_verified round-trips: SPROT 0,-25 -> SPROT(0)=-25, SPROT 0,450 -> 450, SPROT 0,11.2 -> 11. Real programs rely on this (negative angles `SPROT 298,-25`, angles >360 `SPROT KILL,450-ANG`, fractional `SPROT I,11.2`); the documented 0..360 is a convention, not a clamp/wrap."
+  - "The SET apply helper FUN_0017eaa4 sign-extends the (already-truncated) integer to 16 bits — `sxth r1,r1` @0x17eab4 — then stores it as a halfword — `strh r1,[r0,#0x28]` @0x17eac4 — so a magnitude beyond ±32767 wraps mod 2^16. hw_verified: SPROT 0,32768 -> -32768, 0,40000 -> -25536, 0,65536 -> 0, 0,70000 -> 4464, 0,32767 -> 32767, 0,-32768 -> -32768. (The helper also writes a SEPARATE mod-360 field [r0,#0x2a] — `addmi r1,r1,#0x168` @0x17eae4 — used only by the renderer; SPROT() returns the verbatim [+0x28] value, NOT the normalized one.) A fresh `SPSET` initializes the angle to 0."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET (used before SPSET), or the SET form is given other than 2 arguments" }
@@ -39,10 +40,11 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/sprot.md (3 forms: SPROT mgmt,angle set — angle 0-360 clockwise; SPROT mgmt OUT DR get; A=SPROT(mgmt) function get returning current angle 0-360; mgmt 0-511; 'If used before SPSET, an error will occur')" }
   - { type: disassembled, ref: "cia_3.6.0.lst SPROT handler @0x141460: argcount r6=[r0,#0x4] return-count r7=[r0,#0xc]; cmp r6,#0x1 blt @0x141478; mgmt via sprite-index getter bl 0x1eece0 @0x141488 (errnum 10 out-of-range); slot = base[0x141594]+index*0x48 (rsb r1,r0,r0,lsl#5 @0x1414a8 / add r4,r1,r0,lsl#3 @0x1414b4); active-bit guard tst r0,#0x80000000 on [r4,#0x4] @0x1414bc beq -> mov r0,#0x4 bl 0x1fffdc errnum 4 @0x1414e8 (used before SPSET); SET requires argcount==2 cmp r6,#0x2 beq @0x1414f8 else mvn r1 mov r0,#0x4 bl 0x1fffdc @0x141504; set clears rotation flag bic r0,r0,#0x200000 [r4,#0x4] @0x141548 then bl 0x17eaa4 @0x141558; GET path cmp r7,#1 cmpeq r6,#1 beq @0x141574 reads signed halfword ldrsh r1,[r4,#0x28] @0x141578; state ptr 0x315d60 [0x141590], sprite-base 0x141594." }
   - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteData rotation field (3.5.0 structural cross-check only)" }
-  - { type: community, ref: "sbsave corpus: SPROT used ~2,285x. Confirms negative angles `SPROT 298,-25` (~150x e.g. 4RV3DX3D/TXT/SLIME_VS_NINJA), fractional angles `SPROT I,11.2` (4KWED2QE/TXT/MARIO7), angles >360 `SPROT KILL,450-ANG` (S2C4NV4V/TXT/SPIDER), and array-element targets `SPROT PSN[I],0` — proving these forms are LEGAL syntax. The wrap/round behavior for out-of-0..360 inputs is oracle-pending." }
+  - { type: community, ref: "sbsave corpus: SPROT used ~2,285x. Confirms negative angles `SPROT 298,-25` (~150x e.g. 4RV3DX3D/TXT/SLIME_VS_NINJA), fractional angles `SPROT I,11.2` (4KWED2QE/TXT/MARIO7), angles >360 `SPROT KILL,450-ANG` (S2C4NV4V/TXT/SPIDER), and array-element targets `SPROT PSN[I],0` — proving these forms are LEGAL syntax. The wrap/round behavior for out-of-0..360 inputs is now hw_verified (verbatim signed-16-bit, see the 2026-06-24 source)." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8b): SPSET 0,0:SPROT 512,0 -> errnum 10, errline 1 (mgmt out of range); SPCLR:SPROT 5,0 -> errnum 4 (used before SPSET); SPSET 0,0:SPROT 0 (1-arg, 0-return SET) -> errnum 4 (bad argcount). Round-trips: SPROT 0,45 -> SPROT(0)=45; SPROT 0,-25 -> -25 (NOT wrapped); SPROT 0,450 -> 450 (NOT wrapped); SPROT 0,11.2 -> 11 (truncated to int)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (sprot_rt): SET->GET value round-trip via prog readback (`SPSET 0,0:SPROT 0,A:SPROT 0 OUT R` / `R=SPROT(0)`). Confirms the signed-16-bit halfword wrap (the [+0x28] storage): SPROT 0,32768 -> -32768, 0,40000 -> -25536, 0,65536 -> 0, 0,70000 -> 4464, 0,32767 -> 32767, 0,-32768 -> -32768; truncate-toward-zero (NOT floor): 0,-11.9 -> -11, 0,11.2 -> 11; verbatim no-normalize: 0,45 -> 45, 0,-25 -> -25, 0,450 -> 450, 0,90 (func form) -> 90; per-sprite independence (SPROT 0,30:SPROT 1,60 -> SPROT(0)=30); fresh-SPSET default 0. Harvest TSV harness/harvest/out/sprot_rt.tsv. sb-core matches all values with the new `sprot()` builtin (it was previously unrouted)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
   # Round-trips and error cases are hw_verified (sb-oracle 2026-06-22 s_t8b).
@@ -54,3 +56,14 @@ tests:
   - { name: angle_fraction_truncated, code: "SPSET 0,0\nSPROT 0,11.2\nPRINT SPROT(0)", expect: { stdout: "11" } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPROT 512,0", expect: { error: { errnum: 10 } } }
   - { name: before_spset, code: "SPCLR\nSPROT 5,0", expect: { error: { errnum: 4 } } }
+  # Signed-16-bit halfword wrap (sb-oracle 2026-06-24 sprot_rt) — magnitudes beyond ±32767 wrap.
+  - { name: wrap_32768, code: "SPSET 0,0\nSPROT 0,32768\nPRINT SPROT(0)", expect: { stdout: "-32768" } }
+  - { name: wrap_40000, code: "SPSET 0,0\nSPROT 0,40000\nPRINT SPROT(0)", expect: { stdout: "-25536" } }
+  - { name: wrap_65536, code: "SPSET 0,0\nSPROT 0,65536\nPRINT SPROT(0)", expect: { stdout: "0" } }
+  - { name: wrap_70000, code: "SPSET 0,0\nSPROT 0,70000\nPRINT SPROT(0)", expect: { stdout: "4464" } }
+  - { name: max_i16, code: "SPSET 0,0\nSPROT 0,32767\nPRINT SPROT(0)", expect: { stdout: "32767" } }
+  - { name: min_i16, code: "SPSET 0,0\nSPROT 0,-32768\nPRINT SPROT(0)", expect: { stdout: "-32768" } }
+  - { name: neg_fraction_trunc, code: "SPSET 0,0\nSPROT 0,-11.9\nPRINT SPROT(0)", expect: { stdout: "-11" } }
+  - { name: per_sprite_independence, code: "SPSET 0,0\nSPSET 1,0\nSPROT 0,30\nSPROT 1,60\nPRINT SPROT(0)", expect: { stdout: "30" } }
+  - { name: fresh_default_zero, code: "SPCLR\nSPSET 0,0\nPRINT SPROT(0)", expect: { stdout: "0" } }
+  - { name: set_bad_argcount, code: "SPSET 0,0\nSPROT 0", expect: { error: { errnum: 4 } } }

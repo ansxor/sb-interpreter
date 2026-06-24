@@ -641,6 +641,50 @@ pub fn spscale(
     }
 }
 
+/// `SPROT mgmt, angle` (set, ret 0, 2 args) / `SPROT mgmt OUT DR` (get, ret 1, 1 arg) /
+/// `Variable = SPROT(mgmt)` (function get) — set or read a sprite's rotation angle in degrees
+/// (clockwise). The angle is truncated toward zero to an integer then **stored as a SIGNED
+/// 16-bit value** and read back VERBATIM — it is NOT normalized into 0..360. The documented
+/// 0..360 range is a convention, not a clamp/wrap.
+///
+/// The sprite must be `SPSET` (errnum 4); mgmt ∉ 0..511 is errnum 10; the SET form requires
+/// exactly 2 arguments (else errnum 4). hw_verified (sb-oracle 2026-06-24): SPROT 0,45→45,
+/// 0,-25→-25, 0,450→450 (NOT wrapped to 0..360), 0,11.2→11 / 0,-11.9→-11 (truncate toward
+/// zero), fresh default 0. The signed-halfword wrap is decisive: 0,32768→-32768, 0,40000→
+/// -25536, 0,65536→0, 0,70000→4464, 0,32767→32767, 0,-32768→-32768.
+pub fn sprot(
+    sp: &mut SpriteState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if args.is_empty() {
+        return Err(illegal());
+    }
+    let slot = mgmt(&args[0])?;
+    if !sp.is_used(slot) {
+        return Err(illegal());
+    }
+    if ret_count == 0 {
+        let rest = &args[1..];
+        if rest.len() != 1 {
+            return Err(illegal());
+        }
+        // The angle is read through the integer getter (truncate toward zero), then the apply
+        // helper FUN_0017eaa4 sign-extends it to 16 bits (`sxth r1,r1` @0x17eab4) and stores it
+        // as a halfword (`strh r1,[r0,#0x28]` @0x17eac4); GET reads it back signed (`ldrsh
+        // r1,[r4,#0x28]` @0x141578). So the stored angle wraps mod 2^16 into -32768..32767
+        // (cia_3.6.0.lst). The mod-360 normalized angle the renderer uses lives in a separate
+        // field [+0x2a] and is NOT what SPROT() returns.
+        let stored = rest[0].to_int()? as i16;
+        sp.sprites[slot].rot = stored as f64;
+        Ok(vec![])
+    } else if ret_count == 1 {
+        Ok(vec![Value::Int(sp.sprites[slot].rot as i16 as i32)])
+    } else {
+        Err(illegal())
+    }
+}
+
 // -- collision (M3-T3) --------------------------------------------------------
 
 /// The `SPCOL` scale-adjustment flag: a Void (skipped `,,`) field is the default FALSE,
@@ -1165,5 +1209,51 @@ mod tests {
         spscale(&mut sp, &[n(1.0), n(3.0), n(3.0)], 0).unwrap();
         let g0 = spscale(&mut sp, &[n(0.0)], 2).unwrap();
         assert_eq!((g0[0].clone(), g0[1].clone()), (n(2.0), n(2.0)));
+    }
+
+    #[test]
+    fn sprot_round_trip_wrap_and_guards() {
+        // Angle truncates toward zero then stores as a SIGNED 16-bit halfword (verbatim, no
+        // normalization). Magnitudes beyond ±32767 wrap mod 2^16. The function/OUT get returns
+        // the stored value as an integer. hw_verified sb-oracle 2026-06-24 (sprot_rt).
+        let mut sp = SpriteState::new();
+        spset0(&mut sp, 0);
+        // Fresh default 0.
+        assert_eq!(sprot(&mut sp, &[n(0.0)], 1).unwrap()[0], Value::Int(0));
+        // Verbatim, no normalize: 45 / -25 / 450; truncate toward zero: 11.2→11, -11.9→-11.
+        // Signed-16-bit wrap: 32767, -32768, 32768→-32768, 40000→-25536, 65536→0, 70000→4464.
+        for (input, want) in [
+            (45.0, 45),
+            (-25.0, -25),
+            (450.0, 450),
+            (11.2, 11),
+            (-11.9, -11),
+            (32767.0, 32767),
+            (-32768.0, -32768),
+            (32768.0, -32768),
+            (40000.0, -25536),
+            (65536.0, 0),
+            (70000.0, 4464),
+        ] {
+            sprot(&mut sp, &[n(0.0), n(input)], 0).unwrap();
+            assert_eq!(
+                sprot(&mut sp, &[n(0.0)], 1).unwrap()[0],
+                Value::Int(want),
+                "SPROT 0,{input} should read back {want}"
+            );
+        }
+        // Per-sprite independence.
+        spset0(&mut sp, 1);
+        sprot(&mut sp, &[n(0.0), n(30.0)], 0).unwrap();
+        sprot(&mut sp, &[n(1.0), n(60.0)], 0).unwrap();
+        assert_eq!(sprot(&mut sp, &[n(0.0)], 1).unwrap()[0], Value::Int(30));
+        // Used before SPSET → errnum 4; mgmt out of 0..511 → errnum 10; SET form needs exactly
+        // 2 args (1-arg-0-return → errnum 4).
+        assert_eq!(sprot(&mut sp, &[n(5.0), n(0.0)], 0).unwrap_err().errnum, 4);
+        assert_eq!(
+            sprot(&mut sp, &[n(512.0), n(0.0)], 0).unwrap_err().errnum,
+            10
+        );
+        assert_eq!(sprot(&mut sp, &[n(0.0)], 0).unwrap_err().errnum, 4);
     }
 }
