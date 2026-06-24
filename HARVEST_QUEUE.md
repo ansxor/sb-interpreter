@@ -119,9 +119,13 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   validation (arg-count errnum 4, MP-restriction errnum 52 "Incompatible statement" via flag
   @0x305612, range errnum 10, MPSTART non-string identifier errnum 8) but the actual NETWORK
   effects need real wireless peers (the single Azahar oracle can't form a 2-4 player session).
-  Open questions: (a) is the MP-restriction flag @0x305612 zero in a normal program-mode
-  session — i.e. does a valid MPSTART proceed to a connection dialog, or does it immediately
-  raise errnum 52? (b) MPSTART RESULT value on success/failure/timeout; (c) MPSTAT 0/1 return
+  Open questions: (a) RESOLVED 2026-06-23 (M7-T2): the MP-restriction flag @0x305612 IS zero
+  in a normal program-mode RUN context. Proof: the post-flag validation guards fire — `MPSET
+  -1,0`/`MPSET 9,0` -> errnum 10, `MPSTART 1,"X"`/`5,"X"` -> errnum 10, `MPSTART 4,99` ->
+  errnum 8, `MPSTART 4,<17char>` -> errnum 10 (all sb-oracle Azahar) — NOT errnum 52. So a
+  valid MPSTART proceeds toward a real connection (do NOT harvest it headless — it hangs).
+  errnum 52 stays oracle-pending (no headless way to set the flag). (b) MPSTART RESULT value
+  on success/failure/timeout; (c) MPSTAT 0/1 return
   for self vs peers and whole-session; (d) MPSET Double operand — truncated or errnum 8?;
   (e) does real SB reject the corpus 3-arg `MPSET a,b,c` (C2NVX3QJ/PETITWORLD) with errnum 4 as
   the handler's `cmp r0,#0x2` implies? · assumption: validation errnums per disassembly; network
