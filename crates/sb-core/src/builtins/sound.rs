@@ -316,10 +316,13 @@ impl AudioState {
             (true, [track, varnum]) => {
                 let track = ranged(track, 0, 7)? as usize;
                 let varnum = ranged(varnum, 0, 7)? as usize;
+                // Stopped read returns 0 (NOT the docs' -1): the read routine guards on
+                // the audio-availability counter [ctx+0x554] >= 0x100 and `movge r0,#0`
+                // before touching the var array (disasm @0x1a4ea8). hw_verified 2026-06-24.
                 let v = if self.tracks[track].playing {
                     self.tracks[track].vars[varnum]
                 } else {
-                    -1
+                    0
                 };
                 Ok(Some(Value::Int(v)))
             }
@@ -708,10 +711,12 @@ mod tests {
     fn bgmvar_write_then_read_while_playing() {
         let mut a = AudioState::new();
         a.bgmvar(&[int(0), int(5), int(10)], false).unwrap(); // write
-                                                              // Stopped → read returns -1 regardless of the stored value.
+                                                              // Stopped → read returns 0 regardless of the stored value (hw_verified 2026-06-24:
+                                                              // the docs' "-1 when stopped" is wrong for 3.6.0; the read routine returns 0 when the
+                                                              // availability guard is set, disasm @0x1a4ea8 `cmp r3,#0x100 / movge r0,#0`).
         assert_eq!(
             a.bgmvar(&[int(0), int(5)], true).unwrap(),
-            Some(Value::Int(-1))
+            Some(Value::Int(0))
         );
         a.bgmplay(&[int(0)], false).unwrap();
         assert_eq!(

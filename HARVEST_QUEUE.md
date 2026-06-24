@@ -1451,7 +1451,9 @@ a live SB 3.6.0 read:
 - **BGMCHK playing value** — the exact non-zero value while a track plays (sb-core returns 1; docs
   say TRUE — could be a richer flag). Stopped → 0 is confirmed-shape.
 - **BGMVAR stored/read value while playing** — sb-core stores the written i32 and returns it during
-  playback, -1 when stopped (the documented value). The live value mid-tune is unconfirmed.
+  playback. The STOPPED read is now hw_verified = 0 (NOT the docs' -1; M7-T2 2026-06-24, disasm
+  @0x1a4ea8 `cmp r3,#0x100 / movge r0,#0x0`) and a write is not observable while stopped (write-then-
+  stopped-read → 0). The live value mid-tune (signed-16, `ldrsh`) is still unconfirmed (O-T7).
 - **BGMVOL / 3-arg BGMPLAY volume + fade** — the audible mix level / `BGMSTOP track,fade` fade curve
   have no scalar golden.
 

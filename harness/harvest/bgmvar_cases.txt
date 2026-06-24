@@ -1,0 +1,17 @@
+# BGMVAR harvest (M7-T2) — headless-deterministic surface only.
+# Value reads while STOPPED (documented -1) + write-then-read-stopped discriminator,
+# plus form-shape (errnum 4) and 0..7 range (errnum 10) guards. The during-PLAYBACK
+# read value is MML-runtime/timing state with no deterministic golden (O-T7) — NOT here.
+bgmvar_read_stopped|BGMVAR(0,5)
+bgmvar_read_stopped_t7v7|BGMVAR(7,7)
+bgmvar_read_stopped_t0v0|BGMVAR(0,0)
+bgmvar_write_then_read_stopped|BGMVAR 0,5,42|BGMVAR(0,5)|prog
+bgmvar_write_track_oor|BGMVAR 8,0,1|err
+bgmvar_write_track_neg|BGMVAR -1,0,1|err
+bgmvar_write_varnum_oor|BGMVAR 0,8,1|err
+bgmvar_read_track_oor|A=BGMVAR(8,0)|err
+bgmvar_read_varnum_oor|A=BGMVAR(0,8)|err
+bgmvar_2arg_statement|BGMVAR 0,5|err
+bgmvar_3arg_function|A=BGMVAR(0,5,1)|err
+bgmvar_1arg_statement|BGMVAR 0|err
+bgmvar_4arg_statement|BGMVAR 0,5,1,2|err

@@ -5897,9 +5897,10 @@ H$=HEX$(255)"#);
 
     #[test]
     fn bgmvar_round_trips_while_playing() {
-        // Stopped: read returns -1. Playing: read returns the written value.
+        // Stopped: read returns 0 (hw_verified 2026-06-24 — docs' "-1 when stopped" is wrong
+        // for 3.6.0). Playing: read returns the written value.
         let vm = run_b("BGMVAR 0,5,42:A=BGMVAR(0,5):BGMPLAY 0:B=BGMVAR(0,5)");
-        assert_eq!(int(&vm, "A"), -1);
+        assert_eq!(int(&vm, "A"), 0);
         assert_eq!(int(&vm, "B"), 42);
     }
 
