@@ -1,0 +1,24 @@
+# BEEP call-shape + sound-bank + arg-range error contract (M7-T2 headless surface).
+# All cases are |err: error-expected -> errored=true+errnum; acceptance -> errored=false.
+# Audio output itself is NOT harvestable (O-T7).
+accept_default|BEEP|err
+accept_doc_top|BEEP 133|err
+accept_band2_lo|BEEP 224|err
+accept_band2_hi|BEEP 255|err
+accept_band3_lo|BEEP 256|err
+accept_band3_hi|BEEP 383|err
+accept_freq_max|BEEP 0,32767|err
+accept_freq_min|BEEP 0,-32768|err
+accept_vol_max|BEEP 0,0,127|err
+accept_pan_max|BEEP 0,0,0,127|err
+accept_skip_freq|BEEP 9,,80|err
+accept_all_args|BEEP 9,0,80,64|err
+err_gap_lo|BEEP 134|err
+err_gap_hi|BEEP 223|err
+err_above|BEEP 384|err
+err_neg_sound|BEEP -1|err
+err_freq_hi|BEEP 0,32768|err
+err_freq_lo|BEEP 0,-32769|err
+err_vol_hi|BEEP 0,0,128|err
+err_pan_hi|BEEP 0,0,0,128|err
+err_too_many|BEEP 0,0,0,0,0|err

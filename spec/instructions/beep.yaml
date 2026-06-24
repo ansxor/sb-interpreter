@@ -31,13 +31,14 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/beep.md (`BEEP [Sound effect number][,Frequency][,Volume][,Pan pot]` — preset sound 0-133 (SMILE button lists them); frequency -32768..32767, one halftone per 100; volume 0-127; pan pot 0 left / 64 center / 127 right; example `BEEP 20`)" }
   - { type: disassembled, ref: "cia_3.6.0.lst BEEP handler @0x1a3a38: result-count [r4,#0xc] cmp #0x0 beq @0x1a3a68 else errnum 4 errline -1 (mov r0,#0x4 @0x1a3a50); argcount r5=[r4,#0x4] cmp #0x4 ble @0x1a3a8c else errnum 4 (@0x1a3a74); sound default 0x0100002B (@0x1a3a8c), range map n<=0x85 -> +0x2B / n in 224..255 (sub #0xe0 cmp #0x1f) -> +0xD1 / n in 256..383 (sub #0x100 cmp #0x7f) -> +[0x1a3c50]=0x00FFFFB1 / else errnum 10 mov r0,#0xa @0x1a3b28; freq via bl 0x1eec7c min ~0x7FFF max [0x1a3c54]=0x00007FFF @0x1a3b58-0x1a3b70; volume min 0 max #0x7f @0x1a3ba8-0x1a3bb8; pan min 0 max #0x7f then remap mov r0,r0,lsl #0x1 / sub r0,r0,#0x80 @0x1a3c1c; play bl 0x1a5004 @0x1a3c38 against [0x1a3c58]=0x01D08280. Literals [0x1a3c48]=0x0100002B (default sound), [0x1a3c4c]=0x00305628, [0x1a3c50]=0x00FFFFB1, [0x1a3c54]=0x00007FFF" }
   - { type: disassembled, ref: "cia_3.6.0.lst shared integer-arg range helper FUN_001eec7c @0x1eec7c: evaluates the arg (blx [r2,#0x40]), bounds-checks value against min r3 and max [sp,#0x18], raising errnum 10 (mov r2,#0x0 / mov r0,#0xa / b 0x1fffdc @0x1eeccc) — enforces the frequency, volume and pan bounds" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-24 (M7-T2; harness/harvest/out/beep.tsv): BEEP's full headless surface — call shape, the three sound banks + the gap between them, and every arg range — confirmed against real SB. ACCEPTED (no error): bare `BEEP` (default 0), `BEEP 133` (top documented preset), `BEEP 224` & `BEEP 255` (band 224..255), `BEEP 256` & `BEEP 383` (band 256..383), `BEEP 0,32767` & `BEEP 0,-32768` (freq endpoints), `BEEP 0,0,127` (volume max), `BEEP 0,0,0,127` (pan max), `BEEP 9,,80` (empty-comma skip), `BEEP 9,0,80,64` (all 4 args). REJECTED errnum 10 errline 1 (Out of range): `BEEP 134` & `BEEP 223` (the 134..223 gap), `BEEP 384` (above 383), `BEEP -1` (below 0), `BEEP 0,32768` & `BEEP 0,-32769` (freq over/under), `BEEP 0,0,128` (volume > 127), `BEEP 0,0,0,128` (pan > 127). REJECTED errnum 4 errline 1 (Illegal function call): `BEEP 0,0,0,0,0` (5 args). The audible output itself (preset PCM, frequency-shift, pan mix) has no deterministic emulator golden (O-T7) and keeps the top-level confidence at disassembled; the call-shape + sound-bank + range contract is hw_verified." }
   - { type: community, ref: "osb/SMILEBASIC/sound.d BEEP (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg): 1071 files — proves multiple legal forms: bare `BEEP` (217), 1-arg `BEEP 9` / `BEEP 51` / `BEEP 20`, negative frequency `BEEP 9,-500`, 2-arg `BEEP 95,1000`, and the empty-comma skip `BEEP 9,,` and `BEEP 9,0,` (freq skipped, later args set). The extended sound banks the docs omit are heavily used: `BEEP 224`/`BEEP 243` (224..255 band) and `BEEP 258`/`BEEP 293`/`BEEP 303`/`BEEP 354`/`BEEP 382` (256..383 band), matching the disassembly's two extra ranges. Proves the syntax + sound-number ranges are legal; runtime audio output unproven (no oracle, O-T7)." }
 
 confidence: disassembled
 
 tests:
-  # Call shape, argument ranges and error conditions read from the disassembly handler body.
+  # Call shape, sound banks, and arg ranges — hw_verified via sb-oracle batch (beep, 2026-06-24).
   # Audio output is not deterministically harvestable (O-T7); these pin the statement contract.
   - { name: no_args, code: "BEEP", expect: { stdout: "" } }
   - { name: sound_only, code: "BEEP 20", expect: { stdout: "" } }
@@ -46,10 +47,20 @@ tests:
   - { name: all_args, code: "BEEP 9,0,80,64", expect: { stdout: "" } }
   - { name: sound_max_doc, code: "BEEP 133", expect: { stdout: "" } }
   - { name: sound_band2, code: "BEEP 224", expect: { stdout: "" } }
+  - { name: sound_band2_hi, code: "BEEP 255", expect: { stdout: "" } }
+  - { name: sound_band3_lo, code: "BEEP 256", expect: { stdout: "" } }
   - { name: sound_band3, code: "BEEP 293", expect: { stdout: "" } }
+  - { name: sound_band3_hi, code: "BEEP 383", expect: { stdout: "" } }
+  - { name: freq_max, code: "BEEP 0,32767", expect: { stdout: "" } }
+  - { name: freq_min, code: "BEEP 0,-32768", expect: { stdout: "" } }
+  - { name: volume_max, code: "BEEP 0,0,127", expect: { stdout: "" } }
+  - { name: pan_max, code: "BEEP 0,0,0,127", expect: { stdout: "" } }
   - { name: sound_gap, code: "BEEP 134", expect: { error: { errnum: 10 } } }
-  - { name: sound_gap_high, code: "BEEP 200", expect: { error: { errnum: 10 } } }
+  - { name: sound_gap_high, code: "BEEP 223", expect: { error: { errnum: 10 } } }
   - { name: sound_above, code: "BEEP 384", expect: { error: { errnum: 10 } } }
-  - { name: volume_out_of_range, code: "BEEP 0,0,200", expect: { error: { errnum: 10 } } }
-  - { name: pan_out_of_range, code: "BEEP 0,0,0,200", expect: { error: { errnum: 10 } } }
+  - { name: sound_neg, code: "BEEP -1", expect: { error: { errnum: 10 } } }
+  - { name: freq_above, code: "BEEP 0,32768", expect: { error: { errnum: 10 } } }
+  - { name: freq_below, code: "BEEP 0,-32769", expect: { error: { errnum: 10 } } }
+  - { name: volume_out_of_range, code: "BEEP 0,0,128", expect: { error: { errnum: 10 } } }
+  - { name: pan_out_of_range, code: "BEEP 0,0,0,128", expect: { error: { errnum: 10 } } }
   - { name: too_many_args, code: "BEEP 0,0,0,0,0", expect: { error: { errnum: 4 } } }
