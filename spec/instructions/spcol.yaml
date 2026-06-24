@@ -76,6 +76,8 @@ semantics:
   - "Collision mask is a 32-bit value (0..&HFFFFFFFF, default &HFFFFFFFF = all bits). Collision is filtered by bitwise AND: two sprites are considered to collide only when (maskA AND maskB) != 0 (per the docs; cross-checked against osb SpriteCollision.detection: `if(sp.define && sp.col.mask & mask)`)."
   - "Scale adjustment is a boolean: TRUE synchronizes the detection rectangle with the sprite's SPSCALE, but ONLY for SPSCALE instructions issued AFTER this SPCOL (documented). FALSE (the default when omitted) leaves the detection area at its set size regardless of SPSCALE."
   - "The OUT getters read back the stored collision state into the supplied variables; the form (4-7) is chosen by how many OUT variables are listed (1-2 -> scale[,mask]; 4 -> range; 5 -> range+scale; 6 -> all). An OUT slot may be skipped with a leading/empty comma to read only later values, e.g. `SPCOL id OUT ,mask` reads just the mask (verified in the corpus)."
+  - "Read-back value contract (hw_verified sb-oracle 2026-06-24): the scale flag is stored NORMALIZED to a boolean — `SPCOL m,TRUE` and `SPCOL m,5` both read back 1, `SPCOL m,FALSE` reads 0. The mask is a 32-bit value read back as a signed i32 when received into an integer variable (default &HFFFFFFFF -> -1, &H80000000 -> -2147483648, &H12345678 -> 305419896); reading the mask into a Real variable shows STR$'s %g formatting for large values (305419896 -> '3.0542e+08'). A bare `SPCOL m` (no rect) reports the detection area as the sprite's full size with origin (0,0) (SPDEF #0 -> 0,0,16,16). The skipped-scale setter `SPCOL m,,mask` leaves scale 0. Negative start coords are stored verbatim."
+  - "SPSET-interaction (hw_verified sb-oracle 2026-06-24 — collision state lives in a SEPARATE array, slot stride 0x48, indexed by mgmt, distinct from the 2296-byte sprite slot): a SECOND `SPSET` on the same management number PRESERVES the stored detection rectangle and mask but RESETS the scale-adjustment flag to 0. Confirmed: `SPSET 0,0:SPCOL 0,7,8,40,48,TRUE,99:SPSET 0,0:SPCOL 0 OUT sx,sy,w,h,sc,mk` -> 7,8,40,48,0,99 (rect+mask survive, scale flag cleared). sb-core currently full-resets the whole slot (incl. collision rect/mask) on SPSET — a known gap, queued (NOT frozen as a conformance case here)."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET, or no management number is supplied" }
@@ -85,15 +87,41 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/spcol.md (7 forms: setters `SPCOL m [,scale]`, `SPCOL m,[scale],mask`, `SPCOL m,sx,sy,w,h,[scale],mask`; getters `SPCOL m OUT scale[,mask]`, `OUT sx,sy,w,h`, `OUT ...,scale`, `OUT ...,scale,mask`. mgmt 0-511; scale FALSE/TRUE (default FALSE), effective only for SPSCALE set after SPCOL; mask 0-&HFFFFFFFF default &HFFFFFFFF, AND==0 means no collision; range sx,sy -32768..32767 relative to SPHOME, w,h 0-65535; 'Must be called before any SPHIT instruction'; 'SPCOLVEC should also be called'; 'If used before SPSET, an error will occur')" }
   - { type: disassembled, ref: "cia_3.6.0.lst SPCOL handler @0x13f914: argcount gate cmp r7,#0x1 blt 0x13fe28 (r7=[r0,#0x4]); error path mov r0,#0x4 bl 0x1fffdc @0x13f9b0 (errnum 4); mgmt via FUN_001eece0 bl 0x1eece0 @0x13f938 (errnum 10); slot base[0x13fe44]+(mgmt+[0x44])*0x48 rsb r1,r0,r0,lsl#5 @0x13f958; active-bit guard tst r0,#0x80000000 [r6,#0x4] @0x13f96c beq 0x13f9b0 (used before SPSET, errnum 4); form select on OUT-count ldr r12,[r4,#0xc] cmp r12,#0x7 switchD @0x13f980 table @0x13f994; state ptr [0x13fe40], sprite-base [0x13fe44], extra const [0x13fe48]." }
   - { type: community, ref: "osb/SMILEBASIC/sprite.d (3.5.0 structural cross-check only) struct SpriteCollision { SpriteData* data; bool scale=true; int mask=-1; short sx,sy; ushort w,h; double vx,vy; } and overloads spcol(id)/spcol(id,scale)/spcol(id,scale,mask)/spcol(id,sx,sy,w,h,scale,mask) defaulting sx=sy=0,w=sprite.w,h=sprite.h,mask=-1; detection() gates on `sp.col.mask & mask`. Confirms detection rect defaults to full sprite size and mask AND filtering." }
-  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8d): SPCLR:SPCOL 5,TRUE -> errnum 4 (used before SPSET); SPSET 0,0:SPCOL 512,TRUE -> errnum 10 (mgmt out of range). The OUT-getter read-back VALUES are not yet harvested (queued)." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8d): SPCLR:SPCOL 5,TRUE -> errnum 4 (used before SPSET); SPSET 0,0:SPCOL 512,TRUE -> errnum 10 (mgmt out of range)." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-24 (M7-T2, harness/harvest/out/spcol_rt.tsv + spcol_rt2.tsv): OUT-getter set-then-read VALUE contract across all forms. SPSET 0,0:SPCOL 0 OUT sx,sy,w,h,sc,mk -> 0,0,16,16,0,-1 (bare SPCOL = full-sprite rect, scale 0, mask all-bits); SPCOL 0,3,5,20,24 -> 3,5,20,24,0,-1; SPCOL 0,1,2,16,16,TRUE,255 -> 1,2,16,16,1,255; scale normalizes (SPCOL 0,TRUE->1, SPCOL 0,5->1, SPCOL 0,FALSE->0); SPCOL 0,,31 -> scale 0/mask 31; SPCOL 0,-8,-12,15,15 -> rect -8,-12,15,15; mask into integer var exact+signed (&H12345678->305419896, &H80000000->-2147483648, default->-1); leading-comma OUT skip SPCOL 0 OUT ,mk reads only the mask (99). SECOND SPSET preserves rect+mask, resets scale flag (SPSET 0,0:SPCOL 0,7,8,40,48,TRUE,99:SPSET 0,0:SPCOL 0 OUT ... -> 7,8,40,48,0,99)." }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg): all 7 forms appear in real programs — setters `SPCOL id` (e.g. 1BWX7ENV/TXT/AND-OS), `SPCOL id,scale` (numeric OR TRUE/FALSE, e.g. 12C3NWQE/TXT/3DSCLOSEGAME `SPCOL 1,TRUE`), `SPCOL id,scale,mask`, `SPCOL id,sx,sy,w,h` (e.g. 13D4DV3V/TXT/MAIN_PRG_V2 `SPCOL SPID,-8,-12,15,15`), `SPCOL id,sx,sy,w,h,scale[,mask]` (e.g. 1DVK34J/TXT/HNZTL `SPCOL N,0,0,16,16,FALSE,&H1`), and the omitted-middle-arg comma form `SPCOL id,sx,sy,w,h,,mask` (e.g. 13D4DV3V/TXT/MAIN_PRG_V2 `SPCOL ID,-4,-4,9,9,,&B0001`); getters `SPCOL id OUT sc,mk` (e.g. REVVY3RJ/TXT/HNZBI), `SPCOL id OUT ,mask` (leading-comma skips the scale slot, e.g. 13D4DV3V/TXT/MAIN_PRG_V2 `SPCOL C OUT ,MASK`), `SPCOL id OUT sx,sy,w,h` (e.g. Q3KPEEN3/TXT/GAME_ENG `SPCOL S% OUT CX,CY,W,H`), and the all-info `SPCOL id OUT sx,sy,w,h,scale,mask` (e.g. 2XVV233J/TXT/GAME.PRG `SPCOL S% OUT SX%,SY%,W%,H%,A%,B%`). Proves the syntax is legal; exact read-back values are oracle-pending." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Error cases hw_verified (sb-oracle 2026-06-22 s_t8d); set-then-read round-trips remain oracle-pending (need SPCOL OUT value harvest — see HARVEST_QUEUE.md).
+  # Error cases hw_verified (sb-oracle 2026-06-22 s_t8d).
   - { name: enable_basic, code: "SPSET 0,0\nSPCOL 0,TRUE", expect: { stdout: "" } }
   - { name: enable_mask_skip_scale, code: "SPSET 0,0\nSPCOL 0,,31", expect: { stdout: "" } }
   - { name: enable_explicit_range, code: "SPSET 0,0\nSPCOL 0,0,0,32,32,TRUE,255", expect: { stdout: "" } }
   - { name: before_spset, code: "SPCLR\nSPCOL 5,TRUE", expect: { error: { errnum: 4 } } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPCOL 512,TRUE", expect: { error: { errnum: 10 } } }
+  # Set-then-read VALUE contract (sb-oracle 2026-06-24; harness/harvest/out/spcol_rt*.tsv).
+  # A bare SPCOL (no rect) defaults the detection area to the sprite's full size (16x16 for
+  # SPDEF #0), scale flag 0, mask all-bits (read into a Real var -> -1).
+  - { name: out_default_all, code: "SPSET 0,0\nSPCOL 0\nSPCOL 0 OUT SX,SY,W,H,SC,MK\nPRINT STR$(SX)+\",\"+STR$(SY)+\",\"+STR$(W)+\",\"+STR$(H)+\",\"+STR$(SC)+\",\"+STR$(MK)", expect: { stdout: "0,0,16,16,0,-1" } }
+  # Explicit rect, scale/mask defaulted.
+  - { name: out_explicit_rect, code: "SPSET 0,0\nSPCOL 0,3,5,20,24\nSPCOL 0 OUT SX,SY,W,H,SC,MK\nPRINT STR$(SX)+\",\"+STR$(SY)+\",\"+STR$(W)+\",\"+STR$(H)+\",\"+STR$(SC)+\",\"+STR$(MK)", expect: { stdout: "3,5,20,24,0,-1" } }
+  # Full form: rect + scale TRUE + mask 255.
+  - { name: out_full, code: "SPSET 0,0\nSPCOL 0,1,2,16,16,TRUE,255\nSPCOL 0 OUT SX,SY,W,H,SC,MK\nPRINT STR$(SX)+\",\"+STR$(SY)+\",\"+STR$(W)+\",\"+STR$(H)+\",\"+STR$(SC)+\",\"+STR$(MK)", expect: { stdout: "1,2,16,16,1,255" } }
+  # Scale flag stores a normalized boolean: TRUE -> 1, any non-zero (5) -> 1, FALSE -> 0.
+  - { name: out_scale_true, code: "SPSET 0,0\nSPCOL 0,TRUE\nSPCOL 0 OUT SC\nPRINT SC", expect: { stdout: "1" } }
+  - { name: out_scale_nonzero_normalizes, code: "SPSET 0,0\nSPCOL 0,5\nSPCOL 0 OUT SC\nPRINT SC", expect: { stdout: "1" } }
+  - { name: out_scale_false, code: "SPSET 0,0\nSPCOL 0,FALSE\nSPCOL 0 OUT SC\nPRINT SC", expect: { stdout: "0" } }
+  # Skipped-scale setter form `SPCOL m,,mask` keeps scale 0, sets the mask.
+  - { name: out_mask_skip_scale, code: "SPSET 0,0\nSPCOL 0,,31\nSPCOL 0 OUT SC,MK\nPRINT STR$(SC)+\",\"+STR$(MK)", expect: { stdout: "0,31" } }
+  # Negative start coords stored verbatim.
+  - { name: out_neg_rect, code: "SPSET 0,0\nSPCOL 0,-8,-12,15,15\nSPCOL 0 OUT SX,SY,W,H\nPRINT STR$(SX)+\",\"+STR$(SY)+\",\"+STR$(W)+\",\"+STR$(H)", expect: { stdout: "-8,-12,15,15" } }
+  # 32-bit mask read into an INTEGER var is exact; bit-31 set -> signed; default all-bits -> -1.
+  - { name: out_mask_exact_int, code: "SPSET 0,0\nSPCOL 0,,&H12345678\nSPCOL 0 OUT SC%,MK%\nPRINT MK%", expect: { stdout: "305419896" } }
+  - { name: out_mask_bit31, code: "SPSET 0,0\nSPCOL 0,,&H80000000\nSPCOL 0 OUT SC%,MK%\nPRINT MK%", expect: { stdout: "-2147483648" } }
+  - { name: out_mask_default_int, code: "SPSET 0,0\nSPCOL 0\nSPCOL 0 OUT SC%,MK%\nPRINT MK%", expect: { stdout: "-1" } }
+  # Leading-comma OUT skips the scale slot, reading only the mask.
+  - { name: out_skip_scale_slot, code: "SPSET 0,0\nSPCOL 0,,99\nSPCOL 0 OUT ,MK\nPRINT MK", expect: { stdout: "99" } }
+  # 4-OUT (range only) and 5-OUT (range + scale) getter shapes.
+  - { name: out_range_only, code: "SPSET 0,0\nSPCOL 0,7,8,40,48\nSPCOL 0 OUT SX,SY,W,H\nPRINT STR$(SX)+\",\"+STR$(SY)+\",\"+STR$(W)+\",\"+STR$(H)", expect: { stdout: "7,8,40,48" } }
+  - { name: out_range_scale, code: "SPSET 0,0\nSPCOL 0,7,8,40,48,TRUE\nSPCOL 0 OUT SX,SY,W,H,SC\nPRINT STR$(SX)+\",\"+STR$(SY)+\",\"+STR$(W)+\",\"+STR$(H)+\",\"+STR$(SC)", expect: { stdout: "7,8,40,48,1" } }

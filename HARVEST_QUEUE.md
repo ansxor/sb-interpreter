@@ -1532,3 +1532,15 @@ The *live device* outputs have no headless golden — sb-core returns faithful n
   mantissa step (harvestable via `PRINT` %.8f) could distinguish them; folded into the same
   "store transforms as f32" refactor decision as the sprite setters. (BGSCALE value contract is
   otherwise hw_verified, M7-T2 run 17.)
+- **SPSET does NOT reset a slot's collision rect+mask (SPCOL), only the scale-adjust flag**
+  (sb-core gap, M7-T2 SPCOL run). hw_verified (sb-oracle 2026-06-24): collision state lives in
+  a SEPARATE array (slot stride 0x48, indexed by mgmt) distinct from the 2296-byte sprite slot,
+  so a second `SPSET m,...` PRESERVES the stored detection rectangle + mask and only clears the
+  scale-adjust flag to 0 — `SPSET 0,0:SPCOL 0,7,8,40,48,TRUE,99:SPSET 0,0:SPCOL 0 OUT sx,sy,w,h,sc,mk`
+  -> 7,8,40,48,0,99. sb-core's `SpriteState::create` (sb-render sprite.rs) does `..Sprite::default()`,
+  wiping ALL collision fields (rect->0, mask->-1, scale->false, enabled->false) on every SPSET.
+  Fix = split collision state out of the per-slot `Sprite` into a parallel mgmt-indexed array
+  that SPSET leaves alone (clearing only `col_scale_adjust`); spans SPSET/SPCLR/SPCOL/SPHIT*.
+  NOT frozen as a conformance case in spcol.yaml (sb-core would fail it); SPCOL's own set-then-read
+  value contract IS hw_verified + passing. Queue: implement the collision-array split, then add the
+  re-SPSET-preserves-collision conformance case (harvest in harness/harvest/out/spcol_rt2.tsv).
