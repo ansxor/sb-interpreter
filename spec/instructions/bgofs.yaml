@@ -26,27 +26,50 @@ semantics:
   - "GET (OUT) form requires exactly 1 argument (the layer); the X,Y[,Z] results are written to 2 or 3 OUT variables. Z is the optional third OUT variable (the handler checks argcount==3 to decide whether to emit Z — cmp r7,#3 @0x1643d4). OUT variables may be selectively omitted, e.g. `BGOFS I% OUT ,,Z%` reads only the depth."
   - "LAYER must be in 0..3 in both forms: the layer is evaluated and range-checked by the shared BG-layer getter FUN_001e2504 (bl @0x1642ec / @0x1644f8). A value < 0 or >= the live BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560."
   - "X and Y are pixel offsets evaluated as integers (integer getter method, blx [obj,#0x40] @0x164358); they are stored into the layer record and applied to scrolling. The per-layer record stride is 0xe3*8 bytes (mov r1,#0xe3 / mul / add r5,r5,r1,lsl #3 @0x164304-0x164324)."
-  - "Z (4th argument / 3rd OUT) is the depth coordinate: rear 1024 < screen surface 0 < front -256 (documented). When omitted in the SET form the layer's existing depth is left unchanged; when omitted in the OUT form the depth is simply not returned."
+  - "Z (4th argument / 3rd OUT) is the depth coordinate: rear 1024 < screen surface 0 < front -256 (documented). It is RANGE-CHECKED to -256..1024 inclusive: the handler loads the depth as an f32 and compares it against the literal bounds -256.0 (`s17`=0xc3800000) and 1024.0 (`s16`=0x44800000) — vcmpe.f32 s0,s17 / bcc err (Z < -256) and vcmpe.f32 s0,s16 / ble ok (Z <= 1024) @0x1644b8-0x1644cc; a Z outside the range raises errnum 10 (Out of range) via mov r0,#0xa / bl 0x1fffdc @0x1644d8 (errline = the statement line). The boundaries are inclusive (1024 and -256 are accepted; 1025 and -257 raise). When omitted in the SET form (3-arg, or a `,`-skipped 4th slot) the layer's existing depth is left unchanged and the range check does not fire; when omitted in the OUT form the depth is simply not returned."
+  - "Stored X,Y offsets round-trip VERBATIM as i32 with no wrapping to the layer pixel size and no clamping (hw_verified: 16/-32, 1000, 5000, -1, -1000 all read back unchanged); a fractional X/Y/Z operand truncates toward zero via the integer getter (16.7 -> 16, -16.7 -> -16). No BGSCREEN is required for the offset state (the eight layers exist at all times, default offset/depth 0; the on-screen scroll effect itself needs the BG framebuffer, O-T6). The 3-arg SET keeps the current Z, so an explicit depth set via the 4-arg form persists across subsequent 3-arg calls."
   - "BGOFS only changes scroll/depth; it does not change the layer size (BGSCREEN), visibility (BGSHOW/BGHIDE), rotation (BGROT), scale (BGSCALE) or origin (BGHOME)."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "SET form argument count is not 3 or 4, or the GET form is not called with exactly 1 argument and OUT variables" }
-  - { errnum: 10, name: "Out of range", when: "layer is negative or > 3 (not in 0..3)" }
+  - { errnum: 10, name: "Out of range", when: "layer is negative or > 3 (not in 0..3), or the SET form's depth Z is outside -256..1024 (inclusive)" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/bgofs.md (BGOFS Layer,X,Y,[Z] — 'Changes the display offset of the BG screen'; Layer 0-3; X,Y display offset in pixels; Z depth Rear:1024 < Screen surface:0 < Front:-256; form 2 BGOFS Layer OUT X,Y[,Z] — 'Gets BG coordinates'; e.g. BGOFS 0,-100,-100 and BGOFS 0 OUT X,Y,Z)" }
-  - { type: disassembled, ref: "cia_3.6.0.lst BGOFS handler @0x16429c: form select via return-count [r4,#0xc] (beq @0x1642d0 set, else cmp argcount [r4,#0x4],#1 @0x1642c4 get); SET arg-count guard sub r0,r7,#3 / cmp #2 / bcs @0x164540 (errnum 4 via bl 0x1fffdc); layer eval+range bl 0x1e2504 @0x1642ec/@0x1644f8 (errnum 10 @0x1e2560 when layer<0 or layer>=[[0x315d60]+0x60]); X eval via integer getter blx [r3,#0x40] @0x164358, per-layer stride mov r1,#0xe3 / mul / add r5,r5,r1,lsl #3 @0x164304-0x164324; Z handled only when argcount!=3 (cmp r7,#3 @0x1643d4); state ptr 0x315d60." }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGOFS handler @0x16429c: form select via return-count [r4,#0xc] (beq @0x1642d0 set, else cmp argcount [r4,#0x4],#1 @0x1642c4 get); SET arg-count guard sub r0,r7,#3 / cmp #2 / bcs @0x164540 (errnum 4 via bl 0x1fffdc); layer eval+range bl 0x1e2504 @0x1642ec/@0x1644f8 (errnum 10 @0x1e2560 when layer<0 or layer>=[[0x315d60]+0x60]); X eval via integer getter blx [r3,#0x40] @0x164358, per-layer stride mov r1,#0xe3 / mul / add r5,r5,r1,lsl #3 @0x164304-0x164324; Z handled only when argcount!=3 (cmp r7,#3 @0x1643d4). Z RANGE GUARD @0x1644b4-0x1644dc: vldr.32 s0,[sp,#0x1c] / vcmpe.f32 s0,s17 / bcc 0x1644d0 (Z < lower) / vcmpe.f32 s0,s16 / ble 0x164410 (Z <= upper -> store) else errnum 10 mov r0,#0xa / bl 0x1fffdc @0x1644d8; bounds are the f32 literals @0x164658=0xc3800000=-256.0 (s17) and @0x16465c=0x44800000=1024.0 (s16). depth stored negated as f32 at layer+0x70 (vneg.f32 / vstr.32 s0,[r0,#0x70] @0x164454-0x164458). state ptr 0x315d60." }
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer scroll/offset (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus: ~2045 calls — 3-arg 'BGOFS 0,16,0' (~530x, e.g. 1233728E/TXT/MG_DOG), 4-arg with Z 'BGOFS 0,16,0,3' (~1120x), array/expression operands ('BGOFS 0,MPX[ID]-CX[ID],MPY[ID]-CY[ID]' 227YK34J/TXT/JINTRI102), variable layer ('BGOFS I%,...' 25XS34J/TXT/_WORLD). OUT form 'BGOFS 2 OUT X,Y' (1DVK34J/TXT/HNZTL) and selective-omit OUT 'BGOFS I% OUT ,,Z%' (25XS34J/TXT/_WORLD) confirm 2-or-3 OUT vars with skippable slots. No 2-arg or 5+-arg form. (oracle-pending: exact stored offset + Z clamping, queued)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9c): BGOFS 4,0,0 -> errnum 10; BGOFS -1,0,0 -> errnum 10; BGOFS 0,5 (2 args) -> errnum 4; BGSCREEN 0,32,32:BGOFS 0,-100,-100 and :BGOFS 0,16,0,3 raise nothing. All errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (bgofs_rt / bgofs_zerr / bgofs_def, M7-T2): SET->OUT offset round-trip via the prog readback path. X,Y stored VERBATIM as i32 (BGOFS 0,16,-32 OUT->16,-32; 0,1000,0->1000; 0,0,5000->5000; 0,-1,0->-1; 0,-1000,0->-1000 — no wrap to layer pixel size); fractional truncates toward zero (16.7->16, -16.7->-16); no BGSCREEN required (BGOFS 0,10,20 OUT->10,20); construction default X=Y=Z=0 (fresh BGOFS 0 OUT X,Y,Z -> 0,0,0); omitted SET coordinate keeps current (BGOFS 0,7,8:BGOFS 0,,99 OUT->7,99); per-layer independence (BGOFS 2,123,0 OUT->123). Z stored verbatim in range (0,0,0,500->500; 1024->1024; -256->-256; -100->-100) and the 3-arg SET keeps an already-set Z (0,0,0,500:BGOFS 0,9,9 OUT->Z=500). Z RANGE: BGOFS 0,0,0,2000 / 1025 / -1000 / -257 -> errnum 10 errline 1 (1024 and -256 accepted) — confirms the disassembled -256..1024 inclusive f32 guard." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Set/get offset side effects need the BG framebuffer oracle (O-T6, queued). Error and
-  # no-error expects below are derived from the disassembly arg-count/layer guards.
-  - { name: set_ok_xy, code: "BGSCREEN 0,32,32\nBGOFS 0,-100,-100", expect: { stdout: "" } }
-  - { name: set_ok_xyz, code: "BGSCREEN 0,32,32\nBGOFS 0,16,0,3", expect: { stdout: "" } }
+  # The on-screen scroll/depth effect needs the BG framebuffer oracle (O-T6, queued); the
+  # stored offset/depth STATE round-trips through the OUT reader and is fully hw_verified
+  # (sb-oracle 2026-06-24, M7-T2). `stdout` is the console scrape (trailing newline trimmed);
+  # `PRINT X;",";Y` concatenates the two integers no-gap (run-5 PRINT semantics).
+  # --- SET -> OUT offset round-trip (verbatim i32, no wrapping) ---
+  - { name: roundtrip_xy, code: "BGOFS 0,16,-32\nBGOFS 0 OUT X,Y\nPRINT X;\",\";Y", expect: { stdout: "16,-32" } }
+  - { name: roundtrip_no_bgscreen, code: "BGOFS 0,10,20\nBGOFS 0 OUT X,Y\nPRINT X;\",\";Y", expect: { stdout: "10,20" } }
+  - { name: roundtrip_big_no_wrap, code: "BGOFS 0,1000,5000\nBGOFS 0 OUT X,Y\nPRINT X;\",\";Y", expect: { stdout: "1000,5000" } }
+  - { name: roundtrip_negative, code: "BGOFS 0,-1000,-1\nBGOFS 0 OUT X,Y\nPRINT X;\",\";Y", expect: { stdout: "-1000,-1" } }
+  - { name: roundtrip_frac_trunc, code: "BGOFS 0,16.7,-16.7\nBGOFS 0 OUT X,Y\nPRINT X;\",\";Y", expect: { stdout: "16,-16" } }
+  - { name: roundtrip_layer_independent, code: "BGOFS 2,123,0\nBGOFS 2 OUT X,Y\nPRINT X", expect: { stdout: "123" } }
+  - { name: default_offset_zero, code: "BGOFS 0 OUT X,Y,Z\nPRINT X;\",\";Y;\",\";Z", expect: { stdout: "0,0,0" } }
+  - { name: omit_keeps_coordinate, code: "BGOFS 0,7,8\nBGOFS 0,,99\nBGOFS 0 OUT X,Y\nPRINT X;\",\";Y", expect: { stdout: "7,99" } }
+  # --- Z depth round-trip + the -256..1024 inclusive range guard ---
+  - { name: roundtrip_z, code: "BGOFS 0,0,0,500\nBGOFS 0 OUT X,Y,Z\nPRINT Z", expect: { stdout: "500" } }
+  - { name: z_boundary_rear, code: "BGOFS 0,0,0,1024\nBGOFS 0 OUT X,Y,Z\nPRINT Z", expect: { stdout: "1024" } }
+  - { name: z_boundary_front, code: "BGOFS 0,0,0,-256\nBGOFS 0 OUT X,Y,Z\nPRINT Z", expect: { stdout: "-256" } }
+  - { name: z_kept_on_3arg, code: "BGOFS 0,0,0,500\nBGOFS 0,9,9\nBGOFS 0 OUT X,Y,Z\nPRINT Z", expect: { stdout: "500" } }
+  - { name: z_over_out_of_range, code: "BGOFS 0,0,0,2000", expect: { error: { errnum: 10 } } }
+  - { name: z_just_over_out_of_range, code: "BGOFS 0,0,0,1025", expect: { error: { errnum: 10 } } }
+  - { name: z_under_out_of_range, code: "BGOFS 0,0,0,-1000", expect: { error: { errnum: 10 } } }
+  - { name: z_just_under_out_of_range, code: "BGOFS 0,0,0,-257", expect: { error: { errnum: 10 } } }
+  # --- argcount / layer guards (hw_verified s_t9c) ---
+  - { name: set_ok_xy, code: "BGOFS 0,-100,-100", expect: { stdout: "" } }
+  - { name: set_ok_xyz, code: "BGOFS 0,16,0,3", expect: { stdout: "" } }
   - { name: layer_out_of_range, code: "BGOFS 4,0,0", expect: { error: { errnum: 10 } } }
   - { name: layer_negative, code: "BGOFS -1,0,0", expect: { error: { errnum: 10 } } }
   - { name: too_few_args, code: "BGOFS 0,5", expect: { error: { errnum: 4 } } }

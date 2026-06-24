@@ -31,8 +31,11 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   (only the layer check). assumption: the fill rectangle's corners are normalized (min/max)
   and CLAMPED to the map bounds, so an OOB rectangle fills only its in-bounds intersection
   (never errors, never panics). Confirm vs an errnum-10 / no-op / wrap behavior.
-- [ ] M3-T4 (BGOFS Z clamp) · The documented Z range is -256..1024. assumption: Z is stored
-  verbatim with no clamp (matching BGSCALE's no-clamp finding). Confirm whether Z is clamped.
+- [x] M3-T4 (BGOFS Z clamp) · RESOLVED 2026-06-24 (M7-T2 run 13, hw_verified). Z is NOT
+  clamped — it is RANGE-CHECKED to -256..1024 inclusive and a value outside raises errnum 10
+  (1025/-257/2000/-1000 -> errnum 10 errline 1; 1024/-256 stored verbatim). X,Y ARE stored
+  verbatim with no wrap/clamp (1000/5000/-1000 round-trip). Fixed sb-core (added the Z guard)
+  + froze the round-trip + range cases in bgofs.yaml.
 - [ ] M3-T4 (BGPUT/BGFILL malformed hex string) · screenData strings parse as ≤4-digit hex.
   assumption: an unparseable string parses leniently to 0 (no error); over-long (> 0x2000
   chars) → errnum 41; wrong type → errnum 8. Confirm the malformed-hex result + the exact

@@ -257,7 +257,17 @@ pub fn bgofs(
         let x = opt_int(&rest[0], cur.ofs_x)?;
         let y = opt_int(&rest[1], cur.ofs_y)?;
         let z = if rest.len() == 3 {
-            Some(opt_int(&rest[2], cur.ofs_z)?)
+            let zv = opt_int(&rest[2], cur.ofs_z)?;
+            // Depth (Z) is range-checked to the documented -256..1024 (inclusive); a value
+            // outside raises errnum 10. The handler compares the f32 depth against the
+            // literal bounds -256.0 (`s17`=0xc3800000) and 1024.0 (`s16`=0x44800000):
+            // `vcmpe.f32 s0,s17; bcc err` / `vcmpe.f32 s0,s16; ble ok` @0x1644b8-0x1644cc,
+            // raising via `mov r0,#0xa; bl 0x1fffdc` @0x1644d8 (cia_3.6.0.lst BGOFS handler).
+            // hw_verified: BGOFS 0,0,0,1025 / -257 -> errnum 10; 1024 / -256 stored verbatim.
+            if !(-256..=1024).contains(&zv) {
+                return Err(out_of_range());
+            }
+            Some(zv)
         } else {
             None
         };
@@ -923,6 +933,38 @@ mod tests {
                 .unwrap_err()
                 .errnum,
             10
+        );
+    }
+
+    #[test]
+    fn bgofs_z_range_guard() {
+        // Depth Z is range-checked to -256..1024 inclusive (errnum 10 outside); X,Y are not
+        // (verbatim i32). hw_verified sb-oracle 2026-06-24 (bgofs_zerr).
+        let mut bg = BgState::new();
+        // Inclusive boundaries accepted and stored verbatim.
+        bgofs(&mut bg, &[int(0), int(0), int(0), int(1024)], 0).unwrap();
+        assert_eq!(bgofs(&mut bg, &[int(0)], 3).unwrap()[2], int(1024));
+        bgofs(&mut bg, &[int(0), int(0), int(0), int(-256)], 0).unwrap();
+        assert_eq!(bgofs(&mut bg, &[int(0)], 3).unwrap()[2], int(-256));
+        // Just outside -> Out of range.
+        for z in [1025, -257, 2000, -1000] {
+            assert_eq!(
+                bgofs(&mut bg, &[int(0), int(0), int(0), int(z)], 0)
+                    .unwrap_err()
+                    .errnum,
+                10,
+                "Z={z} should be Out of range"
+            );
+        }
+        // A 3-arg SET keeps the already-set Z (no range fire); the verbatim Z survives.
+        bgofs(&mut bg, &[int(0), int(0), int(0), int(500)], 0).unwrap();
+        bgofs(&mut bg, &[int(0), int(9), int(9)], 0).unwrap();
+        assert_eq!(bgofs(&mut bg, &[int(0)], 3).unwrap()[2], int(500));
+        // X,Y are NOT range-checked (large + negative round-trip verbatim).
+        bgofs(&mut bg, &[int(0), int(5000), int(-1000)], 0).unwrap();
+        assert_eq!(
+            bgofs(&mut bg, &[int(0)], 2).unwrap(),
+            vec![int(5000), int(-1000)]
         );
     }
 
