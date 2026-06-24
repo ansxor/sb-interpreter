@@ -1,0 +1,12 @@
+# BGHIDE call-shape + layer-range error contract (M7-T2 headless surface).
+# |err mode: acceptance -> errored=false; error -> errored=true+errnum.
+# The visibility side effect itself is NOT harvestable (O-T6); this pins the statement contract,
+# which (per the BGSHOW/BGMSTOP precedent) IS the whole headless-observable surface of a pure
+# layer-visibility setter.
+hide_layer0|BGHIDE 0|err
+hide_layer3|BGHIDE 3|err
+hide_layer_over|BGHIDE 4|err
+hide_layer_neg|BGHIDE -1|err
+hide_no_args|BGHIDE|err
+hide_2args|BGHIDE 0,1|err
+hide_func|A=BGHIDE(0)|err
