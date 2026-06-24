@@ -1,0 +1,8 @@
+clear_all|BGMCLEAR|err
+clear_one|BGMCLEAR 128|err
+clear_tune_max|BGMCLEAR 255|err
+tune_too_low|BGMCLEAR 127|err
+tune_too_high|BGMCLEAR 256|err
+tune_negative|BGMCLEAR -1|err
+two_args|BGMCLEAR 128,129|err
+used_as_function|A=BGMCLEAR(128)|err

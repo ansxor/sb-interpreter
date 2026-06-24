@@ -30,13 +30,18 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst shared integer-arg range helper FUN_001eec7c @0x1eec7c: bounds-checks value against min r3 and max [sp,#0x18], raising errnum 10 (mov r0,#0xa / b 0x1fffdc @0x1eeccc) — enforces the 128..255 tune bound" }
   - { type: community, ref: "osb/SMILEBASIC/sound.d BGM registration/clear (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGMCLEAR\\b'): 64 files — both documented forms appear: 0-arg `BGMCLEAR` (clears all, 37 occurrences) and 1-arg `BGMCLEAR 128`, including back-to-back single clears `BGMCLEAR 128:BGMCLEAR 129:BGMCLEAR 130`. Proves the syntax is legal." }
+  - { type: hw_verified, ref: "sb-oracle batch vs real SB 3.6.0 (Azahar), 2026-06-24, harness/harvest/out/bgmclear.tsv — BGMCLEAR's whole headless-observable surface is its call shape + tune range (clear EFFECT is audio-state only, O-T7); 8/8 cases confirmed, 0 mismatch. ACCEPTED (NOERR): `BGMCLEAR` (0-arg clear-all), `BGMCLEAR 128` / `BGMCLEAR 255` (tune endpoints). RANGE → errnum 10 errline 1: `BGMCLEAR 127` (below 128), `BGMCLEAR 256` (above 255), `BGMCLEAR -1` (negative). SHAPE → errnum 4 errline 1: `BGMCLEAR 128,129` (2 args), `A=BGMCLEAR(128)` (return context). Pins the @0x1a3794 result-count==0 + argcount∈{0,1} shape gate and the FUN_001eec7c 128..255 (min #0x80 / max #0xff) tune bound to hardware. sb-core's AudioState::bgmclear already matched every boundary (no code change)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Call shape, argument range and error conditions read from the disassembly handler body.
+  # Call shape, argument range and error conditions — hw_verified against real SB 3.6.0
+  # (sb-oracle batch 2026-06-24, harness/harvest/out/bgmclear.tsv; 8/8 confirmed, 0 mismatch).
   - { name: clear_all, code: "BGMCLEAR", expect: { stdout: "" } }
   - { name: clear_one, code: "BGMCLEAR 128", expect: { stdout: "" } }
+  - { name: clear_tune_max, code: "BGMCLEAR 255", expect: { stdout: "" } }
   - { name: tune_too_low, code: "BGMCLEAR 127", expect: { error: { errnum: 10 } } }
   - { name: tune_too_high, code: "BGMCLEAR 256", expect: { error: { errnum: 10 } } }
+  - { name: tune_negative, code: "BGMCLEAR -1", expect: { error: { errnum: 10 } } }
   - { name: two_args, code: "BGMCLEAR 128,129", expect: { error: { errnum: 4 } } }
+  - { name: used_as_function, code: "A=BGMCLEAR(128)", expect: { error: { errnum: 4 } } }
