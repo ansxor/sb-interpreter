@@ -1,0 +1,37 @@
+# Oracle-harvested fixtures for WAIT (hw_verified) — real SmileBASIC 3.6.0 (Azahar),
+# M7-T2 run 7 (2026-06-24). WAIT's headline frame-wait is normally un-capturable headless
+# (it just blocks), but it is frame-PRECISE: the handler busy-yields one VBlank at a time
+# (swi 0xa @0x14b060) and stops exactly when the free-running frame counter [0x315ec0]
+# reaches anchor+count (cmp r0,r5/bge), so it can never overshoot. That makes the MAINCNT
+# delta deterministic — `M0=MAINCNT : WAIT n : ?MAINCNT-M0` reads back exactly n on real SB.
+# Harvested via run_case.py prog (value readback through PRINT) + ready->errcase (the
+# function-form guard). TSV: harness/harvest/out/waitvsync.tsv.
+tests:
+  # Omitted argument defaults to 1 frame.
+  - name: "default_one_frame_delta"
+    code: "M0=MAINCNT\nWAIT\nPRINT MAINCNT-M0"
+    expect: { stdout: "1" }
+  # WAIT n advances the frame counter by exactly n (frame-precise, no overshoot).
+  - name: "explicit_30_delta"
+    code: "M0=MAINCNT\nWAIT 30\nPRINT MAINCNT-M0"
+    expect: { stdout: "30" }
+  - name: "explicit_5_delta"
+    code: "M0=MAINCNT\nWAIT 5\nPRINT MAINCNT-M0"
+    expect: { stdout: "5" }
+  # frames = 0 does not wait ("0: Ignore").
+  - name: "zero_is_ignore_delta"
+    code: "M0=MAINCNT\nWAIT 0\nPRINT MAINCNT-M0"
+    expect: { stdout: "0" }
+  # A negative argument is treated like 0 (count<=0 -> skip), NOT an error.
+  - name: "negative_treated_as_zero_delta"
+    code: "M0=MAINCNT\nWAIT -5\nPRINT MAINCNT-M0"
+    expect: { stdout: "0" }
+  # WAIT re-anchors lastVsync on exit (str current -> [0x315ee8] @0x14b078), so a following
+  # VSYNC measures from the END of the WAIT: VSYNC 0 (anchor) -> WAIT 5 -> VSYNC 30 = 5+30 = 35.
+  - name: "wait_reanchors_following_vsync"
+    code: "VSYNC 0\nM0=MAINCNT\nWAIT 5\nVSYNC 30\nPRINT MAINCNT-M0"
+    expect: { stdout: "35" }
+  # Statement used as a function raises Illegal function call (errnum 4) on its line.
+  - name: "as_function_errnum_4"
+    code: "A=WAIT(1)"
+    expect: { error: { errnum: 4 } }

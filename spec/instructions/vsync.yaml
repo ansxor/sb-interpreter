@@ -29,11 +29,14 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/system.d VSYNC: waits relative to a stored last-vsync timestamp (3.5.0 cross-check, structural only)" }
   - { type: community, ref: "sbsave corpus: bare `VSYNC` with no argument is widespread (~1834 occurrences, e.g. 1DE453HV/TXT/SPACE_MOLE); variable/expression argument forms `VSYNC SPEED` (1K8XDW8E/TXT/@BACKUP.PRG) and `VSYNC (I MOD 40)==39` (4RSXS3W3/TXT/PRG); no `X=VSYNC(...)` return-value form found" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4f): A=VSYNC(1) (statement used as a function) -> errnum 4, errline 1" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 7): VSYNC's frame-wait is frame-PRECISE and anchored at the PREVIOUS VSYNC, captured as a MAINCNT delta — with a leading `VSYNC 0` pinning lastVsync, `M0=MAINCNT:VSYNC n:?MAINCNT-M0` reads back exactly n (VSYNC omitted=1, VSYNC 30=30); VSYNC 0=0 and VSYNC -5=0 (negative treated as 0, no error, still resyncs); a WAIT 5 between the anchor and VSYNC 30 re-anchors lastVsync so the delta is 35 (proves the anchor is the previous VSYNC/WAIT, not 'now'). TSV harness/harvest/out/waitvsync.tsv", confidence: hw_verified }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  - { name: default_one_frame, code: "VSYNC", expect: { stdout: "" } }
-  - { name: explicit_one_frame, code: "VSYNC 1", expect: { stdout: "" } }
-  - { name: zero_is_ignore, code: "VSYNC 0", expect: { stdout: "" } }
+  # VSYNC's headline frame-wait, harvested as a MAINCNT delta from a leading VSYNC 0 anchor.
+  - { name: default_one_frame, code: "VSYNC 0\nM0=MAINCNT\nVSYNC\nPRINT MAINCNT-M0", expect: { stdout: "1" } }
+  - { name: explicit_frames, code: "VSYNC 0\nM0=MAINCNT\nVSYNC 30\nPRINT MAINCNT-M0", expect: { stdout: "30" } }
+  - { name: zero_is_ignore, code: "VSYNC 0\nM0=MAINCNT\nVSYNC 0\nPRINT MAINCNT-M0", expect: { stdout: "0" } }
+  - { name: negative_treated_as_zero, code: "VSYNC 0\nM0=MAINCNT\nVSYNC -5\nPRINT MAINCNT-M0", expect: { stdout: "0" } }
   - { name: as_function_errors, code: "A=VSYNC(1)", expect: { error: { errnum: 4 } } }

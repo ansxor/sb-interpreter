@@ -1,0 +1,35 @@
+# Oracle-harvested fixtures for VSYNC (hw_verified) — real SmileBASIC 3.6.0 (Azahar),
+# M7-T2 run 7 (2026-06-24). Like WAIT, VSYNC's frame-wait is frame-PRECISE (busy-yields one
+# VBlank at a time, swi 0xa @0x14567c, stops exactly when the frame counter reaches
+# lastVsync+count, cmp r0,r5/bge), so the MAINCNT delta is deterministic. The difference
+# from WAIT is the ANCHOR: VSYNC targets `lastVsync + count` (add r5,lastVsync,count
+# @0x14563c) where lastVsync is set by the PREVIOUS VSYNC/WAIT, not by the current instant.
+# Each case below first runs `VSYNC 0` to pin lastVsync to the current frame, then measures.
+# Harvested via run_case.py prog (value readback through PRINT) + ready->errcase. TSV:
+# harness/harvest/out/waitvsync.tsv.
+tests:
+  # Omitted argument defaults to 1 frame (measured from the leading VSYNC 0 anchor).
+  - name: "default_one_frame_delta"
+    code: "VSYNC 0\nM0=MAINCNT\nVSYNC\nPRINT MAINCNT-M0"
+    expect: { stdout: "1" }
+  # VSYNC n advances exactly n frames from the previous VSYNC.
+  - name: "explicit_30_delta"
+    code: "VSYNC 0\nM0=MAINCNT\nVSYNC 30\nPRINT MAINCNT-M0"
+    expect: { stdout: "30" }
+  # frames = 0 does not wait but still resyncs lastVsync ("0: Ignore").
+  - name: "zero_is_ignore_delta"
+    code: "VSYNC 0\nM0=MAINCNT\nVSYNC 0\nPRINT MAINCNT-M0"
+    expect: { stdout: "0" }
+  # A negative argument is treated like 0 (count<=0 -> skip + resync), NOT an error.
+  - name: "negative_treated_as_zero_delta"
+    code: "VSYNC 0\nM0=MAINCNT\nVSYNC -5\nPRINT MAINCNT-M0"
+    expect: { stdout: "0" }
+  # The VSYNC anchor is the previous VSYNC/WAIT, not "now": with a WAIT 5 between the anchor
+  # and VSYNC 30, the WAIT re-anchors lastVsync so VSYNC 30 still waits a full 30 -> delta 35.
+  - name: "anchor_is_previous_vsync_after_wait"
+    code: "VSYNC 0\nM0=MAINCNT\nWAIT 5\nVSYNC 30\nPRINT MAINCNT-M0"
+    expect: { stdout: "35" }
+  # Statement used as a function raises Illegal function call (errnum 4) on its line.
+  - name: "as_function_errnum_4"
+    code: "A=VSYNC(1)"
+    expect: { error: { errnum: 4 } }

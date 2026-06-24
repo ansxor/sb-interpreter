@@ -29,11 +29,14 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/system.d WAIT: waits N frames from now (3.5.0 cross-check, structural only)" }
   - { type: community, ref: "sbsave corpus: bare `WAIT` no-arg (~558, e.g. 12C3NWQE/TXT/3DSCLOSEGAME); variable arg `WAIT PRGSTOP%` (13D4DV3V/TXT/MAIN_PRG_V2); arithmetic/expression args `WAIT D*60` (1R8EDWHE/TXT/DEFY_180.LIB), `WAIT (RND(3)+1)*60` (YK48E3CX/TXT/JT-OS), `WAIT RND(20)` (43LEDEAE/TXT/XCMD.LIB); `WAIT 0` (YK48E3CX/TXT/JT-OS); no return-value form found" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4f): A=WAIT(1) (statement used as a function) -> errnum 4, errline 1" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 7): WAIT's frame-wait is frame-PRECISE, captured as a MAINCNT delta — `M0=MAINCNT:WAIT n:?MAINCNT-M0` reads back exactly n (WAIT omitted=1, WAIT 30=30, WAIT 5=5); WAIT 0=0 and WAIT -5=0 (negative treated as 0, no error); WAIT re-anchors lastVsync on exit so VSYNC 0:WAIT 5:VSYNC 30 -> delta 35 (the WAIT's 5 + VSYNC's 30, not absorbed). TSV harness/harvest/out/waitvsync.tsv", confidence: hw_verified }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  - { name: default_one_frame, code: "WAIT", expect: { stdout: "" } }
-  - { name: explicit_frames, code: "WAIT 60", expect: { stdout: "" } }
-  - { name: zero_is_ignore, code: "WAIT 0", expect: { stdout: "" } }
+  # WAIT's headline frame-wait, harvested as a MAINCNT delta (frame-precise -> deterministic).
+  - { name: default_one_frame, code: "M0=MAINCNT\nWAIT\nPRINT MAINCNT-M0", expect: { stdout: "1" } }
+  - { name: explicit_frames, code: "M0=MAINCNT\nWAIT 30\nPRINT MAINCNT-M0", expect: { stdout: "30" } }
+  - { name: zero_is_ignore, code: "M0=MAINCNT\nWAIT 0\nPRINT MAINCNT-M0", expect: { stdout: "0" } }
+  - { name: negative_treated_as_zero, code: "M0=MAINCNT\nWAIT -5\nPRINT MAINCNT-M0", expect: { stdout: "0" } }
   - { name: as_function_errors, code: "A=WAIT(1)", expect: { error: { errnum: 4 } } }
