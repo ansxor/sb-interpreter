@@ -20,8 +20,12 @@ semantics:
   - "Statement only with exactly 7 arguments: if a return value is requested (used as a function) or the argument count is not 7, the handler raises errnum 4 (Illegal function call) — argcount [r0,#0x4] cmp #0x7 with cmpeq return-count [r0,#0xc],#0, else mov r0,#0x4 @0x1651d0."
   - "LAYER must be in 0..3: range-checked by the shared layer getter FUN_001e2504 (bl @0x1651f0); a value < 0 or >= the live BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560."
   - "The six coordinates (startX, startY, endX, endY, destX, destY) are evaluated as Integers in order (getters @0x165228-0x1652e0). The copy operates on the source rectangle (inclusive of both corners) and writes it with its top-left corner at (destX,destY). The documented coordinate range is 0..(BGSCREEN size - 1) for each axis."
-  - "The copy is performed within a single layer (source and destination layer are the same). The actual block move is done by the BG copy helper bl 0x15f9a0 @0x165308."
-  - "BGCOPY only rewrites tilemap cells; it does not change the layer size (BGSCREEN), visibility, scroll or graphic page."
+  - "The copy is performed within a single layer (source and destination layer are the same). The actual block move is done by the BG copy helper FUN_0015f9a0 (bl 0x15f9a0 @0x165308)."
+  - "The source rectangle is NORMALIZED: the helper swaps the X corners if startX>endX (cmp r1,r3 / ble / cpy swap @0x15f9a4-0x15f9c8) and the Y corners if startY>endY (cmp r2,r12 / ble / swap @0x15f9cc-0x15f9dc), so it always reads a proper (min..max) rectangle inclusive of both corners. The destination (destX,destY) is the literal top-left and is NOT affected by corner order. hw_verified: with cells (0,0)=11 (1,0)=12, BGCOPY 0,1,0,0,0,10,10 (corners reversed) gives BGGET(0,10,10)=11 / BGGET(0,11,10)=12 — same as the non-reversed form; reversed-XY BGCOPY 0,1,1,0,0,10,10 also lands block-top-left at the dest."
+  - "ORIENTATION is preserved: source cell at offset (rx,ry) from the source top-left lands at (destX+rx, destY+ry). hw_verified: a 2x2 block (0,0)=11 (1,0)=12 (0,1)=13 (1,1)=14 copied with BGCOPY 0,0,0,1,1,10,10 reads back BGGET(0,10,10)=11, (11,10)=12, (10,11)=13, (11,11)=14."
+  - "BGCOPY is a COPY, not a move: the source cells are left unchanged unless the destination rectangle overwrites them. hw_verified: BGCOPY 0,2,2,2,2,8,8 leaves BGGET(0,2,2)=77 intact. Each cell value is copied VERBATIM, including the empty value 0 — copying a 0-valued source cell over a non-zero destination clears it (hw_verified: BGPUT 0,8,8,99:BGPUT 0,2,2,0:BGCOPY 0,2,2,2,2,8,8 -> BGGET(0,8,8)=0)."
+  - "OVERLAPPING source/destination copy correctly (the helper picks the copy direction from the overlap test cmp r6,r1/cmpeq r2,r7 @0x15faac so it never corrupts the block). hw_verified: cells (0,0)=11 (1,0)=12, BGCOPY 0,0,0,1,0,1,0 (shift right by one, overlapping) -> BGGET(0,0,0)=11 (unchanged source), BGGET(0,1,0)=11 (the shifted (0,0)), BGGET(0,2,0)=12."
+  - "BGCOPY only rewrites the named layer's tilemap cells; it does not change the layer size (BGSCREEN), visibility, scroll, graphic page, or any OTHER layer. hw_verified: a layer-0 copy leaves layer 1 (BGGET(1,8,8)=200) untouched; cells outside the destination rectangle stay 0."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "used as a function (return requested) or the argument count is not 7" }
@@ -34,12 +38,32 @@ sources:
 
   - { type: community, ref: "sbsave corpus: ~39 calls, all documented 7-arg form, e.g. 'BGCOPY 0,0,0,25,15,0,15' in 2XVV233J/TXT/GAME.PRG, 'BGCOPY 1,0,8,24,47,25,8' in VKAKV3ZP/TXT/HNZRQ. No other argument count." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9b): BGCOPY 4,0,0,1,1,2,2 -> errnum 10 (layer out of range); BGCOPY 0,0,0,1,1 (5 args) -> errnum 4 (Illegal function call). Valid BGSCREEN 2,32,32:BGCOPY 2,0,0,3,3,4,4 raises nothing. All errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2, bgcopy_rt.tsv): tilemap copy VALUE contract read back framebuffer-free through BGGET, 18 cases 0 mismatch. Single-cell BGPUT 0,2,2,77:BGCOPY 0,2,2,2,2,8,8 -> BGGET(0,8,8)=77, source BGGET(0,2,2)=77 kept (copy not move). Orientation preserved: 2x2 block (11,12,13,14) at (0,0)-(1,1) -> dest (10,10)/(11,10)/(10,11)/(11,11) = 11/12/13/14. Source rectangle normalized: reversed-corner BGCOPY 0,1,0,0,0,10,10 == BGCOPY 0,0,0,1,0,10,10 (BGGET(0,10,10)=11, (11,10)=12); reversed-XY 0,1,1,0,0 also = 11. Overlap-safe: (0,0)=11 (1,0)=12, BGCOPY 0,0,0,1,0,1,0 -> (0,0)=11 (1,0)=11 (2,0)=12. Verbatim 0-copy: BGPUT 0,8,8,99:BGPUT 0,2,2,0:BGCOPY 0,2,2,2,2,8,8 -> BGGET(0,8,8)=0. Layer isolation: layer-0 copy leaves BGGET(1,8,8)=200; cell outside dest BGGET(0,9,9)=0. Shape guards re-confirmed: R=BGCOPY(0,0,0,1,1,2,2) and BGCOPY 0,0,0,1,1,2 (6 args) -> errnum 4 errline 1." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Tilemap copy side effects need the BG framebuffer oracle (O-T6, queued); error expects below
-  # are hw_verified (sb-oracle 2026-06-22 s_t9b).
+  # Error/no-error guards: hw_verified (sb-oracle 2026-06-22 s_t9b + 2026-06-24 bgcopy_rt.tsv).
   - { name: copy_ok, code: "BGSCREEN 2,32,32\nBGCOPY 2,0,0,3,3,4,4", expect: { stdout: "" } }
   - { name: layer_out_of_range, code: "BGCOPY 4,0,0,1,1,2,2", expect: { error: { errnum: 10 } } }
   - { name: wrong_argcount_errors, code: "BGCOPY 0,0,0,1,1", expect: { error: { errnum: 4 } } }
+  - { name: ret_form_errors, code: "R=BGCOPY(0,0,0,1,1,2,2)", expect: { error: { errnum: 4 } } }
+  - { name: six_args_errors, code: "BGSCREEN 0,32,32\nBGCOPY 0,0,0,1,1,2", expect: { error: { errnum: 4 } } }
+  # Value contract: copy side-effect read back via BGGET (framebuffer-free).
+  # hw_verified (sb-oracle 2026-06-24, bgcopy_rt.tsv).
+  - { name: baseline_src, code: "BGSCREEN 0,32,32\nBGPUT 0,2,2,77\nPRINT BGGET(0,2,2)", expect: { stdout: "77" } }
+  - { name: copy_single_dest, code: "BGSCREEN 0,32,32\nBGPUT 0,2,2,77\nBGCOPY 0,2,2,2,2,8,8\nPRINT BGGET(0,8,8)", expect: { stdout: "77" } }
+  - { name: copy_single_src_kept, code: "BGSCREEN 0,32,32\nBGPUT 0,2,2,77\nBGCOPY 0,2,2,2,2,8,8\nPRINT BGGET(0,2,2)", expect: { stdout: "77" } }
+  - { name: orient_tl, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,11\nBGPUT 0,1,0,12\nBGPUT 0,0,1,13\nBGPUT 0,1,1,14\nBGCOPY 0,0,0,1,1,10,10\nPRINT BGGET(0,10,10)", expect: { stdout: "11" } }
+  - { name: orient_tr, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,11\nBGPUT 0,1,0,12\nBGPUT 0,0,1,13\nBGPUT 0,1,1,14\nBGCOPY 0,0,0,1,1,10,10\nPRINT BGGET(0,11,10)", expect: { stdout: "12" } }
+  - { name: orient_bl, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,11\nBGPUT 0,1,0,12\nBGPUT 0,0,1,13\nBGPUT 0,1,1,14\nBGCOPY 0,0,0,1,1,10,10\nPRINT BGGET(0,10,11)", expect: { stdout: "13" } }
+  - { name: orient_br, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,11\nBGPUT 0,1,0,12\nBGPUT 0,0,1,13\nBGPUT 0,1,1,14\nBGCOPY 0,0,0,1,1,10,10\nPRINT BGGET(0,11,11)", expect: { stdout: "14" } }
+  - { name: rev_src_x, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,11\nBGPUT 0,1,0,12\nBGCOPY 0,1,0,0,0,10,10\nPRINT BGGET(0,10,10)", expect: { stdout: "11" } }
+  - { name: rev_src_x2, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,11\nBGPUT 0,1,0,12\nBGCOPY 0,1,0,0,0,10,10\nPRINT BGGET(0,11,10)", expect: { stdout: "12" } }
+  - { name: rev_src_xy, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,11\nBGPUT 0,1,1,14\nBGCOPY 0,1,1,0,0,10,10\nPRINT BGGET(0,10,10)", expect: { stdout: "11" } }
+  - { name: overlap_dest_shifted, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,11\nBGPUT 0,1,0,12\nBGCOPY 0,0,0,1,0,1,0\nPRINT BGGET(0,1,0)", expect: { stdout: "11" } }
+  - { name: overlap_dest_far, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,11\nBGPUT 0,1,0,12\nBGCOPY 0,0,0,1,0,1,0\nPRINT BGGET(0,2,0)", expect: { stdout: "12" } }
+  - { name: overlap_src_kept, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,11\nBGPUT 0,1,0,12\nBGCOPY 0,0,0,1,0,1,0\nPRINT BGGET(0,0,0)", expect: { stdout: "11" } }
+  - { name: outside_unchanged, code: "BGSCREEN 0,32,32\nBGPUT 0,2,2,77\nBGCOPY 0,2,2,2,2,8,8\nPRINT BGGET(0,9,9)", expect: { stdout: "0" } }
+  - { name: copy_zero_overwrites, code: "BGSCREEN 0,32,32\nBGPUT 0,8,8,99\nBGPUT 0,2,2,0\nBGCOPY 0,2,2,2,2,8,8\nPRINT BGGET(0,8,8)", expect: { stdout: "0" } }
+  - { name: layer_isolation, code: "BGSCREEN 0,32,32\nBGSCREEN 1,32,32\nBGPUT 0,2,2,77\nBGPUT 1,8,8,200\nBGCOPY 0,2,2,2,2,8,8\nPRINT BGGET(1,8,8)", expect: { stdout: "200" } }

@@ -571,8 +571,11 @@ oracle to confirm exact output and promote to `hw_verified`.
   - [RESOLVED 2026-06-24, M7-T2] BGGET pixel-mode (coordFlag=1): floor(px/tileSize) per axis, NO
     wrap, NOT range-checked — off-map reads the empty cell 0. Tile size = the layer's BGSCREEN
     tile size (tile-8 px16 -> char2). Drove a sb-render cell_pixel fix (was rem_euclid wrap).
-  - BGFILL/BGCOPY rectangle semantics: inclusive corners, reversed start/end ordering, out-of-bounds
-    coordinate clamp vs error (no errnum seen in the handler), and BGCOPY overlapping src/dst.
+  - [RESOLVED 2026-06-24, M7-T2 run] BGCOPY rectangle semantics: inclusive corners, reversed
+    start/end ordering (handler normalizes via the swap @0x15f9a4-0x15f9dc), orientation preserved
+    (block top-left -> destX,destY), copy-not-move (source kept), verbatim incl. 0, and overlapping
+    src/dst (overlap-safe, BGGET read-back, bgcopy_rt.tsv 18 cases 0 mismatch). BGFILL inclusive
+    corners already resolved (run 32). BGCOPY out-of-bounds clamp remains (next item).
   - BGCLIP clip rectangle visible effect and the internal layer-id (layer+2) mapping.
 
 - [ ] S-T9d BG animation/state — render/side-effect harvests (error + default-read cases already
@@ -1281,8 +1284,11 @@ the conformance gate; the following runtime OUTPUTS need the BG framebuffer/tran
   grid of BGROT angles × points (and the on-screen pivot effect) once the BG framebuffer oracle
   (O-T6) lands; until then the rotated branch is a best-effort standard rotation about origin.
 - **BGCOPY out-of-bounds behavior** — cells whose source/destination falls off the map are
-  currently skipped (source captured first so overlap is safe); the real clamp/wrap is
-  unverified.
+  currently skipped (source captured first so overlap is safe); the in-bounds copy contract is
+  hw_verified (M7-T2 bgcopy_rt.tsv), but the real handler CLAMPS the rectangle extent to the map
+  edge (subgt r12,r4,r7 @0x15fa44-0x15fa6c, negative-coord clamp-to-0 @0x15fa18-0x15fa3c) rather
+  than per-cell skipping — the observable result for fully-in-bounds cells is identical, but a
+  partially-off-map copy's exact clamped span is still un-harvested.
 - **BGSAVE/BGLOAD cell packing + auto-grow length + trailing-arg** — the packed tile/palette/
   flip cell word format (modeled as the raw 16-bit cell, round-trips within sb-core), the
   auto-grown 1-D array length, and the meaning of the undocumented 3/7-arg trailing operand
