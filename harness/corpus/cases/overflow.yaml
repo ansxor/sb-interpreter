@@ -1,0 +1,88 @@
+# M7-T5 — integer overflow / precision corners, all hw_verified against real SB 3.6.0
+# via the sb-oracle skill (batch harvests 2026-06-24). Three distinct behaviors:
+#   1. `+`/`-`/`*` overflow PROMOTES Int→Double when an operand is statically Real/
+#      Number-typed (suffix-less / `#` / Real literal / constant fold); a `%`-typed
+#      (statically Integer) operand WRAPS mod 2^32.
+#   2. Storing a Double outside [i32::MIN, i32::MAX] into a `%` target → Overflow (9).
+#   3. `<<`/`>>` shift counts are NOT masked mod 32; `>>` is arithmetic.
+# The oracle batch harvests value cases as STR$(expr) (%g / 6-sig, see M7-T4), so the
+# promoted-Double cases below print via STR$ to match the harvested string EXACTLY; the
+# PRINT (%.8f-trim) form of the same Double would be a plain integer ("2147483648") — a
+# separate M7-T4 formatter, not re-tested here. Integer-result cases use bare PRINT
+# (PRINT == STR$ for integers).
+cases:
+  # --- overflow promotion (constant fold; both operands literal) ---
+  - name: add_overflow_promotes
+    code: 'PRINT STR$(2147483647+1)'
+    expect: { stdout: "2.14748e+09" }   # hw_verified add_overflow (Double 2147483648.0)
+  - name: sub_overflow_promotes
+    code: 'PRINT STR$(-2147483648-1)'
+    expect: { stdout: "-2.14748e+09" }  # hw_verified sub_overflow (-2147483649.0)
+  - name: mul_overflow_promotes
+    code: 'PRINT STR$(2147483647*2)'
+    expect: { stdout: "4.29497e+09" }   # hw_verified mul_overflow_neg2 (4294967294.0)
+  - name: mul_pow30_promotes
+    code: 'PRINT STR$(1073741824*2)'
+    expect: { stdout: "2.14748e+09" }   # hw_verified mul_pow30x2 (2147483648.0)
+  - name: in_range_stays_integer
+    code: 'PRINT -1073741824*2'
+    expect: { stdout: "-2147483648" }   # hw_verified mul_min_neg1 (fits i32 → Integer)
+  # --- overflow promotion (runtime; suffix-less "Number" operand) ---
+  - name: runtime_suffixless_promotes
+    code: 'A=2147483647:A=A+1:PRINT STR$(A)'
+    expect: { stdout: "2.14748e+09" }   # hw_verified sl_print
+  # --- %-typed operand wraps mod 2^32 ---
+  - name: runtime_pct_wraps
+    code: 'A%=2000000000:A%=A%*2:PRINT A%'
+    expect: { stdout: "-294967296" }    # hw_verified pct_wrap_print
+  # --- DIV/MOD are integer ops and WRAP (no promotion); INT_MIN / -1 edge ---
+  - name: div_min_by_neg1_wraps
+    code: 'PRINT -1073741824*2 DIV -1'
+    expect: { stdout: "-2147483648" }   # hw_verified div_min_neg1
+  - name: mod_min_by_neg1
+    code: 'PRINT -1073741824*2 MOD -1'
+    expect: { stdout: "0" }             # hw_verified mod_min_neg1
+  # --- double→int store overflow → errnum 9 (decimal-form huge literal) ---
+  - name: store_huge_double_overflows
+    code: 'A%=10000000000'
+    expect: { error: { errnum: 9 } }    # hw_verified ovf_pos (1e10)
+  - name: store_just_over_max_overflows
+    code: 'A%=2147483648.0'
+    expect: { error: { errnum: 9 } }    # hw_verified ovf_just
+  - name: store_frac_past_max_overflows
+    code: 'A%=2147483647.9'
+    expect: { error: { errnum: 9 } }    # hw_verified ovf_negfrac
+  - name: store_max_is_ok
+    code: 'A%=2147483647.0:PRINT A%'
+    expect: { stdout: "2147483647" }    # hw_verified exactly_max
+  - name: store_frac_in_range_truncates
+    code: 'A%=2147483646.9:PRINT A%'
+    expect: { stdout: "2147483646" }    # hw_verified frac_lo
+  - name: array_store_huge_overflows
+    code: 'DIM A%[1]:A%[0]=10000000000'
+    expect: { error: { errnum: 9 } }    # hw_verified arr_store_ovf
+  # --- shift count is not masked; >> is arithmetic ---
+  - name: shl_sign_bit
+    code: 'PRINT 1<<31'
+    expect: { stdout: "-2147483648" }   # hw_verified shl_1_31
+  - name: shl_count_32_is_zero
+    code: 'PRINT 1<<32'
+    expect: { stdout: "0" }             # hw_verified shl_1_32 (not 1<<0)
+  - name: shl_count_33_is_zero
+    code: 'PRINT 1<<33'
+    expect: { stdout: "0" }             # hw_verified shl_1_33 (not 1<<1)
+  - name: shl_neg_count_is_zero
+    code: 'PRINT 2<<-1'
+    expect: { stdout: "0" }             # hw_verified shl_neg_count
+  - name: shr_is_arithmetic
+    code: 'PRINT -1>>1'
+    expect: { stdout: "-1" }            # hw_verified shr_neg1_1 (sign-extending)
+  - name: shr_count_32_saturates_sign
+    code: 'PRINT -1>>32'
+    expect: { stdout: "-1" }            # hw_verified shr_neg1_32
+  - name: shr_count_32_nonneg_is_zero
+    code: 'PRINT 5>>32'
+    expect: { stdout: "0" }             # hw_verified shr_5_32
+  - name: shr_neg_count_is_zero
+    code: 'PRINT 256>>-1'
+    expect: { stdout: "0" }             # hw_verified shr_neg_count

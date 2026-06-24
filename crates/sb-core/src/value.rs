@@ -34,6 +34,10 @@ use std::rc::Rc;
 
 /// `Type mismatch` — an inconsistent variable type is specified.
 const ERR_TYPE_MISMATCH: u32 = 8;
+/// `Overflow` — the calculation result exceeded the allowed range. Raised when a
+/// Double outside the `i32` range is stored into an Integer (`%`) variable or array
+/// element (hw_verified, see [`Value::to_int_store`]).
+const ERR_OVERFLOW: u32 = 9;
 
 /// A SmileBASIC string: mutable UTF-16 code units.
 pub type SbStr = Vec<u16>;
@@ -70,7 +74,7 @@ impl ElemRef {
     /// type. A String↔numeric mismatch raises Type mismatch (errnum 8).
     pub fn store(&self, v: Value) -> Result<(), RuntimeError> {
         match self {
-            ElemRef::Int(a, off) => a.borrow_mut().as_mut_slice()[*off] = v.to_int()?,
+            ElemRef::Int(a, off) => a.borrow_mut().as_mut_slice()[*off] = v.to_int_store()?,
             ElemRef::Real(a, off) => a.borrow_mut().as_mut_slice()[*off] = v.to_real()?,
             ElemRef::Str(a, off) => a.borrow_mut().as_mut_slice()[*off] = v.as_str()?.clone(),
         }
@@ -182,13 +186,43 @@ impl Value {
     // --- numeric coercion (hw_verified, see module docs) ----------------------
 
     /// Coerce to `i32`, **truncating toward zero** for Doubles (`2.7→2`, `-2.7→-2`).
-    /// Non-numeric values raise Type mismatch (errnum 8).
+    /// Non-numeric values raise Type mismatch (errnum 8). This is the **arithmetic-operand**
+    /// truncation used by AND/OR/XOR/DIV/MOD/shift: a huge-magnitude Double **saturates**
+    /// (`f64 as i32`, ARM VCVT-style) rather than raising. For **storage into a `%` target**
+    /// — where an out-of-range Double raises Overflow (errnum 9) — use [`Self::to_int_store`].
+    /// (A literal out-of-range bit-op operand is caught earlier by constant folding, which
+    /// SB rejects as Syntax error / errnum 3; the runtime saturating path is M7-T5-queued.)
     pub fn to_int(&self) -> Result<i32, RuntimeError> {
         match self {
             Value::Int(i) => Ok(*i),
-            // `f64 as i32` truncates toward zero and saturates on overflow (ARM
-            // VCVT-style). Exact huge-magnitude overflow behaviour is oracle-queued.
             Value::Real(d) => Ok(*d as i32),
+            _ => Err(RuntimeError::new(ERR_TYPE_MISMATCH)),
+        }
+    }
+
+    /// Coerce to `i32` for **storage into an Integer (`%`) variable or array element**:
+    /// truncates a Double toward zero like [`Self::to_int`], but a Double whose VALUE
+    /// lies outside `[i32::MIN, i32::MAX]` raises **Overflow** (errnum 9) instead of
+    /// saturating. hw_verified (sb-oracle 2026-06-24): `A%=1E10`, `A%=2147483648.0`,
+    /// `A%=2147483647.9`, `A%=-2147483648.9`, `A%=1E300*1E300` (∞) and `DIM A%[1]:
+    /// A%[0]=1E10` all raise errnum 9; `A%=2147483647.0→2147483647`, `A%=-2147483648.0→
+    /// -2147483648`, `A%=2147483646.9→2147483646`, `A%=2.7→2` (in range, truncates).
+    /// The guard fires on the value BEFORE truncation, so a fractional value just past
+    /// the limit (2147483647.9, whose truncation 2147483647 would fit) still overflows.
+    /// This differs from the arithmetic-operand truncation [`Self::to_int`] (AND/DIV/
+    /// MOD/shift), which saturates rather than raising here.
+    pub fn to_int_store(&self) -> Result<i32, RuntimeError> {
+        match self {
+            Value::Int(i) => Ok(*i),
+            Value::Real(d) => {
+                // `i32::MAX/MIN as f64` are exact (2147483647.0 / -2147483648.0), so the
+                // strict comparison admits the boundary integers and rejects anything past.
+                if *d > i32::MAX as f64 || *d < i32::MIN as f64 {
+                    Err(RuntimeError::new(ERR_OVERFLOW))
+                } else {
+                    Ok(*d as i32)
+                }
+            }
             _ => Err(RuntimeError::new(ERR_TYPE_MISMATCH)),
         }
     }
@@ -222,7 +256,7 @@ impl Value {
     /// Arrays and references are returned unchanged.
     pub fn coerce_to_suffix(self, suffix: Suffix) -> Result<Value, RuntimeError> {
         match suffix {
-            Suffix::Int => Ok(Value::Int(self.to_int()?)),
+            Suffix::Int => Ok(Value::Int(self.to_int_store()?)),
             Suffix::Real => Ok(Value::Real(self.to_real()?)),
             Suffix::Str => match self {
                 Value::Str(_) => Ok(self),
@@ -337,6 +371,42 @@ mod tests {
         assert_eq!(Value::Real(-2.5).to_int().unwrap(), -2);
         assert_eq!(Value::Real(-3.5).to_int().unwrap(), -3);
         assert_eq!(Value::Int(5).to_int().unwrap(), 5);
+    }
+
+    #[test]
+    fn to_int_store_overflow_raises_errnum_9() {
+        // hw_verified (sb-oracle 2026-06-24): storing a Double outside the i32 range into
+        // a `%` target raises Overflow (errnum 9); the boundary integers pass, anything
+        // fractionally past overflows.
+        assert_eq!(
+            Value::Real(2147483647.0).to_int_store().unwrap(),
+            2147483647
+        );
+        assert_eq!(
+            Value::Real(-2147483648.0).to_int_store().unwrap(),
+            -2147483648
+        );
+        assert_eq!(
+            Value::Real(2147483646.9).to_int_store().unwrap(),
+            2147483646
+        );
+        assert_eq!(Value::Real(2.7).to_int_store().unwrap(), 2);
+        assert_eq!(Value::Real(-2.7).to_int_store().unwrap(), -2);
+        for d in [
+            2147483647.9,
+            2147483648.0,
+            -2147483648.9,
+            1e10,
+            -1e10,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            assert_eq!(Value::Real(d).to_int_store().unwrap_err().errnum, 9, "{d}");
+        }
+        // A plain Int passes through unchanged.
+        assert_eq!(Value::Int(-5).to_int_store().unwrap(), -5);
+        // A non-numeric is still Type mismatch (errnum 8), not Overflow.
+        assert_eq!(Value::str_from("x").to_int_store().unwrap_err().errnum, 8);
     }
 
     #[test]

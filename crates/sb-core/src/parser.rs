@@ -1573,7 +1573,7 @@ fn fold_binary(op: BinOp, a: &Lit, b: &Lit) -> Option<Lit> {
     use BinOp::*;
     match op {
         Add | Sub | Mul => match (a, b) {
-            (Lit::Int(x), Lit::Int(y)) => Some(Lit::Int(int_arith(op, *x, *y))),
+            (Lit::Int(x), Lit::Int(y)) => Some(int_arith(op, *x, *y)),
             _ => {
                 let (x, y) = (to_f64(a)?, to_f64(b)?);
                 Some(Lit::Real(real_arith(op, x, y)))
@@ -1606,12 +1606,25 @@ fn fold_binary(op: BinOp, a: &Lit, b: &Lit) -> Option<Lit> {
     }
 }
 
-fn int_arith(op: BinOp, x: i32, y: i32) -> i32 {
-    match op {
-        BinOp::Add => x.wrapping_add(y),
-        BinOp::Sub => x.wrapping_sub(y),
-        BinOp::Mul => x.wrapping_mul(y),
+/// Fold `+`/`-`/`*` over two integer constants with SmileBASIC's overflow-promotion
+/// rule: compute the exact result in `i64` and keep it Integer if it fits `i32`,
+/// otherwise promote to a Double literal. hw_verified (sb-oracle 2026-06-24):
+/// `2147483647+1 → 2147483648.0`, `2000000000*2 → 4e9`, `-2000000000-2000000000 → -4e9`
+/// (constant folding promotes, it does NOT wrap). Mirrors the runtime
+/// `vm::operate_promote` so a folded constant equals what the VM would compute.
+fn int_arith(op: BinOp, x: i32, y: i32) -> Lit {
+    let (x, y) = (x as i64, y as i64);
+    // i32 OP i32 in i64 cannot overflow (|product| ≤ 2⁶²), so this is exact.
+    let r = match op {
+        BinOp::Add => x + y,
+        BinOp::Sub => x - y,
+        BinOp::Mul => x * y,
         _ => unreachable!("int_arith only handles + - *"),
+    };
+    if (i32::MIN as i64..=i32::MAX as i64).contains(&r) {
+        Lit::Int(r as i32)
+    } else {
+        Lit::Real(r as f64)
     }
 }
 
@@ -1741,10 +1754,22 @@ mod tests {
 
     #[test]
     fn folding_matches_runtime_numeric_rules() {
-        // Integer + integer wraps mod 2^32.
+        // Integer + integer PROMOTES to Double on overflow (hw_verified sb-oracle
+        // 2026-06-24: 2147483647+1 → 2.14748e+09, NOT a mod-2^32 wrap to INT_MIN).
         assert_eq!(
             expr("2147483647+1").kind,
-            ExprKind::Const(Lit::Int(i32::MIN))
+            ExprKind::Const(Lit::Real(2147483648.0))
+        );
+        // A result that still fits i32 stays Integer.
+        assert_eq!(
+            expr("2147483646+1").kind,
+            ExprKind::Const(Lit::Int(2147483647))
+        );
+        // Multiply / subtract promote the same way.
+        assert_eq!(expr("2000000000*2").kind, ExprKind::Const(Lit::Real(4e9)));
+        assert_eq!(
+            expr("-2000000000-2000000000").kind,
+            ExprKind::Const(Lit::Real(-4e9))
         );
         // `/` is always real division.
         assert_eq!(expr("7/2").kind, ExprKind::Const(Lit::Real(3.5)));

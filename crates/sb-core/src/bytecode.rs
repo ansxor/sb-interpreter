@@ -153,6 +153,10 @@ pub enum Op {
     // --- operators ------------------------------------------------------------
     /// Binary operator: pop `rhs` then `lhs`, push the result.
     Operate(BinOp),
+    /// `+`/`-`/`*` where a statically Real/Number-typed operand makes integer overflow
+    /// PROMOTE to Double instead of wrapping (the compiler picks this via `is_real_typed`;
+    /// see [`crate::vm`] `operate_promote`). Pops `rhs` then `lhs`, pushes the result.
+    OperatePromote(BinOp),
     /// Unary operator: pop the operand, push the result.
     Unary(UnOp),
 

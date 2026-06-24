@@ -31,14 +31,22 @@
 //!
 //! ## Operator semantics (from the spec/disassembly)
 //!
-//! Integer arithmetic wraps mod 2³² (`+`/`-`/`*`/unary `-` use `wrapping_*`); a
-//! Double operand promotes the result to Double. `/` is **always** real division
-//! (`7/2 == 3.5`), divide-by-zero → errnum 7. `DIV`/`MOD`/`AND`/`OR`/`XOR` and the
-//! shifts **truncate each operand toward zero to `i32` first** (`7 AND 2.9 == 2`),
-//! then do the integer op; `DIV`/`MOD` by a (truncated) zero → errnum 7
-//! (`spec/instructions/{div,mod,and,or,xor}.yaml`, hw_verified). Comparisons yield
-//! Integer `1`/`0`; strings compare by UTF-16 code units; a string-vs-number compare
-//! or any string in an arithmetic op → Type mismatch (errnum 8).
+//! `+`/`-`/`*` (M7-T5, hw_verified sb-oracle 2026-06-24) are **type-aware**: when both
+//! operands are statically Integer (`%` var, integer literal, bit-op result) the op WRAPS
+//! mod 2³² (`A%=2000000000:A%*2 → -294967296`), but when an operand is Real/Number-typed
+//! (suffix-less / `#` / Real literal / `/`-result / constant fold) overflow PROMOTES the
+//! result Int→Double (`A=2147483647:A+1 → 2147483648.0`) — the compiler picks the path via
+//! `is_real_typed` and emits [`Op::Operate`] (wrap, [`operate`]) or [`Op::OperatePromote`]
+//! ([`operate_promote`]). Storing a Double outside `[i32::MIN, i32::MAX]` into a `%` target
+//! → Overflow (errnum 9, [`Value::to_int_store`]). `/` is **always** real division
+//! (`7/2 == 3.5`), divide-by-zero → errnum 7. `DIV`/`MOD`/`AND`/`OR`/`XOR` **truncate each
+//! operand toward zero to `i32` first** (`7 AND 2.9 == 2`) then do the (wrapping) integer
+//! op; `DIV`/`MOD` by a (truncated) zero → errnum 7. The shifts `<<`/`>>` also truncate
+//! operands but the COUNT is not masked mod 32 (left `≥32` or `<0` → 0; right is arithmetic,
+//! clamped to 31) — see [`shift`]. Comparisons yield Integer `1`/`0`; strings compare by
+//! UTF-16 code units; a string-vs-number compare or any string in an arithmetic op → Type
+//! mismatch (errnum 8). (`spec/instructions/{div,mod,and,or,xor}.yaml` +
+//! `harness/corpus/cases/overflow.yaml`, hw_verified.)
 
 use crate::array::SbArray;
 use crate::ast::{BinOp, Name, UnOp};
@@ -678,6 +686,12 @@ impl Vm {
                 let lhs = self.pop()?;
                 self.stack.push(operate(binop, lhs, rhs).map_err(sb)?);
             }
+            Op::OperatePromote(binop) => {
+                let rhs = self.pop()?;
+                let lhs = self.pop()?;
+                self.stack
+                    .push(operate_promote(binop, lhs, rhs).map_err(sb)?);
+            }
             Op::Unary(unop) => {
                 let v = self.pop()?;
                 self.stack.push(unary(unop, v).map_err(sb)?);
@@ -951,7 +965,7 @@ impl Vm {
         match &*self.cell(var)?.borrow() {
             Value::IntArray(a) => a
                 .borrow_mut()
-                .set(&idx, val.to_int().map_err(sb)?)
+                .set(&idx, val.to_int_store().map_err(sb)?)
                 .map_err(sb)?,
             Value::RealArray(a) => a
                 .borrow_mut()
@@ -3469,8 +3483,8 @@ fn operate(op: BinOp, lhs: Value, rhs: Value) -> Result<Value, RuntimeError> {
         And => bitwise(lhs, rhs, |a, b| a & b),
         Or => bitwise(lhs, rhs, |a, b| a | b),
         Xor => bitwise(lhs, rhs, |a, b| a ^ b),
-        Shl => bitwise(lhs, rhs, |a, b| a.wrapping_shl(b as u32)),
-        Shr => bitwise(lhs, rhs, |a, b| a.wrapping_shr(b as u32)),
+        Shl => shift(lhs, rhs, true),
+        Shr => shift(lhs, rhs, false),
         Eq | Ne | Lt | Le | Gt | Ge => compare(op, lhs, rhs),
         LAnd => Ok(Value::Int((truthy(&lhs)? && truthy(&rhs)?) as i32)),
         LOr => Ok(Value::Int((truthy(&lhs)? || truthy(&rhs)?) as i32)),
@@ -3541,11 +3555,74 @@ fn int_div_mod(lhs: Value, rhs: Value, is_div: bool) -> Result<Value, RuntimeErr
     }))
 }
 
-/// `AND`/`OR`/`XOR`/`<<`/`>>`: truncate both operands toward zero to `i32`, then the
-/// bitwise op. The result is always Integer.
+/// `AND`/`OR`/`XOR`: truncate both operands toward zero to `i32`, then the bitwise op.
+/// The result is always Integer.
 fn bitwise(lhs: Value, rhs: Value, f: fn(i32, i32) -> i32) -> Result<Value, RuntimeError> {
     let (x, y) = (lhs.to_int()?, rhs.to_int()?);
     Ok(Value::Int(f(x, y)))
+}
+
+/// `<<` / `>>`: truncate both operands toward zero to `i32`, then shift by the count.
+/// hw_verified (sb-oracle 2026-06-24): the shift count is NOT masked mod 32.
+/// - **Left** (`<<`): a count `< 0` or `>= 32` yields `0` (`1<<32=0`, `1<<33=0`,
+///   `2<<-1=0`); otherwise the low bits are kept (`1<<31=-2147483648`, `-1<<1=-2`,
+///   `3<<1=6`).
+/// - **Right** (`>>`): ARITHMETIC (sign-extending); a count `< 0` yields `0`
+///   (`256>>-1=0`), a count `>= 32` saturates to the sign bit (clamped to 31:
+///   `-1>>32=-1`, `5>>32=0`); otherwise `-1>>1=-1`, `256>>2=64`,
+///   `-2147483648>>1=-1073741824`.
+fn shift(lhs: Value, rhs: Value, left: bool) -> Result<Value, RuntimeError> {
+    let (x, n) = (lhs.to_int()?, rhs.to_int()?);
+    let r = if left {
+        if (0..32).contains(&n) {
+            x.wrapping_shl(n as u32)
+        } else {
+            0
+        }
+    } else if n < 0 {
+        0
+    } else {
+        x >> n.min(31)
+    };
+    Ok(Value::Int(r))
+}
+
+/// `+`/`-`/`*` in a context where at least one operand is statically Real/Number-typed
+/// (a suffix-less or `#` variable/array element, a Real literal, a `/` result, …). The
+/// compiler selects this path via `is_real_typed` (see `compiler.rs`).
+///
+/// hw_verified (sb-oracle 2026-06-24): when both operands are Integer at runtime and the
+/// exact result overflows `i32`, it PROMOTES to Double rather than wrapping
+/// (`A=2147483647:A+1 → 2147483648.0`, `A=2000000000:A*2 → 4e9`) — whereas the same op
+/// on two statically-Integer (`%`/integer-literal/bit-op) operands wraps mod 2³²
+/// (`A%=2000000000:A%*2 → -294967296`, handled by [`num_arith`] via [`operate`]). Any
+/// non-(Int,Int) case (a Real operand, string concat, a type error) is identical to the
+/// plain operator, so it delegates to [`operate`].
+fn operate_promote(op: BinOp, lhs: Value, rhs: Value) -> Result<Value, RuntimeError> {
+    if let (Value::Int(a), Value::Int(b)) = (&lhs, &rhs) {
+        let (a, b) = (*a as i64, *b as i64);
+        // i32 OP i32 in i64 cannot itself overflow (|product| ≤ 2⁶²), so this is exact.
+        let r = match op {
+            BinOp::Add => Some(a + b),
+            BinOp::Sub => Some(a - b),
+            BinOp::Mul => Some(a * b),
+            _ => None,
+        };
+        if let Some(r) = r {
+            return Ok(narrow_or_real(r));
+        }
+    }
+    operate(op, lhs, rhs)
+}
+
+/// Narrow an exact `i64` arithmetic result back to a [`Value`]: Integer if it fits
+/// `i32`, otherwise Double (the overflow-promotion rule).
+fn narrow_or_real(r: i64) -> Value {
+    if (i32::MIN as i64..=i32::MAX as i64).contains(&r) {
+        Value::Int(r as i32)
+    } else {
+        Value::Real(r as f64)
+    }
 }
 
 /// Comparisons yield Integer `1`/`0`. Strings compare by UTF-16 code units; numbers
@@ -3924,6 +4001,14 @@ mod tests {
         }
     }
 
+    /// Read a `%`-suffixed (Integer) global by its base name.
+    fn int_s(vm: &Vm, name: &str) -> i32 {
+        match vm.global_value(name, Suffix::Int).expect("var exists") {
+            Value::Int(i) => i,
+            other => panic!("{name}% is not Int: {other:?}"),
+        }
+    }
+
     // ---- arithmetic & precedence ----
 
     #[test]
@@ -3942,10 +4027,87 @@ mod tests {
     }
 
     #[test]
-    fn integer_arithmetic_wraps() {
-        // i32 wrap on multiply (2_000_000_000 * 2 overflows).
+    fn suffixless_arithmetic_promotes_on_overflow() {
+        // hw_verified (sb-oracle 2026-06-24): a suffix-less (dynamic "Number") operand
+        // PROMOTES Int→Double on i32 overflow — it does NOT wrap mod 2^32.
         let vm = run("A=2000000000\nB=A*2");
-        assert_eq!(int(&vm, "B"), 2_000_000_000i32.wrapping_mul(2));
+        assert_eq!(real(&vm, "B"), 4_000_000_000.0); // not wrapping_mul's -294967296
+        let vm = run("A=2147483647\nA=A+1");
+        assert_eq!(real(&vm, "A"), 2_147_483_648.0);
+        let vm = run("A=-2000000000\nB=A-2000000000");
+        assert_eq!(real(&vm, "B"), -4_000_000_000.0);
+        // A result that still fits i32 stays Integer.
+        let vm = run("A=1000000000\nB=A+1");
+        assert_eq!(int(&vm, "B"), 1_000_000_001);
+    }
+
+    #[test]
+    fn integer_typed_arithmetic_wraps() {
+        // hw_verified (sb-oracle 2026-06-24): a `%`-typed (statically Integer) operand
+        // wraps mod 2^32 on overflow (A%=2000000000:A%*2 → -294967296).
+        let vm = run("A%=2000000000\nA%=A%*2");
+        let Value::Int(v) = vm.global_value("A", Suffix::Int).expect("A% exists") else {
+            panic!("A% not Int");
+        };
+        assert_eq!(v, -294967296);
+    }
+
+    #[test]
+    fn heavy_program_is_deterministic() {
+        // M7-T5 perf/determinism guard: a heavy arithmetic+loop workload (~100k
+        // iterations through the promoting add/mul + MOD paths) runs to completion and
+        // yields byte-identical results across runs (no RNG/clock/IO in core).
+        let src = "S=0\nFOR I=1 TO 100000\nS=(S+I*3) MOD 1000000\nNEXT";
+        let a = run(src);
+        let b = run(src);
+        assert_eq!(int(&a, "S"), int(&b, "S"));
+        assert!(int(&a, "S") >= 0 && int(&a, "S") < 1000000);
+    }
+
+    #[test]
+    fn shift_count_is_not_masked() {
+        // hw_verified (sb-oracle 2026-06-24): the shift count is not taken mod 32.
+        let vm = run(concat!(
+            "A=1<<31\nB=1<<30\nC=1<<16\nD=1<<32\nE=1<<33\nF=3<<1\nG=-1<<1\n",
+            "H=256>>2\nI=-1>>1\nJ=-2>>1\nK=-2147483648>>1\nL=1>>1\n",
+            "M=-1>>32\nN=5>>32\nO=2<<-1\nP=256>>-1"
+        ));
+        assert_eq!(int(&vm, "A"), -2147483648); // 1<<31 sets the sign bit
+        assert_eq!(int(&vm, "B"), 1073741824);
+        assert_eq!(int(&vm, "C"), 65536);
+        assert_eq!(int(&vm, "D"), 0); // 1<<32 → 0 (not 1<<0=1)
+        assert_eq!(int(&vm, "E"), 0); // 1<<33 → 0 (not 1<<1=2)
+        assert_eq!(int(&vm, "F"), 6);
+        assert_eq!(int(&vm, "G"), -2);
+        assert_eq!(int(&vm, "H"), 64);
+        assert_eq!(int(&vm, "I"), -1); // >> is arithmetic (sign-extending)
+        assert_eq!(int(&vm, "J"), -1);
+        assert_eq!(int(&vm, "K"), -1073741824);
+        assert_eq!(int(&vm, "L"), 0);
+        assert_eq!(int(&vm, "M"), -1); // -1>>32 saturates to the sign bit
+        assert_eq!(int(&vm, "N"), 0); // 5>>32 → 0
+        assert_eq!(int(&vm, "O"), 0); // negative count → 0
+        assert_eq!(int(&vm, "P"), 0);
+    }
+
+    #[test]
+    fn out_of_range_double_to_int_store_is_overflow() {
+        // hw_verified (sb-oracle 2026-06-24): storing a Double outside the i32 range into
+        // a `%` variable (or `%` array element) raises Overflow (errnum 9); the guard is
+        // on the value, so a fractional value just past the limit overflows too.
+        // (decimal-form huge literals — the lexer promotes >i32 integer literals to
+        // Double; E-notation is a separate queued lexer gap.)
+        assert_eq!(run_err("A%=10000000000").errnum(), Some(9)); // 1e10
+        assert_eq!(run_err("A%=2147483648.0").errnum(), Some(9));
+        assert_eq!(run_err("A%=2147483647.9").errnum(), Some(9));
+        assert_eq!(run_err("A%=-2147483648.9").errnum(), Some(9));
+        assert_eq!(run_err("DIM A%[1]\nA%[0]=10000000000").errnum(), Some(9));
+        // In-range values truncate toward zero without error.
+        let vm = run("A%=2147483647.0\nB%=-2147483648.0\nC%=2147483646.9\nD%=2.7");
+        assert_eq!(int_s(&vm, "A"), 2147483647);
+        assert_eq!(int_s(&vm, "B"), -2147483648);
+        assert_eq!(int_s(&vm, "C"), 2147483646);
+        assert_eq!(int_s(&vm, "D"), 2);
     }
 
     #[test]

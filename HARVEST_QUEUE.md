@@ -10,6 +10,39 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] M7-T5 (overflow promotion — MIXED operand typing) · When ONE operand is `%`-typed
+  (statically Integer) and the OTHER is suffix-less/`#` (Number/Real), does `+`/`-`/`*`
+  wrap or promote on overflow? Verified pure cases (sb-oracle 2026-06-24): pure-`%` wraps
+  (`A%=2000000000:A%*2 → -294967296`), pure-suffix-less promotes (`A=2147483647:A+1 →
+  2.14748e+09`), `%`+integer-literal wraps (`A%+1 → -2147483648`), suffix-less+literal
+  promotes. sb-core rule = promote iff EITHER operand `is_real_typed` (compiler.rs), so a
+  `%`+suffix-less mix PROMOTES — UNVERIFIED. · assumption: any Number/Real operand makes
+  the op promote (mirrors how a single Real operand already forces real arithmetic).
+- [ ] M7-T5 (overflow promotion — builtin/sysvar return types) · Does the result of a
+  numeric builtin (e.g. `VAL()`, `LEN()`, `ABS()`) or a non-MAINCNT system variable carry
+  Integer (wrap) or Number (promote) type into `+`/`-`/`*`? sb-core conservatively treats
+  ALL call/ref/sysvar results as NOT real-typed (→ wrapping, the pre-existing behavior). ·
+  assumption: keep wrapping until each builtin's static return type is harvested.
+- [ ] M7-T5 (overflow promotion — INC/DEC and FOR counter) · `INC X` / `DEC X` and the FOR
+  loop counter step still use the WRAPPING integer add (vm.rs `Op::Operate(Add)` at the
+  INC/FOR sites), so a suffix-less counter overflowing i32 wraps instead of promoting. Edge
+  (counting past 2³¹). · assumption: wraps; promote-aware INC/DEC/FOR deferred.
+- [ ] M7-T5 (unsuffixed-array element promotion) · `DIM A[1]:A[0]=2000000000:A[0]=A[0]*2`
+  → `4e9` on real SB (sb-oracle arr_real_promote 2026-06-24): a suffix-less ARRAY element
+  promotes like a suffix-less scalar. sb-core would Overflow (9) here because unsuffixed
+  `DIM` defaults the array to **Integer** (the M1-T4 OPTION-DEFINT bug — should be Real);
+  once that defaults to Real, the existing promote path makes this pass. · assumption:
+  gated on the unsuffixed-array-Real fix; `A`/`A#` scalar promotion already correct.
+- [ ] M7-T5 (NaN → `%` store) · `A%=<NaN>` behavior unharvested (NaN can't be written
+  without a NaN-producing expr; E-notation `0/0`-style needs the lexer gap below). sb-core
+  `to_int_store` lets NaN through the range guard (NaN compares false) → `NaN as i32 = 0`. ·
+  assumption: NaN stores as 0; likely should Overflow (9) like ∞ — queue for the oracle.
+- [ ] lexer (E-notation float literals) · Real SB accepts `1E10` / `1E300` exponent
+  literals (sb-oracle used them throughout the M7-T5 harvest). sb-core's `lex_number` only
+  scans digits + one `.`, so `1E10` lexes as `1` then identifier `E10` (→ errnum 16). NOT
+  an overflow concern (separate parser feature); M7-T5 tests use decimal-form huge literals
+  to avoid it. · assumption: unsupported; add `[eE][+-]?digits` to `lex_number`.
+
 - [ ] parser (statement-keyword as bareword value) · A statement-only keyword used in an
   expression context is treated as an (uninitialized) VARIABLE read, NOT a Syntax error —
   hw_verified 2026-06-24 (M7-T2 run 66, harness/harvest/out/stop.tsv): `A=STOP` → errnum 48

@@ -1251,7 +1251,18 @@ impl<'a> Compiler<'a> {
                 _ => {
                     self.compile_expr(lhs)?;
                     self.compile_expr(rhs)?;
-                    self.emit(Op::Operate(*op));
+                    // `+`/`-`/`*` overflow PROMOTES to Double when a statically Real/
+                    // Number-typed operand is involved (suffix-less / `#` / Real literal /
+                    // `/`-result), but WRAPS mod 2³² when both operands are statically
+                    // Integer (`%` / integer-literal / bit-op). hw_verified (sb-oracle
+                    // 2026-06-24). See [`is_real_typed`].
+                    let promote = matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul)
+                        && (is_real_typed(lhs) || is_real_typed(rhs));
+                    self.emit(if promote {
+                        Op::OperatePromote(*op)
+                    } else {
+                        Op::Operate(*op)
+                    });
                 }
             },
             ExprKind::Call { name, args } => self.compile_call_expr(name, args)?,
@@ -1384,6 +1395,47 @@ impl<'a> Compiler<'a> {
 }
 
 /// The receiver type of an `INPUT` target, used to parse each typed field: a `$`-suffixed
+/// Whether `expr` is statically Real/Number-typed, so that `+`/`-`/`*` involving it uses
+/// the PROMOTING numeric path (Int+Int overflow → Double) rather than i32 wrapping.
+///
+/// hw_verified (sb-oracle 2026-06-24): a suffix-less (`A`) or `#` operand promotes on
+/// overflow (`A=2147483647:A+1 → 2147483648.0`, `A=2000000000:A*2 → 4e9`); a `%`/
+/// integer-literal/bit-op operand wraps (`A%=2000000000:A%*2 → -294967296`). A
+/// suffix-less variable is the dynamic "Number" type — it can hold an Int or a Double at
+/// runtime, and the promoting path handles both (a runtime Int promotes only on overflow).
+///
+/// Unknown sources — function/array-call results, `VAR()` refs, and system variables —
+/// conservatively default to NOT real-typed (i32-wrapping, the pre-existing behavior) to
+/// avoid changing untested cases; the mixed-operand and builtin-return-type corners are
+/// queued in `HARVEST_QUEUE.md`.
+fn is_real_typed(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Const(Lit::Real(_)) => true,
+        ExprKind::Const(_) => false,
+        ExprKind::Var(name) => {
+            // A reserved system variable (MAINCNT/…) is integer-valued and not a user
+            // "Number"; keep it on the wrapping path.
+            Sysvar::from_name(&canonical(name)).is_none()
+                && matches!(name.suffix, Suffix::None | Suffix::Real)
+        }
+        ExprKind::Index { array, .. } => match &array.kind {
+            ExprKind::Var(name) => matches!(name.suffix, Suffix::None | Suffix::Real),
+            _ => false,
+        },
+        ExprKind::Unary { op, operand } => matches!(op, UnOp::Neg) && is_real_typed(operand),
+        ExprKind::Binary { op, lhs, rhs } => match op {
+            // `/` is always real division.
+            BinOp::Div => true,
+            // `+`/`-`/`*` carry the Real/Number type of either operand.
+            BinOp::Add | BinOp::Sub | BinOp::Mul => is_real_typed(lhs) || is_real_typed(rhs),
+            // DIV/MOD/AND/OR/XOR/<<,>>/comparisons all yield Integer.
+            _ => false,
+        },
+        // Calls, VAR() refs, omitted args: unknown/Integer-default — keep wrapping.
+        _ => false,
+    }
+}
+
 /// variable (or string-array element) receives the raw text (`VarType::Str`); every other
 /// receiver parses a number. A `VAR()`-style runtime reference defaults to numeric.
 fn input_target_type(expr: &Expr) -> VarType {
@@ -1434,9 +1486,14 @@ mod tests {
 
     #[test]
     fn non_constant_binary_emits_operate() {
-        // Y = X + 1  -> push X, push 1, add, store Y.
+        // Y = X + 1  -> push X, push 1, add, store Y. X is suffix-less (Number-typed),
+        // so the add is the PROMOTING variant (Int overflow → Double, hw_verified).
         let p = comp("X=5\nY=X+1");
-        assert!(p.code.contains(&Op::Operate(BinOp::Add)));
+        assert!(p.code.contains(&Op::OperatePromote(BinOp::Add)));
+        // A `%`-typed (statically Integer) operand keeps the wrapping `Operate` add.
+        let pi = comp("X%=5\nY%=X%+1");
+        assert!(pi.code.contains(&Op::Operate(BinOp::Add)));
+        assert!(!pi.code.contains(&Op::OperatePromote(BinOp::Add)));
         // X is global 0, Y global 1.
         assert_eq!(p.global_index(&Name::new("X", Suffix::None)), Some(0));
         assert_eq!(p.global_index(&Name::new("Y", Suffix::None)), Some(1));
