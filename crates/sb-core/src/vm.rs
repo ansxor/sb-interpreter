@@ -2477,6 +2477,7 @@ impl Vm {
             "SPLINK" => spr::splink(&mut self.sprites, &args, ret_count),
             "SPUNLINK" => spr::spunlink(&mut self.sprites, &args, ret_count),
             "SPOFS" => spr::spofs(&mut self.sprites, &args, ret_count),
+            "SPSCALE" => spr::spscale(&mut self.sprites, &args, ret_count),
             "SPCOL" => spr::spcol(&mut self.sprites, &args, ret_count),
             "SPCOLVEC" => spr::spcolvec(&mut self.sprites, &args, ret_count),
             "SPCHK" => spr::spchk(&self.sprites, &args, ret_count),

@@ -588,6 +588,59 @@ pub fn spofs(
     }
 }
 
+/// `SPSCALE mgmt, scaleX, scaleY` (set, ret 0, 3 args) / `SPSCALE mgmt OUT SX,SY` (get,
+/// ret 2, 1 arg) — set or read a sprite's display magnification. Each axis is stored verbatim
+/// as a float with NO *upper* bound (the documented 0.5..2.0 is a guideline only — `4`, `400`,
+/// `1000` are all accepted), but each is **range-checked ≥ 0.0**: a negative scale raises
+/// errnum 10. X and Y are independent; the fresh-`SPSET` default is 1.0,1.0.
+///
+/// The sprite must be `SPSET` (errnum 4); mgmt ∉ 0..511 is errnum 10; the SET form requires
+/// exactly 3 arguments (else errnum 4); a void/non-numeric scale is errnum 8 (type mismatch).
+/// hw_verified (sb-oracle 2026-06-24): `SPSCALE 0,2,0.5` reads back 2,0.5; `4,4` / `0.4,0.4` /
+/// `1000,1000` round-trip unclamped; `0,1` ok; `-1,1` / `1,-1` / `-0.001,1` → errnum 10;
+/// `0,,0.5` / `0,0.5,` → errnum 8; default 1,1.
+pub fn spscale(
+    sp: &mut SpriteState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if args.is_empty() {
+        return Err(illegal());
+    }
+    let slot = mgmt(&args[0])?;
+    if !sp.is_used(slot) {
+        return Err(illegal());
+    }
+    if ret_count == 0 {
+        let rest = &args[1..];
+        if rest.len() != 2 {
+            return Err(illegal());
+        }
+        // The handler reads each axis through the minimum-bound float getter FUN_001eec18
+        // (bl @0x143c6c/@0x143c90) with the literal bound 0.0 (`s16` @0x143d2c=0x00000000):
+        // it evaluates the arg (a void/non-numeric value → errnum 8) then `vcmpe.f32 s1,s0;
+        // bls ok` (s1=bound 0.0, s0=value → OK iff value ≥ 0), else `mov r0,#0xa; b 0x1fffdc`
+        // → errnum 10 (cia_3.6.0.lst). X is fully evaluated+checked before Y.
+        let sx = rest[0].to_real()?;
+        if sx < 0.0 {
+            return Err(out_of_range());
+        }
+        let sy = rest[1].to_real()?;
+        if sy < 0.0 {
+            return Err(out_of_range());
+        }
+        let s = &mut sp.sprites[slot];
+        s.scale_x = sx;
+        s.scale_y = sy;
+        Ok(vec![])
+    } else if ret_count == 2 {
+        let s = &sp.sprites[slot];
+        Ok(vec![Value::Real(s.scale_x), Value::Real(s.scale_y)])
+    } else {
+        Err(illegal())
+    }
+}
+
 // -- collision (M3-T3) --------------------------------------------------------
 
 /// The `SPCOL` scale-adjustment flag: a Void (skipped `,,`) field is the default FALSE,
@@ -1043,5 +1096,74 @@ mod tests {
         spofs(&mut sp, &[n(1.0), n(33.0), n(44.0)], 0).unwrap();
         let xy0 = spofs(&mut sp, &[n(0.0)], 2).unwrap();
         assert_eq!((xy0[0].clone(), xy0[1].clone()), (n(50.0), n(80.0)));
+    }
+
+    #[test]
+    fn spscale_round_trip_and_guards() {
+        // Scale round-trips verbatim with NO upper clamp; each axis range-checked >= 0.0
+        // (negative → errnum 10), void → errnum 8, SET requires exactly 3 args (→ errnum 4),
+        // default after SPSET is 1,1, X/Y independent. hw_verified sb-oracle 2026-06-24
+        // (spscale_{rt,neg}).
+        let mut sp = SpriteState::new();
+        spset0(&mut sp, 0);
+        // Fresh default 1,1.
+        let d = spscale(&mut sp, &[n(0.0)], 2).unwrap();
+        assert_eq!((d[0].clone(), d[1].clone()), (n(1.0), n(1.0)));
+        // Verbatim, no upper/lower clamp within >= 0: 4,4 / 0.4,0.4 / 1000,1000 / 0,1.
+        for (sx, sy) in [(4.0, 4.0), (0.4, 0.4), (1000.0, 1000.0), (0.0, 1.0)] {
+            spscale(&mut sp, &[n(0.0), n(sx), n(sy)], 0).unwrap();
+            let g = spscale(&mut sp, &[n(0.0)], 2).unwrap();
+            assert_eq!((g[0].clone(), g[1].clone()), (n(sx), n(sy)));
+        }
+        // Negative scale (either axis) → Out of range (errnum 10).
+        assert_eq!(
+            spscale(&mut sp, &[n(0.0), n(-1.0), n(1.0)], 0)
+                .unwrap_err()
+                .errnum,
+            10
+        );
+        assert_eq!(
+            spscale(&mut sp, &[n(0.0), n(1.0), n(-0.001)], 0)
+                .unwrap_err()
+                .errnum,
+            10
+        );
+        // Void scale → Type mismatch (errnum 8).
+        assert_eq!(
+            spscale(&mut sp, &[n(0.0), Value::Void, n(0.5)], 0)
+                .unwrap_err()
+                .errnum,
+            8
+        );
+        // SET form requires exactly 3 args (else errnum 4).
+        assert_eq!(
+            spscale(&mut sp, &[n(0.0), n(1.0)], 0).unwrap_err().errnum,
+            4
+        );
+        assert_eq!(
+            spscale(&mut sp, &[n(0.0), n(1.0), n(1.0), n(1.0)], 0)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+        // Used before SPSET → errnum 4; mgmt out of 0..511 → errnum 10.
+        assert_eq!(
+            spscale(&mut sp, &[n(5.0), n(1.0), n(1.0)], 0)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+        assert_eq!(
+            spscale(&mut sp, &[n(512.0), n(1.0), n(1.0)], 0)
+                .unwrap_err()
+                .errnum,
+            10
+        );
+        // Per-sprite independence.
+        spset0(&mut sp, 1);
+        spscale(&mut sp, &[n(0.0), n(2.0), n(2.0)], 0).unwrap();
+        spscale(&mut sp, &[n(1.0), n(3.0), n(3.0)], 0).unwrap();
+        let g0 = spscale(&mut sp, &[n(0.0)], 2).unwrap();
+        assert_eq!((g0[0].clone(), g0[1].clone()), (n(2.0), n(2.0)));
     }
 }
