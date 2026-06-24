@@ -1,26 +1,44 @@
 id: STOP
 kind: statement
 category: Control
-version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
 
 signatures:
   - args: []
-    note: "STOP — suspends the running program (breakpoint-like); resumable with CONT."
+    note: "STOP — suspends the running program (breakpoint-like); resumable with CONT. Takes no arguments (a trailing operand is a Syntax error)."
 
-summary: "Suspends a running program, displaying the slot:line where it paused; CONT resumes it."
+summary: "Suspends a running program in place, displaying the slot:line where it paused; while suspended no further statements run (it does not return from the current loop/subroutine — it halts forward progress exactly where it sits). Unlike END (a clean, non-resumable termination) a STOPped program can be resumed with CONT. STOP takes no arguments. Primarily a debugging aid."
 
 semantics:
-  - "Pauses execution and reports the program SLOT and line number of the STOP."
-  - "Unlike END (which terminates), a STOPped program can be resumed with CONT — though resuming is not available in certain situations."
+  - "Suspends execution at the STOP and reports the program SLOT and line number where it paused (the SLOT:line display needs the screen oracle, O-T6 — not headless-harvestable)."
+  - "While suspended, no statement after the STOP runs: like END, STOP halts forward progress in place. hw_verified via the SAVE-sentinel method (a result file is written BEFORE the STOP and would be overwritten AFTER, so the file proves the post-STOP code never ran): `PRINT/SAVE \"A\" / STOP / PRINT/SAVE \"B\"` leaves `A`; `X:STOP:Y` on one `:`-separated line leaves `X` (the mid-line STOP halts the rest of the line)."
+  - "STOP inside an enclosing FOR/WHILE/REPEAT loop suspends on the first reach — it does NOT break out and keep iterating: hw_verified `FOR I=0 TO 5 / <record I> / STOP / NEXT` records only `0` (the first iteration runs, then STOP suspends; the loop never advances)."
+  - "STOP inside a GOSUB subroutine (or a DEF) suspends in place — it does NOT act like RETURN: hw_verified `GOSUB @S / ... / @S / <record \"S\"> / STOP` records `S` (control never returns to the caller, so the post-GOSUB code never runs while suspended)."
+  - "STOP in a single-line `IF ... THEN ... : STOP` (the THEN clause) suspends when the condition is taken: hw_verified `IF 1 THEN <record \"T\">:STOP` followed by a later line records `T` (the later line is not reached)."
+  - "Unlike [[end]], STOP is a SUSPEND, not a termination: a STOPped program can be resumed with CONT (the resume picks up at the statement after the STOP) — though resuming is not available in certain situations. The CONT-resume + the SLOT:line pause display are interactive DIRECT-mode behaviors with no headless oracle, so they remain documented (queued)."
+  - "STOP is a bare keyword with NO arguments: a trailing operand (`STOP 1`) raises errnum 3 (Syntax error) errline 1 — hw_verified, same arg-shape as [[end]]. (errnum 3 is the binary's 'Syntax error'; see [[errors]].)"
+  - "STOP is a statement keyword, not a value-returning function: used in an expression context (`A=STOP`) real SB does NOT raise a Syntax error — it treats the bareword as an (uninitialized) variable read, raising errnum 48 (Uninitialized variable used) errline 1 (hw_verified). This is the general statement-keyword-as-bareword behavior, a cross-cutting parser refinement (sb-core currently lexes STOP as a reserved keyword → errnum 3); recorded here but NOT frozen as a STOP conformance case (queued, HARVEST_QUEUE.md)."
   - "Primarily a debugging aid."
 
-errors: []
+errors:
+  - { errnum: 3, name: "Syntax error", when: "STOP is given a trailing argument (e.g. `STOP 1`) — STOP takes no operands" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/stop.md (suspends a running program; SLOT:line shown; resume with CONT)" }
-  - { type: disassembled, ref: "cia_3.6.0.lst STOP is a parser keyword (token @0x2ed598), not in the builtin dispatch table; suspends the VM (resumable) rather than halting" }
+  - { type: disassembled, ref: "cia_3.6.0.lst STOP is a parser keyword (token @0x2ed598), not in the builtin dispatch table; the compiler emits a suspend opcode that pauses the VM (resumable via CONT) rather than terminating it (contrast END token @0x2ed5a4 -> clean halt)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) 2026-06-24 (M7-T2; harness/harvest/out/stop.tsv). SAVE-sentinel method (each program SAVEs a sentinel to a result file BEFORE the STOP and would overwrite it AFTER, so the file proves whether the post-STOP code ran; the harness recovers cleanly because STOP yields to the editor). SUSPEND + SKIP: `SAVE \"A\" / STOP / SAVE \"AB\"` -> file is \"A\" (post-STOP SAVE never fired); `SAVE \"X\":STOP:SAVE \"Y\"` -> \"X\" (mid-line STOP halts the rest of the line). LOOP: `FOR I=0 TO 5 / SAVE STR$(I) / STOP / NEXT` -> \"0\" (only the first iteration; STOP suspends inside the loop, no advance). SUBROUTINE: `GOSUB @S / SAVE \"M\" / STOP / @S / SAVE \"S\" / STOP` -> \"S\" (STOP inside the GOSUB suspends in place; control never returns, \"M\" never saved). THEN CLAUSE: `IF 1 THEN SAVE \"T\":STOP` then a later `SAVE \"AFTER\"` -> \"T\" (STOP in the taken THEN clause halts; the later line is not reached). ARG SHAPE: `STOP 1` -> errnum 3 (Syntax error) errline 1 (STOP takes no operands). EXPR CONTEXT: `A=STOP` -> errnum 48 (Uninitialized variable used) errline 1 (STOP-as-bareword is an uninit-var read, not a function). sb-core reproduces every suspend-semantics case + `STOP 1`->3 (console-text equivalents) with no code change; `A=STOP`->48 is a cross-cutting parser divergence (sb-core -> errnum 3), queued, not frozen." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
+  # hw_verified via sb-oracle 2026-06-24 (M7-T2, harness/harvest/out/stop.tsv). The oracle
+  # programs SAVE sentinels to prove which branch ran; these stdout equivalents assert the same
+  # suspend-in-place semantics (sb-core matches with no code change) and are replayed by
+  # IN_SCOPE_CONTROL. The CONT-resume / SLOT:line display (interactive, no headless oracle) and
+  # the `A=STOP`->errnum 48 bareword path (a cross-cutting parser refinement) stay queued.
   - { name: suspends_before_next, code: "PRINT \"A\"\nSTOP\nPRINT \"B\"", expect: { stdout: "A" } }
+  - { name: suspend_midline, code: "PRINT \"X\":STOP:PRINT \"Y\"", expect: { stdout: "X" } }
+  - { name: suspend_in_for, code: "FOR I=0 TO 5\nPRINT I\nSTOP\nNEXT", expect: { stdout: "0" } }
+  - { name: suspend_in_gosub, code: "GOSUB @S\nPRINT \"M\"\nSTOP\n@S\nPRINT \"S\"\nSTOP", expect: { stdout: "S" } }
+  - { name: suspend_in_then, code: "IF 1 THEN PRINT \"T\":STOP\nPRINT \"U\"", expect: { stdout: "T" } }
+  - { name: takes_no_args, code: "STOP 1", expect: { error: { errnum: 3 } } }

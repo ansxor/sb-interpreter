@@ -10,6 +10,18 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] parser (statement-keyword as bareword value) · A statement-only keyword used in an
+  expression context is treated as an (uninitialized) VARIABLE read, NOT a Syntax error —
+  hw_verified 2026-06-24 (M7-T2 run 66, harness/harvest/out/stop.tsv): `A=STOP` → errnum 48
+  (Uninitialized variable used) errline 1 on real SB 3.6.0, whereas sb-core lexes STOP as a
+  reserved keyword and raises errnum 3 (Syntax error). assumption: sb-core's lexer/parser
+  reserves statement keywords (STOP/END/…) so a bareword use in an expression is a Syntax
+  error (3); real SB instead lets the name fall through to the variable-read path → uninit-var
+  (48) under non-STRICT. This is a cross-cutting lexer/parser refinement (which words are truly
+  reserved as identifiers vs. only as leading-statement keywords), not a single slice — left
+  unfrozen for STOP. Confirm the breadth (does `A=END`/`A=GOTO` also give 48?) + the STRICT
+  interaction before changing the reservation rule.
+
 - [ ] parser (expr-as-statement errnum) · A bare value-function/expression used as a STATEMENT
   is a Syntax error (errnum 3) on real SB 3.6.0, NOT errnum 4 — hw_verified 2026-06-24 (M7-T2 run
   10, harness/harvest/out/exprstmt.tsv): `GCOLOR()`, `RGB(1,2,3)`, `GCLS()`, `GPAGE()`, a bare `5`,
