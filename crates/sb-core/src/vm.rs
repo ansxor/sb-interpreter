@@ -22,10 +22,11 @@
 //! and the console commands drive, and a headless input queue ([`Vm::push_input`]) feeds
 //! `INPUT`/`LINPUT`. Array-element references ([`Op::PushArrayRef`]) are wired (`SWAP`/
 //! `INC`/`DEC`/`OUT` on `A[i]`); `USE`/`EXEC` (M6-T6) validate their operands with the
-//! hw_verified slot/resource error model and `USE` marks a slot executable, but the actual
-//! multi-program control transfer is left [`VmError::Unsupported`]; runtime-name references
-//! ([`Op::PushRefExpr`]/[`Op::PopRef`], `VAR()`) are not yet wired and likewise raise
-//! [`VmError::Unsupported`] rather than panicking — their handlers land in the milestones
+//! hw_verified slot/resource error model, `USE` marks a slot executable (loading its program
+//! so `COMMON DEF`s resolve cross-slot), and `EXEC` performs the multi-program control
+//! transfer (load-from-storage, slot switch, `END`-returns-to-launcher). Runtime-name
+//! references ([`Op::PushRefExpr`]/[`Op::PopRef`], `VAR()`) are not yet wired and raise
+//! [`VmError::Unsupported`] rather than panicking — their handler lands in the milestones
 //! above.
 //!
 //! ## Operator semantics (from the spec/disassembly)
@@ -1170,13 +1171,16 @@ impl Vm {
             let s = String::from_utf16_lossy(s);
             let (slot_opt, name) =
                 parse_prg_operand(&s).map_err(|errnum| sb(RuntimeError::new(errnum)))?;
-            // A `PRGn:` slot resolves directly; a bare filename (no `PRGn:`) targets a default
-            // slot — its exact selection is part of the deferred loader, so only the file-missing
-            // guard is observable here.
-            if let Some(slot) = slot_opt {
-                if slot == self.current_slot {
-                    return Err(sb(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL)));
-                }
+            // A bare filename (no `PRGn:` resource number) defaults to the RUNNING slot — the
+            // same rule EXEC uses (osb `Exec.execute`: `if (!file.hasResourceNumber)
+            // file.resourceNumber = currentSlotNumber`). Since you cannot USE the slot you are
+            // executing, a bare name therefore always hits the running-slot guard → errnum 4,
+            // and that guard precedes the file-existence check (hw_verified, sb-oracle
+            // 2026-06-23: `USE "NOPE"` / `USE "Q"` / `USE "abc"` — bare, missing file — all
+            // raise 4, NOT the 46 a missing `PRGn:` file gives).
+            let slot = slot_opt.unwrap_or(self.current_slot);
+            if slot == self.current_slot {
+                return Err(sb(RuntimeError::new(ERR_ILLEGAL_FUNCTION_CALL)));
             }
             if !self
                 .storage
@@ -1184,23 +1188,16 @@ impl Vm {
             {
                 return Err(sb(RuntimeError::new(ERR_LOAD_FAILED)));
             }
-            match slot_opt {
-                Some(slot) => {
-                    // Load the slot's program from storage so its `COMMON DEF`s become
-                    // resolvable cross-slot (the documented effect of marking a slot
-                    // executable). Uniform across slots 0..3: the running-slot guard above
-                    // (`slot == current_slot` → errnum 4) means slot 0 is reachable here only
-                    // when it is *non-running* (parked in `slot_programs[0]`), so it loads the
-                    // same way as any other slot (osb keeps all SLOTs in one `slots[]` array).
-                    let prog = self.compile_slot_file(name)?;
-                    self.stash_slot_program(slot, prog);
-                    self.slot_used[slot as usize] = true;
-                    Ok(())
-                }
-                None => Err(VmError::Unsupported(
-                    "USE \"file\" without a PRGn: slot (default-slot load) — M6 multi-program model",
-                )),
-            }
+            // Load the slot's program from storage so its `COMMON DEF`s become resolvable
+            // cross-slot (the documented effect of marking a slot executable). Uniform across
+            // slots 0..3: the running-slot guard above (`slot == current_slot` → errnum 4) means
+            // slot 0 is reachable here only when it is *non-running* (parked in
+            // `slot_programs[0]`), so it loads the same way as any other slot (osb keeps all
+            // SLOTs in one `slots[]` array).
+            let prog = self.compile_slot_file(name)?;
+            self.stash_slot_program(slot, prog);
+            self.slot_used[slot as usize] = true;
+            Ok(())
         } else {
             let n = v.to_int().map_err(sb)?;
             if !(0..=3).contains(&n) {
@@ -4787,6 +4784,35 @@ CALL "ADDOUT",2,3 OUT X"#);
             .err()
             .expect("missing file");
         assert_eq!(err.errnum(), Some(46));
+    }
+
+    #[test]
+    fn use_string_bare_name_defaults_to_running_slot_errnum_4() {
+        // hw_verified (use.yaml, sb-oracle 2026-06-23): a bare filename string with no `PRGn:`
+        // resource number defaults to the RUNNING slot (osb `Exec.execute` rule), which you
+        // cannot USE — so it always raises Illegal function call (4). The running-slot guard
+        // precedes the file-existence check, so a *missing* bare-name file still → 4, not the
+        // 46 a missing `PRGn:` file gives (`USE "NOPE"`→4, `USE "Q"`→4).
+        assert_eq!(
+            run_with_txt("USE \"NOPE\"", &[])
+                .err()
+                .and_then(|e| e.errnum()),
+            Some(4)
+        );
+        assert_eq!(
+            run_with_txt("USE \"Q\"", &[])
+                .err()
+                .and_then(|e| e.errnum()),
+            Some(4)
+        );
+        // Even when the bare-name file EXISTS, the running-slot guard still fires (the file
+        // check never runs) → 4, proving the bare name resolved to the running slot.
+        assert_eq!(
+            run_with_txt("USE \"P\"", &[("P", "DEF F\nEND")])
+                .err()
+                .and_then(|e| e.errnum()),
+            Some(4)
+        );
     }
 
     #[test]

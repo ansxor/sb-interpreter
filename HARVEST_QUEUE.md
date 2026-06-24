@@ -773,6 +773,15 @@ oracle to confirm exact output and promote to `hw_verified`.
     launcher's program is overwritten (osb has the same uniform-slot behavior, but the exact
     resume-state real SB preserves across that return needs a ≥2-slot oracle); whether real SB's
     bare-name default resolves to the running slot vs slot 0; per-slot vs shared variable scoping.)
+    (UPDATE 2026-06-23, M6-T6 DONE: the BARE-name `USE "file"` (no `PRGn:`) default-slot load is
+    now IMPLEMENTED + hw_verified — the LAST `VmError::Unsupported` arm in USE/EXEC is gone. Oracle
+    (batch `|err`): `USE "NOPE"`→errnum 4, `USE "Q"`→4, `USE "abc"`→4. A bare name defaults to the
+    RUNNING slot (osb `Exec.execute` rule), which you cannot USE → always errnum 4; the running-slot
+    guard PRECEDES the file-existence check (a missing bare-name file → 4, not the 46 a missing
+    `PRGn:` file gives). `do_use` now resolves `slot_opt.unwrap_or(self.current_slot)` before the
+    guard. use.yaml + 1 vm.rs e2e test (`use_string_bare_name_defaults_to_running_slot_errnum_4`).
+    All three M6-T6 acceptance criteria met; remaining items below are NON-BLOCKING refinements
+    (resume-state granularity, ≥2-slot scoping confirm, slot-0 clobber, callback quirks).)
 
 - S-T12c Source read (PRGGET$/PRGNAME$/PRGSIZE): the error guards ARE hw_verified (batch
     2026-06-22, s_t12c): PRGGET$ with no active PRGEDIT -> errnum 38 (the no-PRGEDIT check
