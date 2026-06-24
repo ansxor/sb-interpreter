@@ -1,0 +1,30 @@
+# BGSAVE/BGLOAD value contract — read back via BGGET (framebuffer-free) and array index.
+# BGSAVE writes layer tilemap -> numeric array; read the saved value with A[idx].
+# BGLOAD writes array -> layer tilemap; read back with BGGET(layer,x,y).
+
+# --- BGSAVE: saved value == cell value, row-major y*width+x layout ---
+save_cell_val|BGSCREEN 0,32,32:DIM A[32*32]:BGPUT 0,2,2,77:BGSAVE 0,A|A[2*32+2]|prog
+save_layout_x|BGSCREEN 0,32,32:DIM A[32*32]:BGPUT 0,1,0,11:BGSAVE 0,A|A[1]|prog
+save_layout_y|BGSCREEN 0,32,32:DIM A[32*32]:BGPUT 0,0,1,22:BGSAVE 0,A|A[32]|prog
+save_empty_cell|BGSCREEN 0,32,32:DIM A[32*32]:BGSAVE 0,A|A[5]|prog
+save_packed_16|BGSCREEN 0,32,32:DIM A[32*32]:BGPUT 0,3,3,&H8001:BGSAVE 0,A|A[3*32+3]|prog
+# --- BGSAVE ranged: region (sx,sy,w,h) -> array index (ry*w+rx) ---
+save_ranged_origin|BGSCREEN 0,32,32:DIM A[8]:BGPUT 0,5,5,55:BGSAVE 0,5,5,2,2,A|A[0]|prog
+save_ranged_layout|BGSCREEN 0,32,32:DIM A[8]:BGPUT 0,6,5,66:BGSAVE 0,5,5,2,2,A|A[1]|prog
+save_ranged_row|BGSCREEN 0,32,32:DIM A[8]:BGPUT 0,5,6,67:BGSAVE 0,5,5,2,2,A|A[2]|prog
+
+# --- BGLOAD: array value -> cell, same layout ---
+load_cell|BGSCREEN 0,32,32:DIM A[32*32]:A[2*32+2]=77:BGLOAD 0,A|BGGET(0,2,2)|prog
+load_layout_x|BGSCREEN 0,32,32:DIM A[32*32]:A[1]=11:BGLOAD 0,A|BGGET(0,1,0)|prog
+load_layout_y|BGSCREEN 0,32,32:DIM A[32*32]:A[32]=22:BGLOAD 0,A|BGGET(0,0,1)|prog
+load_mask_hi|BGSCREEN 0,32,32:DIM A[32*32]:A[0]=&H1FFFF:BGLOAD 0,A|BGGET(0,0,0)|prog
+load_mask_neg|BGSCREEN 0,32,32:DIM A[32*32]:A[0]=-1:BGLOAD 0,A|BGGET(0,0,0)|prog
+# --- BGLOAD ranged ---
+load_ranged_origin|BGSCREEN 0,32,32:DIM A[8]:A[0]=55:BGLOAD 0,5,5,2,2,A|BGGET(0,5,5)|prog
+load_ranged_layout|BGSCREEN 0,32,32:DIM A[8]:A[1]=66:BGLOAD 0,5,5,2,2,A|BGGET(0,6,5)|prog
+
+# --- Round trip: BGSAVE layer0 -> BGLOAD layer1 ---
+rt_whole_dest|BGSCREEN 0,32,32:BGSCREEN 1,32,32:DIM A[32*32]:BGPUT 0,3,4,123:BGSAVE 0,A:BGLOAD 1,A|BGGET(1,3,4)|prog
+rt_whole_src_kept|BGSCREEN 0,32,32:BGSCREEN 1,32,32:DIM A[32*32]:BGPUT 0,3,4,123:BGSAVE 0,A:BGLOAD 1,A|BGGET(0,3,4)|prog
+rt_ranged_a|BGSCREEN 0,32,32:BGSCREEN 1,32,32:DIM A[8]:BGPUT 0,10,10,88:BGPUT 0,11,10,89:BGSAVE 0,10,10,2,1,A:BGLOAD 1,20,20,2,1,A|BGGET(1,20,20)|prog
+rt_ranged_b|BGSCREEN 0,32,32:BGSCREEN 1,32,32:DIM A[8]:BGPUT 0,10,10,88:BGPUT 0,11,10,89:BGSAVE 0,10,10,2,1,A:BGLOAD 1,20,20,2,1,A|BGGET(1,21,20)|prog

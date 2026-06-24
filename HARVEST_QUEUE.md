@@ -602,11 +602,24 @@ oracle to confirm exact output and promote to `hw_verified`.
   s_t9e batch 2026-06-22: BGLOAD/BGSAVE/BGCOLOR layer-oob & neg -> errnum 10; BGLOAD 0,0,A 3-arg
   non-array -> errnum 8; BGSAVE 0,0,A 3-arg -> errnum 4; all errline 1). Still oracle-pending
   (needs BG framebuffer oracle O-T6 and multi-statement setup-before-read):
-  - BGSAVE -> BGLOAD round trip: BGPUT a tile, BGSAVE to an array, read array contents, BGLOAD it
-    back into another region and confirm the tilemap matches (cell packing: tile/palette/flip bits).
-  - BGSAVE auto-grow: pass a too-small 1-D array, confirm it is resized to width*height elements.
+  - [x] BGSAVE -> BGLOAD round trip — RESOLVED 2026-06-24 (M7-T2 run 38, hw_verified,
+    bgsaveload_rt/_conv/_typed.tsv). The whole BG framebuffer is NOT needed: read the tilemap back
+    through BGGET (framebuffer-free), exactly like BGCOPY run 37. Saved element == the packed cell
+    value (== BGGET == BGPUT, incl. &H8001->32769); whole-screen layout = y*width+x, ranged =
+    (y-startY)*width+(x-startX); round trip reproduces the map (123/88/89/321) and keeps the source.
+    KEY FINDING — BGLOAD's element->cell conversion is array-TYPE dependent (FUN_0015f1fc): INTEGER
+    array wraps the low 16 bits (A%=-1->65535, &H10001->1) but REAL array uses a saturating
+    vcvt.u32.f64 (A#=-1->0, 77.9->77, 65537->1, 70000->4464). Fixed sb-core read_cells (Real path was
+    wrapping like Int). bgsave/bgload bumped to hw_verified; 11+17 value/conversion cases frozen.
+  - BGSAVE auto-grow: pass a too-small 1-D array, confirm it is resized to EXACTLY width*height
+    elements (the resize length is not directly readable headless — no array-LEN read-back; still
+    queued). sb-core auto-grows 1-D arrays to width*height.
   - BGLOAD 3-arg / 7-arg trailing numeric argument: what does it mean (start offset/index into the
-    source array?) and its valid range (handler range-checks against r6=[0x165e3c], r7=r6>>20).
+    source array?) and its valid range (handler range-checks against r6=[0x165e3c], r7=r6>>20). Still
+    queued (sb-core accepts the 3/7-arg forms and ignores the trailing operand).
+  - BGLOAD Real-array saturation is only reachable for EXPLICITLY-suffixed `A#` arrays in sb-core
+    until M1-T4 fixes the unsuffixed-`DIM` default (currently typed Int, should be Real — see the
+    run-4 OPTION DEFINT note). The frozen conversion cases therefore use explicit `A%`/`A#`.
   - [x] BGCOLOR set-then-get round trip — RESOLVED 2026-06-24 (M7-T2 run 15, hw_verified,
     bgcolor_rt.tsv): the stored 32-bit code is returned VERBATIM — the alpha byte is NOT masked
     off (decisive contrast with BACKCOLOR's 24-bit strip). &H7F112233->&H7F112233, -1->&HFFFFFFFF,
@@ -1289,10 +1302,11 @@ the conformance gate; the following runtime OUTPUTS need the BG framebuffer/tran
   edge (subgt r12,r4,r7 @0x15fa44-0x15fa6c, negative-coord clamp-to-0 @0x15fa18-0x15fa3c) rather
   than per-cell skipping — the observable result for fully-in-bounds cells is identical, but a
   partially-off-map copy's exact clamped span is still un-harvested.
-- **BGSAVE/BGLOAD cell packing + auto-grow length + trailing-arg** — the packed tile/palette/
-  flip cell word format (modeled as the raw 16-bit cell, round-trips within sb-core), the
-  auto-grown 1-D array length, and the meaning of the undocumented 3/7-arg trailing operand
-  (currently evaluated then ignored) are unverified.
+- **BGSAVE/BGLOAD cell packing + auto-grow length + trailing-arg** — cell packing + the
+  round-trip + the type-dependent BGLOAD conversion are now hw_verified (M7-T2 run 38, via BGGET
+  read-back; bgsaveload_rt/_conv/_typed.tsv). STILL unverified: the auto-grown 1-D array's exact
+  length (not headless-readable) and the undocumented 3/7-arg trailing operand (evaluated then
+  ignored).
 
 ## M3-T6 — Sprite/BG composite into framebuffer (implemented 2026-06-23; pixel-exactness oracle-pending)
 The sprite + BG rasterizers and the full layer stack (`compose_top_screen`: backdrop → GRP →

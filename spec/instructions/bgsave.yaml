@@ -25,6 +25,7 @@ semantics:
   - "LAYER must be in 0..3: evaluated and range-checked by the shared BG-layer getter FUN_001e2504 (bl @0x165f6c / @0x165ff8). A value < 0 or >= the BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560. Per-layer state stride is 0xe3 doublewords (mul r0,r0,#0xe3), state ptr 0x315d60 [0x166174]."
   - "The destination ARRAY must be a numeric array variable: the handler reads the variable's array/type byte ([arr,#0x10]+0x1, ldrb @0x165f84) and if it is not an array raises errnum 8 (Type mismatch) — the error-setup at @0x16616c (mov r1,#1). In the 6-arg form each of startX,startY,width,height is evaluated as an integer (blx [obj,#0x40] with a position marker r8=1..4 stored at [error-arg]) and a non-numeric argument raises a type error too."
   - "BGSAVE reads only the layer's tilemap — the packed tile/palette/flip cell values, which BGLOAD writes back unchanged for a round trip. For a one-dimensional destination array that is too small, the required element(s) are appended automatically (documented auto-grow); it copies width*height cells starting at (startX,startY) in the ranged form, or the whole screen otherwise."
+  - "VALUE contract (hw_verified 2026-06-24 via BGGET read-back + array index, framebuffer-free): each saved element is the cell's packed 16-bit value — identical to what BGGET(layer,X,Y) returns and what BGPUT wrote (`BGPUT 0,3,3,&H8001` → saved 32769). The WHOLE-SCREEN form lays cells out ROW-MAJOR by y then x: element index = y*width + x (`BGPUT 0,1,0` → A[1]; `BGPUT 0,0,1` on a width-32 layer → A[32]); an unwritten cell saves 0. The RANGED form (startX,startY,width,height) lays the sub-rectangle out row-major from its OWN origin: element index = (y-startY)*width + (x-startX) (`BGPUT 0,5,5` → A[0], `BGPUT 0,6,5` → A[1], `BGPUT 0,5,6` → A[2] for a 2-wide region at (5,5))."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "the argument count is not 2 or 6, or a return value is requested (used as a function)" }
@@ -37,14 +38,25 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG array save handling (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus: ~99 calls / 38 files — whole-screen 'BGSAVE 0,MAP' (~60x, incl. variable layer 'BGSAVE I,TMP%' and runtime-resolved array 'BGSAVE I,VAR(\"UNDO\"+STR$(I)+\"%\")' in KX8E48M/TXT/SBMAP2) and ranged 'BGSAVE 0,0,0,79,63,P0%' (full 80x64 backup in EKEN34LM/TXT/@BACKUP.PRG) / 'BGSAVE BGN,X,Y,W,H,BGBUFF' with expression args 'BGSAVE LAYER%,XOFS%+WOFS%,0,8,BGH%,DUMP%'. Only 2-arg and 6-arg forms observed (no 3/7-arg, confirming BGSAVE is 1D-only). (oracle-pending: array contents + auto-grow length, queued)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9e): BGSAVE 4,A -> errnum 10, BGSAVE -1,A -> errnum 10 (layer out of range); BGSAVE 0,0,A (3 args) -> errnum 4 (Illegal function call) — confirming BGSAVE rejects the 3-arg count that BGLOAD accepts. All errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (bgsaveload_rt.tsv): saved element == BGGET cell value — BGPUT 0,2,2,77 -> A[2*32+2]=77, packed BGPUT 0,3,3,&H8001 -> A=32769; whole-screen layout y*width+x (BGPUT 0,1,0 -> A[1]=11, BGPUT 0,0,1 -> A[32]=22), unwritten cell -> 0; ranged (5,5,2,2) layout (y-startY)*width+(x-startX) (BGPUT 0,5,5 -> A[0]=55, (6,5) -> A[1]=66, (5,6) -> A[2]=67). Round trip BGSAVE 0,A# then BGLOAD 1,A# reproduces the cell (BGPUT 0,4,4,321 -> BGGET(1,4,4)=321). Read back via BGGET + array index, framebuffer-free." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Saved array contents + auto-grow length need the BG framebuffer oracle (O-T6, queued). Error
-  # expects are hw_verified (sb-oracle 2026-06-22 s_t9e).
+  # Error expects hw_verified (sb-oracle 2026-06-22 s_t9e). Value/layout cases hw_verified
+  # (sb-oracle 2026-06-24, bgsaveload_rt.tsv) — saved value read back through the array index.
   - { name: save_whole_ok, code: "DIM A[32*32]\nBGSCREEN 0,32,32\nBGSAVE 0,A", expect: { stdout: "" } }
   - { name: save_range_ok, code: "DIM A[30*10]\nBGSCREEN 0,32,32\nBGSAVE 0,0,0,30,10,A", expect: { stdout: "" } }
   - { name: layer_out_of_range, code: "DIM A[1]\nBGSAVE 4,A", expect: { error: { errnum: 10 } } }
   - { name: layer_negative, code: "DIM A[1]\nBGSAVE -1,A", expect: { error: { errnum: 10 } } }
   - { name: bad_argcount, code: "DIM A[1]\nBGSAVE 0,0,A", expect: { error: { errnum: 4 } } }
+  # Saved value == BGGET cell value; whole-screen layout = y*width+x.
+  - { name: save_cell_val, code: "BGSCREEN 0,32,32\nDIM A[32*32]\nBGPUT 0,2,2,77\nBGSAVE 0,A\nPRINT A[2*32+2]", expect: { stdout: "77" } }
+  - { name: save_layout_x, code: "BGSCREEN 0,32,32\nDIM A[32*32]\nBGPUT 0,1,0,11\nBGSAVE 0,A\nPRINT A[1]", expect: { stdout: "11" } }
+  - { name: save_layout_y, code: "BGSCREEN 0,32,32\nDIM A[32*32]\nBGPUT 0,0,1,22\nBGSAVE 0,A\nPRINT A[32]", expect: { stdout: "22" } }
+  - { name: save_empty_cell, code: "BGSCREEN 0,32,32\nDIM A[32*32]\nBGSAVE 0,A\nPRINT A[5]", expect: { stdout: "0" } }
+  - { name: save_packed_16, code: "BGSCREEN 0,32,32\nDIM A[32*32]\nBGPUT 0,3,3,&H8001\nBGSAVE 0,A\nPRINT A[3*32+3]", expect: { stdout: "32769" } }
+  # Ranged form layout = (y-startY)*width + (x-startX) from the region origin.
+  - { name: save_ranged_origin, code: "BGSCREEN 0,32,32\nDIM A[8]\nBGPUT 0,5,5,55\nBGSAVE 0,5,5,2,2,A\nPRINT A[0]", expect: { stdout: "55" } }
+  - { name: save_ranged_col, code: "BGSCREEN 0,32,32\nDIM A[8]\nBGPUT 0,6,5,66\nBGSAVE 0,5,5,2,2,A\nPRINT A[1]", expect: { stdout: "66" } }
+  - { name: save_ranged_row, code: "BGSCREEN 0,32,32\nDIM A[8]\nBGPUT 0,5,6,67\nBGSAVE 0,5,5,2,2,A\nPRINT A[2]", expect: { stdout: "67" } }

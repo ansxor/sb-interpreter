@@ -729,8 +729,15 @@ fn grow_or_31(one_d: bool, len: usize, needed: usize) -> Result<bool, RuntimeErr
 }
 
 /// Read the first `count` 16-bit cell values from a numeric `src` array (`BGLOAD`). A
-/// non-numeric array is errnum 8; fewer than `count` elements is errnum 31. Integer elements
-/// are masked to 16 bits; Real elements are truncated toward zero then masked.
+/// non-numeric array is errnum 8; fewer than `count` elements is errnum 31. The per-element
+/// conversion to the 16-bit cell depends on the array's element TYPE, exactly as the copy
+/// helper `FUN_0015f1fc` does it (hw_verified 2026-06-24 via BGGET read-back):
+/// - INTEGER array — a direct halfword store of the i32: the low 16 bits, so a negative
+///   element WRAPS (`-1` → 65535, `&H10001` → 1) (`ldrh`/`strh` path @0x15f330-0x15f33c).
+/// - REAL array — a saturating `vcvt.u32.f64` (truncate toward zero, clamp negatives to 0 and
+///   huge values to `0xFFFFFFFF`) followed by a halfword store of the low 16 bits, so a
+///   negative element becomes 0 (`-1.0` → 0, `77.9` → 77, `65537.0` → 1) (`vcvt.u32.f64`
+///   @0x15f3f0 then `strh` @0x15f3f8). Rust's saturating `f64 as u32` cast matches `vcvt`.
 fn read_cells(src: &Value, count: usize) -> Result<Vec<u16>, RuntimeError> {
     match src {
         Value::IntArray(a) => {
@@ -750,7 +757,7 @@ fn read_cells(src: &Value, count: usize) -> Result<Vec<u16>, RuntimeError> {
             }
             Ok(b.as_slice()[..count]
                 .iter()
-                .map(|&v| (v as i64 & 0xFFFF) as u16)
+                .map(|&v| (v as u32 & 0xFFFF) as u16)
                 .collect())
         }
         _ => Err(type_mismatch()),
@@ -1377,6 +1384,35 @@ mod tests {
             10
         );
         assert_eq!(bgload(&mut bg, &[int(-1), arr], 0).unwrap_err().errnum, 10);
+    }
+
+    #[test]
+    fn bgload_value_conversion_depends_on_array_type() {
+        // hw_verified 2026-06-24: BGLOAD's element->cell conversion is type-dependent
+        // (FUN_0015f1fc). Int arrays do a raw halfword store (low 16 bits, negatives WRAP);
+        // Real arrays use a saturating vcvt.u32.f64 (negatives clamp to 0) then a halfword
+        // store. -1 in an Int array reads back 65535; -1.0 in a Real array reads back 0.
+        use crate::array::SbArray;
+        let mut bg = BgState::new();
+        bgscreen(&mut bg, &[int(0), int(8), int(8)], 0).unwrap();
+
+        // Integer array: -1 -> 65535 (wrap), &H10001 -> 1 (mask).
+        let iarr =
+            Value::IntArray(SbArray::from_vec(vec![-1, 0x1_0001, 70_000, 65_536]).into_ref());
+        bgload(&mut bg, &[int(0), int(0), int(0), int(2), int(2), iarr], 0).unwrap();
+        assert_eq!(bg.layers[0].cell(0, 0), 65_535);
+        assert_eq!(bg.layers[0].cell(1, 0), 1);
+        assert_eq!(bg.layers[0].cell(0, 1), 70_000u32 as u16); // 4464
+        assert_eq!(bg.layers[0].cell(1, 1), 0);
+
+        // Real array: -1.0 -> 0 (saturate), 77.9 -> 77 (trunc), 65537.0 -> 1, 70000.0 -> 4464.
+        let rarr =
+            Value::RealArray(SbArray::from_vec(vec![-1.0f64, 77.9, 65_537.0, 70_000.0]).into_ref());
+        bgload(&mut bg, &[int(1), int(0), int(0), int(2), int(2), rarr], 0).unwrap();
+        assert_eq!(bg.layers[1].cell(0, 0), 0);
+        assert_eq!(bg.layers[1].cell(1, 0), 77);
+        assert_eq!(bg.layers[1].cell(0, 1), 1);
+        assert_eq!(bg.layers[1].cell(1, 1), 4464);
     }
 
     #[test]
