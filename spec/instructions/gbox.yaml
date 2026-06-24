@@ -25,6 +25,11 @@ semantics:
   - "Takes exactly 4 args (x1,y1,x2,y2) or 5 args (+color) and returns no value. Any other argument count, or requesting a return value, raises errnum 4 (Illegal function call) — return-count [r4,#0xc] cmp #0 bne error @0x155130, argcount [r4,#0x4] cmp #4 (beq @0x155140) / cmp #5 (beq @0x155148) else mov r0,#0x4 (errnum 4) @0x15514c."
   - "With 4 args the color defaults to the current GCOLOR draw color (loaded from graphics-context field +0xc). With 5 args the popped 32-bit value is used. The color is NOT range-checked — a full 32-bit ARGB value (A=255 opaque, otherwise transparent); signed/&H/#CONSTANT operands are accepted (e.g. -1 = opaque white)."
   - "Corners may be given in any order and may be off-screen / out of range; coordinates are integer-coerced and clipped by the draw helper rather than rejected — no range error. The handler reads the graphics context via [[0x315d60]+0x20] (r6) and passes the corners + color to the rectangle-outline draw helper bl 0x1939d8 @0x1552bc."
+  - "Only the four EDGES are lit; the interior is left untouched (hw_verified via GSPOIT read-back: GBOX 10,100,20,110,white lights all four corners (10,100)/(20,100)/(10,110)/(20,110), the edge midpoints (15,100)/(15,110)/(10,105)/(20,105), but the interior (15,105) and a just-inside pixel (15,101) stay 0). Corners are inclusive on all four edges."
+  - "Corner order is normalized — any of the two opposite corners draws the same outline (hw_verified: GBOX 20,110,10,100,white draws the identical box: (10,100)/(20,110) lit, interior (15,105) clear)."
+  - "The box color round-trips through the device RGBA5551 format EXACTLY like GPSET/GLINE (8->5 bit channel truncation; the draw helper @0x1939d8 builds the halfword: g = (c>>5)&0x7c0, r = (c>>2)&0x3e... b = (c>>8)&0xf800, alpha bit set only when (c>>0x18)==0xff). hw_verified: white/-1 -> -460552, RGB(0,0,255) -> -16776968. With 4 args the color defaults to the current GCOLOR draw color (hw_verified: GCOLOR RGB(255,0,0):GBOX 40,100,45,105 reads back -524288 == the explicit-red form)."
+  - "A degenerate box (start == end) plots a single pixel; a zero-width box (x1==x2) draws a vertical segment and a zero-height box (y1==y2) a horizontal segment (hw_verified: GBOX 60,60,60,60,white lights only (60,60); GBOX 70,70,70,75,white lights the column (70,70)/(70,75), (71,72)=0; GBOX 80,80,85,80,white lights the row (80,80)/(85,80), (82,81)=0)."
+  - "Off-page / partially-off-page boxes do NOT error — the draw helper clips each edge to the page rather than raising a range error (hw_verified: GBOX -50,-50,999,999,-1 runs without error; GBOX 395,130,405,140,white still lights the on-page edge pixels (399,130) and (399,140))."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "argument count is not 4 or 5, or a return value is requested (used as a function)" }
@@ -34,15 +39,51 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst GBOX handler @0x155110: graphics state ptr 0x1552cc->0x315d60, gfx-context = [[..]+0x20] (r6); return-count r0=[r4,#0xc] cmp #0 bne -> errnum 4 @0x155130; argcount r0=[r4,#0x4] cmp #4 beq @0x155164 (4-arg, default color), cmp #5 beq @0x1551f0 (5-arg), else mov r2,#0/mvn r1/mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x15514c; coordinates fetched via vtable [r2,#0x40]; rectangle-outline draw bl 0x1939d8 @0x1552bc; no fill path and no range guard in the handler." }
   - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GBOX: draws a rectangle outline on the active graphic page (3.5.0 structural cross-check only)." }
   - { type: community, ref: "sbsave corpus: GBOX appears ~2238x. Confirms the 4-arg default-color form (~418 lines, e.g. 5KSKXX8X/TXT/GED 'GBOX 236,16,364,144'), #CONSTANT/&H/RGB() and negative (-1, e.g. 2RD4S3RJ/TXT/GAME 'GBOX 88,32,152,48,-1') color operands, and negative/off-screen corners (clipped). No real 6-arg/fill form exists — apparent extras are inline RGB()/array commas or a user-defined 'GBOX2' DEF; outline-only holds. Faux-fill via GPAINT seen (23EX5E4V/TXT/10)." }
+  - { type: disassembled, ref: "cia_3.6.0.lst rectangle-outline draw helper @0x1939d8 (called by the GBOX handler @0x1552bc): ARGB8888->RGBA5551 build at entry — mov r5,#0x3e / mov r6,#0xf800 / mov lr,#0x7c0 / and r7,lr,r0,lsr #0x5 (green) / and r5,r5,r0,lsr #0x2 (red) / and r6,r6,r0,lsr #0x8 (blue) / orr r5,r5,r7 / orr r6,r6,r5, with alpha bit set only for A==255 (mov lr,#0xff / cmp lr,r0,lsr #0x18 / orreq r6,r6,#0x1) — identical channel layout to GPSET/GLINE; corners are normalized (cmp r5,r9 / ble + swap @0x193a28, cmp r1,r8 / cpygt @0x193a44) and each edge is clipped to the page window (cmp against [r4,#0x10]/[r4,#0x14]/[r4,#0x18]/[r4,#0x1c] @0x193a60-@0x193a98) before the 8x8-tiled framebuffer store strh r6,[r3] @0x193aec." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7b): GBOX 0,0,1 (3 args) -> errnum 4, errline 1; GBOX 0,0,1,1,2,3 (6 args) -> errnum 4; A=GBOX(0,0,1,1) (used as a function) -> errnum 4." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 42, harness/harvest/out/gbox.tsv) — box side-effects via GSPOIT read-back (framebuffer-free, same method as gpset/gline/gspoit). Outline: GBOX 10,100,20,110,white -> corners (10,100)/(20,100)/(10,110)/(20,110)=-460552, edge mids (15,100)/(15,110)/(10,105)/(20,105)=-460552, interior (15,105)=0, just-inside (15,101)=0, outside (9,100)/(21,110)=0. Corner-order: GBOX 20,110,10,100,white -> (10,100)/(20,110)=-460552, (15,105)=0 (same box). Color: RGB(0,0,255)->-16776968, -1->-460552 (white), 4-arg default GCOLOR RGB(255,0,0):GBOX 40,100,45,105 -> -524288. Degenerate GBOX 60,60,60,60,white -> (60,60)=-460552, (61,61)=0; zero-width GBOX 70,70,70,75 -> (70,70)/(70,75)=-460552, (71,72)=0; zero-height GBOX 80,80,85,80 -> (80,80)/(85,80)=-460552, (82,81)=0. Clip: GBOX -50,-50,999,999,-1 no error; GBOX 395,130,405,140,white -> (399,130)/(399,140)=-460552." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7b); box side-effects need the framebuffer oracle (O-T6, queued).
+  # arg-count/return errors hw_verified (sb-oracle 2026-06-22 s_t7b); box pixel side-effects
+  # hw_verified via GSPOIT read-back (M7-T2 run 42, harness/harvest/out/gbox.tsv).
+  # white=-460552, red=-524288, blue=-16776968 (RGBA5551 8->5, identical to GPSET/GLINE/GSPOIT).
   - { name: box_default_color_ok, code: "GBOX 0,0,399,239", expect: { stdout: "" } }
   - { name: box_explicit_color_ok, code: "GBOX 10,10,100,100,RGB(255,0,0)", expect: { stdout: "" } }
   - { name: box_negative_color_ok, code: "GBOX 0,0,50,50,-1", expect: { stdout: "" } }
   - { name: three_args_errors, code: "GBOX 0,0,1", expect: { error: { errnum: 4 } } }
   - { name: six_args_errors, code: "GBOX 0,0,1,1,2,3", expect: { error: { errnum: 4 } } }
   - { name: as_function_errors, code: "A=GBOX(0,0,1,1)", expect: { error: { errnum: 4 } } }
+  # --- outline: all four corners + edge midpoints lit, interior clear ---
+  - { name: corner_tl, code: "GBOX 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(10,100)", expect: { stdout: "-460552" } }
+  - { name: corner_tr, code: "GBOX 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(20,100)", expect: { stdout: "-460552" } }
+  - { name: corner_bl, code: "GBOX 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(10,110)", expect: { stdout: "-460552" } }
+  - { name: corner_br, code: "GBOX 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(20,110)", expect: { stdout: "-460552" } }
+  - { name: top_edge_mid, code: "GBOX 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(15,100)", expect: { stdout: "-460552" } }
+  - { name: bottom_edge_mid, code: "GBOX 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(15,110)", expect: { stdout: "-460552" } }
+  - { name: left_edge_mid, code: "GBOX 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(10,105)", expect: { stdout: "-460552" } }
+  - { name: right_edge_mid, code: "GBOX 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(20,105)", expect: { stdout: "-460552" } }
+  - { name: interior_clear, code: "GBOX 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(15,105)", expect: { stdout: "0" } }
+  - { name: just_inside_clear, code: "GBOX 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(15,101)", expect: { stdout: "0" } }
+  - { name: outside_clear, code: "GBOX 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(9,100)", expect: { stdout: "0" } }
+  # --- corner order normalized: reversed corners draw the same outline ---
+  - { name: reversed_corner, code: "GBOX 20,110,10,100,RGB(255,255,255):PRINT GSPOIT(10,100)", expect: { stdout: "-460552" } }
+  - { name: reversed_interior_clear, code: "GBOX 20,110,10,100,RGB(255,255,255):PRINT GSPOIT(15,105)", expect: { stdout: "0" } }
+  # --- color: explicit blue; 4-arg default uses GCOLOR; negative literal = white ---
+  - { name: explicit_blue, code: "GBOX 30,100,35,105,RGB(0,0,255):PRINT GSPOIT(30,100)", expect: { stdout: "-16776968" } }
+  - { name: four_arg_uses_gcolor, code: "GCOLOR RGB(255,0,0):GBOX 40,100,45,105:PRINT GSPOIT(40,100)", expect: { stdout: "-524288" } }
+  - { name: neg_color_is_white, code: "GBOX 50,100,55,105,-1:PRINT GSPOIT(50,100)", expect: { stdout: "-460552" } }
+  # --- degenerate forms: point / zero-width column / zero-height row ---
+  - { name: point_hit, code: "GBOX 60,60,60,60,RGB(255,255,255):PRINT GSPOIT(60,60)", expect: { stdout: "-460552" } }
+  - { name: point_off_clear, code: "GBOX 60,60,60,60,RGB(255,255,255):PRINT GSPOIT(61,61)", expect: { stdout: "0" } }
+  - { name: vseg_start, code: "GBOX 70,70,70,75,RGB(255,255,255):PRINT GSPOIT(70,70)", expect: { stdout: "-460552" } }
+  - { name: vseg_end, code: "GBOX 70,70,70,75,RGB(255,255,255):PRINT GSPOIT(70,75)", expect: { stdout: "-460552" } }
+  - { name: vseg_side_clear, code: "GBOX 70,70,70,75,RGB(255,255,255):PRINT GSPOIT(71,72)", expect: { stdout: "0" } }
+  - { name: hseg_start, code: "GBOX 80,80,85,80,RGB(255,255,255):PRINT GSPOIT(80,80)", expect: { stdout: "-460552" } }
+  - { name: hseg_end, code: "GBOX 80,80,85,80,RGB(255,255,255):PRINT GSPOIT(85,80)", expect: { stdout: "-460552" } }
+  - { name: hseg_below_clear, code: "GBOX 80,80,85,80,RGB(255,255,255):PRINT GSPOIT(82,81)", expect: { stdout: "0" } }
+  # --- clipping: off-page no error; partially-off box still draws on-page edges ---
+  - { name: offscreen_no_error, code: "GBOX -50,-50,999,999,-1:PRINT 42", expect: { stdout: "42" } }
+  - { name: partial_clip_top, code: "GBOX 395,130,405,140,RGB(255,255,255):PRINT GSPOIT(399,130)", expect: { stdout: "-460552" } }
+  - { name: partial_clip_bottom, code: "GBOX 395,130,405,140,RGB(255,255,255):PRINT GSPOIT(399,140)", expect: { stdout: "-460552" } }
