@@ -1,0 +1,16 @@
+# BGMVOL call-shape + arg-range error contract (M7-T2 headless surface).
+# |err mode: acceptance -> errored=false; error -> errored=true+errnum.
+# Audible volume itself is NOT harvestable (O-T7); this pins the statement contract.
+vol_1arg|BGMVOL 64|err
+vol_1arg_min|BGMVOL 0|err
+vol_1arg_max|BGMVOL 127|err
+vol_2arg|BGMVOL 0,64|err
+vol_2arg_track_max|BGMVOL 7,64|err
+vol_1arg_over|BGMVOL 128|err
+vol_1arg_neg|BGMVOL -1|err
+vol_2arg_vol_over|BGMVOL 0,128|err
+vol_2arg_track_over|BGMVOL 8,64|err
+vol_2arg_track_neg|BGMVOL -1,64|err
+vol_no_args|BGMVOL|err
+vol_3args|BGMVOL 0,64,1|err
+vol_func|A=BGMVOL(64)|err

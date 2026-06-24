@@ -32,13 +32,24 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst shared integer-arg range helper FUN_001eec7c @0x1eec7c: bounds-checks the evaluated value [r4,#0x0] against min r3 (=0) and max stack-arg [sp,#0x18] (cmp r1,r6 / cmpge r7,r1 / bge ok), raising errnum 10 on out-of-range (mov r2,#0x0 / mov r0,#0xa / b 0x1fffdc @0x1eeccc) — enforces the track (max 7) and volume (max 127) bounds" }
   - { type: community, ref: "osb/SMILEBASIC/sound.d BGM volume (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGMVOL\\b'): 159 files — both the 1-arg volume-only form and the 2-arg track,volume form, often called repeatedly to ramp volume (e.g. 41x in 4K33NPAX/TXT/STGHOLIC, 30x in DSJB3DD/TXT/SSKMQ) — proving both forms are LEGAL syntax. Audible level unproven (no oracle, O-T7)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2; harness/harvest/out/bgmvol.tsv): the whole headless contract pinned to real SB 3.6.0. ACCEPTED (NOERR): BGMVOL 64, BGMVOL 0 (vol min), BGMVOL 127 (vol max), BGMVOL 0,64 (2-arg), BGMVOL 7,64 (track max). errnum 10 errline 1: BGMVOL 128 (vol>127), BGMVOL -1 (vol<0), BGMVOL 0,128 (2-arg vol>127), BGMVOL 8,64 (track>7), BGMVOL -1,64 (track<0). errnum 4 errline 1: BGMVOL (0 args), BGMVOL 0,64,1 (3 args), A=BGMVOL(64) (return context). Confirms the disassembled shape gate (result==0, argcount 1..2) + the 0..7 track / 0..127 volume FUN_001eec7c bounds. Audible level itself stays unobservable (O-T7) — the only un-harvested piece." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Call shape + error conditions from the disassembly. Audible volume is oracle-pending (O-T7).
+  # Call shape + arg ranges — hw_verified 2026-06-24 (M7-T2, harness/harvest/out/bgmvol.tsv).
+  # Audible volume is oracle-pending (O-T7); the statement contract below is the whole
+  # headless-observable surface.
   - { name: set_volume_track0, code: "BGMVOL 64", expect: { stdout: "" } }
+  - { name: set_volume_track0_min, code: "BGMVOL 0", expect: { stdout: "" } }
+  - { name: set_volume_track0_max, code: "BGMVOL 127", expect: { stdout: "" } }
   - { name: set_volume_track, code: "BGMVOL 0,64", expect: { stdout: "" } }
+  - { name: set_volume_track_max, code: "BGMVOL 7,64", expect: { stdout: "" } }
   - { name: volume_out_of_range, code: "BGMVOL 128", expect: { error: { errnum: 10 } } }
+  - { name: volume_negative, code: "BGMVOL -1", expect: { error: { errnum: 10 } } }
+  - { name: volume_out_of_range_2arg, code: "BGMVOL 0,128", expect: { error: { errnum: 10 } } }
   - { name: track_out_of_range, code: "BGMVOL 8,64", expect: { error: { errnum: 10 } } }
+  - { name: track_negative, code: "BGMVOL -1,64", expect: { error: { errnum: 10 } } }
+  - { name: no_args, code: "BGMVOL", expect: { error: { errnum: 4 } } }
+  - { name: too_many_args, code: "BGMVOL 0,64,1", expect: { error: { errnum: 4 } } }
   - { name: used_as_function, code: "A=BGMVOL(64)", expect: { error: { errnum: 4 } } }
