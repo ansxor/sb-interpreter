@@ -524,7 +524,9 @@ oracle to confirm exact output and promote to `hw_verified`.
   hw_verified s_t8e batch 2026-06-22: SPVAR read/write round-trip, SPCHK stopped=0, SPUSED TRUE/FALSE,
   SPDEF defaults W=H=16/A=1 + range errnum 10, SPCOLOR &H11223344 round-trip, SPFUNC bind NOERR before
   SPSET, all mgmt-oob errnum 10 / before-SPSET errnum 4):
-  - SPCHK mid-animation #CHK* bit values — need a running SPANIM to set channel bits, then read SPCHK.
+  - [x] SPCHK mid-animation #CHK* bit values — RESOLVED 2026-06-24 (spstartstop_rt.tsv): a running XY-channel
+    SPANIM gives SPCHK=1 (#CHKXY), goes to 0 under SPSTOP, back to 1 under SPSTART. Frozen in spchk.yaml
+    (running_xy_bit) + spstart/spstop value-contract tests; SPSTART/SPSTOP both promoted hw_verified.
   - SPDEF non-default template field read-back (U,V,W,H,OX,OY,A round-trip for explicit values; copy form 6
     field inheritance; bulk array/DATA forms; array element-count-not-multiple-of-7 -> errnum 31).
   - SPFUNC CALL SPRITE dispatch: confirm the documented "error before SPSET" actually surfaces at CALL time
@@ -917,9 +919,9 @@ oracle to confirm exact output and promote to `hw_verified`.
 - S-C3 · sprite-bg-model concept spec — model authored from docs + the disassembled
   sprite/BG instruction specs (which carry handler-body reads) + hw_verified constant bits.
   Open items the model marks oracle-pending:
-  - Exact per-channel mid-animation bit values reported by SPCHK (`(flags>>17)&0xFF`) and
-    BGCHK (low byte) while a given SPANIM/BGANIM channel runs (see also lines for S-T8/S-T9
-    above — same probe). The `#CHK*` target→bit mapping is documented; the live running bit is not.
+  - SPCHK part RESOLVED 2026-06-24 (spstartstop_rt.tsv): an XY SPANIM gives SPCHK=1 (#CHKXY), so
+    `(flags>>17)&0xFF` is confirmed (SPANIM's XY anim-active bit 0x20000 = bit 17 → SPCHK bit 0). The
+    BGCHK low-byte mid-animation bit values while a BGANIM channel runs are still oracle-pending (same probe).
   - Sprite SPVAR out-of-range variable number (outside 0–7): does it error (which errnum) or
     wrap/no-op? No visible guard at the SPVAR store site (BGVAR DOES guard 0–7).
   - SPHITINFO 3-variable OUT form (TM,X1,Y1) — accepted by the handler, undocumented; confirm legal + values.

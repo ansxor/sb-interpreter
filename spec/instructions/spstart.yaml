@@ -30,12 +30,20 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst SPSTART handler @0x143d34: ret-count [r0,#0xc] must be 0 cmp r1,#0 bne @0x143d64; argcount [r0,#0x4] 0->all @0x143d7c, 1->one @0x143e00, else errln -1 mvn r1,#0 mov r0,#0x4 bl 0x1fffdc errnum 4 @0x143d64; all-form ldrd r0,r1,[r0,#0x44] count, per-slot bic r2,r2,#0x2000000 @0x143db4 (clear stop bit, no error); one-form mgmt via bl 0x1eece0 @0x143e0c (errnum 10), active-bit tst r1,#0x80000000 [slot+4] @0x143e3c bicne #0x2000000 else errnum 4 mov r0,#0x4 bl 0x1fffdc @0x143e4c; state ptr 0x315d60 [0x143e64], sprite-base 0x19A5FB0 [0x143e68]." }
   - { type: community, ref: "osb/SMILEBASIC/sprite.d sprite animation stop/run flag (3.5.0 structural cross-check only)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8c): SPCLR:SPSTART 5 -> errnum 4 (used before SPSET); SPSET 0,0:SPSTART 512 -> errnum 10 (mgmt out of range)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (spstartstop_rt.tsv, read back via SPCHK with a running SPANIM): the VALUE contract — SPSTART actually CLEARS the stop bit set by SPSTOP. One-form `SPSET 0,0:SPANIM 0,0,60,100,100,0:SPSTOP 0:SPSTART 0:?SPCHK(0)`=1 (resumed). No-arg-form `...:SPSTOP:SPSTART:?SPCHK(0)`=1 (all resumed). SPSTART touches ONLY the named slot: with slots 0 AND 1 both stopped, `...:SPSTOP:SPSTART 0:?SPCHK(0)`=1 (slot 0 resumed) while `?SPCHK(1)`=0 (slot 1 stays stopped); the no-arg `...:SPSTOP:SPSTART:?SPCHK(1)`=1 resumes all. Idempotent on an already-running sprite: `...:SPSTART 0:SPSTART 0:?SPCHK(0)`=1 (no error). 6/6 value cases confirmed, 0 mismatch; sb-core matched with no code change." }
   - { type: community, ref: "sbsave corpus: SPSTART used ~600x, both the bare all-sprites form `SPSTART` and the per-sprite form `SPSTART 0`..`SPSTART 5` (e.g. ______LAUNCHER) — proving both forms are LEGAL syntax." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
   - { name: start_all_no_arg, code: "SPSET 0,0\nSPSTART", expect: { stdout: "" } }
   - { name: start_one, code: "SPSET 0,0\nSPSTOP 0\nSPSTART 0", expect: { stdout: "" } }
   - { name: before_spset, code: "SPCLR\nSPSTART 5", expect: { error: { errnum: 4 } } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPSTART 512", expect: { error: { errnum: 10 } } }
+  # Value contract (sb-oracle 2026-06-24, read back via SPCHK on a running SPANIM).
+  - { name: start_one_resumes, code: "SPSET 0,0\nSPANIM 0,0,60,100,100,0\nSPSTOP 0\nSPSTART 0\nPRINT SPCHK(0)", expect: { stdout: "1" } }
+  - { name: start_all_resumes, code: "SPSET 0,0\nSPANIM 0,0,60,100,100,0\nSPSTOP\nSPSTART\nPRINT SPCHK(0)", expect: { stdout: "1" } }
+  - { name: start_one_isolated_self, code: "SPSET 0,0\nSPANIM 0,0,60,100,100,0\nSPSET 1,0\nSPANIM 1,0,60,100,100,0\nSPSTOP\nSPSTART 0\nPRINT SPCHK(0)", expect: { stdout: "1" } }
+  - { name: start_one_isolated_other, code: "SPSET 0,0\nSPANIM 0,0,60,100,100,0\nSPSET 1,0\nSPANIM 1,0,60,100,100,0\nSPSTOP\nSPSTART 0\nPRINT SPCHK(1)", expect: { stdout: "0" } }
+  - { name: start_all_resumes_all, code: "SPSET 0,0\nSPANIM 0,0,60,100,100,0\nSPSET 1,0\nSPANIM 1,0,60,100,100,0\nSPSTOP\nSPSTART\nPRINT SPCHK(1)", expect: { stdout: "1" } }
+  - { name: start_idempotent, code: "SPSET 0,0\nSPANIM 0,0,60,100,100,0\nSPSTART 0\nSPSTART 0\nPRINT SPCHK(0)", expect: { stdout: "1" } }

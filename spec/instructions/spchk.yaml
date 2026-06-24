@@ -27,12 +27,14 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/spchk.md (`Variable=SPCHK(Management number)` — gets the animation status of a sprite; mgmt 0-511; return-value bits b00 #CHKXY(1) / b01 #CHKZ(2) / b02 #CHKUV(4) / b03 #CHKI(8) / b04 #CHKR(16) / b05 #CHKS(32) / b06 #CHKC(64) / b07 #CHKV(128); 'If 0 is assigned for all bits, animation is being stopped'; 'If used before SPSET, an error will occur'; example ST=SPCHK(5))" }
   - { type: disassembled, ref: "cia_3.6.0.lst SPCHK handler @0x13ed7c: shape gate cmp r0,#0x1 (argcount [r4,#0x4]) / ldreq r0,[r4,#0xc] / cmpeq r0,#0x1 (result-count) / beq 0x13edb4 @0x13ed8c, else errnum 4 mov r0,#0x4 bl 0x1fffdc @0x13eda4; mgmt via FUN_001eece0 bl 0x1eece0 @0x13edc4 (errnum 10); slot base[0x13ee48]+(mgmt+[[0x13ee44]+0x44])*0x48 @0x13ede8; active-bit guard tst [slot+0x4],#0x80000000 @0x13edfc beq -> errnum 4 @0x13ee34 (used before SPSET); stopped-bit clear tst r1,#0x2000000 movne r1,#0 @0x13ee04; status byte mov r0,r1,lsl#0x7 / mov r1,r0,lsr#0x18 @0x13ee0c (= (flags>>17)&0xFF); result via [r4+0x10]->[+0x14] blx @0x13ee20. Literals [0x13ee44]=0x00315D60 (state), [0x13ee48]=0x019A5FB0 (sprite slot base)." }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bSPCHK\\b'): 780 uses, all the documented function form, overwhelmingly read into a variable or tested bitwise, e.g. `IF (SPCHK(I) AND #CHKXY)==0`. No statement/OUT form and no extra-arg form observed in real programs (the OUT form is permitted by the handler but unused in the corpus)." }
-  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8e): `SPSET 0,0:?SPCHK(0)` -> 0 (no animation running -> animation-stopped reads 0); `SPCLR:V=SPCHK(5)` -> errnum 4 (used before SPSET); `SPSET 0,0:V=SPCHK(512)` -> errnum 10 (mgmt out of range). Mid-animation #CHK* bit values (needs a running SPANIM) remain oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8e): `SPSET 0,0:?SPCHK(0)` -> 0 (no animation running -> animation-stopped reads 0); `SPCLR:V=SPCHK(5)` -> errnum 4 (used before SPSET); `SPSET 0,0:V=SPCHK(512)` -> errnum 10 (mgmt out of range)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (spstartstop_rt.tsv): mid-animation #CHK* bit value confirmed (resolves the prior oracle-pending) — `SPSET 0,0:SPANIM 0,0,60,100,100,0:?SPCHK(0)`=1, i.e. an XY-channel SPANIM sets exactly #CHKXY (bit 0 = 1), matching status=(flags>>17)&0xFF since SPANIM's XY anim-active bit is 0x20000 (bit 17). The status returns to 0 under SPSTOP and back to 1 under SPSTART (see [[spstop]]/[[spstart]])." }
 
 confidence: hw_verified
 
 tests:
-  # Stopped=0 + error cases hw_verified (sb-oracle 2026-06-22 s_t8e). Mid-animation bit values oracle-pending (need SPANIM running, see HARVEST_QUEUE.md).
+  # Stopped=0 + error cases hw_verified (sb-oracle 2026-06-22 s_t8e); running #CHKXY bit hw_verified (2026-06-24, spstartstop_rt.tsv).
   - { name: stopped_returns_zero, code: "SPSET 0,0\nPRINT SPCHK(0)", expect: { stdout: "0" } }
+  - { name: running_xy_bit, code: "SPSET 0,0\nSPANIM 0,0,60,100,100,0\nPRINT SPCHK(0)", expect: { stdout: "1" } }
   - { name: before_spset, code: "SPCLR\nPRINT SPCHK(5)", expect: { error: { errnum: 4 } } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nPRINT SPCHK(512)", expect: { error: { errnum: 10 } } }
