@@ -412,6 +412,12 @@ impl SpriteState {
         self.sprites[mgmt].func = name;
     }
 
+    /// The callback process name bound to a slot by `SPFUNC`, or `None` if unbound — read by
+    /// `CALL SPRITE` dispatch (M6-T6).
+    pub fn func(&self, mgmt: usize) -> Option<String> {
+        self.sprites[mgmt].func.clone()
+    }
+
     /// `SPLINK child, parent` — link `child` to `parent` (only coordinates are inherited).
     /// The caller has already validated the ordering and active bits.
     pub fn link(&mut self, child: usize, parent: usize) {

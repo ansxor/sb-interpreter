@@ -43,7 +43,7 @@ use crate::array::SbArray;
 use crate::ast::{BinOp, Name, UnOp};
 use crate::builtins::screen::ScreenConfig;
 use crate::builtins::sound::AudioState;
-use crate::bytecode::{Const, Op, Program, VarRef, VarType};
+use crate::bytecode::{CallbackKind, Const, Op, Program, VarRef, VarType};
 use crate::clock::{FrameClock, WallClock};
 use crate::input::InputState;
 use crate::storage::{
@@ -235,8 +235,12 @@ pub struct Vm {
     /// any dialog (sb-oracle 2026-06-23); DIALOG (M6-T5) sets it to TRUE/FALSE/-1 (Suspended).
     result: i32,
     /// `CALLIDX` — the index passed into the current SPFUNC/BGFUNC callback (M6-T3). 0 outside
-    /// any callback (the hw_verified golden); the per-frame callback dispatch (M6-T6) sets it.
+    /// any callback (the hw_verified golden); a `CALL SPRITE`/`CALL BG` sweep (M6-T6) sets it to
+    /// each dispatched sprite/layer index and leaves it at the final value afterwards.
     callidx: i32,
+    /// Whether a `CALL SPRITE`/`CALL BG` callback sweep is in progress (M6-T6). Armed by
+    /// [`Op::CallbackInit`]; cleared when [`Op::CallbackNext`] runs the index past the table.
+    callback_active: bool,
     /// `FREEMEM` — free user memory in KB (M6-T3). A fixed faithful model (we don't track the
     /// real allocator); the exact boot value is oracle-pending (`HARVEST_QUEUE.md`).
     freemem: i32,
@@ -337,6 +341,7 @@ impl Vm {
             sysbeep: 1,
             result: 1,
             callidx: 0,
+            callback_active: false,
             freemem: DEFAULT_FREEMEM,
             wall_clock: WallClock::EPOCH,
             input_lines: VecDeque::new(),
@@ -739,6 +744,18 @@ impl Vm {
                 wants_value,
             } => self.call_user(&name, argc, out_argc, wants_value)?,
             Op::ReturnFunc { has_value } => self.return_func(has_value)?,
+
+            Op::CallbackInit(_) => {
+                self.callidx = -1;
+                self.callback_active = true;
+            }
+            Op::CallbackNext(kind) => {
+                // `self.pc` was advanced past this op by the run loop, so this op's own index
+                // is `self.pc - 1`. When a callback is dispatched we rewind there so the sweep
+                // resumes (advancing `CALLIDX`) once the callback returns.
+                let here = self.pc - 1;
+                self.callback_next(kind, here)?;
+            }
 
             Op::ReadValue => {
                 let c = self
@@ -2877,6 +2894,73 @@ impl Vm {
             return Err(sb(crate::builtins::illegal()));
         }
         self.sprites.set_func(slot, Some(name));
+        Ok(())
+    }
+
+    /// One `CALL SPRITE`/`CALL BG` dispatch step (M6-T6). Advances [`Vm::callidx`] and, if the
+    /// next sprite/layer has a bound `SPFUNC`/`BGFUNC` process, invokes it and rewinds the PC to
+    /// `here` (this `CallbackNext` op) so the sweep resumes after the callback returns. When the
+    /// index runs past the table, the sweep ends and control falls through to the next statement.
+    ///
+    /// Modeled on osb `VM.d:CallSprite`/`CallBG` (the only structural reference — these are
+    /// parser special forms with no body-readable disassembly): one shared `callidx` counter
+    /// incremented once per step, the bound process called like a `GOSUB`/`DEF` so it returns to
+    /// re-run the step. A `CALLIDX` read inside a process therefore yields its own
+    /// management/layer number (documented). The final `callidx` is left at one-past the table
+    /// (e.g. 4 after `CALL BG`), matching osb. Whether real SB clears `callidx`, raises on a
+    /// bound-but-not-`SPSET` sprite, or shares the counter with a nested sweep is oracle-pending
+    /// (queued, `HARVEST_QUEUE.md`).
+    fn callback_next(&mut self, kind: CallbackKind, here: usize) -> Result<(), VmError> {
+        self.callidx += 1;
+        if !self.callback_active {
+            return Ok(());
+        }
+        let max = match kind {
+            CallbackKind::Sprite => sb_render::sprite::SPRITE_COUNT as i32,
+            CallbackKind::Bg => sb_render::bg::BG_LAYER_COUNT as i32,
+        };
+        if self.callidx >= max {
+            // Ran past the table: the sweep is done, fall through (PC already advanced).
+            self.callback_active = false;
+            return Ok(());
+        }
+        let idx = self.callidx as usize;
+        let bound = match kind {
+            CallbackKind::Sprite => self.sprites.func(idx),
+            CallbackKind::Bg => self.bg.func(idx),
+        };
+        // Re-run this op after the dispatch (or after skipping an unbound index) so the sweep
+        // keeps advancing — the osb `pc--` self-loop.
+        self.pc = here;
+        if let Some(name) = bound {
+            self.dispatch_callback(&name)?;
+        }
+        Ok(())
+    }
+
+    /// Invoke a registered callback process by name (M6-T6 `CALL SPRITE`/`CALL BG`). The name
+    /// was resolved + recorded by `SPFUNC`/`BGFUNC` (uppercase, no leading `@`), so it names a
+    /// code `@label` (run like `GOSUB` — priority, matching the bind-time `@Label`-first lookup)
+    /// or a `DEF` process (run like a 0-arg `CALL`). Either return path lands back at the
+    /// `CallbackNext` op (`self.pc` is already `here`), continuing the sweep.
+    fn dispatch_callback(&mut self, name: &str) -> Result<(), VmError> {
+        if let Some(addr) = self
+            .program
+            .code_labels
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, a)| *a)
+        {
+            self.push_gosub(self.pc)?;
+            self.pc = addr;
+            return Ok(());
+        }
+        let fname = Name::new(name.to_string(), Suffix::None);
+        if let Some(idx) = self.program.function_index(&fname) {
+            // `invoke_function` captures `self.pc` (== `here`) as the return address.
+            return self.invoke_function(idx, 0, 0, false);
+        }
+        // A bound name that no longer resolves (e.g. its program was swapped out): skip it.
         Ok(())
     }
 
@@ -5261,6 +5345,70 @@ H$=HEX$(255)"#);
             run_b_err("BGFUNC 0,5"),
             VmError::Sb { errnum: 8, .. }
         ));
+    }
+
+    // ---- CALL SPRITE / CALL BG callback dispatch (M6-T6) ----
+
+    #[test]
+    fn call_sprite_runs_bound_label_callback_with_callidx() {
+        // CALL SPRITE invokes sprite 0's SPFUNC-bound @label process; inside it CALLIDX is
+        // the sprite's management number (documented). The @label runs GOSUB-style (RETURN).
+        let vm = run_b("SPSET 0,0\nSPFUNC 0,@CB\nCALL SPRITE\nEND\n@CB\nPRINT CALLIDX\nRETURN");
+        assert_eq!(vm.console_text(), "0");
+    }
+
+    #[test]
+    fn call_sprite_dispatches_all_bound_in_ascending_order() {
+        // Every bound sprite process runs, in ascending management-number order, each with
+        // its own CALLIDX. Sprites 0 and 3 are bound; the `;` keeps them on one line.
+        let vm = run_b(
+            "SPSET 0,0\nSPSET 3,0\nSPFUNC 0,@CB\nSPFUNC 3,@CB\nCALL SPRITE\nEND\n@CB\nPRINT CALLIDX;\nRETURN",
+        );
+        assert_eq!(vm.console_text(), "03");
+    }
+
+    #[test]
+    fn call_sprite_runs_bound_def_process() {
+        // A SPFUNC name that resolves to a DEF process (not an @label) is invoked like a
+        // 0-arg CALL; CALLIDX is still the management number inside it.
+        let vm = run_b("SPSET 2,0\nSPFUNC 2,@CB\nCALL SPRITE\nEND\nDEF CB\nPRINT CALLIDX\nEND");
+        assert_eq!(vm.console_text(), "2");
+    }
+
+    #[test]
+    fn call_sprite_with_no_bound_callbacks_is_noop() {
+        // No SPFUNC bound anywhere: CALL SPRITE sweeps the table and falls through.
+        let vm = run_b("SPSET 0,0\nCALL SPRITE\nPRINT \"OK\"");
+        assert_eq!(vm.console_text(), "OK");
+    }
+
+    #[test]
+    fn call_bg_runs_bound_layer_callback_with_callidx() {
+        // CALL BG invokes each BGFUNC-bound layer's process; inside it CALLIDX is the layer.
+        let vm = run_b("BGSCREEN 0,32,32\nBGFUNC 0,@CB\nCALL BG\nEND\n@CB\nPRINT CALLIDX\nRETURN");
+        assert_eq!(vm.console_text(), "0");
+    }
+
+    #[test]
+    fn call_bg_dispatches_all_bound_layers_in_order() {
+        let vm = run_b(
+            "BGSCREEN 0,32,32\nBGFUNC 0,@CB\nBGFUNC 2,@CB\nCALL BG\nEND\n@CB\nPRINT CALLIDX;\nRETURN",
+        );
+        assert_eq!(vm.console_text(), "02");
+    }
+
+    #[test]
+    fn call_bg_leaves_callidx_one_past_the_layer_table() {
+        // osb VM.d: after CALL BG the shared CALLIDX counter rests at 4 (one past layers 0..3).
+        let vm = run_b("BGSCREEN 0,32,32\nCALL BG\nPRINT CALLIDX");
+        assert_eq!(vm.console_text(), "4");
+    }
+
+    #[test]
+    fn callidx_reads_zero_before_any_callback_sweep() {
+        // The idle/boot value is 0 (hw_verified sysvars golden); a sweep is what changes it.
+        let vm = run_b("PRINT CALLIDX");
+        assert_eq!(vm.console_text(), "0");
     }
 
     #[test]

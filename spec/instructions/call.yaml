@@ -15,7 +15,7 @@ summary: "Calls a user-defined (DEF) instruction selected by a name string at ru
 semantics:
   - "The instruction name is a string (literal or string variable), so the target is chosen at runtime rather than written literally."
   - "Arguments after the name are passed to the instruction; OUT names receive its return values."
-  - "There is also a CALL SPRITE / CALL BG / CALL TInTEGER form for calling registered callbacks (separate from user DEF dispatch)."
+  - "There is also a CALL SPRITE / CALL BG form for calling registered callbacks (separate from user DEF dispatch): SPRITE/BG are bare keyword operands, not a name string. CALL SPRITE runs every SPFUNC-bound sprite process; CALL BG runs every BGFUNC-bound BG-layer process. Each bound process is invoked in ascending index order with the system variable CALLIDX set to its sprite management number / BG layer number (so one process can drive many sprites/layers). An @Label process runs GOSUB-style; a DEF process runs like a 0-arg CALL. See [[spfunc]] / [[bgfunc]] for the dispatch model (M6-T6, osb-structural; runtime confirmation oracle-pending)."
 
 errors:
   - { errnum: 16, name: "Undefined function", when: "no user instruction with the given name exists" }
@@ -30,3 +30,5 @@ confidence: hw_verified
 tests:
   - { name: calls_by_name, code: "DEF GREET\nPRINT \"HI\"\nEND\nCALL \"GREET\"", expect: { stdout: "HI" } }
   - { name: undefined_instruction, code: 'CALL "NOPE"', expect: { error: { errnum: 16 } } }
+  # CALL SPRITE special form: dispatches the SPFUNC-bound process with CALLIDX = mgmt (M6-T6).
+  - { name: call_sprite_form, code: "SPSET 1,0\nSPFUNC 1,@CB\nCALL SPRITE\nEND\n@CB\nPRINT CALLIDX\nRETURN", expect: { stdout: "1" } }

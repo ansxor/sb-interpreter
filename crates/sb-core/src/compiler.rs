@@ -1075,6 +1075,27 @@ impl<'a> Compiler<'a> {
 
     fn compile_call_stmt(&mut self, name: &Name, args: &[Expr], out_args: &[Expr]) -> CResult<()> {
         let cname = canonical(name);
+        // `CALL SPRITE` / `CALL BG` — the registered-callback dispatch forms (M6-T6). `SPRITE`
+        // and `BG` are bare keyword operands (not a name string), so detect them before the
+        // generic arg-compilation below would try to read an undeclared variable.
+        if cname == "CALL" && out_args.is_empty() && args.len() == 1 {
+            if let ExprKind::Var(kw) = &args[0].kind {
+                if kw.suffix == Suffix::None {
+                    let kind = if kw.ident.eq_ignore_ascii_case("SPRITE") {
+                        Some(CallbackKind::Sprite)
+                    } else if kw.ident.eq_ignore_ascii_case("BG") {
+                        Some(CallbackKind::Bg)
+                    } else {
+                        None
+                    };
+                    if let Some(kind) = kind {
+                        self.emit(Op::CallbackInit(kind));
+                        self.emit(Op::CallbackNext(kind));
+                        return Ok(());
+                    }
+                }
+            }
+        }
         // The stack/queue ops (M1-T14) take their first operand by reference so they can
         // grow/shrink the caller's array or write a modified string scalar back.
         let leading_ref = is_stack_op(&cname);

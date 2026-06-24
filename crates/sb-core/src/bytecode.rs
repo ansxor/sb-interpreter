@@ -86,6 +86,15 @@ pub struct OptionFlags {
     pub defint: bool,
 }
 
+/// Which registered-callback table `CALL SPRITE` / `CALL BG` sweeps (M6-T6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallbackKind {
+    /// `CALL SPRITE` — the `SPFUNC`-bound sprite processes (`CALLIDX` = management number).
+    Sprite,
+    /// `CALL BG` — the `BGFUNC`-bound BG-layer processes (`CALLIDX` = layer number).
+    Bg,
+}
+
 /// One opcode. The address operands are indices into the owning slot's `code` vec.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
@@ -192,6 +201,16 @@ pub enum Op {
     },
     /// `RETURN [value]` from a `DEF` body.
     ReturnFunc { has_value: bool },
+
+    /// `CALL SPRITE` / `CALL BG` — begin a callback dispatch sweep (M6-T6): reset the
+    /// `CALLIDX` counter to -1 and arm the dispatch. Always paired with a following
+    /// [`Op::CallbackNext`].
+    CallbackInit(CallbackKind),
+    /// `CALL SPRITE` / `CALL BG` — one dispatch step (M6-T6): advance `CALLIDX`, and if the
+    /// next sprite/layer has a bound `SPFUNC`/`BGFUNC` process, invoke it (with `CALLIDX` set
+    /// to that index) and re-execute this op when it returns; when the index runs past the
+    /// valid range the sweep ends and control falls through.
+    CallbackNext(CallbackKind),
 
     // --- DATA / READ / RESTORE ------------------------------------------------
     /// Read one `DATA` item, advancing the DATA cursor, and push it. Out of DATA →

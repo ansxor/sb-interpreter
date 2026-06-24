@@ -47,11 +47,24 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   assumption: the VM's `values_to_f64` raises errnum 8.
 - [ ] M3-T2 (SPVAR variable number > 7) · The handler computes slot+0x58+n*8 with no visible
   0..7 guard (any bound is inside FUN_001eec7c). assumption: code rejects n∉0..7 with errnum 10.
-- [ ] M3-T2 (SPFUNC dispatch + unresolved label) · `CALL SPRITE` invocation of the bound
-  process (with CALLIDX = management number) is not yet implemented (M3-T6); the errnum for a
-  label/process that does not resolve is errnum 4 per disassembly but unconfirmed.
-  assumption: bind records the resolved name; an unresolvable name raises errnum 4; CALL SPRITE
-  dispatch is deferred.
+- [ ] M3-T2 (SPFUNC dispatch + unresolved label) · the errnum for a label/process that does not
+  resolve is errnum 4 per disassembly but unconfirmed. assumption: bind records the resolved
+  name; an unresolvable name raises errnum 4.
+  UPDATE 2026-06-23 (M6-T6): `CALL SPRITE`/`CALL BG` dispatch IS now implemented (sweep the
+  table in ascending order, invoke each SPFUNC/BGFUNC-bound process with CALLIDX = the sprite
+  mgmt / BG layer number; @label → GOSUB-style, DEF → 0-arg CALL). Built to osb VM.d
+  CallSprite/CallBG (the only structural reference — these are parser special forms with no
+  body-readable disassembly), confidence community. STILL ORACLE-PENDING:
+    - does CALL SPRITE raise at CALL time for a bound-but-NOT-SPSET sprite? (docs say "If used
+      before SPSET, an error will occur" but the bind itself doesn't raise — hw_verified; we
+      currently run the callback regardless of SPSET, following osb isCallable which ignores it)
+    - the exact final CALLIDX value after a sweep (we leave it one past the table, e.g. 4 after
+      CALL BG, per osb; whether real SB clears it to 0 or leaves it is unconfirmed)
+    - does a nested CALL BG inside a sprite process clobber the shared CALLIDX counter (osb's
+      one-shared-counter model says yes — the "SPFUNC 1~511 not called" quirk; we share one
+      counter so we'd reproduce it, but it's unverified on real SB)
+    - exact iteration upper bound for sprites (we sweep 0..511 = SPRITE_COUNT; osb uses spmax,
+      per-screen, which may differ for the upper screen / XSCREEN modes)
 
 - [ ] M2-T2 (drawing-primitive pixel coverage) · GPSET/GLINE/GBOX/GFILL/GCIRCLE/GTRI/GPAINT
   are IMPLEMENTED in sb-core (`crates/sb-render/src/raster.rs`) with deterministic integer

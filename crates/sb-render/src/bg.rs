@@ -405,6 +405,12 @@ impl BgState {
         self.layers[layer].func = name;
     }
 
+    /// The callback process name bound to a layer by `BGFUNC`, or `None` if unbound — read by
+    /// `CALL BG` dispatch (M6-T6).
+    pub fn func(&self, layer: usize) -> Option<String> {
+        self.layers[layer].func.clone()
+    }
+
     // -- block copy (BGCOPY, M3-T5) --------------------------------------------
 
     /// `BGCOPY layer, sx, sy, ex, ey, dx, dy` — copy a rectangular block of the layer's
