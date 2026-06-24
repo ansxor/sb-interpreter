@@ -1153,14 +1153,16 @@ impl Vm {
     ///   *running* slot restarts the current program ([`Vm::restart_active_slot`]).
     /// * **resource string** `EXEC "PRGn:file"`: an unknown resource type / bad PRG index /
     ///   empty name → 4; a missing file → Load failed (46); an existing file in a `PRGn:` slot
-    ///   distinct from the running one is read from storage, compiled in-VM, loaded into that
-    ///   slot, and run ([`Vm::compile_slot_file`] + [`Vm::exec_transfer`], documented form 1).
+    ///   *distinct* from the running one is read from storage, compiled in-VM, loaded into that
+    ///   slot, and run ([`Vm::compile_slot_file`] + [`Vm::exec_transfer`], documented form 1);
+    ///   a `PRGn:` slot naming the *running* slot loads the file into the running slot and runs
+    ///   it from the top ([`Vm::load_into_running_slot`], the corpus loader idiom).
     ///
     /// The numeric loaded-slot transfer, the numeric running-slot restart, and the string-form
-    /// `PRGn:` file LOAD are the documented single-level model. The remaining pieces — the
-    /// string-form running/default-slot file LOAD, the `END`-returns-across-slots rule, and
-    /// per-slot vs shared variable scoping — are not body-readable in the disassembly and stay
-    /// oracle-pending (queued, `HARVEST_QUEUE.md`).
+    /// `PRGn:` file LOAD (into a non-running OR the running slot) are the documented single-level
+    /// model. The remaining pieces — the bare-name (no `PRGn:`) default-slot file LOAD, the
+    /// `END`-returns-across-slots rule, and per-slot vs shared variable scoping — are not
+    /// body-readable in the disassembly and stay oracle-pending (queued, `HARVEST_QUEUE.md`).
     fn do_exec(&mut self, v: Value) -> Result<(), VmError> {
         if let Value::Str(s) = &v {
             let s = String::from_utf16_lossy(s);
@@ -1175,16 +1177,28 @@ impl Vm {
             match slot_opt {
                 // A `PRGn:` slot distinct from the running one: load the file's program into
                 // that slot and transfer control to it (documented form 1, "Loads and
-                // executes a program"). The running slot (restart) and the bare-name default
-                // slot remain the deferred multi-program model.
+                // executes a program").
                 Some(slot) if slot != self.current_slot && slot != 0 => {
                     let prog = self.compile_slot_file(name)?;
                     self.load_slot_program(slot, prog);
                     self.exec_transfer(slot);
                     Ok(())
                 }
+                // A `PRGn:` slot naming the RUNNING slot (`EXEC "PRG0:file"` while slot 0
+                // runs): load the file's program INTO the running slot and execute it from
+                // the top — documented form 1 applied to the running slot (the corpus loader
+                // idiom). Like a restart, the previous program is abandoned (impossible to
+                // return to it).
+                Some(slot) if slot == self.current_slot => {
+                    let prog = self.compile_slot_file(name)?;
+                    self.load_into_running_slot(prog);
+                    Ok(())
+                }
+                // The bare-name (no `PRGn:`) default-slot load — its exact destination slot
+                // is part of the deferred loader (oracle-pending) — and a `PRG0:` resource
+                // when slot 0 is *not* the running slot remain the deferred multi-program model.
                 _ => Err(VmError::Unsupported(
-                    "EXEC \"file\" into the running or default slot (restart / default-slot load) — M6 multi-program model",
+                    "EXEC \"file\" without a PRGn: slot (default-slot load) — M6 multi-program model",
                 )),
             }
         } else {
@@ -1255,6 +1269,31 @@ impl Vm {
             .iter()
             .map(|v| Value::cell(Value::default_for_suffix(v.name.suffix)))
             .collect();
+        self.pc = 0;
+        self.frames.clear();
+        self.gosub.clear();
+        self.stack.clear();
+        self.data_cursor = 0;
+    }
+
+    /// `EXEC "PRGn:file"` into the RUNNING slot (M6-T6) — replace the currently-executing
+    /// program with one freshly loaded from storage and run it from the top. This is the
+    /// documented form 1 ("Loads and executes a program", exec.yaml) applied to the running
+    /// slot: `EXEC "PRG0:file"` while slot 0 runs — the corpus loader idiom where a small
+    /// slot-0 loader `LOAD`s/`EXEC`s the real program. The loaded program *replaces* the
+    /// running one ([`Vm::program`]/[`Vm::globals`]); because it is impossible to return to
+    /// the previous program the whole execution state (`DEF` frames, the `GOSUB` stack, the
+    /// operand stack, and the `DATA` read cursor) is discarded and the new program's globals
+    /// start at their declared-type zeros. Per-slot I/O state (graphics/sprites/console/
+    /// system variables) is untouched, matching [`Vm::exec_transfer`]/[`Vm::restart_active_slot`].
+    /// The slot number is unchanged (the file loads into the slot already running).
+    fn load_into_running_slot(&mut self, program: Program) {
+        self.globals = program
+            .globals
+            .iter()
+            .map(|v| Value::cell(Value::default_for_suffix(v.name.suffix)))
+            .collect();
+        self.program = program;
         self.pc = 0;
         self.frames.clear();
         self.gosub.clear();
@@ -4345,13 +4384,34 @@ CALL "ADDOUT",2,3 OUT X"#);
     }
 
     #[test]
-    fn exec_string_into_running_slot_stays_deferred() {
-        // The running-slot restart (`EXEC "PRG0:…"` from slot 0) is the deferred model — it
-        // must not silently no-op; it stays `Unsupported` until the restart rule is grounded.
-        let err = run_with_txt("EXEC \"PRG0:SUB\"", &[("SUB", "PRINT 1\nEND")])
+    fn exec_string_into_running_slot_loads_and_runs_from_top() {
+        // documented (exec.yaml form 1): `EXEC "PRG0:file"` while slot 0 runs loads the file's
+        // program INTO the running slot and runs it from the top (the corpus loader idiom).
+        let vm = run_with_txt(
+            "PRINT \"A\";\nEXEC \"PRG0:SUB\"\nPRINT \"NEVER\"",
+            &[("SUB", "PRINT \"B\"\nEND")],
+        )
+        .expect("run");
+        // The slot-0 statement after EXEC is abandoned (can't return to the previous program).
+        assert_eq!(vm.console_text(), "AB");
+    }
+
+    #[test]
+    fn exec_string_running_slot_runs_against_fresh_globals() {
+        // The loaded program replaces the running one and starts with its own zeroed globals —
+        // slot 0's pre-EXEC X is not visible to the loaded program.
+        let vm = run_with_txt("X=99\nEXEC \"PRG0:SUB\"", &[("SUB", "PRINT X\nEND")]).expect("run");
+        assert_eq!(vm.console_text(), "0");
+    }
+
+    #[test]
+    fn exec_string_running_slot_missing_file_is_load_failed() {
+        // hw_verified (exec.yaml): a `PRG0:` resource naming an absent file → Load failed (46),
+        // even when it targets the running slot.
+        let err = run_with_txt("EXEC \"PRG0:NOPE\"", &[])
             .err()
-            .expect("running-slot restart deferred");
-        assert!(matches!(err, VmError::Unsupported(_)));
+            .expect("missing file");
+        assert_eq!(err.errnum(), Some(46));
     }
 
     #[test]

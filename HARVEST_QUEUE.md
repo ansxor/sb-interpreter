@@ -694,8 +694,16 @@ oracle to confirm exact output and promote to `hw_verified`.
     preserves them. The single-program oracle harness CANNOT confirm this: a self-restart needs a
     persistent counter across the restart, which means mid-program SAVEs whose confirm dialogs the
     harness only clears once → the next restart's SAVE dialog hangs. Needs the deferred multi-slot
-    / file-diff harness. The STRING running/default-slot file LOAD (`EXEC "PRG0:…"`) stays
-    VmError::Unsupported.)
+    / file-diff harness.)
+    (UPDATE 2026-06-23, M6-T6: the STRING RUNNING-slot file LOAD `EXEC "PRG0:file"` is now
+    IMPLEMENTED to the documented model (`Vm::load_into_running_slot`): read the TXT body from
+    storage, compile in-VM, REPLACE the running program (`Vm::program`/`globals`), discard all
+    execution state + jump to the top — documented form 1 applied to the running slot, the corpus
+    loader idiom (a slot-0 loader EXECs the real program). Missing file → 46 unchanged. 3 e2e
+    tests. STILL VmError::Unsupported / oracle-pending: the BARE-name (no `PRGn:`) default-slot
+    file LOAD — its destination slot is the deferred loader, same edge as a `PRG0:` resource when
+    slot 0 is NOT the running slot — plus the nested END-returns-across-slots rule and per-slot vs
+    shared variable scoping. These need a ≥2-slot oracle harness, not a single injected program.)
 
 - S-T12c Source read (PRGGET$/PRGNAME$/PRGSIZE): the error guards ARE hw_verified (batch
     2026-06-22, s_t12c): PRGGET$ with no active PRGEDIT -> errnum 38 (the no-PRGEDIT check
