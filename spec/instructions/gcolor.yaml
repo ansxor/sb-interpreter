@@ -16,7 +16,9 @@ summary: "Sets the color used by subsequent graphic drawing instructions; the OU
 semantics:
   - "Two forms, chosen by the return-value count: 0 returns = SET (requires exactly 1 input arg), 1 return = GET (requires 0 input args). Any other (return count, arg count) combination raises errnum 4 (Illegal function call) — return-count [r0,#0xc] cmp #0 (SET) / cmp #1 with argcount [r0,#0x4]==0 (GET) @0x154460..@0x154478 else mov r0,#0x4 @0x154494."
   - "The GET form has two spellings that hit the same handler path (return-count 1, arg-count 0): the statement GCOLOR OUT C32, and the function GCOLOR() used inside an expression (e.g. C=GCOLOR() or passing GCOLOR() as an argument). Both return the current draw color. (sbsave corpus: GCOLOR() in 79 occurrences, e.g. 73AN3J9P/TXT/_CYW4SB3-LIB: C=GCOLOR().)"
-  - "SET stores the popped 32-bit ARGB value directly into the current draw color (str r0,[state+0xc] @0x1544cc); the value is NOT range-checked, so the full 32-bit ARGB code (8 bits each for A,R,G,B) is kept."
+  - "SET stores the popped 32-bit ARGB value directly into the current draw color (str r0,[state+0xc] @0x1544cc); the value is NOT range-checked, so the full 32-bit ARGB code (8 bits each for A,R,G,B) is kept. hw_verified: the SET→GET round-trip preserves all 32 bits VERBATIM, alpha included — `GCOLOR &HFF408080:?GCOLOR()`=-12550016, `GCOLOR -1:?GCOLOR()`=-1, `GCOLOR &H7F112233:?GCOLOR()`=2131829299, `GCOLOR RGB(255,64,128,32):?GCOLOR()`=-12550112. This is the key contrast with BACKCOLOR (which masks the stored color to 24 bits, `& &H00FFFFFF`): GCOLOR's draw color carries its alpha byte (A=255 opaque vs other = transparent), so it is NOT masked."
+  - "hw_verified form guards: the statement OUT spelling `GCOLOR 50:GCOLOR OUT C` reads back 50 (same path as the function form); a wrong (return-count, arg-count) combination raises errnum 4 — `GCOLOR OUT A,B` (2 OUT receivers) → errnum 4, `GCOLOR 5 OUT C` (1 arg + 1 return) → errnum 4, both errline 1."
+  - "hw_verified: writing the GET/function spelling as a BARE statement — `GCOLOR()` with no receiver — is a Syntax error (errnum 3, errline 1), NOT errnum 4. This is the general SmileBASIC rule that an expression / function-call used as a statement is a syntax error (e.g. `RGB(1,2,3)`, `GCLS()`, `GPAGE()`, a bare `5`, `1+2` all → errnum 3), distinct from a value-returning command reached as a statement that then validates its form (`ABS(5)` as a statement → errnum 4). The errnum-3-vs-4 split is decided by the keyword table before GCOLOR's handler runs — see HARVEST_QUEUE (sb-core currently returns errnum 4 for the bare `GCOLOR()` statement; the general parser refinement is queued and is not GCOLOR-specific)."
   - "The color applies to subsequent graphic draw instructions (GPSET/GLINE/GBOX/GTRI/GCIRCLE/GFILL/GPAINT). The alpha byte controls opacity: A=255 is opaque, any other A is treated as transparent. Colors are usually built with the RGB() function, e.g. GCOLOR RGB(255,0,0)."
   - "GET (GCOLOR OUT C32): reads the stored draw color back from state field +0xc and writes it into the single OUT receiver @0x1544d8."
 
@@ -29,14 +31,28 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 draw color (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus: GCOLOR() function-getter form in 79 occurrences, e.g. 73AN3J9P/TXT/_CYW4SB3-LIB (C=GCOLOR()) and 73AN3J9P/TXT/-SETUP- (GCOLOR() passed as an argument) — confirms the GET form is also callable as the function GCOLOR(); GCOLOR &H hex literals and GCOLOR #NAME constants also appear (legal integer color operands)." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7a): GCOLOR (no argument, not OUT/function) -> errnum 4, errline 1; GCOLOR 1,2 (2 args) -> errnum 4, errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 10, harness/harvest/out/gcolor.tsv): full-32-bit SET->GET round-trip via the prog path — GCOLOR &HFF408080:?GCOLOR()=-12550016, GCOLOR -1:?GCOLOR()=-1, GCOLOR &H7F112233:?GCOLOR()=2131829299, GCOLOR RGB(255,64,128,32):?GCOLOR()=-12550112, GCOLOR 0:?GCOLOR()=0 (alpha NEVER stripped, unlike BACKCOLOR's 24-bit mask); statement OUT spelling GCOLOR 50:GCOLOR OUT C -> 50; form guards GCOLOR OUT A,B -> errnum 4 errline 1, GCOLOR 5 OUT C -> errnum 4 errline 1; bare GCOLOR() statement -> errnum 3 errline 1 (general expr-as-statement syntax error, see harness/harvest/out/exprstmt.tsv: RGB(1,2,3)/GCLS()/GPAGE()/5/1+2 all -> errnum 3, ABS(5) -> errnum 4)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # error expects are hw_verified (sb-oracle 2026-06-22 s_t7a); set/get round-trip is disassembled (store/load of the raw color int).
+  # All cases below are hw_verified (sb-oracle 2026-06-24 M7-T2 run 10, gcolor.tsv) except where
+  # noted; the earlier no-arg/2-arg errnum 4 are hw_verified s_t7a (2026-06-22).
   - { name: roundtrip_color, code: "GCOLOR 100\nGCOLOR OUT C\nPRINT C", expect: { stdout: "100" } }
   - { name: roundtrip_function_get, code: "GCOLOR 100\nC=GCOLOR()\nPRINT C", expect: { stdout: "100" } }
   - { name: roundtrip_zero, code: "GCOLOR 0\nGCOLOR OUT C\nPRINT C", expect: { stdout: "0" } }
+  # Full 32-bit ARGB round-trip — alpha preserved verbatim (NOT masked like BACKCOLOR).
+  - { name: roundtrip_argb_alpha, code: "GCOLOR &HFF408080\nPRINT GCOLOR()", expect: { stdout: "-12550016" } }
+  - { name: roundtrip_neg1, code: "GCOLOR -1\nPRINT GCOLOR()", expect: { stdout: "-1" } }
+  - { name: roundtrip_high_alpha, code: "GCOLOR &H7F112233\nPRINT GCOLOR()", expect: { stdout: "2131829299" } }
+  - { name: roundtrip_rgb4, code: "GCOLOR RGB(255,64,128,32)\nPRINT GCOLOR()", expect: { stdout: "-12550112" } }
+  - { name: roundtrip_out_stmt, code: "GCOLOR 50\nGCOLOR OUT C\nPRINT C", expect: { stdout: "50" } }
   - { name: set_rgb_ok, code: "GCOLOR RGB(255,0,0)", expect: { stdout: "" } }
   - { name: no_arg_set_errors, code: "GCOLOR", expect: { error: { errnum: 4 } } }
   - { name: too_many_args_errors, code: "GCOLOR 1,2", expect: { error: { errnum: 4 } } }
+  # Wrong (return-count, arg-count) form combinations → errnum 4.
+  - { name: two_out_receivers_errors, code: "GCOLOR OUT A,B", expect: { error: { errnum: 4 } } }
+  - { name: arg_and_out_errors, code: "GCOLOR 5 OUT C", expect: { error: { errnum: 4 } } }
+  # NOTE: bare `GCOLOR()` statement → errnum 3 (Syntax error) on real SB, but that is a general
+  # expr-as-statement parser rule (sb-core currently returns 4); queued in HARVEST_QUEUE.md, NOT
+  # frozen here as a conformance case.

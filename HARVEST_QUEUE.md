@@ -10,6 +10,18 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
+- [ ] parser (expr-as-statement errnum) · A bare value-function/expression used as a STATEMENT
+  is a Syntax error (errnum 3) on real SB 3.6.0, NOT errnum 4 — hw_verified 2026-06-24 (M7-T2 run
+  10, harness/harvest/out/exprstmt.tsv): `GCOLOR()`, `RGB(1,2,3)`, `GCLS()`, `GPAGE()`, a bare `5`,
+  `1+2` all → errnum 3 errline 1. Decisively NON-uniform: `ABS(5)` as a statement → errnum 4 (a
+  value-returning command reached as a statement that then validates its 0-return form), so the
+  3-vs-4 split is decided by the keyword/command table BEFORE the handler runs. assumption: sb-core
+  routes a paren-form `NAME(args)` statement to the builtin (GCOLOR/RGB → errnum 4) or silently
+  discards it (ABS/GCLS → no error); it should instead raise errnum 3 for the genuine
+  expr-as-statement forms while still allowing a user-DEF `MYDEF(a,b)` paren call as a statement
+  (which sb-core already supports). This is a cross-instruction parser refinement, not a single
+  slice — a value-only family (GCOLOR's own value contract is hw_verified + frozen).
+
 - [ ] M3-T4 (BGGET pixel-coord read) · The pixel→char conversion rounding (flag=1) and the
   off-map read behavior are not framebuffer-harvested. assumption: char coord = floor(pixel /
   tileSize) via `div_euclid`, then the cell index is wrapped modulo the map width/height
