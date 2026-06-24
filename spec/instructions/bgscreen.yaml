@@ -25,7 +25,11 @@ semantics:
   - "WIDTH and HEIGHT must each be >= 1: width<1 or height<1 raises errnum 10 (Out of range) — cmp r5(=1),value ble(ok) else mov r0,#0xa @0x166aac (width) / @0x166ad4 (height)."
   - "WIDTH * HEIGHT must be <= 16383: the handler computes the product (smull r4,r0,height,width @0x166af4) and compares it against the constant 0x3fff (16383) @0x166b64; a product greater than 16383 raises errnum 10 (Out of range) — bcs(ok) else mov r0,#0xa @0x166b0c."
   - "TILE SIZE (4-argument form): the 4th argument is evaluated and mapped to an internal format code — 8 -> 3, 16 -> 4, 32 -> 5 (cmp #0x8 moveq r0,#3 @0x1669d8 / cmp #0x10 keep 4 @0x1669e4 / cmp #0x20 moveq r0,#5 @0x1669f0). Any other value raises errnum 4 (Illegal function call) — mov r0,#0x4 @0x166a00. With only 3 arguments the code defaults to 4 (= 16 px) — mov r7,#4 / str r7,[sp,#0x8] @0x16697c."
-  - "Initial (power-on / ACLS) map size for a layer is 25 x 15 — the right size to fill the upper (top) screen with 16x16 tiles (documented)."
+  - "Initial (power-on / ACLS) map size for a layer is 25 x 15 — the right size to fill the upper (top) screen with 16x16 tiles (documented; hw_verified: a fresh layer's whole-screen BGSAVE places a marker at (0,1) at array index 25 and the last cell (24,14) at index 374, i.e. width 25 x height 15)."
+  - "The WIDTH set here IS the layer's row-major tilemap stride: a whole-screen BGSAVE lays cells out as index = y*width+x (hw_verified 2026-06-24, framebuffer-free via BGSAVE read-back). WIDTH is the FIRST size argument, not the second — BGSCREEN 0,64,8 gives stride 64 (marker at (0,1) → index 64, not 8); BGSCREEN 0,8,64 gives stride 8."
+  - "Resizing a layer with BGSCREEN reallocates a FRESH, fully-cleared map: a cell written before a BGSCREEN call reads back as 0 (empty) afterward (hw_verified 2026-06-24). The map-buffer reallocation/zero is done by helper FUN_0011605c (called @0x166b50 after the new width/height are stored)."
+  - "The 4th (tile-size) argument is orthogonal to the tilemap DATA layout — it selects only the on-screen pixel size (8/16/32), not the cell stride (BGSCREEN 0,32,32,8 still has stride 32; hw_verified)."
+  - "BGSCREEN is per-layer: resizing one layer does not change another layer's size (BGSCREEN 0,64,8 leaves layer 1 at the default width 25; hw_verified)."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "used as a function (return requested), the argument count is not 3 or 4, or the 4-arg tile size is not 8/16/32" }
@@ -37,15 +41,32 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer/map-size handling (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus: the 4-argument BGSCREEN layer,width,height,tileSize form is real (~100+ programs), tile size always 8/16/32, e.g. 'BGSCREEN 3,50,120,8' in 2XVV233J/TXT/GAME.PRG and 'BGSCREEN 1,64,64,16' in 1DVK34J/TXT/HNZTL. (oracle-pending: exact tile-size effect, queued)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9a): BGSCREEN 4,32,32 -> errnum 10; BGSCREEN -1,32,32 -> errnum 10; BGSCREEN 0,128,128 (16384>16383) -> errnum 10; BGSCREEN 0,32,32,10 (bad tile size) -> errnum 4. All errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 39, bgscreen.tsv) — width side-effect via BGSAVE row-major stride (framebuffer-free): DEFAULT map 25x15 (BGPUT 0,0,1 -> BGSAVE A[25]=value, A[1]=0; BGPUT 0,24,14 -> A[374]); WIDTH=first arg sets stride (BGSCREEN 0,32,32 -> A[32]; 0,64,8 -> A[64] and A[8]=0; 0,8,64 -> A[8]); resize CLEARS the map (BGSCREEN 0,32,32:BGPUT 0,5,5,99:BGSCREEN 0,16,16:BGSAVE -> A[5*16+5]=0); tile size orthogonal (0,32,32,8 still stride 32); per-layer (resize layer0 leaves layer1 width 25)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Map-size side effects need the BG framebuffer oracle (O-T6, queued); error expects are
-  # hw_verified (sb-oracle 2026-06-22 s_t9a).
+  # Error expects hw_verified (sb-oracle 2026-06-22 s_t9a). Map-size side effects are
+  # framebuffer-free: BGSCREEN sets the layer's row-major BGSAVE stride (width), read back
+  # through the saved array index (hw_verified 2026-06-24, bgscreen.tsv).
   - { name: set_ok_3arg, code: "BGSCREEN 0,32,32", expect: { stdout: "" } }
   - { name: set_ok_4arg, code: "BGSCREEN 1,64,64,16", expect: { stdout: "" } }
   - { name: layer_out_of_range, code: "BGSCREEN 4,32,32", expect: { error: { errnum: 10 } } }
   - { name: layer_negative, code: "BGSCREEN -1,32,32", expect: { error: { errnum: 10 } } }
   - { name: area_too_big, code: "BGSCREEN 0,128,128", expect: { error: { errnum: 10 } } }
   - { name: bad_tile_size, code: "BGSCREEN 0,32,32,10", expect: { error: { errnum: 4 } } }
+  # Default (no BGSCREEN) map is 25 x 15: (0,1) -> A[25] (NOT A[1]); last cell (24,14) -> A[374].
+  - { name: default_width_25, code: "DIM A[400]\nBGPUT 0,0,1,22\nBGSAVE 0,A\nPRINT A[25]", expect: { stdout: "22" } }
+  - { name: default_not_colmajor, code: "DIM A[400]\nBGPUT 0,0,1,22\nBGSAVE 0,A\nPRINT A[1]", expect: { stdout: "0" } }
+  - { name: default_lastcell_25x15, code: "DIM A[400]\nBGPUT 0,24,14,77\nBGSAVE 0,A\nPRINT A[374]", expect: { stdout: "77" } }
+  # WIDTH (first size arg) is the stride: (0,1) -> A[width].
+  - { name: width32_stride, code: "BGSCREEN 0,32,32\nDIM A[32*32]\nBGPUT 0,0,1,22\nBGSAVE 0,A\nPRINT A[32]", expect: { stdout: "22" } }
+  - { name: width64_stride, code: "BGSCREEN 0,64,8\nDIM A[64*8]\nBGPUT 0,0,1,33\nBGSAVE 0,A\nPRINT A[64]", expect: { stdout: "33" } }
+  - { name: width64_not_height, code: "BGSCREEN 0,64,8\nDIM A[64*8]\nBGPUT 0,0,1,33\nBGSAVE 0,A\nPRINT A[8]", expect: { stdout: "0" } }
+  - { name: width8_is_first_arg, code: "BGSCREEN 0,8,64\nDIM A[8*64]\nBGPUT 0,0,1,44\nBGSAVE 0,A\nPRINT A[8]", expect: { stdout: "44" } }
+  # Resize reallocates a fresh CLEARED map: a cell written before the resize reads back as 0.
+  - { name: resize_clears_map, code: "BGSCREEN 0,32,32\nBGPUT 0,5,5,99\nBGSCREEN 0,16,16\nDIM A[16*16]\nBGSAVE 0,A\nPRINT A[5*16+5]", expect: { stdout: "0" } }
+  # 4th (tile-size) arg is orthogonal to the data layout: stride stays 32.
+  - { name: tile_size_orthogonal, code: "BGSCREEN 0,32,32,8\nDIM A[32*32]\nBGPUT 0,0,1,55\nBGSAVE 0,A\nPRINT A[32]", expect: { stdout: "55" } }
+  # Per-layer: resizing layer 0 leaves layer 1 at the default width 25.
+  - { name: per_layer_independent, code: "BGSCREEN 0,64,8\nDIM A[400]\nBGPUT 1,0,1,66\nBGSAVE 1,A\nPRINT A[25]", expect: { stdout: "66" } }

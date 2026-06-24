@@ -1,0 +1,31 @@
+# BGSCREEN value contract — the map-size side effect is framebuffer-free: BGSCREEN sets the
+# layer's row-major stride (width), observable by BGPUT-ing a marker at a known (x,y) and
+# reading where it lands in the whole-screen BGSAVE array (index = y*width+x, hw_verified run 38).
+
+# --- Default (initial) map size: 25 x 15 (no BGSCREEN setup) ---
+# (0,0) -> A[0]; (0,1) -> A[width]; if width=25, marker lands at A[25], NOT A[1].
+bgscr_def_origin|DIM A[400]:BGPUT 0,0,0,11:BGSAVE 0,A|A[0]|prog
+bgscr_def_width|DIM A[400]:BGPUT 0,0,1,22:BGSAVE 0,A|A[25]|prog
+bgscr_def_not_colmajor|DIM A[400]:BGPUT 0,0,1,22:BGSAVE 0,A|A[1]|prog
+# Last cell of a 25x15 map is (24,14) -> index 14*25+24 = 374 (proves width 25 AND height 15).
+bgscr_def_lastcell|DIM A[400]:BGPUT 0,24,14,77:BGSAVE 0,A|A[374]|prog
+
+# --- BGSCREEN sets the stride to WIDTH (first size arg) ---
+# width 32: (0,1) -> A[32]
+bgscr_w32|BGSCREEN 0,32,32:DIM A[32*32]:BGPUT 0,0,1,22:BGSAVE 0,A|A[32]|prog
+# width 64, height 8: (0,1) -> A[64], NOT A[8] (distinguishes width from height)
+bgscr_w64|BGSCREEN 0,64,8:DIM A[64*8]:BGPUT 0,0,1,33:BGSAVE 0,A|A[64]|prog
+bgscr_w64_not8|BGSCREEN 0,64,8:DIM A[64*8]:BGPUT 0,0,1,33:BGSAVE 0,A|A[8]|prog
+# width 8, height 64 (swap): (0,1) -> A[8] (the FIRST arg is the stride/width)
+bgscr_w8|BGSCREEN 0,8,64:DIM A[8*64]:BGPUT 0,0,1,44:BGSAVE 0,A|A[8]|prog
+
+# --- Resize reallocates a fresh (cleared) map ---
+# Put a cell, then resize the same layer; the cell at its new index is empty (0) if cleared.
+bgscr_resize_clears|BGSCREEN 0,32,32:BGPUT 0,5,5,99:BGSCREEN 0,16,16:DIM A[16*16]:BGSAVE 0,A|A[5*16+5]|prog
+
+# --- 4th arg (tile size) is orthogonal to the map data layout ---
+# tile size 8 still gives width-32 stride: (0,1) -> A[32]
+bgscr_tile8_layout|BGSCREEN 0,32,32,8:DIM A[32*32]:BGPUT 0,0,1,55:BGSAVE 0,A|A[32]|prog
+
+# --- Per-layer independence: resizing layer 0 does not change layer 1's default 25 width ---
+bgscr_layer_indep|BGSCREEN 0,64,8:DIM A[400]:BGPUT 1,0,1,66:BGSAVE 1,A|A[25]|prog
