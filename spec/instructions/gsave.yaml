@@ -54,11 +54,16 @@ sources:
   - { type: community, ref: "sbsave corpus: GSAVE appears ~520x — all four documented arg counts occur: 3-arg page,array,flag (e.g. 4K24P3MD/TXT/VFONT.LIB 'GSAVE 3,GRPF%,1'), 7-arg page,x,y,w,h,array,flag ('GSAVE 5,SX,SY,16,16,T%,1'), and GRPF -1 source ('GSAVE -1,0,0,512,512,T%,0'). convert_flag is commonly written as TRUE/FALSE/#TRUE (= 1/0). Confirms the signatures are legal; runtime output unproven (framebuffer oracle pending, O-T6)." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7d): GSAVE 0,0,W,1 (4 args, W a DIM'd array) -> errnum 4, errline 1; GSAVE 6,W,1 (source page 6, out of -1..5) -> errnum 10; A=GSAVE(W,1) (used as a function) -> errnum 4." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-23 (s_t7d_bitmap): a 2-arg whole-area GSAVE auto-expands the 1-D array to 512x512 = 262144 elements (DIM W[0]:GSAVE W,1:LEN(W) -> 262144); a 6-arg 8x8 sub-rect -> 64 elements. convert_flag 1 stores the raw RGBA5551 physical code (red GPSET 0,0 -> W[0] = 63489 = 0xF801), flag 0 stores the 32-bit logical color (red -> W%[0] = -524288 = 0xFFF80000 signed, = 4294443008 unsigned in a Double array). A string dest array -> errnum 8 (Type mismatch)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 51, harness/harvest/out/gsave.tsv, case file harness/harvest/gsave_cases.txt): the saved array contents pinned by direct read-back. (1) FILL ORDER is ROW-MAJOR — a 2x2 sub-rect painted (10,10)=red (11,10)=green (10,11)=blue (11,11)=white saved raw gives W=[63489,1985,63,65535] (element 1 is x+1 same row, element 2 is the next row), confirming W[j*w+i]=pixel(x+i,y+j). (2) RGBA5551 raw codes (flag 1, layout R[15:11] G[10:6] B[5:1] A[0]): red=63489 (0xF801), green=1985 (0x07C1), blue=63 (0x003F), white=65535 (0xFFFF). (3) 32-bit logical (flag 0, into Int array, signed; 5-bit channel left-shift-expand so 255->0xF8): red=-524288 (0xFFF80000), green=-16713728 (0xFF00F800), blue=-16776968 (0xFF0000F8), white=-460552 (0xFFF8F8F8). (4) An untouched pixel reads 0 under both flags. (5) The explicit src_page arg selects the source page, NOT the current manip page: with red on page 0 and the manip page switched to a blank page 1 (GPAGE 0,1:GCLS), GSAVE 0,... -> 63489 (page 0 red) while GSAVE 1,... -> 0 (page 1 blank); and a no-page-arg GSAVE reads the current manip page (page 1) -> 0. (6) The 2-arg whole-area form is row-major from pixel(0,0): W[0]=pixel(0,0), W[1]=pixel(1,0), LEN=262144. sb-core matches every value exactly (no code change)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7d). Pixel/array-content checks need the framebuffer oracle (O-T6, queued).
+  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7d); array-content +
+  # fill-order + cross-page expects hw_verified via direct array read-back (M7-T2 run 51,
+  # harness/harvest/out/gsave.tsv). raw (flag 1) = RGBA5551 code; logical (flag 0, Int array)
+  # = signed 32-bit ARGB. red=63489/-524288, green=1985/-16713728, blue=63/-16776968,
+  # white=65535/-460552, transparent=0/0.
   - { name: save_whole_default_ok, code: "DIM WORK[0]\nGSAVE WORK,1", expect: { stdout: "" } }
   - { name: save_page_whole_ok, code: "DIM WORK[0]\nGSAVE 0,WORK,1", expect: { stdout: "" } }
   - { name: save_subrect_ok, code: "DIM WORK[0]\nGSAVE 0,0,64,64,WORK,1", expect: { stdout: "" } }
@@ -67,3 +72,25 @@ tests:
   - { name: bad_src_page_errors, code: "DIM WORK[0]\nGSAVE 6,WORK,1", expect: { error: { errnum: 10 } } }
   - { name: string_array_type_mismatch, code: "DIM WORK$[64]\nGSAVE 0,0,8,8,WORK$,1", expect: { error: { errnum: 8 } } }
   - { name: as_function_errors, code: "DIM WORK[0]\nA=GSAVE(WORK,1)", expect: { error: { errnum: 4 } } }
+  # --- fill order is ROW-MAJOR: 2x2 sub-rect (10,10)=red (11,10)=green (10,11)=blue (11,11)=white ---
+  - { name: roworder_raw, code: "GCLS:GPSET 10,10,RGB(255,0,0):GPSET 11,10,RGB(0,255,0):GPSET 10,11,RGB(0,0,255):GPSET 11,11,RGB(255,255,255):DIM W[0]:GSAVE 10,10,2,2,W,1:PRINT STR$(W[0])+\" \"+STR$(W[1])+\" \"+STR$(W[2])+\" \"+STR$(W[3])", expect: { stdout: "63489 1985 63 65535" } }
+  - { name: roworder_logical, code: "GCLS:GPSET 10,10,RGB(255,0,0):GPSET 11,10,RGB(0,255,0):GPSET 10,11,RGB(0,0,255):GPSET 11,11,RGB(255,255,255):DIM W%[0]:GSAVE 10,10,2,2,W%,0:PRINT STR$(W%[0])+\" \"+STR$(W%[1])+\" \"+STR$(W%[2])+\" \"+STR$(W%[3])", expect: { stdout: "-524288 -16713728 -16776968 -460552" } }
+  # --- raw (flag 1) RGBA5551 codes per color ---
+  - { name: raw_red, code: "GCLS:GPSET 0,0,RGB(255,0,0):DIM W[0]:GSAVE 0,0,1,1,W,1:PRINT W[0]", expect: { stdout: "63489" } }
+  - { name: raw_green, code: "GCLS:GPSET 0,0,RGB(0,255,0):DIM W[0]:GSAVE 0,0,1,1,W,1:PRINT W[0]", expect: { stdout: "1985" } }
+  - { name: raw_blue, code: "GCLS:GPSET 0,0,RGB(0,0,255):DIM W[0]:GSAVE 0,0,1,1,W,1:PRINT W[0]", expect: { stdout: "63" } }
+  - { name: raw_white, code: "GCLS:GPSET 0,0,RGB(255,255,255):DIM W[0]:GSAVE 0,0,1,1,W,1:PRINT W[0]", expect: { stdout: "65535" } }
+  # --- logical (flag 0, Int array) signed 32-bit ARGB per color ---
+  - { name: log_red, code: "GCLS:GPSET 0,0,RGB(255,0,0):DIM W%[0]:GSAVE 0,0,1,1,W%,0:PRINT W%[0]", expect: { stdout: "-524288" } }
+  - { name: log_green, code: "GCLS:GPSET 0,0,RGB(0,255,0):DIM W%[0]:GSAVE 0,0,1,1,W%,0:PRINT W%[0]", expect: { stdout: "-16713728" } }
+  - { name: log_blue, code: "GCLS:GPSET 0,0,RGB(0,0,255):DIM W%[0]:GSAVE 0,0,1,1,W%,0:PRINT W%[0]", expect: { stdout: "-16776968" } }
+  - { name: log_white, code: "GCLS:GPSET 0,0,RGB(255,255,255):DIM W%[0]:GSAVE 0,0,1,1,W%,0:PRINT W%[0]", expect: { stdout: "-460552" } }
+  # --- untouched pixel reads 0 under both flags ---
+  - { name: raw_transparent, code: "GCLS:DIM W[0]:GSAVE 5,5,1,1,W,1:PRINT W[0]", expect: { stdout: "0" } }
+  - { name: log_transparent, code: "GCLS:DIM W%[0]:GSAVE 5,5,1,1,W%,0:PRINT W%[0]", expect: { stdout: "0" } }
+  # --- explicit src_page selects that page; no-page-arg reads the current manip page ---
+  - { name: xpage_src0, code: "GCLS:GPSET 0,0,RGB(255,0,0):GPAGE 0,1:GCLS:DIM W[0]:GSAVE 0,0,0,1,1,W,1:PRINT W[0]", expect: { stdout: "63489" } }
+  - { name: xpage_src1, code: "GCLS:GPSET 0,0,RGB(255,0,0):GPAGE 0,1:GCLS:DIM W[0]:GSAVE 1,0,0,1,1,W,1:PRINT W[0]", expect: { stdout: "0" } }
+  - { name: default_page_is_manip, code: "GCLS:GPSET 0,0,RGB(255,0,0):GPAGE 0,1:GCLS:DIM W[0]:GSAVE 0,0,1,1,W,1:PRINT W[0]", expect: { stdout: "0" } }
+  # --- 2-arg whole-area save is row-major from (0,0); LEN = 512x512 ---
+  - { name: whole_order, code: "GCLS:GPSET 0,0,RGB(255,0,0):GPSET 1,0,RGB(0,255,0):DIM W[0]:GSAVE W,1:PRINT STR$(W[0])+\" \"+STR$(W[1])+\" \"+STR$(LEN(W))", expect: { stdout: "63489 1985 262144" } }

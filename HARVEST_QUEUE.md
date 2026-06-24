@@ -450,6 +450,16 @@ oracle to confirm exact output and promote to `hw_verified`.
   -524288 signed / 4294443008 in a Double array); 1-D dest auto-expands (whole-area 262144, 8×8 = 64).
   GSAVE/GLOAD round-trip a pixel exactly for both flags. Folded into graphics_bitmap.yaml + the specs
   (hw_verified). The pixel-EXACT PNG golden of a blit is still M2-T5 (compositor + O-T6).
+- [x] S-T7d GSAVE fill order + color table + cross-page · HARVESTED 2026-06-24 (M7-T2 run 51,
+  harness/harvest/out/gsave.tsv) WITHOUT a framebuffer — the saved array contents ARE the read-back.
+  FILL ORDER is ROW-MAJOR (W[j*w+i]=pixel(x+i,y+j); a 4-color 2x2 sub-rect → [red,green,blue,white]).
+  RGBA5551 raw codes (flag 1): green=1985, blue=63, white=65535 (red 63489 was already verified).
+  32-bit logical (flag 0, Int array, signed): green=-16713728 (0xFF00F800), blue=-16776968, white=-460552.
+  Transparent pixel → 0 under both flags. The explicit src_page arg selects that page (not the manip page);
+  no-page-arg reads the current manip page. Folded into gsave.yaml; gsave bumped disassembled→hw_verified.
+  Resolves the GSAVE half of the deferred "array side-effects" beyond the single red pixel. (GPUTCHR stays
+  disassembled: sb-core does not implement glyph rendering / the system-font ROM, so its pixel side-effects
+  are not yet replayable in the gate — a font-ROM impl task, not an in-loop harvest.)
 - [ ] M2-T3 GRPF (source page -1) content · GCOPY/GSAVE with src_page -1 (GRPF, the captured-screen plane)
   is accepted (no error, hw_verified) but GRPF is not backed in the GRP model — reads yield transparent
   pixels. The real GRPF content needs the framebuffer/screen-capture model (O-T6). Implemented as blank; queued.

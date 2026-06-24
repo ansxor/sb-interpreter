@@ -1,0 +1,38 @@
+# GSAVE page->array side-effect harvest — direct array read-back (the saved pixels ARE the
+# numeric array contents; no framebuffer/GSPOIT needed). Arg-shape + auto-expand + the single
+# red-pixel flag values are already hw_verified (gsave.yaml s_t7d / s_t7d_bitmap). This run
+# pins the remaining headline behaviors: the array FILL ORDER (row-major?), the flag-0 (32-bit
+# logical) and flag-1 (raw RGBA5551) words for several colors, the cross-page source arg, and
+# the transparent-pixel readback. Int arrays so flag-0 logical words read back as signed i32.
+#
+# Row-major fill order: a 2x2 sub-rect at (10,10) painted with 4 distinct colors —
+# (10,10)=red (11,10)=green (10,11)=blue (11,11)=white. Save 2x2 raw (flag 1), read W[0..3].
+# Row-major => W=[red,green,blue,white]; column-major => W=[red,blue,green,white].
+roworder_raw|GCLS:GPSET 10,10,RGB(255,0,0):GPSET 11,10,RGB(0,255,0):GPSET 10,11,RGB(0,0,255):GPSET 11,11,RGB(255,255,255):DIM W[0]:GSAVE 10,10,2,2,W,1:R$=STR$(W[0])+" "+STR$(W[1])+" "+STR$(W[2])+" "+STR$(W[3])|R$|progstr
+# Same 2x2, flag 0 (32-bit logical), read into an INT array -> signed i32 logical words.
+roworder_logical|GCLS:GPSET 10,10,RGB(255,0,0):GPSET 11,10,RGB(0,255,0):GPSET 10,11,RGB(0,0,255):GPSET 11,11,RGB(255,255,255):DIM W%[0]:GSAVE 10,10,2,2,W%,0:R$=STR$(W%[0])+" "+STR$(W%[1])+" "+STR$(W%[2])+" "+STR$(W%[3])|R$|progstr
+# Flag-1 raw RGBA5551 codes for the basic colors (single pixel each).
+raw_red|GCLS:GPSET 0,0,RGB(255,0,0):DIM W[0]:GSAVE 0,0,1,1,W,1:R$=STR$(W[0])|R$|progstr
+raw_green|GCLS:GPSET 0,0,RGB(0,255,0):DIM W[0]:GSAVE 0,0,1,1,W,1:R$=STR$(W[0])|R$|progstr
+raw_blue|GCLS:GPSET 0,0,RGB(0,0,255):DIM W[0]:GSAVE 0,0,1,1,W,1:R$=STR$(W[0])|R$|progstr
+raw_white|GCLS:GPSET 0,0,RGB(255,255,255):DIM W[0]:GSAVE 0,0,1,1,W,1:R$=STR$(W[0])|R$|progstr
+# Flag-0 logical (32-bit) words for the basic colors, read into INT array (signed). Reveals
+# the 5-bit-quantize-then-expand round (255 -> top5 11111 -> 0xF8=248 per channel) + opaque A.
+log_red|GCLS:GPSET 0,0,RGB(255,0,0):DIM W%[0]:GSAVE 0,0,1,1,W%,0:R$=STR$(W%[0])|R$|progstr
+log_green|GCLS:GPSET 0,0,RGB(0,255,0):DIM W%[0]:GSAVE 0,0,1,1,W%,0:R$=STR$(W%[0])|R$|progstr
+log_blue|GCLS:GPSET 0,0,RGB(0,0,255):DIM W%[0]:GSAVE 0,0,1,1,W%,0:R$=STR$(W%[0])|R$|progstr
+log_white|GCLS:GPSET 0,0,RGB(255,255,255):DIM W%[0]:GSAVE 0,0,1,1,W%,0:R$=STR$(W%[0])|R$|progstr
+# Transparent (untouched) pixel: flag 1 raw, flag 0 logical -> both 0?
+raw_transparent|GCLS:DIM W[0]:GSAVE 5,5,1,1,W,1:R$=STR$(W[0])|R$|progstr
+log_transparent|GCLS:DIM W%[0]:GSAVE 5,5,1,1,W%,0:R$=STR$(W%[0])|R$|progstr
+# Cross-page source arg reads the named page, NOT the current manip page. Draw red on page 0,
+# switch manip page to 1 (blank), then GSAVE 0,... reads page 0 (red) and GSAVE 1,... reads
+# page 1 (transparent 0). 7-arg page,x,y,w,h,array,flag form.
+xpage_src0|GCLS:GPSET 0,0,RGB(255,0,0):GPAGE 0,1:GCLS:DIM W[0]:GSAVE 0,0,0,1,1,W,1:R$=STR$(W[0])|R$|progstr
+xpage_src1|GCLS:GPSET 0,0,RGB(255,0,0):GPAGE 0,1:GCLS:DIM W[0]:GSAVE 1,0,0,1,1,W,1:R$=STR$(W[0])|R$|progstr
+# Default (no page arg) reads the CURRENT manip page. After GPAGE 0,1 (manip=blank page 1) a 6-arg
+# GSAVE x,y,w,h,array,flag reads page 1 -> transparent 0 (even though page 0 has red).
+default_page|GCLS:GPSET 0,0,RGB(255,0,0):GPAGE 0,1:GCLS:DIM W[0]:GSAVE 0,0,1,1,W,1:R$=STR$(W[0])|R$|progstr
+# Whole-area 2-arg save: element[0] is pixel(0,0); element[1] is pixel(1,0) (row-major).
+# Paint (0,0)=red (1,0)=green, save whole page raw, read first two + LEN.
+whole_order|GCLS:GPSET 0,0,RGB(255,0,0):GPSET 1,0,RGB(0,255,0):DIM W[0]:GSAVE W,1:R$=STR$(W[0])+" "+STR$(W[1])+" "+STR$(LEN(W))|R$|progstr
