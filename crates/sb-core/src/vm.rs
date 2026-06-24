@@ -133,6 +133,7 @@ impl VmError {
 }
 
 /// One `DEF`/`COMMON DEF` activation record.
+#[derive(Clone)]
 struct Frame {
     /// Frame-local storage cells, indexed by [`VarRef::Local`]: params, then `OUT`
     /// params, then body-declared/auto-declared locals.
@@ -155,6 +156,30 @@ struct Frame {
 struct LoadedSlot {
     program: Program,
     globals: Vec<Cell>,
+}
+
+/// A saved caller execution context for the documented `EXEC` cross-slot return rule
+/// (M6-T6). `EXEC`-ing into a *different* slot transfers control there, but the docs say
+/// "It is possible to return by using END in a program started with EXEC in another SLOT"
+/// — so a program run by a cross-slot `EXEC` returns to its launcher when it reaches `END`
+/// (or falls off the end of its code). This record holds the launcher's full resume state,
+/// captured the moment control is handed to the target slot. The stack of these supports
+/// nesting (A `EXEC`s B `EXEC`s C → C's `END` returns to B, B's to A). A running-slot
+/// `EXEC` (restart / `EXEC "PRG0:…"`) is not cross-slot and pushes nothing.
+struct ExecReturn {
+    /// The launcher's active program SLOT, to swap back to on return.
+    slot: u8,
+    /// `pc` to resume at in the launcher (the op after the `EXEC` statement).
+    pc: usize,
+    /// The launcher's operand stack (balanced at the statement boundary, but captured
+    /// faithfully in case `EXEC` runs from inside an expression-y context).
+    stack: Vec<Value>,
+    /// The launcher's `DEF`-call frames (so an `EXEC` from inside a function returns into it).
+    frames: Vec<Frame>,
+    /// The launcher's `GOSUB` return stack.
+    gosub: Vec<usize>,
+    /// The launcher's `DATA` read cursor.
+    data_cursor: usize,
 }
 
 /// The stack VM.
@@ -269,6 +294,11 @@ pub struct Vm {
     /// (its program/globals swapped into [`Vm::program`]/[`Vm::globals`]) and restores it
     /// on return. Distinct from [`Vm::current_slot`] (the file-resource default slot).
     active_slot: u8,
+    /// Pending cross-slot `EXEC` return contexts (M6-T6). A cross-slot `EXEC` pushes the
+    /// launcher's resume state here; when the EXEC'd program reaches `END` (or runs off the
+    /// end of its code) the top context is restored, returning control to the launcher — the
+    /// documented "return by using END in a program started with EXEC in another SLOT" rule.
+    exec_returns: Vec<ExecReturn>,
     /// The active `PRGEDIT` edit target: `(slot, current line index)`. `None` is the *cold*
     /// state — no PRGEDIT has run, so `PRGGET$`/`PRGSET`/`PRGINS`/`PRGDEL` raise errnum 38.
     /// In real SB this state is session-persistent (a shared global, see the `prgset` spec).
@@ -323,6 +353,7 @@ impl Vm {
             slot_used: [true, false, false, false],
             slot_programs: Default::default(),
             active_slot: 0,
+            exec_returns: Vec::new(),
             prg_edit: None,
             device: Default::default(),
         }
@@ -536,6 +567,10 @@ impl Vm {
     pub fn run(&mut self) -> Result<Halt, VmError> {
         loop {
             if self.pc >= self.program.code.len() {
+                // Fell off the end = an implicit `END`; a cross-slot `EXEC` returns here.
+                if self.try_exec_return() {
+                    continue;
+                }
                 return Ok(Halt::End);
             }
             let here = self.pc;
@@ -543,6 +578,13 @@ impl Vm {
             self.pc += 1;
             match self.step(op) {
                 Ok(None) => {}
+                Ok(Some(Halt::End)) => {
+                    // `END` returns to a cross-slot `EXEC` launcher if one is pending.
+                    if self.try_exec_return() {
+                        continue;
+                    }
+                    return Ok(Halt::End);
+                }
                 Ok(Some(halt)) => return Ok(halt),
                 Err(e) => {
                     let e = self.attach_line(e, here);
@@ -1236,17 +1278,47 @@ impl Vm {
     /// runs against its own globals (swapped in by [`Vm::activate_slot`]). When the EXEC'd
     /// program ends, the run ends.
     ///
-    /// The nested `END`-returns-across-slots rule (a program EXEC'd into another slot returning
-    /// to its launcher) and DIRECT-mode gating remain oracle-pending (queued,
-    /// `HARVEST_QUEUE.md`). The running-slot *restart* is [`Vm::restart_active_slot`].
+    /// Per the documented cross-slot return rule, the launcher's full execution state is
+    /// captured into [`Vm::exec_returns`] before the swap, so that an `END` in the EXEC'd
+    /// program (handled by [`Vm::try_exec_return`]) hands control back to the launcher. The
+    /// running-slot *restart* is [`Vm::restart_active_slot`]. DIRECT-mode gating remains
+    /// oracle-pending (queued, `HARVEST_QUEUE.md`).
     fn exec_transfer(&mut self, target: u8) {
+        // Capture the launcher's resume state for the documented END-returns rule (the `pc`
+        // already points past the EXEC statement). `target != active_slot` always holds here.
+        self.exec_returns.push(ExecReturn {
+            slot: self.active_slot,
+            pc: self.pc,
+            stack: std::mem::take(&mut self.stack),
+            frames: std::mem::take(&mut self.frames),
+            gosub: std::mem::take(&mut self.gosub),
+            data_cursor: self.data_cursor,
+        });
         self.activate_slot(target);
         self.current_slot = target;
         self.pc = 0;
-        self.frames.clear();
-        self.gosub.clear();
-        self.stack.clear();
         self.data_cursor = 0;
+    }
+
+    /// The documented cross-slot `EXEC` return (M6-T6): when the active program reaches `END`
+    /// (or falls off the end of its code), if a cross-slot `EXEC` is pending its launcher is
+    /// restored and `true` is returned so the run continues in the launcher; otherwise `false`
+    /// (a genuine halt). This realises "It is possible to return by using END in a program
+    /// started with EXEC in another SLOT" (exec.md). The launcher's program/globals are swapped
+    /// back via [`Vm::activate_slot`] and its pc/stack/frames/gosub/data-cursor restored.
+    /// `STOP` does NOT trigger a return (only `END` / end-of-code does), matching the docs.
+    fn try_exec_return(&mut self) -> bool {
+        let Some(ret) = self.exec_returns.pop() else {
+            return false;
+        };
+        self.activate_slot(ret.slot);
+        self.current_slot = ret.slot;
+        self.pc = ret.pc;
+        self.stack = ret.stack;
+        self.frames = ret.frames;
+        self.gosub = ret.gosub;
+        self.data_cursor = ret.data_cursor;
+        true
     }
 
     /// `EXEC <running slot>` restart (M6-T6) — re-run the active program from the top. Unlike
@@ -4279,10 +4351,35 @@ CALL "ADDOUT",2,3 OUT X"#);
     #[test]
     fn exec_numeric_transfers_to_loaded_slot() {
         // documented (exec.yaml): `EXEC n` executes the program already loaded in slot n.
-        // Control transfers — the slot-1 program runs; the slot-0 statement *after* EXEC is
-        // abandoned (impossible to return to the previous program).
-        let vm = run_with_slot1("PRINT \"A\";\nEXEC 1\nPRINT \"NEVER\"", "PRINT \"B\"\nEND");
-        assert_eq!(vm.console_text(), "AB");
+        // Control transfers to slot 1 ("B"); then per the documented cross-slot return rule
+        // ("It is possible to return by using END in a program started with EXEC in another
+        // SLOT") slot 1's END returns to the launcher, resuming right after the EXEC → "C".
+        let vm = run_with_slot1("PRINT \"A\";\nEXEC 1\nPRINT \"C\"", "PRINT \"B\";\nEND");
+        assert_eq!(vm.console_text(), "ABC");
+    }
+
+    #[test]
+    fn exec_cross_slot_end_returns_to_launcher() {
+        // The documented END-returns-across-slots rule (exec.md): a program EXEC'd into a
+        // DIFFERENT slot returns to its launcher when it hits END. The launcher resumes with
+        // its own slot-0 state intact — `X` set before the EXEC is still readable afterward.
+        let vm = run_with_slot1("X=7\nEXEC 1\nPRINT \"BACK\";X", "PRINT \"IN1\";\nEND");
+        assert_eq!(vm.console_text(), "IN1BACK7");
+    }
+
+    #[test]
+    fn exec_cross_slot_nesting_returns_in_lifo_order() {
+        // Nesting: slot 0 EXECs slot 1, which EXECs slot 2. Slot 2's END returns to slot 1,
+        // whose END returns to slot 0 — LIFO, each launcher resuming after its own EXEC.
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        let ast = parse("PRINT \"0A\";\nEXEC 1\nPRINT \"0B\";").expect("parse");
+        let program = compile_with(&ast, &StdBuiltins).expect("compile");
+        let mut vm = Vm::new(program);
+        vm.load_slot_program(1, slot_program("PRINT \"1A\";\nEXEC 2\nPRINT \"1B\";\nEND"));
+        vm.load_slot_program(2, slot_program("PRINT \"2\";\nEND"));
+        vm.run().expect("run");
+        assert_eq!(vm.console_text(), "0A1A21B0B");
     }
 
     #[test]
@@ -4307,14 +4404,15 @@ CALL "ADDOUT",2,3 OUT X"#);
     }
 
     #[test]
-    fn exec_transfer_discards_caller_gosub_state() {
-        // EXEC abandons the caller's GOSUB stack: a transfer from inside a GOSUB does not
-        // resume the caller's @RET line — the target program runs and the run ends there.
+    fn exec_cross_slot_return_preserves_caller_gosub_state() {
+        // The launcher's GOSUB stack is captured across a cross-slot EXEC and restored on the
+        // END-return: EXEC fired from inside a GOSUB, so after slot 1's END resumes the caller
+        // its `RETURN` still pops back to the line after `GOSUB @SUB` → "AFTER".
         let vm = run_with_slot1(
-            "GOSUB @SUB\nPRINT \"AFTER\"\n@SUB\nEXEC 1\nRETURN",
-            "PRINT \"IN1\"\nEND",
+            "GOSUB @SUB\nPRINT \"AFTER\"\nSTOP\n@SUB\nPRINT \"IN0\";\nEXEC 1\nRETURN",
+            "PRINT \"IN1\";\nEND",
         );
-        assert_eq!(vm.console_text(), "IN1");
+        assert_eq!(vm.console_text(), "IN0IN1AFTER");
     }
 
     #[test]
@@ -4356,14 +4454,14 @@ CALL "ADDOUT",2,3 OUT X"#);
     #[test]
     fn exec_string_loads_prg_slot_and_transfers_control() {
         // documented (exec.yaml form 1): `EXEC "PRGn:file"` loads the file's program into
-        // slot n and runs it. Control transfers — the loaded program runs; the slot-0
-        // statement after EXEC is abandoned (impossible to return to the previous program).
+        // slot n and runs it. Control transfers to the loaded program ("B"); since the load
+        // targets a DIFFERENT slot, its END returns to the launcher, resuming after EXEC → "C".
         let vm = run_with_txt(
-            "PRINT \"A\";\nEXEC \"PRG1:SUB\"\nPRINT \"NEVER\"",
-            &[("SUB", "PRINT \"B\"\nEND")],
+            "PRINT \"A\";\nEXEC \"PRG1:SUB\"\nPRINT \"C\"",
+            &[("SUB", "PRINT \"B\";\nEND")],
         )
         .expect("run");
-        assert_eq!(vm.console_text(), "AB");
+        assert_eq!(vm.console_text(), "ABC");
     }
 
     #[test]

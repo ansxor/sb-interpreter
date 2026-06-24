@@ -702,8 +702,20 @@ oracle to confirm exact output and promote to `hw_verified`.
     loader idiom (a slot-0 loader EXECs the real program). Missing file → 46 unchanged. 3 e2e
     tests. STILL VmError::Unsupported / oracle-pending: the BARE-name (no `PRGn:`) default-slot
     file LOAD — its destination slot is the deferred loader, same edge as a `PRG0:` resource when
-    slot 0 is NOT the running slot — plus the nested END-returns-across-slots rule and per-slot vs
-    shared variable scoping. These need a ≥2-slot oracle harness, not a single injected program.)
+    slot 0 is NOT the running slot — plus per-slot vs shared variable scoping.
+    These need a ≥2-slot oracle harness, not a single injected program.)
+    (UPDATE 2026-06-23, M6-T6: the cross-slot END-returns rule is now IMPLEMENTED to the
+    DOCUMENTED model (`Vm::exec_transfer` saves the launcher's resume state into `exec_returns`;
+    `Vm::try_exec_return` restores it when the EXEC'd program hits END / end-of-code, resuming
+    right after the EXEC; nesting is LIFO). Both EXEC forms' notes document this ("possible to
+    return by using END in a program started with EXEC in another SLOT"); a SAME-slot EXEC
+    (restart / `EXEC "PRG0:…"`) saves no return. osb/VM.d Exec.execute is the structural model.
+    4 new vm.rs e2e tests (cross-slot return, X preserved across return, LIFO nesting, GOSUB
+    state preserved across the return). STILL ORACLE-PENDING: the exact resume-state granularity
+    real SB preserves across the return (sb-core preserves the full operand stack + DEF frames +
+    GOSUB stack, matching osb; whether 3.6.0 preserves all of these or only the pc needs a
+    ≥2-slot oracle to confirm), and whether a free variable inside the returned-to launcher sees
+    any state the EXEC'd program mutated in a COMMON.)
 
 - S-T12c Source read (PRGGET$/PRGNAME$/PRGSIZE): the error guards ARE hw_verified (batch
     2026-06-22, s_t12c): PRGGET$ with no active PRGEDIT -> errnum 38 (the no-PRGEDIT check
