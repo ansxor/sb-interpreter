@@ -555,8 +555,9 @@ oracle to confirm exact output and promote to `hw_verified`.
   BGVAR(0,0) -> 0; BGCHK(0)/BGCHK(3) -> 0; BGCHK layer-oob & neg -> errnum 10; all errline 1).
   Still oracle-pending (need a way to run setup statements before a value read, and the BG
   framebuffer oracle O-T6):
-  - BGVAR write-then-read round-trip persistence: BGVAR 0,3,7 then BGVAR(0,3) -> expect 7; var 7
-    special-case (clears flag bit 0x20) observable effect; BGVAR ... OUT V form value.
+  - BGVAR var-7 flag-bit-0x20 side effect (the BGANIM "V"-channel marker the var-7 write clears) —
+    observable only through a running BGANIM transform, so O-T6-pending. [The write→read round-trip
+    + OUT-V form VALUE persistence is now hw_verified — bgvar_rt 2026-06-24, frozen in bgvar.yaml.]
   - BGCHK mid-animation #CHK* bit values while a BGANIM channel runs (which bit per XY/Z/R/S/C/V),
     and confirm BG omits #CHKUV(4)/#CHKI(8); confirm BGSTOP-then-BGCHK reads 0 on a running anim.
   - BGANIM interpolation output (positive hold vs negative linear interp), Loop 0 endless, the

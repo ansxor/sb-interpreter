@@ -43,15 +43,33 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst BGVAR handler @0x164a14: argcount gate cmp r0,#0x1 blt 0x164a5c (r0=[r4,#0x4]); error path mov r2,#0x0 mvn r1,#0x0 mov r0,#0x4 bl 0x1fffdc @0x164a5c (errnum 4 errline -1); form select on result-count r1=[r4,#0xc] — setter r1==0 + argcount==3 @0x164a54, reader r1==1 + argcount==2 @0x164a44 (covers both function and OUT forms); layer via FUN_001e2504 bl 0x1e2504 @0x164a84 (errnum 10 out of range); var-number range guard cmp r0,#0 blt @0x164b24 / cmp r0,#0x7 ble @0x164ac0 else mov r0,#0xa bl 0x1fffdc errnum 10 @0x164b2c; slot base [[0x315d60]+0x5c] stride mov r1,#0xe3 mul lsl#3 add r0,r6,r0,lsl#0x3 @0x164b04; var 7 special cmp r2,#0x7 bic r1,r1,#0x20 [layer+0x0] @0x164b44. Literals [0x164c24]/[0x164c28]/[0x164c2c]." }
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG per-layer user variables (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGVAR'): 14 files, 166 lines — all three forms appear. Setter `BGVAR 0,7,&H7FFFFFFF` (DK384E4S/TXT/GAME) and `BGVAR 0,_XY,(TX<<16)OR TY` (EDD3E3GJ/TXT/HNZRDJ); function read `Y=BGVAR(I%,cBG_VY%)-BGVAR(I%,cBG_DY%)` and `IF BGVAR(2,cBG_ST%)<0 THEN RETURN` (2XVV233J/TXT/GAME.PRG); variable layer/slot operands `BGVAR I%,cBG_VY%,Y`, `BGVAR _I%,_J%,0` (DK384E4S/TXT/GAME). Variable numbers are constants/vars resolving to 0-7; no var number >= 8 and no layer > 3 observed. Proves the syntax of all three forms is legal." }
-  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9d): BGVAR(0,0) -> 0 (default zero, readable with no BGSCREEN setup — confirms layers 0..3 exist by default); BGVAR 4,0,1 -> errnum 10 (layer out of range); BGVAR 0,8,1 -> errnum 10 (variable number out of range, confirming the disassembled 0..7 guard). All errlines 1. The write-then-read round-trip (setter persistence) is oracle-pending — the value harvester evaluates a single expression and cannot run the BGVAR setter statement first; queued in HARVEST_QUEUE.md." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9d): BGVAR(0,0) -> 0 (default zero, readable with no BGSCREEN setup — confirms layers 0..3 exist by default); BGVAR 4,0,1 -> errnum 10 (layer out of range); BGVAR 0,8,1 -> errnum 10 (variable number out of range, confirming the disassembled 0..7 guard). All errlines 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (bgvar_rt, prog setup-then-read path): the write-then-read round-trip + persistence is confirmed. BGVAR 0,3,7 then BGVAR(0,3) -> 7 (function read); BGVAR 0,5,42:BGVAR 0,5 OUT V -> V=42 (OUT-form read, resolves the queued OUT V case); the slot stores a DOUBLE verbatim — BGVAR 0,2,3.5 -> 3.5, BGVAR 0,0,-12.25 -> -12.25 (no integer truncation), BGVAR 0,7,&H7FFFFFFF -> 2147483647 (STR$ shows 2.14748e+09, the full i32 stored as a double). Per-layer/per-var independence: BGVAR 0,0,10:BGVAR 0,1,20 -> BGVAR(0,1)=20 (sibling var unaffected), BGVAR 0,0,11:BGVAR 1,0,22 -> BGVAR(0,0)=11 (sibling layer unaffected), overwrite BGVAR 0,0,5:BGVAR 0,0,8 -> 8; layers 2 and 3 also round-trip (BGVAR 2,4,123 -> 123, BGVAR 3,6,-1 -> -1). NO BGSCREEN setup is required (BGVAR 1,1,55 -> 55 with no prior BGSCREEN — confirms the disassembled 'every layer always exists' note). var 7 round-trips its value despite the flag-bit-0x20 clear (BGVAR 0,7,99 -> 99). Harvest TSV harness/harvest/out/bgvar_rt.tsv. The var-7 flag-bit-0x20 side effect itself (the BGANIM \"V\"-channel marker) is a transform side effect observable only through rendering and stays O-T6-pending." }
 
-confidence: disassembled
+# hw_verified: argcount/layer/varnum error guards + default-zero read (s_t9d 2026-06-22) and the
+# full write→read VALUE round-trip across all forms/layers/doubles (bgvar_rt 2026-06-24). The only
+# un-harvested piece is var 7's flag-bit-0x20 transform side effect (BGANIM "V" channel), which is
+# observable only through the BG framebuffer (O-T6) — BGVAR's own value contract is complete.
+confidence: hw_verified
 
 tests:
-  # Default-zero read + range errors hw_verified (sb-oracle s_t9d). Round-trip setter persistence is oracle-pending (queued) but follows directly from the disassembled strd/ldrd of a double. `stdout` is the console scrape (`console_text()`, trailing newline trimmed), so a single `PRINT v` reads back as the value without a "\n".
+  # All values hw_verified: default-zero read + range errors (sb-oracle s_t9d 2026-06-22) and the
+  # write→read round-trip across forms/layers/doubles (bgvar_rt 2026-06-24). `stdout` is the console
+  # scrape (`console_text()`, trailing newline trimmed), so a single `PRINT v` reads back the value
+  # without a "\n". PRINT renders an i32-valued double as the integer (M7-T4 formatter), so var 7's
+  # &H7FFFFFFF round-trips to "2147483647" under PRINT (vs STR$'s "2.14748e+09").
   - { name: read_default_zero, code: "PRINT BGVAR(0,0)", expect: { stdout: "0" } }
-  - { name: write_basic, code: "BGSCREEN 0,32,32\nBGVAR 0,7,1", expect: { stdout: "" } }
-  - { name: write_read_roundtrip, code: "BGSCREEN 0,32,32\nBGVAR 0,3,7\nPRINT BGVAR(0,3)", expect: { stdout: "7" } }
-  - { name: out_read, code: "BGSCREEN 0,32,32\nBGVAR 0,5,42\nBGVAR 0,5 OUT V\nPRINT V", expect: { stdout: "42" } }
+  - { name: write_basic, code: "BGVAR 0,7,1", expect: { stdout: "" } }
+  - { name: write_read_roundtrip, code: "BGVAR 0,3,7\nPRINT BGVAR(0,3)", expect: { stdout: "7" } }
+  - { name: out_read, code: "BGVAR 0,5,42\nBGVAR 0,5 OUT V\nPRINT V", expect: { stdout: "42" } }
+  - { name: roundtrip_double, code: "BGVAR 0,2,3.5\nPRINT BGVAR(0,2)", expect: { stdout: "3.5" } }
+  - { name: roundtrip_negative, code: "BGVAR 0,0,-12.25\nPRINT BGVAR(0,0)", expect: { stdout: "-12.25" } }
+  - { name: roundtrip_no_bgscreen, code: "BGVAR 1,1,55\nPRINT BGVAR(1,1)", expect: { stdout: "55" } }
+  - { name: roundtrip_var7, code: "BGVAR 0,7,99\nPRINT BGVAR(0,7)", expect: { stdout: "99" } }
+  - { name: roundtrip_var7_i32, code: "BGVAR 0,7,&H7FFFFFFF\nPRINT BGVAR(0,7)", expect: { stdout: "2147483647" } }
+  - { name: overwrite, code: "BGVAR 0,0,5\nBGVAR 0,0,8\nPRINT BGVAR(0,0)", expect: { stdout: "8" } }
+  - { name: sibling_var_independent, code: "BGVAR 0,0,10\nBGVAR 0,1,20\nPRINT BGVAR(0,1)", expect: { stdout: "20" } }
+  - { name: sibling_layer_independent, code: "BGVAR 0,0,11\nBGVAR 1,0,22\nPRINT BGVAR(0,0)", expect: { stdout: "11" } }
+  - { name: roundtrip_layer3, code: "BGVAR 3,6,-1\nPRINT BGVAR(3,6)", expect: { stdout: "-1" } }
   - { name: layer_out_of_range, code: "BGVAR 4,0,1", expect: { error: { errnum: 10 } } }
-  - { name: varnum_out_of_range, code: "BGSCREEN 0,32,32\nBGVAR 0,8,1", expect: { error: { errnum: 10 } } }
+  - { name: varnum_out_of_range, code: "BGVAR 0,8,1", expect: { error: { errnum: 10 } } }
