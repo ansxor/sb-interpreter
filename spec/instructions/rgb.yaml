@@ -30,7 +30,7 @@ semantics:
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "argument count is not 3 or 4, or RGB is not used as a value-returning function (return-count != 1)" }
-  - { errnum: 8, name: "Type mismatch", when: "a string is passed for any channel argument" }
+  - { errnum: 8, name: "Type mismatch", when: "a string is passed for any channel argument (hw_verified: a string in the 3-arg R slot and in the 4-arg G slot both raise errnum 8)" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/rgb.md (Variable = RGB([Transparency,] Red,Green,Blue) — gets a color code from 8-bit RGB values; Transparency 255 opaque otherwise transparent (0-255 meaningful for SPCOLOR); each of R,G,B is 0-255; returns an 8-bit-per-ARGB color code, see GCOLOR; named-color table e.g. White=RGB(255,255,255), Red=RGB(255,0,0), Brown=RGB(160,128,96))." }
@@ -38,8 +38,13 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/graphic.d color packing (3.5.0 structural cross-check only): ARGB8888 with opaque alpha for the 3-arg form." }
   - { type: community, ref: "sbsave corpus: RGB() appears ~26k times across 1180 programs. Both forms are common — 3-arg RGB(r,g,b) baseline and 4-arg RGB(a,r,g,b) heavily used (e.g. FADE RGB(0,0,0,0),60 in 1BWX7ENV/TXT/AND-OS). Out-of-range channels appear in real shipped code: RGB(999,999,999) (2J7443A4/TXT/@BACKUP.PRG), RGB(500,5,5,5) (1BWX7ENV/TXT/AND-OS), RGB(2999,30,100) (4KE83PCY/TXT/@BACKUP.PRG) — confirming saturation/clamping is relied upon, not an error. Variable/array/expression operands common: RGB(C[0],C[1],C[2]), RGB(R+RND(8),G+RND(8),B+RND(8))." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7e): RGB(255,0,0) -> -65536 (&HFFFF0000); RGB(0,0,0) -> -16777216 (&HFF000000, 3-arg forces opaque alpha); RGB(255,255,255) -> -1 (&HFFFFFFFF); RGB(128,255,0,0) -> -2130771968 (&H80FF0000, 4-arg explicit alpha); RGB(999,999,999) -> -1 (clamps each channel to 255); RGB(-5,300,0) -> -16711936 (&HFF00FF00, clamps -5->0 and 300->255); X=RGB(1,2) (2 args) -> errnum 4; X=RGB(1,2,3,4,5) (5 args) -> errnum 4." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-24 (M7-T2): a string channel raises errnum 8 (Type mismatch) — `X=RGB(\"A\",2,3)` (string in the 3-arg R slot) -> errnum 8 errline 1; `X=RGB(1,\"B\",3,4)` (string in the 4-arg G slot) -> errnum 8 errline 1. Confirms the disassembled deferred-error path (arg-vtable [r2,#0x40] string fetch fails -> errnum 8 @0x155058). With this, RGB's ENTIRE observable contract is hw_verified — value packing (3-arg + 4-arg alpha), per-channel clamp (high + mixed neg), and all error guards (argcount 2/5 -> 4, string channel -> 8) — so the top-level confidence is promoted disassembled -> hw_verified. Harvest TSV harness/harvest/out/rgb_type.tsv." }
 
-confidence: disassembled
+# Top-level hw_verified: RGB is a pure value function — its full contract (ARGB packing,
+# channel clamping, argcount errnum 4, string-channel errnum 8) is value/errnum-deterministic
+# and entirely oracle-confirmed (s_t7e values/clamps/argcount + M7-T2 string type-mismatch). No
+# framebuffer/hardware state is involved, so nothing remains oracle-pending.
+confidence: hw_verified
 
 tests:
   # value + error expects are hw_verified (sb-oracle 2026-06-22 s_t7e); colors are returned as i32, so alpha-set codes read negative.
@@ -51,3 +56,6 @@ tests:
   - { name: clamp_mixed, code: "PRINT RGB(-5,300,0)", expect: { stdout: "-16711936" } }
   - { name: two_args_errors, code: "X=RGB(1,2)", expect: { error: { errnum: 4 } } }
   - { name: five_args_errors, code: "X=RGB(1,2,3,4,5)", expect: { error: { errnum: 4 } } }
+  # string channel -> errnum 8 (hw_verified sb-oracle 2026-06-24 M7-T2)
+  - { name: string_chan3_type, code: 'X=RGB("A",2,3)', expect: { error: { errnum: 8 } } }
+  - { name: string_chan4_type, code: 'X=RGB(1,"B",3,4)', expect: { error: { errnum: 8 } } }
