@@ -24,8 +24,12 @@ semantics:
   - "Takes exactly 4 args (x1,y1,x2,y2) or 5 args (+color) and returns no value. Any other argument count, or requesting a return value, raises errnum 4 (Illegal function call) — return-count [r4,#0xc] cmp #0 bne error @0x1532f4, argcount [r4,#0x4] cmp #4 (beq @0x153304) / cmp #5 (beq @0x15330c) else mov r0,#0x4 (errnum 4) @0x153318."
   - "With 4 args the color defaults to the current GCOLOR draw color (the 4-arg path loads it from the graphics-context draw-color field +0xc: ldreq r0,[r6,#0xc] / streq r0,[sp,#0x18] @0x1533a4). With 5 args the popped 32-bit value is the color."
   - "The color is NOT range-checked — it is a full 32-bit ARGB value (8 bits each A,R,G,B); A=255 opaque, otherwise transparent. Signed/&H/#CONSTANT color operands are accepted (e.g. -1 = opaque white)."
-  - "A degenerate line where start == end (e.g. GLINE x,y,x,y) plots a single point; coordinates are integer-coerced from the popped args and off-screen / out-of-range coordinates are clipped by the draw helper rather than rejected — no range error."
-  - "Draws onto the GPAGE-selected manipulation page; the handler reads the graphics context via [[0x315d60]+0x20] (r6) and fetches the four coordinates plus color through the standard arg-fetch vtable slot [r2,#0x40]."
+  - "A degenerate line where start == end (e.g. GLINE x,y,x,y) plots a single point; coordinates are integer-coerced from the popped args and off-screen / out-of-range coordinates are clipped by the draw helper rather than rejected — no range error. (hw_verified via GSPOIT read-back: GLINE 50,50,50,50,white lights exactly (50,50), leaving (51,51) clear.)"
+  - "Draws onto the GPAGE-selected manipulation page; the handler reads the graphics context via [[0x315d60]+0x20] (r6), fetches the four coordinates plus color through the standard arg-fetch vtable slot [r2,#0x40], clamps each coordinate to the signed [-0x8000,0x8000) window (add r1,r8,#0x8000 / cmp #0x10000 / bcs skip @0x153474), and calls the line-draw helper bl 0x1e6700 @0x1534d8."
+  - "Every pixel from start to end is plotted INCLUSIVE in the line color; cardinal (horizontal/vertical) and 45-degree diagonal lines are exact and pixels off the line are untouched (hw_verified via GSPOIT read-back: GLINE 10,100,15,100,white lights (10..15,100) and leaves (13,101) clear; GLINE 30,110,30,115,white lights the column and leaves (31,112) clear; GLINE 40,40,45,45,white lights only the (i,i) diagonal, leaving (41,42) clear)."
+  - "The line color round-trips through the device RGBA5551 format EXACTLY like GPSET (8->5 bit channel truncation; see gspoit/gpset): hw_verified white/-1 -> GSPOIT -460552, RGB(255,0,0) -> -524288, RGB(0,0,255) -> -16776968. With 4 args the color defaults to the current GCOLOR draw color (hw_verified: GCOLOR RGB(255,0,0):GLINE 60,120,65,120 reads back -524288, identical to the explicit-red form)."
+  - "Off-page / partially-off-page lines do NOT error — the draw helper clips to the page rather than raising a range error (hw_verified: GLINE -50,-50,999,999,-1 runs without error; GLINE 395,130,405,130,white still lights the on-page pixel (399,130))."
+  - "Interior-pixel selection on a NON-cardinal, non-45-degree slope is a round-half-DOWN DDA, NOT a textbook Bresenham. For the line (200,150)->(210,155) (slope 0.5) hardware lights y per x = 150,150,151,151,152,152,153,153,154,154,155 — i.e. y = y1 + round_half_down((x-x1)*dy/dx), so the y step happens at the SECOND x of each pair: (205,152) is LIT and (205,153) is clear (hw_verified, harness/harvest/out/gline_robust.tsv steep_map bitmap). The draw helper @0x1e6700 splits on |dx| vs |dy| to pick the driving axis (subs r11,r8,r5 / subs r9,r7,r4 / cmp r11,r9 / blt 0x1e6b3c @0x1e69ac) and writes into the 8x8-tiled framebuffer via swizzle tables (and r2,#0x7 / asr #0x3 / lsl #0xc @0x1e67a4; ldrsb from [0x1e6f28]/[0x1e6f30]). NOTE: sb-core currently uses a plain integer Bresenham that lights the OPPOSITE mid-pixel ((205,153)) on such slopes — a rasterizer-parity fix is queued (HARVEST_QUEUE, M2-T2 fidelity)."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "argument count is not 4 or 5, or a return value is requested (used as a function)" }
@@ -35,15 +39,43 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst GLINE handler @0x1532d4: graphics state ptr 0x153524->0x315d60, gfx-context = [[..]+0x20] (r6); return-count r0=[r4,#0xc] cmp #0 bne -> errnum 4 @0x1532f4; argcount r0=[r4,#0x4] cmp #4 beq @0x153328 (4-arg, default color), cmp #5 beq @0x1533b4 (5-arg), else mov r2,#0/mvn r1/mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x153310; 4-arg path defaults color ldreq r0,[r6,#0xc]/streq [sp,#0x18] @0x1533a4; coordinates fetched via vtable [r2,#0x40]; no range guard in the handler." }
   - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GLINE: draws a line on the active graphic page (3.5.0 structural cross-check only)." }
   - { type: community, ref: "sbsave corpus: GLINE appears ~5121x. Confirms the 4-arg default-color form (e.g. NZ53Y3AJ/TXT/SIMPLEDRAW 'GLINE 200+I,20,200+I,40'), #CONSTANT/&H/RGB() and negative (-1) color operands, float coordinates (13D4DV3V/TXT/MAIN_PRG_V2 'GLINE CX-0.5,...'), and single-point (start==end) usage — all legal." }
+  - { type: disassembled, ref: "cia_3.6.0.lst line-draw helper @0x1e6700 (called by the GLINE handler @0x1534d8): color-convert ARGB8888->RGBA5551 bl 0x18ff08/0x18ff9c; cardinal fast paths cmp r8,r3 bne @0x1e6868 (x1==x2 / y1==y2 columns/rows); general case @0x1e69ac computes dx=|x2-x1| (subs r11,r8,r5 / submi r11,r5,r8) and dy=|y2-y1| (subs r9,r7,r4 / submi r9,r4,r7), then cmp r11,r9 / blt 0x1e6b3c selects the driving axis (longer span). Pixels are written into the 8x8-tiled (morton/z-order) framebuffer: tile index and r2,r7,#0x7 / mov r3,r7,asr #0x3 / lsl #0xc / add r1,r3,r1,lsl #0x6 @0x1e67a4, with the in-tile swizzle read ldrsb r0,[r0,r2] from the byte tables at [0x1e6f28]/[0x1e6f30]; the stored halfword is strh r10,[r3]." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7b): GLINE 0,0,1 (3 args) -> errnum 4, errline 1; GLINE 0,0,1,1,2,3 (6 args) -> errnum 4; A=GLINE(0,0,1,1) (used as a function) -> errnum 4." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 41, harness/harvest/out/gline_robust.tsv) — line side-effects via GSPOIT read-back (framebuffer-free, same method as gpset/gspoit). Geometry: horizontal GLINE 10,100,15,100,white -> (10,100)/(13,100)/(15,100)=-460552, (13,101)=0; vertical GLINE 30,110,30,115,white -> (30,110)/(30,115)=-460552, (31,112)=0; 45-deg GLINE 40,40,45,45,white -> (40,40)/(42,42)/(45,45)=-460552, (41,42)=0; degenerate GLINE 50,50,50,50,white -> (50,50)=-460552, (51,51)=0. Color: explicit blue RGB(0,0,255)->-16776968, negative -1->white -460552, RGBA5551 round-trip identical to GPSET; 4-arg default uses GCOLOR (GCOLOR RGB(255,0,0):GLINE 60,120,65,120 -> (62,120)=-524288). Clipping: GLINE -50,-50,999,999,-1 no error (sentinel 42 captured); GLINE 395,130,405,130,white -> (399,130)=-460552. Non-45 raster (steep_map bitmap): line (200,150)->(210,155) lights y per x = 150,150,151,151,152,152,153,153,154,154,155 (round-half-down DDA; (205,152) lit, (205,153) clear)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7b); line side-effects need the framebuffer oracle (O-T6, queued).
+  # arg-count/return errors hw_verified (sb-oracle 2026-06-22 s_t7b); line pixel side-effects
+  # hw_verified via GSPOIT read-back (M7-T2 run 41, harness/harvest/out/gline_robust.tsv).
+  # white=-460552, red=-524288, blue=-16776968 (RGBA5551 8->5, identical to GPSET/GSPOIT).
   - { name: line_default_color_ok, code: "GLINE 0,0,399,239", expect: { stdout: "" } }
   - { name: line_explicit_color_ok, code: "GLINE 0,0,399,239,RGB(0,255,255)", expect: { stdout: "" } }
   - { name: line_single_point_ok, code: "GLINE 10,10,10,10,-1", expect: { stdout: "" } }
   - { name: three_args_errors, code: "GLINE 0,0,1", expect: { error: { errnum: 4 } } }
   - { name: six_args_errors, code: "GLINE 0,0,1,1,2,3", expect: { error: { errnum: 4 } } }
   - { name: as_function_errors, code: "A=GLINE(0,0,1,1)", expect: { error: { errnum: 4 } } }
+  # --- horizontal line: span inclusive, the row below is clear ---
+  - { name: hline_start, code: "GLINE 10,100,15,100,RGB(255,255,255):PRINT GSPOIT(10,100)", expect: { stdout: "-460552" } }
+  - { name: hline_mid, code: "GLINE 10,100,15,100,RGB(255,255,255):PRINT GSPOIT(13,100)", expect: { stdout: "-460552" } }
+  - { name: hline_end, code: "GLINE 10,100,15,100,RGB(255,255,255):PRINT GSPOIT(15,100)", expect: { stdout: "-460552" } }
+  - { name: hline_below_clear, code: "GLINE 10,100,15,100,RGB(255,255,255):PRINT GSPOIT(13,101)", expect: { stdout: "0" } }
+  # --- vertical line ---
+  - { name: vline_start, code: "GLINE 30,110,30,115,RGB(255,255,255):PRINT GSPOIT(30,110)", expect: { stdout: "-460552" } }
+  - { name: vline_end, code: "GLINE 30,110,30,115,RGB(255,255,255):PRINT GSPOIT(30,115)", expect: { stdout: "-460552" } }
+  - { name: vline_side_clear, code: "GLINE 30,110,30,115,RGB(255,255,255):PRINT GSPOIT(31,112)", expect: { stdout: "0" } }
+  # --- 45-degree diagonal: only (i,i) lit ---
+  - { name: diag_start, code: "GLINE 40,40,45,45,RGB(255,255,255):PRINT GSPOIT(40,40)", expect: { stdout: "-460552" } }
+  - { name: diag_mid, code: "GLINE 40,40,45,45,RGB(255,255,255):PRINT GSPOIT(42,42)", expect: { stdout: "-460552" } }
+  - { name: diag_end, code: "GLINE 40,40,45,45,RGB(255,255,255):PRINT GSPOIT(45,45)", expect: { stdout: "-460552" } }
+  - { name: diag_off_clear, code: "GLINE 40,40,45,45,RGB(255,255,255):PRINT GSPOIT(41,42)", expect: { stdout: "0" } }
+  # --- degenerate line plots exactly one pixel ---
+  - { name: point_hit, code: "GLINE 50,50,50,50,RGB(255,255,255):PRINT GSPOIT(50,50)", expect: { stdout: "-460552" } }
+  - { name: point_off_clear, code: "GLINE 50,50,50,50,RGB(255,255,255):PRINT GSPOIT(51,51)", expect: { stdout: "0" } }
+  # --- color: 4-arg default uses GCOLOR; explicit blue; negative literal = white ---
+  - { name: four_arg_uses_gcolor, code: "GCOLOR RGB(255,0,0):GLINE 60,120,65,120:PRINT GSPOIT(62,120)", expect: { stdout: "-524288" } }
+  - { name: explicit_blue, code: "GLINE 70,120,75,120,RGB(0,0,255):PRINT GSPOIT(72,120)", expect: { stdout: "-16776968" } }
+  - { name: neg_color_is_white, code: "GLINE 80,120,85,120,-1:PRINT GSPOIT(82,120)", expect: { stdout: "-460552" } }
+  # --- clipping: off-page no error; partially-off line still draws on-page pixels ---
+  - { name: offscreen_no_error, code: "GLINE -50,-50,999,999,-1:PRINT 42", expect: { stdout: "42" } }
+  - { name: partial_clip_onpage, code: "GLINE 395,130,405,130,RGB(255,255,255):PRINT GSPOIT(399,130)", expect: { stdout: "-460552" } }

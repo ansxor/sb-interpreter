@@ -1,0 +1,17 @@
+# GLINE robust harvest: each case is ONE program that draws then reads MANY pixels into a
+# single string result (immune to per-case capture flakiness + cross-case page residue).
+# white=-460552, empty=0, red=-524288, blue=-16776968.
+# geom: H line (10,100..15,100), V line (30,110..115), 45-diag (40,40..45,45), point (50,50).
+#   order: H(10,100) H(13,100) H(15,100) Hbelow(13,101) V(30,110) V(30,115) Vside(31,112)
+#          D(40,40) D(42,42) D(45,45) Doff(41,42) P(50,50) Poff(51,51)
+geom|GCLS:W=RGB(255,255,255):GLINE 10,100,15,100,W:GLINE 30,110,30,115,W:GLINE 40,40,45,45,W:GLINE 50,50,50,50,W:R$=STR$(GSPOIT(10,100))+" "+STR$(GSPOIT(13,100))+" "+STR$(GSPOIT(15,100))+" "+STR$(GSPOIT(13,101))+" "+STR$(GSPOIT(30,110))+" "+STR$(GSPOIT(30,115))+" "+STR$(GSPOIT(31,112))+" "+STR$(GSPOIT(40,40))+" "+STR$(GSPOIT(42,42))+" "+STR$(GSPOIT(45,45))+" "+STR$(GSPOIT(41,42))+" "+STR$(GSPOIT(50,50))+" "+STR$(GSPOIT(51,51))|R$|progstr
+# colors: 4-arg uses GCOLOR(red); 5-arg explicit blue; negative literal = white.
+#   order: default(62,120) blue(72,120) white(82,120)
+colors|GCLS:GCOLOR RGB(255,0,0):GLINE 60,120,65,120:GLINE 70,120,75,120,RGB(0,0,255):GLINE 80,120,85,120,-1:R$=STR$(GSPOIT(62,120))+" "+STR$(GSPOIT(72,120))+" "+STR$(GSPOIT(82,120))|R$|progstr
+# off-screen line must NOT error -> sentinel 42 captured.
+clip_noerr|GCLS:GLINE -50,-50,999,999,-1|42|prog
+# partially off-page line still draws on-page pixels (page is 512 wide).
+clip_onpage|GCLS:GLINE 395,130,405,130,RGB(255,255,255)|GSPOIT(399,130)|prog
+# steep_map: line (200,150)->(210,155) slope .5; for each x=200..210 emit lit-flag for y=150..155.
+#   66 chars = 11 x-groups of 6 y-flags (1=lit,0=empty). Reveals the rasterizer's y per x.
+steep_map|GCLS:W=RGB(255,255,255):GLINE 200,150,210,155,W:R$="":FOR GX=200 TO 210:FOR GY=150 TO 155:R$=R$+STR$((GSPOIT(GX,GY)!=0)):NEXT:NEXT|R$|progstr

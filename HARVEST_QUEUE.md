@@ -1595,3 +1595,19 @@ The *live device* outputs have no headless golden — sb-core returns faithful n
   NOT frozen as a conformance case in spcol.yaml (sb-core would fail it); SPCOL's own set-then-read
   value contract IS hw_verified + passing. Queue: implement the collision-array split, then add the
   re-SPSET-preserves-collision conformance case (harvest in harness/harvest/out/spcol_rt2.tsv).
+- **GLINE non-45 rasterizer differs from hardware (sb-core fidelity gap, M7-T2 run 41).**
+  hw_verified (sb-oracle 2026-06-24, harness/harvest/out/gline_robust.tsv `steep_map`): SB's line
+  draw is a round-half-DOWN DDA — for the line (200,150)->(210,155) (slope 0.5) hardware lights
+  y per x = 150,150,151,151,152,152,153,153,154,154,155 (y = y1 + round_half_down((x-x1)*dy/dx)),
+  so (205,152) is LIT and (205,153) is clear. sb-core's `sb-render::raster::line_dev` uses a plain
+  integer Bresenham (err=dx+dy init) that lights the OPPOSITE mid-pixel — (205,153) lit, (205,152)
+  clear — diverging on every non-cardinal, non-45-degree slope. The draw helper @0x1e6700 splits on
+  |dx| vs |dy| (@0x1e69ac) to drive the longer axis and writes the 8x8-tiled framebuffer via swizzle
+  tables (@0x1e6f28/@0x1e6f30); the exact per-octant tie-break is interleaved with the tile
+  addressing. Cardinal (H/V), 45-deg, degenerate-point, color round-trip, GCOLOR-default, and
+  clipping are ALL hw_verified + passing (gline.yaml). Fix (M2-T2 fidelity, its own slice): replace
+  `line_dev` with the round-half-down DDA, VERIFY across all 8 octants + both half-integer and
+  non-half slopes against a broader oracle harvest (a one-octant fix from this single line would be
+  under-verified), then freeze the steep_map case as a conformance test. GBOX/GCIRCLE radii reuse
+  `line_dev` (cardinal only there, so unaffected today) but inherit the fix. NOT frozen as a
+  conformance case now (sb-core would fail it).
