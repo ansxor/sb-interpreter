@@ -859,6 +859,20 @@ mod tests {
     }
 
     #[test]
+    fn respset_clears_parent_link() {
+        // hw_verified (sb-oracle 2026-06-24, M7-T2): re-SPSET on a linked slot resets its
+        // parent pointer — SPSET 1,0:SPLINK 1,0:SPSET 1,0 then SPLINK(1) -> -1. `create`
+        // rebuilds the whole `Sprite` from default (`parent: None`).
+        let mut st = SpriteState::new();
+        st.set_direct(0, 0, 0, 16, 16, 1);
+        st.set_direct(1, 0, 0, 16, 16, 1);
+        st.link(1, 0);
+        assert_eq!(st.parent_of(1), 0);
+        st.set_direct(1, 0, 0, 16, 16, 1); // re-SPSET the linked child
+        assert_eq!(st.parent_of(1), -1);
+    }
+
+    #[test]
     fn nested_links_chain_coordinates() {
         let mut st = SpriteState::new();
         for i in [0usize, 1, 2] {

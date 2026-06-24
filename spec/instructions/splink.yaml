@@ -34,9 +34,14 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst SPLINK handler @0x1428f4: form by ret-count [r5,#0xc] 0->link @0x142928, 1->query @0x142a00, else b @0x142aa8 errnum 4; SET argcount==2 cmp r0,#2 bne @0x142a0c errnum 4 errln -1; child/parent via bl 0x1eece0 @0x142944/@0x142964 (errnum 10); ordering ldr r0,[sp,#4] ldr r1,[sp,#0] cmp r1,r0 ble @0x1429e8 (child<=parent -> errnum 4 mov r1,#1 mov r0,#0x4 bl 0x1fffdc); active bits tst #0x80000000 [child+4]@0x1429a8 / [parent+4]@0x1429b4; install link bl 0x17e688 @0x1429cc; GET argcount==1 @0x142a24, parent ptr [slot+0xa4]@0x142a64 ==0 -> mvneq r1,#0 (-1), else mgmt = (ptr-base)*recip 0x1C8B265B asr#8 @0x142a74; errnum 4 site @0x142aa8 errln -1; state ptr 0x315d60 [0x142ac0], sprite-base 0x19A5FB0 [0x142ac4]." }
   - { type: community, ref: "osb/SMILEBASIC/sprite.d SPLINK section: 'SPLINKの親は子より小さい管理番号でしかなれないので sprite->child->next の X座標を加算すればなんとかなる' (3.5.0 structural cross-check only)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8c): SPSET 4,0:SPSET 15,0:SPLINK 4,15 -> errnum 4 (parent not lower than child); SPSET 4,0:SPLINK 4,4 -> errnum 4 (parent == child); SPCLR:SPSET 0,0:SPLINK 5,0 -> errnum 4 (child before SPSET); SPSET 0,0:SPLINK 512,0 -> errnum 10 (mgmt out of range). Function form CONFIRMED: SPSET 0,0 then SPLINK(0) -> -1 (unlinked); SPSET 4,0:SPSET 15,0:SPLINK 15,4 then SPLINK(15) -> 4 (returns the parent's management number)." }
-  - { type: community, ref: "sbsave corpus: SPLINK used ~1,140x. SET form `SPLINK 251,250`, `SPLINK 125,0`, variable/expr operands `SPLINK N,MN%`, full-width var names `SPLINK ショット`. The UNDOCUMENTED function form `=SPLINK(mgmt)` appears ~25x — e.g. `OWN%=SPLINK(S%)` (2XVV233J/TXT/GAME.PRG), `N=SPLINK(SPN%):IF N<0 THEN@FB` (RRWECV3V/TXT/CYBURST) — the `IF N<0` corroborates the disassembly's -1 return for an unlinked sprite. Function form is disassembled+community; its exact return is oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 SPLINK gap push, splink_rt.tsv, SPCLR-prefixed clean-slate): VALUE contract — re-linking overwrites: SPLINK 2,0:SPLINK 2,1 then SPLINK(2) -> 1 (last parent wins); NESTED hierarchy SPLINK 1,0:SPLINK 2,1 reads back per-slot: SPLINK(2) -> 1, SPLINK(1) -> 0; a parent's own SPLINK reads -1 (SPLINK(0) -> -1). **DISCOVERY — re-SPSET clears the link:** SPSET 1,0:SPLINK 1,0:SPSET 1,0 then SPLINK(1) -> -1 (re-creating a slot resets its parent pointer; sb-core's `create` already rebuilds the whole `Sprite` from default so `parent: None`). ERROR guards: child SPSET but parent NOT SPSET (SPSET 15,0:SPLINK 15,4) -> errnum 4 (active-bit guard, errline 1); SET form with 1 arg (SPLINK 15) or 3 args (SPLINK 15,4,1) -> errnum 4; function form on an un-SPSET slot (X=SPLINK(5)) -> errnum 4; function form with 2 args (X=SPLINK(15,4)) -> errnum 4 (GET needs argcount 1); negative mgmt in either form (X=SPLINK(-1), SPLINK -1,0) -> errnum 10." }
+  - { type: community, ref: "sbsave corpus: SPLINK used ~1,140x. SET form `SPLINK 251,250`, `SPLINK 125,0`, variable/expr operands `SPLINK N,MN%`, full-width var names `SPLINK ショット`. The UNDOCUMENTED function form `=SPLINK(mgmt)` appears ~25x — e.g. `OWN%=SPLINK(S%)` (2XVV233J/TXT/GAME.PRG), `N=SPLINK(SPN%):IF N<0 THEN@FB` (RRWECV3V/TXT/CYBURST) — the `IF N<0` corroborates the -1 return for an unlinked sprite. Function-form return now hw_verified (2026-06-24 batch)." }
 
-confidence: disassembled
+# The OBSERVABLE value/error contract (function-form returns + all error guards) is now
+# hw_verified. The remaining unverified piece is the rendered coordinate-inheritance EFFECT
+# (the renderer adds the parent's X/Y to the child's display position) — a framebuffer golden,
+# deferred to O-T6, consistent with the rest of the sprite family (SPSET/SPOFS/etc.).
+confidence: hw_verified
 
 tests:
   # Link form, function form, and error cases — all hw_verified (sb-oracle 2026-06-22 s_t8c).
@@ -47,3 +52,16 @@ tests:
   - { name: parent_equal, code: "SPSET 4,0\nSPLINK 4,4", expect: { error: { errnum: 4 } } }
   - { name: child_before_spset, code: "SPCLR\nSPSET 0,0\nSPLINK 5,0", expect: { error: { errnum: 4 } } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPLINK 512,0", expect: { error: { errnum: 10 } } }
+  # M7-T2 gap push (sb-oracle 2026-06-24) — function-form value contract + remaining error guards.
+  - { name: relink_last_wins, code: "SPSET 0,0\nSPSET 1,0\nSPSET 2,0\nSPLINK 2,0\nSPLINK 2,1\nPRINT SPLINK(2)", expect: { stdout: "1" } }
+  - { name: nested_query_top, code: "SPSET 0,0\nSPSET 1,0\nSPSET 2,0\nSPLINK 1,0\nSPLINK 2,1\nPRINT SPLINK(2)", expect: { stdout: "1" } }
+  - { name: nested_query_mid, code: "SPSET 0,0\nSPSET 1,0\nSPSET 2,0\nSPLINK 1,0\nSPLINK 2,1\nPRINT SPLINK(1)", expect: { stdout: "0" } }
+  - { name: respset_clears_link, code: "SPSET 0,0\nSPSET 1,0\nSPLINK 1,0\nSPSET 1,0\nPRINT SPLINK(1)", expect: { stdout: "-1" } }
+  - { name: parent_query_unlinked, code: "SPSET 0,0\nSPSET 1,0\nSPLINK 1,0\nPRINT SPLINK(0)", expect: { stdout: "-1" } }
+  - { name: parent_not_spset, code: "SPSET 15,0\nSPLINK 15,4", expect: { error: { errnum: 4 } } }
+  - { name: set_one_arg, code: "SPSET 4,0\nSPSET 15,0\nSPLINK 15", expect: { error: { errnum: 4 } } }
+  - { name: set_three_args, code: "SPSET 4,0\nSPSET 15,0\nSPLINK 15,4,1", expect: { error: { errnum: 4 } } }
+  - { name: func_unset_slot, code: "X=SPLINK(5)", expect: { error: { errnum: 4 } } }
+  - { name: func_neg_mgmt, code: "X=SPLINK(-1)", expect: { error: { errnum: 10 } } }
+  - { name: func_two_args, code: "SPSET 4,0\nSPSET 15,0\nX=SPLINK(15,4)", expect: { error: { errnum: 4 } } }
+  - { name: set_neg_child, code: "SPSET 0,0\nSPLINK -1,0", expect: { error: { errnum: 10 } } }
