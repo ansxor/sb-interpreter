@@ -1,0 +1,27 @@
+# BGSTART + BGSTOP value contract (M7-T2), observed through BGCHK (which forces 0 while a
+# layer is BGSTOP'd). An endless XY BGANIM (loop=0) keeps the XY channel running so BGCHK
+# reads bit 0 (#CHKXY=1) until BGSTOP. ACLS resets BG state (anim flags persist across RUNs).
+# Baseline: an XY animation is running.
+baseline_running|ACLS:BGANIM 0,0,60,100,100,0|BGCHK(0)|prog
+# Bonus (BGCHK mid-anim bit): XY anim -> #CHKXY bit value.
+bgchk_xy_bit|ACLS:BGANIM 0,0,60,100,100,0|BGCHK(0)|prog
+# One-arg form toggles only the named layer.
+stop_one|ACLS:BGANIM 0,0,60,100,100,0:BGSTOP 0|BGCHK(0)|prog
+start_one|ACLS:BGANIM 0,0,60,100,100,0:BGSTOP 0:BGSTART 0|BGCHK(0)|prog
+# No-arg form toggles all layers.
+stop_all|ACLS:BGANIM 0,0,60,100,100,0:BGSTOP|BGCHK(0)|prog
+start_all|ACLS:BGANIM 0,0,60,100,100,0:BGSTOP:BGSTART|BGCHK(0)|prog
+# Named-layer isolation: layers 0 and 1 both animating.
+iso_stop0_chk0|ACLS:BGANIM 0,0,60,100,100,0:BGANIM 1,0,60,100,100,0:BGSTOP 0|BGCHK(0)|prog
+iso_stop0_chk1|ACLS:BGANIM 0,0,60,100,100,0:BGANIM 1,0,60,100,100,0:BGSTOP 0|BGCHK(1)|prog
+iso_start0_chk0|ACLS:BGANIM 0,0,60,100,100,0:BGANIM 1,0,60,100,100,0:BGSTOP:BGSTART 0|BGCHK(0)|prog
+iso_start0_chk1|ACLS:BGANIM 0,0,60,100,100,0:BGANIM 1,0,60,100,100,0:BGSTOP:BGSTART 0|BGCHK(1)|prog
+iso_startall_chk1|ACLS:BGANIM 0,0,60,100,100,0:BGANIM 1,0,60,100,100,0:BGSTOP:BGSTART|BGCHK(1)|prog
+# Idempotency.
+stop_twice|ACLS:BGANIM 0,0,60,100,100,0:BGSTOP 0:BGSTOP 0|BGCHK(0)|prog
+start_twice|ACLS:BGANIM 0,0,60,100,100,0:BGSTOP 0:BGSTART 0:BGSTART 0|BGCHK(0)|prog
+# (return,arg)-shape guards.
+bgstop_two_args|BGSTOP 1,2|err
+bgstart_two_args|BGSTART 1,2|err
+bgstop_ret|R=BGSTOP(0)|err
+bgstart_ret|R=BGSTART(0)|err

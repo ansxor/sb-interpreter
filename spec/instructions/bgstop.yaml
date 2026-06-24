@@ -30,13 +30,23 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst BGSTOP handler @0x166214: ret-count [r0,#0xc] must be 0 cmp r1,#0 bne @0x166244; argcount [r0,#0x4] 0->all @0x16625c, 1->one @0x1662ac, else errln -1 mov r2,#0x0 mvn r1,#0x0 mov r0,#0x4 bl 0x1fffdc errnum 4 @0x166244; all-form layer count ldr r2,[r1,#0x60], per-layer orr r3,r3,#0x40 [layer+0x0] @0x16628c (SET stop bit, no error), stride mov r2,#0xe3 mul lsl#3 base [r1,#0x5c] @0x166274; one-form layer via bl 0x1e2504 @0x1662b8 (errnum 10 @0x1e2560), orr r1,r1,#0x40 @0x1662e8; NO active-bit guard. State ptr [0x1662fc]=0x00315D60, layer base [0x166300]=0x019A2F50." }
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer animation run/stop flag (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGSTOP\\b'): 34 files, 58 lines — both the bare all-layers form `BGSTOP` and the per-layer form `BGSTOP 0` / `BGSTOP 2` (43KNQEA6/TXT/3DENGINE, DK384E4S/TXT/GAME), often paired `BGSTOP:SPSTOP` (2XVV233J/TXT/GAME.PRG) — proving both forms are LEGAL syntax." }
-  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9d): BGSTOP 4 -> errnum 10 errline 1 (single-layer form, layer out of range). The pause is observable via BGCHK reading 0 after BGSTOP (see [[bgchk]] stopped path). Framebuffer effect oracle-pending (O-T6)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9d): BGSTOP 4 -> errnum 10 errline 1 (single-layer form, layer out of range)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 35, bgstartstop_rt.tsv): pause contract observed through BGCHK (forced to 0 by the 0x40 stop bit — [[bgchk]]) with an endless XY BGANIM running #CHKXY. Baseline `BGANIM 0,0,60,100,100,0`->BGCHK(0)=1; `:BGSTOP 0`->BGCHK(0)=0 (one-layer pause); no-arg `:BGSTOP`->BGCHK(0)=0 (all-layer pause). NAMED-LAYER ISOLATION (layers 0+1 both animating): `BGSTOP 0`->BGCHK(0)=0 but BGCHK(1)=1 (layer 1 untouched). IDEMPOTENT: `BGSTOP 0:BGSTOP 0`->BGCHK(0)=0, no error. SHAPE GUARDS: `BGSTOP 1,2` (2-arg) and `R=BGSTOP(0)` (return ctx) both -> errnum 4 errline 1 (the @0x166244 gate). The on-screen pause EFFECT still needs the O-T6 BG framebuffer golden." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Error / no-error cases derived from the disassembly gates; runtime animation output is oracle-pending (no BG framebuffer harvest, O-T6).
+  # Pause contract hw_verified (sb-oracle M7-T2 run 35): BGSTOP sets the 0x40 stop bit, so BGCHK
+  # reads 0 for that layer while paused. An endless XY BGANIM (loop=0) keeps #CHKXY=1 until BGSTOP.
+  # `stdout` is the console scrape (trailing newline trimmed). The on-screen pause effect is still
+  # oracle-pending (no BG framebuffer harvest, O-T6).
   - { name: stop_all_no_arg, code: "BGSCREEN 0,32,32\nBGSTOP", expect: { stdout: "" } }
-  - { name: stop_one, code: "BGSCREEN 0,32,32\nBGSTOP 0", expect: { stdout: "" } }
+  - { name: baseline_running, code: "BGANIM 0,0,60,100,100,0\nPRINT BGCHK(0)", expect: { stdout: "1" } }
+  - { name: stop_one_reads_zero, code: "BGANIM 0,0,60,100,100,0\nBGSTOP 0\nPRINT BGCHK(0)", expect: { stdout: "0" } }
+  - { name: stop_all_reads_zero, code: "BGANIM 0,0,60,100,100,0\nBGSTOP\nPRINT BGCHK(0)", expect: { stdout: "0" } }
+  - { name: stop_one_isolates_named_layer, code: "BGANIM 0,0,60,100,100,0\nBGANIM 1,0,60,100,100,0\nBGSTOP 0\nPRINT BGCHK(0);\",\";BGCHK(1)", expect: { stdout: "0,1" } }
+  - { name: stop_idempotent, code: "BGANIM 0,0,60,100,100,0\nBGSTOP 0\nBGSTOP 0\nPRINT BGCHK(0)", expect: { stdout: "0" } }
   - { name: layer_out_of_range, code: "BGSTOP 4", expect: { error: { errnum: 10 } } }
   - { name: layer_negative, code: "BGSTOP -1", expect: { error: { errnum: 10 } } }
+  - { name: two_args_illegal, code: "BGSTOP 1,2", expect: { error: { errnum: 4 } } }
+  - { name: return_ctx_illegal, code: "R=BGSTOP(0)", expect: { error: { errnum: 4 } } }

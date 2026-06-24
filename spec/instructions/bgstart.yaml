@@ -30,13 +30,22 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst BGSTART handler @0x16685c: ret-count [r0,#0xc] must be 0 cmp r1,#0 bne @0x16688c; argcount [r0,#0x4] 0->all @0x1668a4, 1->one @0x1668f4, else errln -1 mov r2,#0x0 mvn r1,#0x0 mov r0,#0x4 bl 0x1fffdc errnum 4 @0x16688c; all-form layer count ldr r2,[r1,#0x60], per-layer bic r3,r3,#0x40 [layer+0x0] @0x1668d4 (clear stop bit, no error), stride mov r2,#0xe3 mul lsl#3 base [r1,#0x5c] @0x1668bc; one-form layer via bl 0x1e2504 @0x166900 (errnum 10 @0x1e2560), bic r1,r1,#0x40 @0x166930; NO active-bit guard. State ptr [0x166944]=0x00315D60, layer base [0x166948]=0x019A2F50." }
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer animation run/stop flag (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGSTART\\b'): 27 files, 72 lines — both the bare all-layers form `BGSTART` (e.g. NDNYH3J4/TXT/HNZSCSR) and the per-layer form `BGSTART 0` / `BGSTART 1` (43KNQEA6/TXT/3DENGINE, 515XV3C4/TXT/BBZH) and variable layer `BGSTART ID%` (735YW3L4/TXT/GIVERS_APP) — proving both forms are LEGAL syntax." }
-  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9d): BGSTART 4 -> errnum 10 errline 1 (single-layer form, layer out of range). Resume-side effect on a running animation is oracle-pending (no BG framebuffer harvest, O-T6)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9d): BGSTART 4 -> errnum 10 errline 1 (single-layer form, layer out of range)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 35, bgstartstop_rt.tsv): resume contract observed through BGCHK (forces 0 while stopped — [[bgchk]]) with an endless XY BGANIM keeping #CHKXY running. `BGANIM 0,0,60,100,100,0:BGSTOP 0:BGSTART 0`->BGCHK(0)=1 (one-layer resume); no-arg `BGSTOP:BGSTART`->BGCHK(0)=1 (all-layer resume). NAMED-LAYER ISOLATION (layers 0+1 both animating): after `BGSTOP:BGSTART 0`, BGCHK(0)=1 but BGCHK(1)=0 (only the named layer resumed); `BGSTOP:BGSTART`->BGCHK(1)=1 (all). IDEMPOTENT: `BGSTOP 0:BGSTART 0:BGSTART 0`->BGCHK(0)=1, no error. SHAPE GUARDS: `BGSTART 1,2` (2-arg) and `R=BGSTART(0)` (return ctx) both -> errnum 4 errline 1 (the @0x16688c gate). The on-screen animation EFFECT (which tiles actually move) still needs the O-T6 BG framebuffer golden." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Error / no-error cases derived from the disassembly gates; runtime animation output is oracle-pending (no BG framebuffer harvest, O-T6).
+  # Resume contract hw_verified (sb-oracle M7-T2 run 35) by reading BGCHK back (BGSTOP forces it
+  # to 0, BGSTART restores the running #CHK* bit). An endless XY BGANIM (loop=0) keeps #CHKXY=1
+  # running. `stdout` is the console scrape (trailing newline trimmed). The on-screen animation
+  # effect is still oracle-pending (no BG framebuffer harvest, O-T6).
   - { name: start_all_no_arg, code: "BGSCREEN 0,32,32\nBGSTART", expect: { stdout: "" } }
-  - { name: start_one, code: "BGSCREEN 0,32,32\nBGSTOP 0\nBGSTART 0", expect: { stdout: "" } }
+  - { name: start_one_resumes, code: "BGANIM 0,0,60,100,100,0\nBGSTOP 0\nBGSTART 0\nPRINT BGCHK(0)", expect: { stdout: "1" } }
+  - { name: start_all_resumes, code: "BGANIM 0,0,60,100,100,0\nBGSTOP\nBGSTART\nPRINT BGCHK(0)", expect: { stdout: "1" } }
+  - { name: start_one_isolates_named_layer, code: "BGANIM 0,0,60,100,100,0\nBGANIM 1,0,60,100,100,0\nBGSTOP\nBGSTART 0\nPRINT BGCHK(0);\",\";BGCHK(1)", expect: { stdout: "1,0" } }
+  - { name: start_idempotent, code: "BGANIM 0,0,60,100,100,0\nBGSTOP 0\nBGSTART 0\nBGSTART 0\nPRINT BGCHK(0)", expect: { stdout: "1" } }
   - { name: layer_out_of_range, code: "BGSTART 4", expect: { error: { errnum: 10 } } }
   - { name: layer_negative, code: "BGSTART -1", expect: { error: { errnum: 10 } } }
+  - { name: two_args_illegal, code: "BGSTART 1,2", expect: { error: { errnum: 4 } } }
+  - { name: return_ctx_illegal, code: "R=BGSTART(0)", expect: { error: { errnum: 4 } } }

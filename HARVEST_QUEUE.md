@@ -581,8 +581,12 @@ oracle to confirm exact output and promote to `hw_verified`.
   - BGVAR var-7 flag-bit-0x20 side effect (the BGANIM "V"-channel marker the var-7 write clears) —
     observable only through a running BGANIM transform, so O-T6-pending. [The write→read round-trip
     + OUT-V form VALUE persistence is now hw_verified — bgvar_rt 2026-06-24, frozen in bgvar.yaml.]
-  - BGCHK mid-animation #CHK* bit values while a BGANIM channel runs (which bit per XY/Z/R/S/C/V),
-    and confirm BG omits #CHKUV(4)/#CHKI(8); confirm BGSTOP-then-BGCHK reads 0 on a running anim.
+  - [x] BGCHK mid-animation #CHK* bit (XY) + BGSTOP/BGSTART resume — RESOLVED 2026-06-24 (M7-T2 run 35,
+    bgstartstop_rt.tsv): a running XY BGANIM gives BGCHK=1 (#CHKXY, raw `1<<channel`, no shift), goes 0
+    under BGSTOP (one-layer + all-layer + named-layer isolation), back to 1 under BGSTART; idempotent;
+    shape guards BGSTART/BGSTOP `1,2` & return-ctx -> errnum 4. Frozen in bgstart/bgstop/bgchk.yaml.
+    [Remaining: the Z/R/S/C/V mid-anim bits + confirming BG omits #CHKUV(4)/#CHKI(8) — same probe with
+    those targets; the on-screen animation transform stays O-T6-pending.]
   - BGANIM interpolation output (positive hold vs negative linear interp), Loop 0 endless, the
     "@label" DATA form and relative "+" semantics against rendered layer transform.
   - BGFUNC callback dispatch via CALL BG (CALLIDX = layer number); errnum 4/8 for unresolvable /
@@ -935,7 +939,8 @@ oracle to confirm exact output and promote to `hw_verified`.
   Open items the model marks oracle-pending:
   - SPCHK part RESOLVED 2026-06-24 (spstartstop_rt.tsv): an XY SPANIM gives SPCHK=1 (#CHKXY), so
     `(flags>>17)&0xFF` is confirmed (SPANIM's XY anim-active bit 0x20000 = bit 17 → SPCHK bit 0). The
-    BGCHK low-byte mid-animation bit values while a BGANIM channel runs are still oracle-pending (same probe).
+    BGCHK low-byte XY bit RESOLVED 2026-06-24 (M7-T2 run 35, bgstartstop_rt.tsv): a running XY BGANIM
+    gives BGCHK=1 (#CHKXY, raw `1<<channel`), 0 under BGSTOP, 1 under BGSTART. Z/R/S/C/V bits still pending.
   - Sprite SPVAR out-of-range variable number (outside 0–7): does it error (which errnum) or
     wrap/no-op? No visible guard at the SPVAR store site (BGVAR DOES guard 0–7).
   - SPHITINFO 3-variable OUT form (TM,X1,Y1) — accepted by the handler, undocumented; confirm legal + values.

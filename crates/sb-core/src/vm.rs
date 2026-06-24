@@ -5414,6 +5414,25 @@ H$=HEX$(255)"#);
     }
 
     #[test]
+    fn bgstart_bgstop_isolate_named_layer() {
+        // Two layers animating XY (#CHKXY = 1). hw_verified M7-T2 run 35: the one-layer form
+        // touches only the named layer; the no-arg form touches all.
+        let prog = "BGANIM 0,0,60,100,100,0\nBGANIM 1,0,60,100,100,0";
+        // Baseline: both running.
+        let vm = run_b(&format!("{prog}\nPRINT BGCHK(0);BGCHK(1)"));
+        assert_eq!(vm.console_text(), "11");
+        // Stop layer 0 only — layer 1 stays running.
+        let vm = run_b(&format!("{prog}\nBGSTOP 0\nPRINT BGCHK(0);BGCHK(1)"));
+        assert_eq!(vm.console_text(), "01");
+        // Stop all, resume layer 0 only.
+        let vm = run_b(&format!("{prog}\nBGSTOP\nBGSTART 0\nPRINT BGCHK(0);BGCHK(1)"));
+        assert_eq!(vm.console_text(), "10");
+        // Resume all; idempotent double BGSTART is a no-op (no error).
+        let vm = run_b(&format!("{prog}\nBGSTOP\nBGSTART\nBGSTART\nPRINT BGCHK(0);BGCHK(1)"));
+        assert_eq!(vm.console_text(), "11");
+    }
+
+    #[test]
     fn bgfunc_binds_callback_name() {
         let vm = run_b("BGSCREEN 0,32,32\nBGFUNC 0,@CB\nEND\n@CB");
         assert_eq!(vm.bg().layers[0].func.as_deref(), Some("CB"));
