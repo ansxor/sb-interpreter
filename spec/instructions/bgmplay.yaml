@@ -45,12 +45,14 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst shared integer-arg range helper FUN_001eec7c @0x1eec7c: evaluates arg (blx [r2,#0x40]), then bounds-checks value [r4,#0x0] against min r3 and max stack-arg [sp,#0x18] (cmp r1,r6 / cmpge r7,r1 / bge ok), raising errnum 10 on out-of-range (mov r2,#0x0 / mov r0,#0xa / b 0x1fffdc @0x1eeccc-0x1eecd4) — this is how the track (max 7) and volume (max 127) bounds are enforced" }
   - { type: community, ref: "osb/SMILEBASIC/sound.d BGM playback (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGMPLAY\\b'): 1125 files — all four forms appear: 1-arg numeric `BGMPLAY 27` (BLOCKDUDE), 2-arg `BGMPLAY 0,27` (BLOCKDUDE), 3-arg with volume `BGMPLAY 0,128,80` (KENTEI), MML string literal `BGMPLAY \":15@255 V50 >C+33\"` (5KXNXXNX/TXT/.MAIN) incl. computed MML `BGMPLAY \"@\"+STR$(P1)+\"C\"` (4D2X3KQV/TXT/PP3_D_RACE) and a long T511 MML string (XR847ENV/TXT/1-THE_QUEST); tune number is often a variable/expression e.g. `BGMPLAY 0,27-10*(LVL MOD 2)` (BLOCKDUDE) — proving the forms are LEGAL syntax. Runtime audio output unproven (no oracle, O-T7)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-24 (M7-T2, harness/harvest/out/bgmplay.tsv): all four accepted call shapes run WITHOUT error — `BGMPLAY 0` (1-arg tune on track 0), `BGMPLAY 0,27` (track,tune), `BGMPLAY 0,128,80` (track,tune,volume), and `BGMPLAY \"T120O4L4CDE\"` (MML string) all return NOERR. NOTE: `BGMPLAY 0,128,80` confirms an UNREGISTERED user tune (128) is accepted (band 128..255 is range-valid; playback is a no-op, not an error) — the gate validates only the band, never whether the tune is defined. Error guards confirmed exact: `BGMPLAY 50` (tune in the 43..127 gap) -> errnum 10 errline 1; `BGMPLAY 127` (still in the gap, just below the user band) -> errnum 10; `BGMPLAY 8,0` (track > 7) -> errnum 10; `BGMPLAY 0,0,128` (volume > 127) -> errnum 10; `A=BGMPLAY(0)` (return context) -> errnum 4. Audio output itself remains unverifiable (O-T7); this freezes the headless call-shape + range contract." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Call shape, argument ranges, and error conditions from the disassembly. Audio output is
-  # not deterministically harvestable (O-T7); these pin the statement contract.
+  # Call shape, argument ranges, and error conditions — all hw_verified via sb-oracle SB
+  # 3.6.0 batch 2026-06-24 (harness/harvest/out/bgmplay.tsv): the 4 accepted forms NOERR,
+  # the 5 guards errnum-exact. Audio output is not deterministically harvestable (O-T7).
   - { name: tune_track0, code: "BGMPLAY 0", expect: { stdout: "" } }
   - { name: tune_explicit_track, code: "BGMPLAY 0,27", expect: { stdout: "" } }
   - { name: tune_track_volume, code: "BGMPLAY 0,128,80", expect: { stdout: "" } }

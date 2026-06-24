@@ -1,0 +1,12 @@
+# BGMPLAY call-shape + arg-range error contract (M7-T2 headless surface).
+# |err mode: acceptance -> errored=false; error -> errored=true+errnum.
+# Audio output itself is NOT harvestable (O-T7); this pins the statement contract.
+tune_track0|BGMPLAY 0|err
+tune_explicit_track|BGMPLAY 0,27|err
+tune_track_volume|BGMPLAY 0,128,80|err
+mml_string|BGMPLAY "T120O4L4CDE"|err
+tune_out_of_range|BGMPLAY 50|err
+tune_gap_127|BGMPLAY 127|err
+track_out_of_range|BGMPLAY 8,0|err
+volume_out_of_range|BGMPLAY 0,0,128|err
+used_as_function|A=BGMPLAY(0)|err
