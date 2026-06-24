@@ -1121,16 +1121,17 @@ impl Vm {
     /// `hw_verified` (sb-oracle 2026-06-23); the actual control transfer is the deferred
     /// multi-program model:
     /// * **numeric slot** `EXEC n`: `n` outside 0..3 → Out of range (10); a valid *non-running*
-    ///   slot with no loaded program → Syntax error (3) (`EXEC 1` on a fresh, empty slot — and
-    ///   every slot is empty until a loader exists); the *running* slot would restart the
-    ///   current program (transfer, deferred).
+    ///   slot with a loaded program transfers control to it ([`Vm::exec_transfer`], documented);
+    ///   an *empty* non-running slot → Syntax error (3) (`EXEC 1` on a fresh, empty slot); the
+    ///   *running* slot would restart the current program (transfer, deferred).
     /// * **resource string** `EXEC "[PRGn:]file"`: an unknown resource type / bad PRG index /
     ///   empty name → 4; a missing file → Load failed (46); an existing file would load + run it
-    ///   (transfer, deferred).
+    ///   (the file LOAD needs a compile hook — deferred).
     ///
-    /// The transfer itself (switching the running program, the `END`-returns-across-slots
-    /// rule, per-slot vs shared variable scoping) is not body-readable in the disassembly and
-    /// is oracle-pending — left unsupported rather than faked (queued, `HARVEST_QUEUE.md`).
+    /// The numeric loaded-slot transfer is the documented single-level model. The remaining
+    /// pieces — the string-form file LOAD, the running-slot restart, the
+    /// `END`-returns-across-slots rule, and per-slot vs shared variable scoping — are not
+    /// body-readable in the disassembly and stay oracle-pending (queued, `HARVEST_QUEUE.md`).
     fn do_exec(&mut self, v: Value) -> Result<(), VmError> {
         if let Value::Str(s) = &v {
             let s = String::from_utf16_lossy(s);
@@ -1155,11 +1156,38 @@ impl Vm {
                     "EXEC <running slot> (program restart / control transfer) — M6 multi-program model",
                 ));
             }
-            // A valid non-running slot. No program loader exists yet, so the slot is empty —
-            // real SB raises Syntax error (3) for `EXEC <empty slot>` (hw_verified). When the
-            // loader lands, a loaded slot transfers control here instead.
-            Err(sb(RuntimeError::new(crate::builtins::ERR_SYNTAX)))
+            // A valid non-running slot. If a program is loaded there (host/test seeded it via
+            // `Vm::load_slot_program`, or a future `LOAD "PRGn:…"`), EXEC transfers control to
+            // it — documented "Executes a program in a different SLOT". An *empty* slot raises
+            // Syntax error (3) (hw_verified: `EXEC 1` on a fresh, empty slot).
+            if self.slot_programs[n as usize].is_some() {
+                self.exec_transfer(n as u8);
+                Ok(())
+            } else {
+                Err(sb(RuntimeError::new(crate::builtins::ERR_SYNTAX)))
+            }
         }
+    }
+
+    /// `EXEC` control transfer (M6-T6) — switch the running program to a loaded, non-running
+    /// slot and begin executing it from the top. This is the *documented* model (exec.yaml):
+    /// "Executes a program in a different SLOT". Because it is impossible to return to the
+    /// previous program, the caller's whole execution state — `DEF` frames, the `GOSUB`
+    /// stack, the operand stack, and the `DATA` read cursor — is discarded; the target slot
+    /// runs against its own globals (swapped in by [`Vm::activate_slot`]). When the EXEC'd
+    /// program ends, the run ends.
+    ///
+    /// The nested `END`-returns-across-slots rule (a program EXEC'd into another slot returning
+    /// to its launcher), the running-slot *restart*, the string-form file LOAD, and DIRECT-mode
+    /// gating remain oracle-pending (queued, `HARVEST_QUEUE.md`).
+    fn exec_transfer(&mut self, target: u8) {
+        self.activate_slot(target);
+        self.current_slot = target;
+        self.pc = 0;
+        self.frames.clear();
+        self.gosub.clear();
+        self.stack.clear();
+        self.data_cursor = 0;
     }
 
     /// Call a registered builtin (M1-T7 math/string set). Pops `argc` value args
@@ -4133,6 +4161,63 @@ CALL "ADDOUT",2,3 OUT X"#);
             "COMMON DEF DBL(N)\nRETURN N*2\nEND",
         );
         assert_eq!(vm.console_text(), "42");
+    }
+
+    // ---- EXEC numeric control transfer (M6-T6) ----
+
+    #[test]
+    fn exec_numeric_transfers_to_loaded_slot() {
+        // documented (exec.yaml): `EXEC n` executes the program already loaded in slot n.
+        // Control transfers — the slot-1 program runs; the slot-0 statement *after* EXEC is
+        // abandoned (impossible to return to the previous program).
+        let vm = run_with_slot1("PRINT \"A\";\nEXEC 1\nPRINT \"NEVER\"", "PRINT \"B\"\nEND");
+        assert_eq!(vm.console_text(), "AB");
+    }
+
+    #[test]
+    fn exec_transfer_runs_target_against_its_own_globals() {
+        // The EXEC'd program runs with the target slot's own globals, not the caller's.
+        // Slot 0 sets X=99 but never uses it; slot 1 has its own X defaulting to 0.
+        let vm = run_with_slot1("X=99\nEXEC 1", "PRINT X\nEND");
+        assert_eq!(vm.console_text(), "0");
+    }
+
+    #[test]
+    fn exec_unloaded_non_running_slot_is_syntax_error() {
+        // hw_verified (exec.yaml): `EXEC 1` on an empty (no program loaded) non-running slot
+        // → Syntax error (3) — the transfer only fires when a program is loaded there.
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        let ast = parse("EXEC 1").expect("parse");
+        let program = compile_with(&ast, &StdBuiltins).expect("compile");
+        let mut vm = Vm::new(program);
+        let err = vm.run().expect_err("empty slot must be Syntax error");
+        assert_eq!(err.errnum(), Some(3));
+    }
+
+    #[test]
+    fn exec_transfer_discards_caller_gosub_state() {
+        // EXEC abandons the caller's GOSUB stack: a transfer from inside a GOSUB does not
+        // resume the caller's @RET line — the target program runs and the run ends there.
+        let vm = run_with_slot1(
+            "GOSUB @SUB\nPRINT \"AFTER\"\n@SUB\nEXEC 1\nRETURN",
+            "PRINT \"IN1\"\nEND",
+        );
+        assert_eq!(vm.console_text(), "IN1");
+    }
+
+    #[test]
+    fn exec_transfer_error_reports_target_slot() {
+        // After the transfer, an error in the EXEC'd program reports ERRPRG = its slot.
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        let ast = parse("EXEC 1").expect("parse");
+        let program = compile_with(&ast, &StdBuiltins).expect("compile");
+        let mut vm = Vm::new(program);
+        vm.load_slot_program(1, slot_program("A=SQR(-1)\nEND"));
+        let _ = vm.run();
+        assert_eq!(vm.errnum(), 10);
+        assert_eq!(vm.errprg(), 1);
     }
 
     #[test]

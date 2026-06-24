@@ -662,8 +662,18 @@ oracle to confirm exact output and promote to `hw_verified`.
     caller's on return (`Vm::load_slot_program` seeds slots 1-3; 6 new vm.rs e2e tests).
     STILL UNHARVESTED for COMMON specifically: whether a free (non-param/local) variable
     referenced inside a COMMON DEF binds to the DEFINING slot's globals (what we implement)
-    or the CALLER's — needs a 2-slot oracle that shares a same-named global. EXEC whole-
-    program control transfer + the string-form program LOAD remain VmError::Unsupported.)
+    or the CALLER's — needs a 2-slot oracle that shares a same-named global.)
+    (UPDATE 2026-06-23, M6-T6: EXEC FORM 2 numeric loaded-slot CONTROL TRANSFER is now
+    IMPLEMENTED to the documented model (`Vm::exec_transfer`) — `EXEC n` on a non-running slot
+    holding a loaded program switches the active program/globals to that slot, runs it from the
+    top, and discards the caller's frames/GOSUB/operand-stack/DATA-cursor (impossible to return
+    to the previous program); an empty slot stays Syntax error (3). The EXEC'd program runs
+    against its own globals; ERRPRG reports the target slot. 5 new vm.rs e2e tests. STILL
+    VmError::Unsupported / UNHARVESTED (need a ≥2-slot oracle harness, NOT a single injected
+    program): the string FORM 1 file LOAD (needs a compile-from-storage hook threading the
+    builtin registry), the running-slot RESTART, the nested END-returns-across-slots rule, and
+    the per-slot vs shared variable-scoping confirmation. EXEC DIRECT-mode error (hypothesis
+    errnum 43) also unharvested.)
 
 - S-T12c Source read (PRGGET$/PRGNAME$/PRGSIZE): the error guards ARE hw_verified (batch
     2026-06-22, s_t12c): PRGGET$ with no active PRGEDIT -> errnum 38 (the no-PRGEDIT check
