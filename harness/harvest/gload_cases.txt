@@ -1,0 +1,27 @@
+# GLOAD array->page side-effect harvest — GSPOIT read-back (framebuffer-free, same method
+# as gpset/gline/gbox/gfill/gtri). Placement + round-trip + error guards already hw_verified
+# (graphics_bitmap.yaml, s_t7d). This run pins the remaining headline behaviors: copy_mode
+# transparent skip vs copy, the form-2 PALETTE recolor, and the scalar-flag domain.
+#
+# Image built in-page (GPSET) then GSAVE'd into an array; page cleared; GLOAD'd elsewhere;
+# pixels read back with GSPOIT. white=RGB(255,255,255), red=RGB(255,0,0), blue=RGB(0,0,255).
+#
+# copy_mode 0 (skip transparent): the image's transparent pixel (0,0)=color 0 must NOT
+# overwrite the red background; the opaque white pixel must. Read both dest pixels.
+copymode_skip|GCLS:W=RGB(255,255,255):GPSET 0,0,0:GPSET 1,0,W:DIM I[0]:GSAVE 0,0,2,1,I,0:GFILL 100,100,101,100,RGB(255,0,0):GLOAD 100,100,2,1,I,0,0:R$=STR$(GSPOIT(100,100))+" "+STR$(GSPOIT(101,100))|R$|progstr
+# copy_mode 1 (copy transparent): same image+bg, but now the transparent pixel DOES overwrite
+# the red background (-> transparent). Read both dest pixels.
+copymode_copy|GCLS:W=RGB(255,255,255):GPSET 0,0,0:GPSET 1,0,W:DIM I[0]:GSAVE 0,0,2,1,I,0:GFILL 100,100,101,100,RGB(255,0,0):GLOAD 100,100,2,1,I,0,1:R$=STR$(GSPOIT(100,100))+" "+STR$(GSPOIT(101,100))|R$|progstr
+# Form-2 PALETTE recolor: image holds indices [0,1]; palette P[0]=red,P[1]=blue. Read the two
+# dest pixels -> reveals (a) index->palette mapping and (b) whether palette entries are logical
+# ARGB (RGB() value) or physical codes.
+palette_recolor|GCLS:DIM I[2]:I[0]=0:I[1]=1:DIM P[2]:P[0]=RGB(255,0,0):P[1]=RGB(0,0,255):GLOAD 100,120,2,1,I,P,1:R$=STR$(GSPOIT(100,120))+" "+STR$(GSPOIT(101,120))|R$|progstr
+# Form-2 with a non-trivial index order [2,0,1] into a 3-entry palette red/green/blue.
+palette_order|GCLS:DIM I[3]:I[0]=2:I[1]=0:I[2]=1:DIM P[3]:P[0]=RGB(255,0,0):P[1]=RGB(0,255,0):P[2]=RGB(0,0,255):GLOAD 100,140,3,1,I,P,1:R$=STR$(GSPOIT(100,140))+" "+STR$(GSPOIT(101,140))+" "+STR$(GSPOIT(102,140))|R$|progstr
+# Scalar convert_flag must be 0 or 1: a flag of 2 falls through to the type-mismatch site
+# (mov r0,#0x8 @0x1539a8). Expect errnum 8.
+flag2_err|DIM W[4]:GLOAD 0,0,2,2,W,2,0|err
+# Flag semantics cross-check: GSAVE flag 0 (32-bit logical) then GLOAD flag 1 (raw 16-bit) of a
+# red pixel. flag 1 takes only the LOW 16 bits of the logical word (red's low half = 0) -> the
+# loaded pixel is black/transparent. Read dest pixel + the stored logical word I[0].
+flag_cross|GCLS:GPSET 0,0,RGB(255,0,0):DIM I[0]:GSAVE 0,0,1,1,I,0:GCLS:GLOAD 50,50,1,1,I,1,1:R$=STR$(GSPOIT(50,50))+" "+STR$(I[0])|R$|progstr

@@ -1619,3 +1619,15 @@ The *live device* outputs have no headless golden — sb-core returns faithful n
   under-verified), then freeze the steep_map case as a conformance test. GBOX/GCIRCLE radii reuse
   `line_dev` (cardinal only there, so unaffected today) but inherit the fix. NOT frozen as a
   conformance case now (sb-core would fail it).
+
+## M7-T2 — GLOAD convert_flag cross-flag raw extraction (oracle curiosity, NOT a normal path)
+GLOAD's raw path (convert_flag != 0) fed a 32-bit LOGICAL word (i.e. GSAVE'd with flag 0,
+then GLOAD'd with flag 1/2 — a mismatched flag no real program uses) yields an un-modelled
+pixel on real SB: GSAVE flag 0 of red = I[0]=0xFFF80000, GLOAD flag 2 -> GSPOIT = -460552
+(WHITE / 0xFFF8F8F8). Neither low-16 (0x0000 -> black) nor high-16 (0xFFF8 -> R=31,G=31,B=28,A=0)
+explains white. sb-core takes the low 16 bits (-> 0). Discrepancy ONLY on this pathological
+mismatched-flag input; the documented matched-flag round-trips (flag 0->0, flag 1->1, flag 2 raw
+round-trip of a physical code) are all hw_verified and sb-core matches them. Harvest the raw-path
+byte extraction rule for an out-of-domain (logical) input if ever worth modelling (`gload_extra.tsv`
+flag2_draw, `gload.tsv` flag_cross). NOT frozen as a conformance case (sb-core would fail it, and
+the input is undefined usage).

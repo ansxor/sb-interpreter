@@ -40,8 +40,10 @@ semantics:
   - "With 3 args the destination is the whole stored image placed at the current drawing area's origin (the drawable rectangle is computed via bl 0x18fec0 @0x1535c8 and width/height taken as x2-x1+1, y2-y1+1)."
   - "With 7 args the leading X,Y,Width,Height give the destination rectangle. Width and Height are validated against the destination position: an out-of-range (e.g. negative) width or height raises errnum 10 (Out of range) — guards cmp r8,r0 ble with mov r0,#0xa @0x153728 and @0x153750."
   - "image_array must be a numeric array; it must hold at least Width*Height elements or errnum 31 (Subscript out of range) is raised (element-count cmp r0,r1 bge / mov r0,#0x1f @0x15381c). If the array element type is wrong (not a numeric array) errnum 8 (Type mismatch) is raised (mov r0,#0x8 @0x1539a8)."
-  - "The second-to-last operand selects the FORM: if it is a numeric SCALAR it is the convert_flag (form 1: 0 converts stored data to 32-bit logical colors, 1 keeps the raw 16-bit physical codes); if it is an ARRAY it is the palette and the image data is recolored as palette indices (form 2). The handler branches on the flag value cmp #0 / cmp #1 @0x153888 into two draw helpers — bl 0x191414 (convert path) and bl 0x190aa8 (raw/index path)."
-  - "copy_mode is the LAST arg and is normalized to a boolean (any non-zero -> 1, cmp/movne @0x1538bc): TRUE copies the transparent color, FALSE skips transparent pixels. Numeric args use the vtable fetch [r2,#0x40]; the image/palette arrays use the array fetch [r2,#0x48]. Graphics context globals are read via [0x153b60]/[0x153b64]."
+  - "The second-to-last operand selects the FORM: if it is a numeric SCALAR it is the convert_flag (form 1: 0 converts stored data to 32-bit logical colors, non-zero keeps the raw 16-bit physical codes); if it is an ARRAY it is the palette and the image data is recolored as palette indices (form 2). The handler branches on the flag value cmp #0 / cmp #1 @0x153888 into two draw helpers — bl 0x191414 (convert path) and bl 0x190aa8 (raw/index path); the array (palette) form takes separate recolor helpers bl 0x1911c4 @0x1539b0 / bl 0x190... @0x153a1c."
+  - "convert_flag domain (hw_verified sb-oracle 2026-06-24): flag 0 takes the convert path; ANY non-zero scalar (1, 2, …) takes the raw path and the flag is NOT validated — flag 2 round-trips a physical code identically to flag 1 (GSAVE flag 1 -> GLOAD flag 2 = exact red) and does NOT raise an error. (Loading a 32-bit *logical* word — GSAVE flag 0 — back through the raw path is the undefined cross-flag case: real SB yields an un-modelled value, low-16-bit extraction does not explain it; exact byte extraction is oracle-pending, never reached when GLOAD's flag matches GSAVE's.)"
+  - "Form-2 PALETTE recolor (hw_verified sb-oracle 2026-06-24): each image element is used as an INDEX into palette_array; the indexed entry is the pixel color. Palette entries are LOGICAL ARGB colors (the `RGB()` value), truncated to the page's RGBA5551 on write — `DIM I[2]:I[0]=0:I[1]=1:DIM P[2]:P[0]=RGB(255,0,0):P[1]=RGB(0,0,255):GLOAD x,y,2,1,I,P,1` paints red then blue; index order [2,0,1] over a red/green/blue palette paints blue/red/green."
+  - "copy_mode is the LAST arg and is normalized to a boolean (any non-zero -> 1, cmp/movne @0x1538bc): TRUE (1) copies the transparent color, FALSE (0) skips transparent pixels. hw_verified via GSPOIT read-back (sb-oracle 2026-06-24): an image whose pixel is the transparent color (color 0, alpha bit clear) loaded over a red background — mode 0 KEEPS the red (skipped), mode 1 OVERWRITES it with the transparent color (reads back 0); an opaque pixel draws under both modes. Numeric args use the vtable fetch [r2,#0x40]; the image/palette arrays use the array fetch [r2,#0x48]. Graphics context globals are read via [0x153b60]/[0x153b64]."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "argument count is not 3 or 7, or a return value is requested (used as a function)" }
@@ -56,11 +58,15 @@ sources:
   - { type: community, ref: "sbsave corpus: GLOAD appears ~670x — only the documented 3-arg (image_array,flag,mode, e.g. QRY34XVD/TXT/UNPACK 'GLOAD D,1,1') and 7-arg forms occur. Confirms the form-2 PALETTE variant is real in the wild — the 2nd-to-last operand is a palette array name (e.g. 53383XCF/TXT/CHIP8.PKG '...,CHIP8_PAL,TRUE'; '...,SFNPAL%,FALSE'). Legal syntax; runtime output unproven (framebuffer oracle pending, O-T6)." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7d): GLOAD W,1 (2 args, W a DIM'd array) -> errnum 4, errline 1; GLOAD 0,0,8,8,W (5 args) -> errnum 4; A=GLOAD(W,1,0) (used as a function) -> errnum 4." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-23 (s_t7d_bitmap): 3-arg GLOAD loads the WHOLE drawing area = 512x512 (a too-small array -> errnum 31: DIM W[8]:GLOAD W,1,0 -> 31); 7-arg too-small -> errnum 31 (DIM W[3]:GLOAD 0,0,8,8,W,1,0 -> 31); a string image array -> errnum 8 (Type mismatch); GSAVE-then-GLOAD round-trips a pixel exactly for both convert flags (green GPSET 5,5 -> GSAVE 16x16 -> GCLS -> GLOAD elsewhere -> GSPOIT = 0xFF00F800 = -16713728 for flag 0 and flag 1)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 50, GSPOIT read-back, harness/harvest/out/gload.tsv + gload_extra.tsv): copy_mode 0 SKIPS the image's transparent pixel (red bg kept = -524288), mode 1 COPIES it (reads back 0) — opaque pixel (white = -460552) draws under both; form-2 PALETTE recolors image elements as indices into the palette array, whose entries are LOGICAL ARGB (`RGB()`) colors — indices [0,1] over P=[red,blue] paint red/blue, indices [2,0,1] over P=[red,green,blue] paint blue/red/green; convert_flag domain — flag 2 takes the raw path like flag 1 (GSAVE flag 1 physical -> GLOAD flag 2 = -524288 red) and does NOT error (flag value is unvalidated)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # error/arg-count + size expects are hw_verified (sb-oracle s_t7d 2026-06-22/06-23). Pixel side-effects are exercised by harness/corpus/cases/graphics_bitmap.yaml (GSPOIT round-trips).
+  # error/arg-count + size expects are hw_verified (sb-oracle s_t7d 2026-06-22/06-23). Pixel
+  # side-effects are hw_verified via GSPOIT read-back: round-trip/placement in
+  # harness/corpus/cases/graphics_bitmap.yaml, plus the copy_mode + palette + raw-flag inline
+  # cases below (M7-T2 run 50, harness/harvest/out/gload.tsv + gload_extra.tsv).
   # The 3-arg whole form loads the WHOLE drawing area (512x512 = 262144 elements), so it must be paired with a whole-area GSAVE (a sub-rect GSAVE into a 64-element array would raise errnum 31 — hw_verified).
   - { name: load_whole_flag_ok, code: "DIM WORK[0]\nGSAVE WORK,1\nGLOAD WORK,1,0", expect: { stdout: "" } }
   - { name: load_rect_flag_ok, code: "DIM WORK[0]\nGSAVE 0,0,8,8,WORK,1\nGLOAD 0,0,8,8,WORK,1,0", expect: { stdout: "" } }
@@ -70,3 +76,18 @@ tests:
   - { name: two_args_errors, code: "DIM WORK[0]\nGLOAD WORK,1", expect: { error: { errnum: 4 } } }
   - { name: five_args_errors, code: "DIM WORK[0]\nGLOAD 0,0,8,8,WORK", expect: { error: { errnum: 4 } } }
   - { name: as_function_errors, code: "DIM WORK[0]\nA=GLOAD(WORK,1,0)", expect: { error: { errnum: 4 } } }
+  # --- pixel side-effects hw_verified via GSPOIT read-back (M7-T2 run 50, gload.tsv/gload_extra.tsv).
+  # white=-460552, red=-524288, blue=-16776968, green=-16713728, transparent=0 (RGBA5551 8->5).
+  # copy_mode: image is [transparent@(0,0), white@(1,0)] saved 2x1, loaded over a red 2x1 background.
+  - { name: copymode_skip_keeps_bg, code: "GCLS:W=RGB(255,255,255):GPSET 0,0,0:GPSET 1,0,W:DIM I[0]:GSAVE 0,0,2,1,I,0:GFILL 100,100,101,100,RGB(255,0,0):GLOAD 100,100,2,1,I,0,0:PRINT GSPOIT(100,100)", expect: { stdout: "-524288" } }
+  - { name: copymode_skip_draws_opaque, code: "GCLS:W=RGB(255,255,255):GPSET 0,0,0:GPSET 1,0,W:DIM I[0]:GSAVE 0,0,2,1,I,0:GFILL 100,100,101,100,RGB(255,0,0):GLOAD 100,100,2,1,I,0,0:PRINT GSPOIT(101,100)", expect: { stdout: "-460552" } }
+  - { name: copymode_copy_overwrites_transparent, code: "GCLS:W=RGB(255,255,255):GPSET 0,0,0:GPSET 1,0,W:DIM I[0]:GSAVE 0,0,2,1,I,0:GFILL 100,100,101,100,RGB(255,0,0):GLOAD 100,100,2,1,I,0,1:PRINT GSPOIT(100,100)", expect: { stdout: "0" } }
+  - { name: copymode_copy_draws_opaque, code: "GCLS:W=RGB(255,255,255):GPSET 0,0,0:GPSET 1,0,W:DIM I[0]:GSAVE 0,0,2,1,I,0:GFILL 100,100,101,100,RGB(255,0,0):GLOAD 100,100,2,1,I,0,1:PRINT GSPOIT(101,100)", expect: { stdout: "-460552" } }
+  # form-2 palette recolor: image elements are indices into the palette array (logical-ARGB entries).
+  - { name: palette_index0_red, code: "GCLS:DIM I[2]:I[0]=0:I[1]=1:DIM P[2]:P[0]=RGB(255,0,0):P[1]=RGB(0,0,255):GLOAD 100,120,2,1,I,P,1:PRINT GSPOIT(100,120)", expect: { stdout: "-524288" } }
+  - { name: palette_index1_blue, code: "GCLS:DIM I[2]:I[0]=0:I[1]=1:DIM P[2]:P[0]=RGB(255,0,0):P[1]=RGB(0,0,255):GLOAD 100,120,2,1,I,P,1:PRINT GSPOIT(101,120)", expect: { stdout: "-16776968" } }
+  - { name: palette_order_idx2, code: "GCLS:DIM I[3]:I[0]=2:I[1]=0:I[2]=1:DIM P[3]:P[0]=RGB(255,0,0):P[1]=RGB(0,255,0):P[2]=RGB(0,0,255):GLOAD 100,140,3,1,I,P,1:PRINT GSPOIT(100,140)", expect: { stdout: "-16776968" } }
+  - { name: palette_order_idx0, code: "GCLS:DIM I[3]:I[0]=2:I[1]=0:I[2]=1:DIM P[3]:P[0]=RGB(255,0,0):P[1]=RGB(0,255,0):P[2]=RGB(0,0,255):GLOAD 100,140,3,1,I,P,1:PRINT GSPOIT(101,140)", expect: { stdout: "-524288" } }
+  - { name: palette_order_idx1, code: "GCLS:DIM I[3]:I[0]=2:I[1]=0:I[2]=1:DIM P[3]:P[0]=RGB(255,0,0):P[1]=RGB(0,255,0):P[2]=RGB(0,0,255):GLOAD 100,140,3,1,I,P,1:PRINT GSPOIT(102,140)", expect: { stdout: "-16713728" } }
+  # convert_flag domain: a non-zero flag (here 2) takes the raw path like flag 1 and round-trips a physical code.
+  - { name: rawflag_nonzero_roundtrips, code: "GCLS:GPSET 0,0,RGB(255,0,0):DIM I[0]:GSAVE 0,0,1,1,I,1:GCLS:GLOAD 70,70,1,1,I,2,1:PRINT GSPOIT(70,70)", expect: { stdout: "-524288" } }
