@@ -902,6 +902,21 @@ mod tests {
             bgget(&bg, &[int(0), int(0), int(0), int(0)], 1).unwrap(),
             vec![int(5)]
         );
+        // hw_verified 2026-06-24 (M7-T2 bgput_rt.tsv): numeric data is MASKED to its low 16
+        // bits (strh halfword store), NOT range-checked like BGFILL — &H1FFFF/65536/-1 wrap.
+        for (write, read) in [
+            (0x1_FFFF, 65535),
+            (0x1_0000, 0),
+            (-1, 65535),
+            (0xFFFF, 65535),
+        ] {
+            bgput(&mut bg, &[int(0), int(2), int(2), int(write)], 0).unwrap();
+            assert_eq!(
+                bgget(&bg, &[int(0), int(2), int(2)], 1).unwrap(),
+                vec![int(read)],
+                "BGPUT data {write} should store masked {read}"
+            );
+        }
         // Out-of-range cell.
         assert_eq!(
             bgput(&mut bg, &[int(0), int(32), int(0), int(5)], 0)

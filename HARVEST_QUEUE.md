@@ -557,7 +557,9 @@ oracle to confirm exact output and promote to `hw_verified`.
   errnum 10 / used-as-statement -> errnum 4; BGCOPY layer-oob -> errnum 10 / 5-arg -> errnum 4;
   BGCLIP layer-oob -> errnum 10 / 3-arg -> errnum 4; all valid forms NOERR, errline 1). Need the
   BG framebuffer oracle (O-T6) for:
-  - [RESOLVED 2026-06-24, M7-T2 via BGGET read-back] BGPUT screen-data bit layout: rotation IS at
+  - [RESOLVED 2026-06-24, M7-T2 via BGGET read-back; FOLDED INTO bgput.yaml run 33 — BGPUT now
+    hw_verified: value/mask contract + attribute-bit packing inline cases, bgput_rt.tsv +
+    bgput_attr_rt.tsv] BGPUT screen-data bit layout: rotation IS at
     b12-13 (#BGROT90=&H1000 confirmed — BGPUT &H1064 -> BGGET 4196 = char 100 + &H1000; &H3064 ->
     12388 = char 100 + &H3000), flips #BGREVH=&H4000 b14 / #BGREVV=&H8000 b15. BGGET returns the
     FULL stored 16-bit packed value verbatim (NOT the mod-1024 displayed value): &HFFFF -> 65535;

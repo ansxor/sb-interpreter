@@ -18,9 +18,9 @@ semantics:
   - "LAYER must be in 0..3: the layer is evaluated and range-checked by the shared layer getter FUN_001e2504 (bl @0x1646a0); a value < 0 or >= the live BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560."
   - "X must be in 0..width-1: X<0 (cmp X,#0 blt @0x164714) or X>=the layer's map width ([r0,#0xc], cmp width,X bgt = ok @0x164738) raises errnum 10 (Out of range) — mov r0,#0xa, r1=#1 @0x164748."
   - "Y must be in 0..height-1: Y<0 or Y>=the layer's map height ([r0,#0xc], cmpge height,Y bgt = ok @0x164764) raises errnum 10 (Out of range) — mov r0,#0xa, r1=#2 @0x164774."
-  - "SCREEN DATA (4th argument) may be a number OR a string. If a string is supplied (type tag ldrb [r2,#0x2] != 0 @0x164794) it is parsed as a 4-digit hexadecimal value (\"0000\"-\"FFFF\") via the layer's string-to-data method (blx [r2,#0x50] @0x1647b8); otherwise the numeric value is used directly. The low 16 bits are stored into the tilemap cell at (X,Y)."
+  - "SCREEN DATA (4th argument) may be a number OR a string. If a string is supplied (type tag ldrb [r2,#0x2] != 0 @0x164794) it is parsed as a 4-digit hexadecimal value (\"0000\"-\"FFFF\") via the layer's string-to-data method (blx [r2,#0x50] @0x1647b8); otherwise the numeric value is taken directly from the value method (blx [r2,#0x40] @0x164844) with NO range check. The cell is written with a 16-bit HALFWORD STORE (strh r1,[r2,#0x90] @0x164874), so the value is MASKED to its low 16 bits — UNLIKE BGFILL, whose numeric data is range-checked to 0..65535 (errnum 10). A numeric value above 0xFFFF wraps (`&H1FFFF`→65535), and a negative value stores its low 16 bits (`-1`→65535, `-2`→65534). hw_verified 2026-06-24 via BGGET read-back."
   - "Screen-data bit layout (documented): bits b0-b11 = character number 0-4095 (the displayed glyph repeats with a cycle of 1024); rotation is selected by the #BGROT0/#BGROT90/#BGROT180/#BGROT270 attribute bits; horizontal flip = #BGREVH; vertical flip = #BGREVV. Character number 0 displays nothing (empty/transparent cell)."
-  - "BGPUT writes a single cell; it does not change the layer size (BGSCREEN), visibility (BGSHOW/BGHIDE), scroll (BGOFS) or graphic page (BGPAGE)."
+  - "BGPUT writes a single cell; it does not change the layer size (BGSCREEN), visibility (BGSHOW/BGHIDE), scroll (BGOFS) or graphic page (BGPAGE). The written cell value is read back verbatim by BGGET(layer,X,Y) (hw_verified run 29), which is how the value contract is captured framebuffer-free."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "used as a function (return requested) or the argument count is not 4" }
@@ -29,19 +29,38 @@ errors:
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/bgput.md (BGPUT Layer,X,Y,ScreenData — 'Places a BG character on the BG screen'; 'No image will be displayed for character number 0'; Layer 0-3; X,Y 0..BGSCREEN-1; screen data = char number 0-4095 (cycle 1024) + rotation b12/b13 + h/v inversion b14/b15, or a 4-digit hex string \"0000\"-\"FFFF\"; e.g. BGPUT 0,0,0,5 and BGPUT 0,20,15,\"80FF\")" }
   - { type: disassembled, ref: "cia_3.6.0.lst BGPUT handler @0x164660: argcount [r4,#0x4] cmp #0x4 + cmpeq return-count [r4,#0xc],#0, else mov r0,#0x4 errnum 4 @0x164688; layer range-check via bl 0x1e2504 (errnum 10 @0x1e2560); X<0 or X>=width [r0,#0xc] -> mov r0,#0xa errnum 10 @0x164748 (cmp @0x164714/@0x164738); Y<0 or Y>=height -> mov r0,#0xa errnum 10 @0x164774 (cmp @0x16475c/@0x164764); screen-data string-vs-number branch ldrb [r2,#0x2] @0x164794, string parse via blx [r2,#0x50] @0x1647b8; state ptr 0x315d60, map base const @0x164890." }
+  - { type: disassembled, ref: "cia_3.6.0.lst BGPUT store/mask path: numeric screen-data is read via blx [r2,#0x40] @0x164844 with NO range check (cf. BGFILL @0x165504 cmp #0x10000), and the cell is written with a 16-bit halfword store strh r1,[r2,#0x90] @0x164874 — so the value is MASKED to its low 16 bits, not bounds-checked. Cell index mla r2,X,width,(width-1-Y) @0x16486c over base+0x90." }
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG tilemap put handling (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus: ~4900 calls, all 4-arg. screenData is most often a numeric literal/hex string but is freely an expression — numeric variable (~158x), array element (~119x), and a STRING variable holding the 4-digit hex form (~5x, e.g. 'BGPUT 2,I,J,T$' in 81DYX3N4/TXT/SLIMEGUY, 'BGPUT 0,SPX,SPY,BGVAL$' in Y3ENE491/TXT/TILELOAD), confirming the string path applies to runtime string values, not just literals. No 3-arg or 5+-arg form. (oracle-pending: exact rotation/flip bit effect, queued)" }
 
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9b): BGPUT 4,0,0,5 -> errnum 10 (layer out of range); BGSCREEN 0,32,32:BGPUT 0,32,0,5 -> errnum 10 (X out of range); BGSCREEN 0,32,32:BGPUT 0,0,32,5 -> errnum 10 (Y out of range). Valid BGPUT 0,0,0,5 and BGPUT 0,20,15,\"80FF\" raise nothing. All errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2, harness/harvest/out/bgput_rt.tsv): cell VALUE/mask contract via BGGET read-back on a 32x32 layer. BGPUT 0,3,4,5 -> BGGET(0,3,4)=5, BGGET(0,4,4)=0 (only the written cell changes); BGPUT 0,20,15,\"80FF\" -> 33023 (hex string parse); BGPUT 0,1,1,0 -> 0 (char 0 = empty). Numeric data is MASKED to the low 16 bits, NOT range-checked like BGFILL: &H1FFFF->65535, 65536->0, -1->65535, &HFFFF->65535. (Confirms strh halfword store @0x164874; the 65536->0 / -1->65535 cases prove BGPUT masks where BGFILL raises errnum 10.) The packed rotation/flip attribute bits store verbatim (char 100 &H64): &H1064(#BGROT90)->4196, &H3064(#BGROT270)->12388, &H4064(#BGREVH)->16484, &H8064(#BGREVV)->32868 — BGGET returns the full 16-bit packed value, not the mod-1024 displayed glyph (bgput_attr_rt.tsv)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Tilemap write side effects (and the exact rotation/flip bit positions vs the #BG* constants)
-  # need the BG framebuffer oracle (O-T6, queued); error expects below are hw_verified
-  # (sb-oracle 2026-06-22 s_t9b).
+  # Error expects hw_verified (sb-oracle 2026-06-22 s_t9b); cell VALUE/mask contract
+  # hw_verified via BGGET read-back (sb-oracle 2026-06-24, M7-T2; harness/harvest/out/bgput_rt.tsv
+  # + bgput_attr_rt.tsv). The packed 16-bit value (char number + rotation/flip attribute bits) is
+  # stored + read back verbatim; only the *rendered* rotation/flip DISPLAY effect needs the BG
+  # framebuffer oracle (O-T6, queued).
   - { name: put_ok_num, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,5", expect: { stdout: "" } }
   - { name: put_ok_hexstr, code: "BGSCREEN 0,32,32\nBGPUT 0,20,15,\"80FF\"", expect: { stdout: "" } }
   - { name: layer_out_of_range, code: "BGPUT 4,0,0,5", expect: { error: { errnum: 10 } } }
   - { name: x_out_of_range, code: "BGSCREEN 0,32,32\nBGPUT 0,32,0,5", expect: { error: { errnum: 10 } } }
   - { name: y_out_of_range, code: "BGSCREEN 0,32,32\nBGPUT 0,0,32,5", expect: { error: { errnum: 10 } } }
+  # The stored value reads back verbatim via BGGET, and ONLY the written cell changes.
+  - { name: put_value_num, code: "BGSCREEN 0,32,32\nBGPUT 0,3,4,5\nPRINT BGGET(0,3,4);\",\";BGGET(0,4,4)", expect: { stdout: "5,0" } }
+  - { name: put_value_hexstr, code: "BGSCREEN 0,32,32\nBGPUT 0,20,15,\"80FF\"\nPRINT BGGET(0,20,15)", expect: { stdout: "33023" } }
+  # Character 0 writes an empty cell.
+  - { name: put_char_zero, code: "BGSCREEN 0,32,32\nBGPUT 0,1,1,0\nPRINT BGGET(0,1,1)", expect: { stdout: "0" } }
+  # Numeric data is MASKED to the low 16 bits (NOT range-checked like BGFILL): a value above
+  # 0xFFFF wraps, and a negative value stores its low 16 bits.
+  - { name: put_mask_over16, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,&H1FFFF\nPRINT BGGET(0,0,0)", expect: { stdout: "65535" } }
+  - { name: put_mask_65536, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,65536\nPRINT BGGET(0,0,0)", expect: { stdout: "0" } }
+  - { name: put_mask_neg1, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,-1\nPRINT BGGET(0,0,0)", expect: { stdout: "65535" } }
+  - { name: put_full16, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,&HFFFF\nPRINT BGGET(0,0,0)", expect: { stdout: "65535" } }
+  # Rotation/flip attribute bits pack into the stored value verbatim: char 100 (&H64) + #BGROT90
+  # (&H1000) reads back 4196; + #BGREVV (&H8000) reads back 32868.
+  - { name: put_attr_rot90, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,&H1064\nPRINT BGGET(0,0,0)", expect: { stdout: "4196" } }
+  - { name: put_attr_revv, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,&H8064\nPRINT BGGET(0,0,0)", expect: { stdout: "32868" } }
