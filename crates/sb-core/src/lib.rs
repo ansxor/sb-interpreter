@@ -19,6 +19,7 @@ pub mod bytecode;
 pub mod clock;
 pub mod compiler;
 pub mod consts;
+pub mod error;
 pub mod host_input;
 pub mod input;
 pub mod lexer;
@@ -34,6 +35,7 @@ pub use array::{ArrayRef, SbArray};
 pub use builtins::{dispatch as call_builtin, StdBuiltins, BUILTIN_NAMES};
 pub use bytecode::{Const, Function, Op, OptionFlags, Program, VarInfo, VarRef, VarType};
 pub use compiler::{compile, compile_with, Builtins, CompileError, NoBuiltins};
+pub use error::{error_message, ERROR_NAMES};
 pub use lexer::Lexer;
 pub use parser::{parse, parse_expression, ParseError, Parser};
 pub use storage::{

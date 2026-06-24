@@ -131,6 +131,12 @@ impl VmError {
             VmError::Unsupported(_) | VmError::Assert { .. } => None,
         }
     }
+
+    /// The byte-for-byte message SmileBASIC displays for this error (the binary's error-pool
+    /// string for this `errnum`; see [`crate::error`]). `None` for the non-SB variants.
+    pub fn message(&self) -> Option<&'static str> {
+        self.errnum().map(crate::error::error_message)
+    }
 }
 
 /// One `DEF`/`COMMON DEF` activation record.

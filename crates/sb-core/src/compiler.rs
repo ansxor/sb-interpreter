@@ -43,6 +43,15 @@ pub struct CompileError {
     pub msg: String,
 }
 
+impl CompileError {
+    /// The byte-for-byte message SmileBASIC displays for this error's `errnum`
+    /// (e.g. errnum 14 → `"Undefined label"`, errnum 15 → `"Undefined variable"`; see
+    /// [`crate::error`]), distinct from the diagnostic [`Self::msg`] detail.
+    pub fn message(&self) -> &'static str {
+        crate::error::error_message(self.errnum)
+    }
+}
+
 impl std::fmt::Display for CompileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(

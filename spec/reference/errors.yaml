@@ -29,6 +29,18 @@ sources:
       Lookup in FUN_001e94a8: `sub r0,r0,#0x1; cmp r0,#0x37` range-guards errnum≤55,
       `ldrcc r0,[0x1e9584]`→0x3054f8, `ldrcc r9,[r0,r5,lsl #0x2]` indexes table[errnum],
       out-of-range `adrcs r9,0x1e9588`="Internal Error". word @0x3054f8+56*4 is 0 (table end).
+  - type: disassembled
+    reference: >-
+      M7-T3 byte-for-byte verify: all 56 pointers at *[0x3054f8] dereferenced straight out
+      of SmileBASIC_3.6.0_CIA.bin — every `name` below matches its pool string exactly
+      (incl. case: errnum 43 @0x2e97c8 "Can't use from direct mode" lowercase, errnum 41
+      @0x2e98b8 "String is too long" ≠ docs "String too long"). Display semantics from the
+      FUN_001e94a8 body: the formatter computes `errnum-1` and only indexes the table when
+      unsigned `errnum-1 < 0x37 (55)`, i.e. a real display is errnum∈[1,55]; errnum 0 (cleared)
+      and errnum≥56 take the `adrcs r9,0x1e9588`="Internal Error" fallback (so table[0]
+      "No Error" is never displayed). After the bare message it optionally appends " (<detail>)"
+      (parens @0x1e95a4/@0x1e95a8) + a space-prefixed location string, then stores errnum to
+      *[0x3054e8]. Reproduced in crates/sb-core/src/error.rs (ERROR_NAMES + error_message).
   - type: documented
     reference: sb-docs/smilebasic-3/reference/error-table.md (errnum 3..47)
 

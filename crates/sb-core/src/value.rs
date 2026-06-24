@@ -91,6 +91,12 @@ impl RuntimeError {
     pub fn new(errnum: u32) -> Self {
         RuntimeError { errnum }
     }
+
+    /// The byte-for-byte message SmileBASIC displays for this error's `errnum`
+    /// (e.g. errnum 8 → `"Type mismatch"`; see [`crate::error`]).
+    pub fn message(&self) -> &'static str {
+        crate::error::error_message(self.errnum)
+    }
 }
 
 impl fmt::Display for RuntimeError {

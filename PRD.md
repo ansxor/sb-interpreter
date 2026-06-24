@@ -214,6 +214,6 @@ and name the instructions they cover inline.
 ## M7 — Hardening
 - [ ] M7-T1 Fuzzing campaign → O-T8
 - [ ] M7-T2 hw_verified push → O-T8
-- [ ] M7-T3 Exact error strings → O-T5
+- [x] M7-T3 Exact error strings → O-T5 — new `crates/sb-core/src/error.rs`: the canonical `errnum → message` authority (`ERROR_NAMES[0..=55]` + `error_message`), reproduced **byte-for-byte from the binary** by dereferencing all 56 pointers at `*[0x3054f8]` into the `.rodata` ASCII pool `[0x2e965c,0x2e9ac0)` (not re-spelled from docs — catches the binary's case: 43 "Can't use from **direct** mode", 41 "String is too long" ≠ docs "String too long"). `error_message` mirrors the formatter `FUN_001e94a8` exactly: real display is errnum∈[1,55]→`table[errnum]`, while errnum 0 (cleared) and ≥56 take the `"Internal Error"` fallback (`adrcs r9,0x1e9588`), so pool[0] "No Error" is never shown; the binary then optionally appends " (detail)" + a location string. `message()` accessors added to `VmError`/`ParseError`/`CompileError`/`RuntimeError` (the four errnum carriers) surface the SB string distinct from their diagnostic detail. errnum assignments verified: VM's errnum consts (4/5/6/7/8/10/13/14/16/30/31/38/46) all match the byte-for-byte table; the hw_verified 4/7/8/10 from S-T14a stand. 3 golden tests (byte-for-byte pool, display semantics, out-of-band fallback); `errors.yaml` source enriched with the full-dereference + formatter range/fallback detail.
 - [ ] M7-T4 Float formatting (STR$) → S-T1
 - [ ] M7-T5 Overflow/precision + perf → M7-T4

@@ -53,6 +53,15 @@ pub struct ParseError {
     pub msg: String,
 }
 
+impl ParseError {
+    /// The byte-for-byte message SmileBASIC displays for this error's `errnum`
+    /// (e.g. errnum 3 → `"Syntax error"`, errnum 21 → `"NEXT without FOR"`; see
+    /// [`crate::error`]), distinct from the diagnostic [`Self::msg`] detail.
+    pub fn message(&self) -> &'static str {
+        crate::error::error_message(self.errnum)
+    }
+}
+
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
