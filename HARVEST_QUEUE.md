@@ -1501,3 +1501,12 @@ The *live device* outputs have no headless golden — sb-core returns faithful n
   by clamping to the page; verify SB doesn't instead raise an Out-of-range errnum). (c) `VSYNC
   <huge>` blocks headless `sb-run` (broad seeds 403/850) — decide whether headless VSYNC should
   advance instantly; currently it waits, so such programs are parse/compile-only in CI.
+- **Sprite coordinates are f32 storage (SPOFS/SPSCALE/SPHOME/SPANGLE…)** — the disassembly
+  stores sprite X,Y,Z as 32-bit floats (vldr.32/vstr.32; SPOFS slot+0x30/+0x34/+0x38). sb-core
+  stores f64. This is undistinguishable via the oracle's 6-sig-figure `STR$` readback (f32 vs
+  f64 agree to ≥7 sig figs for normal magnitudes), so the M7-T2 SPOFS round-trips are all
+  exact for both. A value beyond the f32 mantissa (e.g. SPOFS X=16777217 → f32 16777216) WOULD
+  diverge and is harvestable via `PRINT` (%.8f, exact) — but the fix is an f32-storage refactor
+  spanning every sprite transform setter, not an SPOFS-only slice. Queue: harvest a PRINT-exact
+  large-coordinate case per sprite setter, then decide whether to store coords as f32 in
+  sb-render's `Sprite`. (SPOFS value/Z-range contract is otherwise hw_verified, M7-T2 run 14.)

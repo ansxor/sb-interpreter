@@ -563,7 +563,18 @@ pub fn spofs(
             s.y = rest[1].to_real()?;
         }
         if rest.len() == 3 && !matches!(rest[2], Value::Void) {
-            s.z = rest[2].to_real()?;
+            let z = rest[2].to_real()?;
+            // Depth (Z) is range-checked to the documented -256..1024 (inclusive); a value
+            // outside raises errnum 10. The 4-arg path reads the depth through the bounded
+            // float-arg helper FUN_001eeb9c with the two literal bounds 1024.0 (`s16`=
+            // 0x44800000 @0x141458) and -256.0 (`s17`=0xc3800000 @0x14145c): `vcmpe.f32
+            // s0,s17; bcc err` / `vcmpe.f32 s0,s16; ble ok` @0x1eebd8-0x1eebf0, raising via
+            // `mov r0,#0xa; b 0x1fffdc` @0x1eec04 (cia_3.6.0.lst). hw_verified: SPOFS 0,0,0,
+            // 1025 / -257 / 5000 / -2000 -> errnum 10 errline 1; 1024 / -256 stored verbatim.
+            if !(-256.0..=1024.0).contains(&z) {
+                return Err(out_of_range());
+            }
+            s.z = z;
         }
         Ok(vec![])
     } else {
@@ -966,5 +977,71 @@ pub(crate) fn spdef_entry_from_slice(vals: &[f64]) -> SpdefEntry {
         origin_x: vals[4] as i32,
         origin_y: vals[5] as i32,
         attr: vals[6] as i32,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn n(v: f64) -> Value {
+        Value::Real(v)
+    }
+
+    /// Create sprite `slot` (SPSET slot,0) so SPOFS can operate on it.
+    fn spset0(sp: &mut SpriteState, slot: i32) {
+        spset(sp, &[Value::Int(slot), Value::Int(0)], 0).unwrap();
+    }
+
+    #[test]
+    fn spofs_z_range_guard() {
+        // Depth Z is range-checked to -256..1024 inclusive (errnum 10 outside) via the bounded
+        // float-arg helper FUN_001eeb9c; X,Y are not range-checked. hw_verified sb-oracle
+        // 2026-06-24 (spofs_zerr): 1024 / -256 stored verbatim; 1025 / -257 / 5000 / -2000 → 10.
+        let mut sp = SpriteState::new();
+        spset0(&mut sp, 0);
+        // Inclusive boundaries accepted and stored verbatim.
+        spofs(&mut sp, &[n(0.0), n(0.0), n(0.0), n(1024.0)], 0).unwrap();
+        assert_eq!(spofs(&mut sp, &[n(0.0)], 3).unwrap()[2], n(1024.0));
+        spofs(&mut sp, &[n(0.0), n(0.0), n(0.0), n(-256.0)], 0).unwrap();
+        assert_eq!(spofs(&mut sp, &[n(0.0)], 3).unwrap()[2], n(-256.0));
+        // Just outside → Out of range.
+        for z in [1025.0, -257.0, 5000.0, -2000.0] {
+            assert_eq!(
+                spofs(&mut sp, &[n(0.0), n(0.0), n(0.0), n(z)], 0)
+                    .unwrap_err()
+                    .errnum,
+                10,
+                "Z={z} should be Out of range"
+            );
+        }
+        // A 3-arg SET keeps the already-set Z (no range fire); the verbatim Z survives.
+        spofs(&mut sp, &[n(0.0), n(0.0), n(0.0), n(500.0)], 0).unwrap();
+        spofs(&mut sp, &[n(0.0), n(9.0), n(9.0)], 0).unwrap();
+        assert_eq!(spofs(&mut sp, &[n(0.0)], 3).unwrap()[2], n(500.0));
+    }
+
+    #[test]
+    fn spofs_value_round_trip() {
+        // X,Y stored verbatim incl. fractional + negative; empty-arg skip keeps current coord;
+        // per-sprite independence. hw_verified sb-oracle 2026-06-24 (spofs_rt).
+        let mut sp = SpriteState::new();
+        spset0(&mut sp, 0);
+        spofs(&mut sp, &[n(0.0), n(16.5), n(-16.5)], 0).unwrap();
+        let xy = spofs(&mut sp, &[n(0.0)], 2).unwrap();
+        assert_eq!((xy[0].clone(), xy[1].clone()), (n(16.5), n(-16.5)));
+        // Empty-arg skip keeps current X,Y while setting Z.
+        spofs(&mut sp, &[n(0.0), n(50.0), n(80.0)], 0).unwrap();
+        spofs(&mut sp, &[n(0.0), Value::Void, Value::Void, n(1000.0)], 0).unwrap();
+        let xyz = spofs(&mut sp, &[n(0.0)], 3).unwrap();
+        assert_eq!(
+            (xyz[0].clone(), xyz[1].clone(), xyz[2].clone()),
+            (n(50.0), n(80.0), n(1000.0))
+        );
+        // Per-sprite independence.
+        spset0(&mut sp, 1);
+        spofs(&mut sp, &[n(1.0), n(33.0), n(44.0)], 0).unwrap();
+        let xy0 = spofs(&mut sp, &[n(0.0)], 2).unwrap();
+        assert_eq!((xy0[0].clone(), xy0[1].clone()), (n(50.0), n(80.0)));
     }
 }
