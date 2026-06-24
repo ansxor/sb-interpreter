@@ -30,6 +30,7 @@ semantics:
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET (used before SPSET), or the SET form is given other than 3 arguments" }
+  - { errnum: 8, name: "Type mismatch", when: "a coordinate is void (a skipped `,,` field) or otherwise non-numeric — the slot float getter fails the eval before the value is stored. hw_verified: SPHOME 0,,16 -> errnum 8 errline 1" }
   - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
 
 sources:
@@ -38,13 +39,24 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteData home/origin fields (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus: SPHOME used ~3,068x. Confirms negative home offsets `SPHOME I,-16,-16` (e.g. 43LEDEAE/TXT/XCMD.LIB), fractional offsets `SPHOME 2,127.5,127.5` (~85x e.g. 1233728E/TXT/MG_DOG), and OUT-to-array targets `SPHOME I OUT SPHX[I],SPHY[I]` (Q3HE34KD/TXT/OTW) — proving negative/fractional home coords are LEGAL. Output round-trip values oracle-pending." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8b): SPSET 0,0:SPHOME 512,0,0 -> errnum 10, errline 1 (mgmt out of range); SPCLR:SPHOME 5,0,0 -> errnum 4 (used before SPSET). Round-trip: SPSET 0,0:SPHOME 0,16,16:SPHOME 0 OUT HX,HY -> HX,HY = 16,16." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (sphome_rt): SET->GET round-trip is VERBATIM FLOAT with no range/sign/integer constraint — SPHOME 0,-16,-16 -> -16,-16; 0,127.5,127.5 -> 127.5,127.5; 0,16.25,-8.5 -> 16.25,-8.5; 0,0.1,0.2 -> 0.1,0.2. Fresh SPSET default = 0,0. Per-sprite independence: SPHOME 0,5,6:SPHOME 1,7,8 -> 5,6 / 7,8. SET argcount: 0,16 (2 args) and 0,1,2,3 (4 args) -> errnum 4 errline 1; a void coordinate 0,,16 -> errnum 8 errline 1." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
   # Home is float state with no stdout side-effect; set then read-back round-trips.
+  # All round-trip + guard values hw_verified (sb-oracle 2026-06-24, sphome_rt).
   - { name: set_ok, code: "SPSET 0,0\nSPHOME 0,16,16", expect: { stdout: "" } }
   - { name: set_negative_ok, code: "SPSET 0,0\nSPHOME 0,-8,-8", expect: { stdout: "" } }
   - { name: get_round_trip, code: "SPSET 0,0\nSPHOME 0,16,16\nSPHOME 0 OUT HX,HY\nPRINT HX;\",\";HY", expect: { stdout: "16,16" } }
+  - { name: get_round_trip_negative, code: "SPSET 0,0\nSPHOME 0,-16,-16\nSPHOME 0 OUT HX,HY\nPRINT HX;\",\";HY", expect: { stdout: "-16,-16" } }
+  - { name: get_round_trip_fractional, code: "SPSET 0,0\nSPHOME 0,127.5,127.5\nSPHOME 0 OUT HX,HY\nPRINT HX;\",\";HY", expect: { stdout: "127.5,127.5" } }
+  - { name: get_round_trip_mixed, code: "SPSET 0,0\nSPHOME 0,16.25,-8.5\nSPHOME 0 OUT HX,HY\nPRINT HX;\",\";HY", expect: { stdout: "16.25,-8.5" } }
+  - { name: get_round_trip_small_frac, code: "SPSET 0,0\nSPHOME 0,0.1,0.2\nSPHOME 0 OUT HX,HY\nPRINT HX;\",\";HY", expect: { stdout: "0.1,0.2" } }
+  - { name: default_zero, code: "SPSET 0,0\nSPHOME 0 OUT HX,HY\nPRINT HX;\",\";HY", expect: { stdout: "0,0" } }
+  - { name: per_sprite_independence, code: "SPSET 0,0\nSPSET 1,0\nSPHOME 0,5,6\nSPHOME 1,7,8\nSPHOME 0 OUT AX,AY\nSPHOME 1 OUT BX,BY\nPRINT AX;\",\";AY;\",\";BX;\",\";BY", expect: { stdout: "5,6,7,8" } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPHOME 512,0,0", expect: { error: { errnum: 10 } } }
   - { name: before_spset, code: "SPCLR\nSPHOME 5,0,0", expect: { error: { errnum: 4 } } }
+  - { name: set_two_args, code: "SPSET 0,0\nSPHOME 0,16", expect: { error: { errnum: 4 } } }
+  - { name: set_four_args, code: "SPSET 0,0\nSPHOME 0,1,2,3", expect: { error: { errnum: 4 } } }
+  - { name: set_void_coord, code: "SPSET 0,0\nSPHOME 0,,16", expect: { error: { errnum: 8 } } }

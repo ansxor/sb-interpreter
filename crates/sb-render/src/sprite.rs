@@ -140,8 +140,12 @@ pub struct Sprite {
     pub y: f64,
     pub z: f64,
     /// Home/origin offset (`SPHOME`), the rotation/scale pivot relative to the sprite.
-    pub home_x: i32,
-    pub home_y: i32,
+    /// Stored as a 32-bit float on hardware (the handler writes f32 at slot+0x18); negative
+    /// and fractional offsets are accepted and round-trip verbatim, so this is `f64` here, not
+    /// the integer grid-cell home of BG. hw_verified (sb-oracle 2026-06-24): `SPHOME 0,127.5,
+    /// 127.5` / `0,16.25,-8.5` / `0,-16,-16` read back unchanged.
+    pub home_x: f64,
+    pub home_y: f64,
     /// Character offset added to the sheet sampling (`SPCHR`).
     pub chr: i32,
     /// Scale factors (`SPSCALE`), 1.0 = unscaled.
@@ -205,8 +209,8 @@ impl Default for Sprite {
             x: 0.0,
             y: 0.0,
             z: 0.0,
-            home_x: 0,
-            home_y: 0,
+            home_x: 0.0,
+            home_y: 0.0,
             chr: 0,
             scale_x: 1.0,
             scale_y: 1.0,
@@ -341,8 +345,8 @@ impl SpriteState {
             v,
             w,
             h,
-            home_x: home.0,
-            home_y: home.1,
+            home_x: home.0 as f64,
+            home_y: home.1 as f64,
             ..Sprite::default()
         };
         sp.set_attr(attr);
@@ -1089,7 +1093,7 @@ mod tests {
         st.set_template(0, 1);
         let sp = &st.sprites[0];
         assert_eq!((sp.u, sp.v, sp.w, sp.h), (32, 48, 24, 24));
-        assert_eq!((sp.home_x, sp.home_y), (12, 12));
+        assert_eq!((sp.home_x, sp.home_y), (12.0, 12.0));
         // Reset restores defaults.
         st.spdef_reset();
         assert_eq!(st.spdef_get(1), SpdefEntry::default());

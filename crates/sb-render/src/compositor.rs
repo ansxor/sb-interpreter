@@ -254,7 +254,7 @@ fn render_sprite(sp: &Sprite, sheet: &GrpPage, fb: &mut Framebuffer) {
     if sp.scale_x == 0.0 || sp.scale_y == 0.0 {
         return;
     }
-    let (hx, hy) = (sp.home_x as f64, sp.home_y as f64);
+    let (hx, hy) = (sp.home_x, sp.home_y);
     let fwd = |lx: f64, ly: f64| {
         let ax = (lx - hx) * sp.scale_x;
         let ay = (ly - hy) * sp.scale_y;

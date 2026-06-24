@@ -685,6 +685,53 @@ pub fn sprot(
     }
 }
 
+/// `SPHOME mgmt, X, Y` (set, ret 0, 3 args) / `SPHOME mgmt OUT HX,HY` (get, ret 2, 1 arg) —
+/// set or read a sprite's reference (home) point: the origin used for `SPOFS` positioning, the
+/// center for rotation/scaling, and the collision-area origin. Coordinates are relative to the
+/// sprite's top-left and stored as a 32-bit float — negative and fractional offsets are
+/// accepted and round-trip VERBATIM (unlike BG's integer grid home). X and Y are independent;
+/// the fresh-`SPSET` default is 0.0,0.0.
+///
+/// The sprite must be `SPSET` (errnum 4); mgmt ∉ 0..511 is errnum 10; the SET form requires
+/// exactly 3 arguments (else errnum 4); a void/non-numeric coordinate is errnum 8 (type
+/// mismatch). hw_verified (sb-oracle 2026-06-24): `SPHOME 0,16,16`→16,16; `0,-16,-16`→-16,-16;
+/// `0,127.5,127.5`→127.5,127.5; `0,16.25,-8.5`→16.25,-8.5; `0,0.1,0.2`→0.1,0.2; default 0,0;
+/// per-sprite independence; `0,16` / `0,1,2,3` → errnum 4; `0,,16` → errnum 8.
+pub fn sphome(
+    sp: &mut SpriteState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if args.is_empty() {
+        return Err(illegal());
+    }
+    let slot = mgmt(&args[0])?;
+    if !sp.is_used(slot) {
+        return Err(illegal());
+    }
+    if ret_count == 0 {
+        let rest = &args[1..];
+        if rest.len() != 2 {
+            return Err(illegal());
+        }
+        // The handler fetches each coordinate through the slot float getter (a void/non-numeric
+        // field → errnum 8) and applies the home via FUN_001ee524 (vldmia sp,{s0,s1} / bl
+        // 0x1ee524 @0x142884) — stored as f32 at [r4,#0x18], NO range/sign/integer constraint
+        // (cia_3.6.0.lst). X is evaluated before Y.
+        let hx = rest[0].to_real()?;
+        let hy = rest[1].to_real()?;
+        let s = &mut sp.sprites[slot];
+        s.home_x = hx;
+        s.home_y = hy;
+        Ok(vec![])
+    } else if ret_count == 2 {
+        let s = &sp.sprites[slot];
+        Ok(vec![Value::Real(s.home_x), Value::Real(s.home_y)])
+    } else {
+        Err(illegal())
+    }
+}
+
 // -- collision (M3-T3) --------------------------------------------------------
 
 /// The `SPCOL` scale-adjustment flag: a Void (skipped `,,`) field is the default FALSE,
@@ -1255,5 +1302,61 @@ mod tests {
             10
         );
         assert_eq!(sprot(&mut sp, &[n(0.0)], 0).unwrap_err().errnum, 4);
+    }
+
+    #[test]
+    fn sphome_round_trip_and_guards() {
+        // Home is a verbatim FLOAT round-trip with no range/sign/integer constraint (negative,
+        // fractional accepted); a void coord → errnum 8; SET needs exactly 3 args (→ errnum 4);
+        // default after SPSET is 0,0, X/Y independent. hw_verified sb-oracle 2026-06-24
+        // (sphome_rt).
+        let mut sp = SpriteState::new();
+        spset0(&mut sp, 0);
+        // Fresh default 0,0.
+        let d = sphome(&mut sp, &[n(0.0)], 2).unwrap();
+        assert_eq!((d[0].clone(), d[1].clone()), (n(0.0), n(0.0)));
+        // Verbatim float, any sign/fraction: -16,-16 / 127.5,127.5 / 16.25,-8.5.
+        for (hx, hy) in [(-16.0, -16.0), (127.5, 127.5), (16.25, -8.5)] {
+            sphome(&mut sp, &[n(0.0), n(hx), n(hy)], 0).unwrap();
+            let g = sphome(&mut sp, &[n(0.0)], 2).unwrap();
+            assert_eq!((g[0].clone(), g[1].clone()), (n(hx), n(hy)));
+        }
+        // Void coordinate → Type mismatch (errnum 8).
+        assert_eq!(
+            sphome(&mut sp, &[n(0.0), Value::Void, n(16.0)], 0)
+                .unwrap_err()
+                .errnum,
+            8
+        );
+        // SET form requires exactly 3 args (else errnum 4).
+        assert_eq!(
+            sphome(&mut sp, &[n(0.0), n(16.0)], 0).unwrap_err().errnum,
+            4
+        );
+        assert_eq!(
+            sphome(&mut sp, &[n(0.0), n(1.0), n(2.0), n(3.0)], 0)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+        // Used before SPSET → errnum 4; mgmt out of 0..511 → errnum 10.
+        assert_eq!(
+            sphome(&mut sp, &[n(5.0), n(0.0), n(0.0)], 0)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+        assert_eq!(
+            sphome(&mut sp, &[n(512.0), n(0.0), n(0.0)], 0)
+                .unwrap_err()
+                .errnum,
+            10
+        );
+        // Per-sprite independence.
+        spset0(&mut sp, 1);
+        sphome(&mut sp, &[n(0.0), n(5.0), n(6.0)], 0).unwrap();
+        sphome(&mut sp, &[n(1.0), n(7.0), n(8.0)], 0).unwrap();
+        let g0 = sphome(&mut sp, &[n(0.0)], 2).unwrap();
+        assert_eq!((g0[0].clone(), g0[1].clone()), (n(5.0), n(6.0)));
     }
 }
