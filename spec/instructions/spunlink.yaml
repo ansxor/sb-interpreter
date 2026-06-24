@@ -26,11 +26,22 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/sprite.d sprite child-list detach (3.5.0 structural cross-check only)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8c): SPCLR:SPUNLINK 5 -> errnum 4 (used before SPSET); SPSET 0,0:SPUNLINK 512 -> errnum 10 (mgmt out of range); SPSET 0,0:SPUNLINK 0 on an unlinked sprite -> no error (no-op)." }
   - { type: community, ref: "sbsave corpus: SPUNLINK used ~107x with literal and expression operands, e.g. `SPUNLINK 15`, `SPUNLINK 81+I` — proving the single-operand form (incl. expressions) is LEGAL syntax." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (spunlink_rt.tsv, value contract read back through the undocumented function form =SPLINK(mgmt)): SPLINK 2,0:SPUNLINK 2 -> SPLINK(2)=-1 (link torn down); nested SPLINK 1,0:SPLINK 2,1:SPUNLINK 2 -> SPLINK(2)=-1 AND SPLINK(1)=0 (sibling/parent links unaffected — only the named slot is detached); SPSET 0,0:SPUNLINK 0 on never-linked slot -> SPLINK(0)=-1 (no-op); double SPUNLINK 1:SPUNLINK 1 -> SPLINK(1)=-1 (idempotent, no error). Error guards: SPUNLINK 5 before SPSET -> errnum 4 errline 1; SPUNLINK 512 / SPUNLINK -1 -> errnum 10 errline 1; SPUNLINK (0 args) / SPUNLINK 0,1 (2 args) / X=SPUNLINK(0) (return context) -> errnum 4 errline 1." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
   - { name: unlink_ok, code: "SPSET 4,0\nSPSET 15,0\nSPLINK 15,4\nSPUNLINK 15", expect: { stdout: "" } }
   - { name: unlink_unlinked_noop, code: "SPSET 0,0\nSPUNLINK 0", expect: { stdout: "" } }
   - { name: before_spset, code: "SPCLR\nSPUNLINK 5", expect: { error: { errnum: 4 } } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPUNLINK 512", expect: { error: { errnum: 10 } } }
+  # M7-T2 gap push (sb-oracle 2026-06-24) — value contract read back via =SPLINK(mgmt) + remaining error guards.
+  - { name: unlink_breaks_link, code: "SPSET 0,0\nSPSET 2,0\nSPLINK 2,0\nSPUNLINK 2\nPRINT SPLINK(2)", expect: { stdout: "-1" } }
+  - { name: unlink_child_only, code: "SPSET 0,0\nSPSET 1,0\nSPSET 2,0\nSPLINK 1,0\nSPLINK 2,1\nSPUNLINK 2\nPRINT SPLINK(2)", expect: { stdout: "-1" } }
+  - { name: unlink_keeps_parent_link, code: "SPSET 0,0\nSPSET 1,0\nSPSET 2,0\nSPLINK 1,0\nSPLINK 2,1\nSPUNLINK 2\nPRINT SPLINK(1)", expect: { stdout: "0" } }
+  - { name: unlink_noop_readback, code: "SPSET 0,0\nSPUNLINK 0\nPRINT SPLINK(0)", expect: { stdout: "-1" } }
+  - { name: unlink_idempotent, code: "SPSET 0,0\nSPSET 1,0\nSPLINK 1,0\nSPUNLINK 1\nSPUNLINK 1\nPRINT SPLINK(1)", expect: { stdout: "-1" } }
+  - { name: mgmt_negative, code: "SPSET 0,0\nSPUNLINK -1", expect: { error: { errnum: 10 } } }
+  - { name: no_args, code: "SPSET 0,0\nSPUNLINK", expect: { error: { errnum: 4 } } }
+  - { name: two_args, code: "SPSET 0,0\nSPUNLINK 0,1", expect: { error: { errnum: 4 } } }
+  - { name: return_context, code: "SPSET 0,0\nX=SPUNLINK(0)", expect: { error: { errnum: 4 } } }
