@@ -61,15 +61,16 @@ semantics:
   - "The form is chosen first by the return-value count: 0 returns = explicit-management-number forms (1 and 2), 1 return = auto-allocate OUT forms (3,4,5,6). Any other return count raises errnum 4 (Illegal function call) — return-count r0=[r0,#0xc]: cmp #0 beq no-OUT @0x1415f4, cmp #1 beq OUT @0x141990, else b error @0x1419b4."
   - "Explicit-number path (0 returns) accepts 2..6 arguments (sub r0,argcount,#2 / cmp #5 / bcc @0x1415f4); any other count raises errnum 4 (mov r0,#0x4 @0x14160c). argcount==2 is form 1 (mgmt, defn); argcount 3..6 is form 2 (mgmt,U,V[,W,H][,attr]) dispatched at @0x14169c-0x1416c4, with W,H defaulting to 16,16 and attribute defaulting to &H01 (display ON)."
   - "The management number is fetched through the sprite-index getter FUN_001eece0 and must be in 0..(sprite count - 1) = 0..511; out of range raises errnum 10 (Out of range) — getter guard then mov r0,#0xa @0x1eed3c (count = [[0x315d60]+0x48]) @0x14161c-0x141628. The definition number (form 1) is fetched via the bounded getter FUN_001eec7c with upper bound &H0FFF = 4095 (ldr from [0x1418c4]=0xFFF @0x1416c8), so defn must be 0..4095 else errnum 10."
-  - "Form 2 image params: U,V are fetched via the coordinate getter FUN_001eec18 @0x141668/0x14168c, W,H/attr via FUN_001eeb9c. When W,H are omitted the default 16,16 (vldr.32 s16 = 16.0) is used; when attribute is omitted the default &H01 (#SPSHOW only — display ON, no rotation/flip/additive) is used. Per the docs, U+W and/or V+H greater than 512 raises an error (queued for the oracle to pin the errnum — assumed errnum 10 Out of range)."
+  - "Form 2 image params: U,V are fetched via the coordinate getter FUN_001eec18 @0x141668/0x14168c, W,H/attr via FUN_001eeb9c. When W,H are omitted the default 16,16 (vldr.32 s16 = 16.0) is used; when attribute is omitted the default &H01 (#SPSHOW only — display ON, no rotation/flip/additive) is used. U+W and/or V+H greater than 512 raises errnum 10 (Out of range) — the rectangle must fit on the 512-pixel sheet: U+W is compared against 512.0 (cmp #0x44000000 / bgt errnum-10 @0x141b44) and V+H likewise (@0x141b5c); the U+W==512 edge is accepted. hw_verified: SPSET 0,500,0,20,16 (U+W=520) and SPSET 0,0,500,16,20 (V+H=520) both raise errnum 10, while SPSET 0,496,0,16,16 (U+W=512) succeeds."
   - "Attribute bitfield (also used by SPCHR): b00 = display 0/1 (#SPSHOW &H01); b01-b02 = 90-degree rotation, #SPROT0/#SPROT90/#SPROT180/#SPROT270 = &H00/&H02/&H04/&H06; b03 = horizontal flip (#SPREVH &H08); b04 = vertical flip (#SPREVV &H10); b05 = additive blending (#SPADD &H20). See spec/reference/constants.yaml."
-  - "OUT (auto-allocate) path (1 return): forms 3 (defn) / 4 (U,V,W,H,attr) / 5 (upper,lower,defn) / 6 (upper,lower,U,V,W,H,attr). The runtime scans for an unused slot — the whole range 0..511 (forms 3,4) or the inclusive [upper,lower] range (forms 5,6) — and writes the chosen number into IX, or -1 if no slot is free (handler @0x141990). The search-range and result-store logic lives in the OUT branch; the -1 'no available number' result is documented."
+  - "OUT (auto-allocate) path (1 return): forms 3 (defn) / 4 (U,V,W,H,attr) / 5 (upper,lower,defn) / 6 (upper,lower,U,V,W,H,attr). The runtime scans for an unused slot LOW-TO-HIGH and writes the LOWEST free number into IX, or -1 if no slot is free (the free-slot search FUN_0017eb6c is called with start in r0 / end in r1 @0x141ba8, the result stored at [sp,#0x8] @0x141bb4). Forms 3,4 scan the whole range 0..511 (hw_verified: SPSET(0)→0 in a clean slate; with slot 0 taken →1, with 0,1 taken →2). Forms 5,6 scan the inclusive [upper,lower] range (hw_verified: IX=SPSET(100,105,0)→100, with 100 taken →101, IX=SPSET(5,5,0)→5; a full single-slot range →-1)."
+  - "Forms 5,6 require upper <= lower: the handler compares the two range bounds and only proceeds when upper <= lower (cmp upper,lower / ble ok @0x141a30), otherwise raises errnum 4 (mov r0,#0x4 @0x141a40) — it does NOT scan downward when the range is reversed. hw_verified: IX=SPSET(105,100,0) → errnum 4, errline 1."
   - "Each auto-allocate form has an equivalent FUNCTION-CALL syntax: `IX = SPSET(...)` is identical to `SPSET ... OUT IX` (same return-count==1 dispatch @0x141990). E.g. `SP=SPSET(0)` is form 3, `SP=SPSET(U,V,W,H,attr)` form 4, `SP=SPSET(upper,lower,defn)` form 5, `SP=SPSET(upper,lower,U,V,W,H,attr)` form 6. The function-call form is the more common spelling in real programs; the OUT target may be an array element (e.g. SPSET 0 OUT SPID[0])."
   - "SPSET always (re)initializes the slot it creates: rotation and all other sprite state are reset and all SPVAR values become 0 (per docs). To use collision detection (SPHIT*) on the sprite, SPCOL must be called AFTER SPSET. A freshly SPSET sprite has its display attribute per the attribute argument (default ON)."
 
 errors:
-  - { errnum: 4, name: "Illegal function call", when: "the return-value count is not 0 or 1, or the explicit-number form is given other than 2..6 arguments" }
-  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511, the definition number is not in 0..4095, or (per docs) U+W / V+H exceeds 512 (errnum pending oracle)" }
+  - { errnum: 4, name: "Illegal function call", when: "the return-value count is not 0 or 1, the explicit-number form is given other than 2..6 arguments, or an auto-allocate range form (5/6) has upper > lower" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511, the definition number is not in 0..4095, or U+W / V+H exceeds 512" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/spset.md (6 forms: SPSET mgmt,defn (defn 0-4095); SPSET mgmt,U,V[,W,H],attr (U,V 0-511, W,H default 16,16, U+W/V+H>512 errors, attr default &H01); SPSET defn OUT IX; SPSET U,V,W,H,attr OUT IX; SPSET upper,lower,defn OUT IX; SPSET upper,lower,U,V,W,H,attr OUT IX — IX is 0-511 or -1 if none free; mgmt 0-511; SPSET reinitializes rotation and all info, SPVAR all 0; call SPCOL after SPSET for collisions. Attribute bits b00 display/#SPSHOW, b01-02 rotation/#SPROT0-270, b03 #SPREVH, b04 #SPREVV, b05 #SPADD)" }
@@ -77,16 +78,42 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteData/SpriteAttr create + SPDEF template + free-slot allocation (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus: SPSET is one of the most common sprite calls; both the explicit-number forms (SPSET I,defn / SPSET I,U,V,W,H,attr) and the OUT auto-allocate forms (SPSET defn OUT IX) appear widely — confirms all forms are legal. The FUNCTION-CALL spelling IX=SPSET(...) appears ~122x (e.g. VAR SP=SPSET(536) in 5KSKXX8X/TXT/RNDLIBTEST; VAR IDX%=SPSET(1,511,1) range-form in B2B43VHE/TXT/SHINIES; SPSET 0 OUT SPID[0] array target in 13D4DV3V/TXT/MAIN_PRG_V2), confirming the function syntax is legal and common. A 1-argument no-OUT form 'SPSET 510' appears in 534NX3L6/TXT/DANMAKU3 behind a rare MPCOUNT!=2 branch — oracle-confirmed to raise errnum 4 (dead/buggy code), so the disassembly's argcount-2..6 guard is correct." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8a): SPSET 512,0 -> errnum 10, errline 1; SPSET -1,0 -> errnum 10; SPSET 0,4096 -> errnum 10; SPSET 0,0,0,0,0,0,0 (7 args, no OUT) -> errnum 4; SPSET 510 (1 arg, no OUT) -> errnum 4 (resolves the corpus contradiction — strict 2..6 argcount)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2): creation effect observed via the hw_verified SPUSED scalar (no framebuffer), each case SPCLR-prefixed for a clean slate (sprite state persists across RUNs). Explicit forms create the named slot: SPSET 0,0 -> SPUSED(0)=1 (and SPUSED(5)=0); SPSET 54,0,0,32,32,1 -> SPUSED(54)=1; SPSET 10,0,0,1 -> SPUSED(10)=1; re-SPSET stays SPUSED(0)=1. Auto-allocate picks the LOWEST free slot: IX=SPSET(0)->0, with slot 0 taken ->1, with 0,1 taken ->2; SPSET 0 OUT IX ->0 (OUT==function form); IX=SPSET(0,0,16,16,1)->0; SPUSED(allocated)=1. Range forms: IX=SPSET(100,105,0)->100, with 100 taken ->101, IX=SPSET(5,5,0)->5, single-slot range with that slot taken ->-1, IX=SPSET(100,105,0,0,16,16,1)->100. Reversed range IX=SPSET(105,100,0) -> errnum 4 errline 1 (NOT a downward scan). Rect bounds: SPSET 0,500,0,20,16 (U+W=520) -> errnum 10, SPSET 0,0,500,16,20 (V+H=520) -> errnum 10, SPSET 0,496,0,16,16 (U+W=512 edge) -> SPUSED(0)=1. Harvest TSV harness/harvest/out/spset_rt2.tsv (+ error cases in spset_rt.tsv)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # creation side-effects (visible sprite) need the sprite-framebuffer oracle (O-T6, queued); error expects are hw_verified (sb-oracle 2026-06-22 s_t8a).
-  - { name: create_from_template_ok, code: "SPSET 0,0", expect: { stdout: "" } }
-  - { name: create_direct_ok, code: "SPSET 54,0,0,32,32,1", expect: { stdout: "" } }
-  - { name: create_direct_no_wh_ok, code: "SPSET 10,0,0,1", expect: { stdout: "" } }
-  - { name: out_alloc_from_template_ok, code: "SPSET 0 OUT IX\nPRINT IX>=0", expect: { stdout: "1" } }
-  - { name: func_alloc_form_ok, code: "SP=SPSET(0)\nPRINT SP>=0", expect: { stdout: "1" } }
+  # The creation EFFECT is proven via SPUSED read-back (a routed, hw_verified in-use scalar)
+  # and the auto-allocate forms' returned management number — so no sprite-framebuffer golden
+  # is needed. All values + error guards hw_verified (sb-oracle batch 2026-06-24, M7-T2; the
+  # 2026-06-22 s_t8a argcount/range errors stand). sb-core starts each test with a clean slate
+  # (the oracle needed an SPCLR prefix only because its session retains sprite state).
+  # `stdout` is the console_text() scrape (a single PRINT reads back the value, trailing
+  # newline trimmed — the in-scope convention).
+  # --- explicit-number forms create the named slot ---
+  - { name: explicit_creates, code: "SPSET 0,0\nPRINT SPUSED(0)", expect: { stdout: "1" } }
+  - { name: direct_creates, code: "SPSET 54,0,0,32,32,1\nPRINT SPUSED(54)", expect: { stdout: "1" } }
+  - { name: direct_no_wh_creates, code: "SPSET 10,0,0,1\nPRINT SPUSED(10)", expect: { stdout: "1" } }
+  - { name: only_named_slot_used, code: "SPSET 0,0\nPRINT SPUSED(5)", expect: { stdout: "0" } }
+  - { name: reinit_stays_used, code: "SPSET 0,0\nSPSET 0,0\nPRINT SPUSED(0)", expect: { stdout: "1" } }
+  # --- auto-allocate picks the LOWEST free slot ---
+  - { name: alloc_lowest_free, code: "IX=SPSET(0)\nPRINT IX", expect: { stdout: "0" } }
+  - { name: alloc_skips_used, code: "SPSET 0,0\nIX=SPSET(0)\nPRINT IX", expect: { stdout: "1" } }
+  - { name: alloc_skips_two, code: "SPSET 0,0\nSPSET 1,0\nIX=SPSET(0)\nPRINT IX", expect: { stdout: "2" } }
+  - { name: alloc_slot_is_used, code: "IX=SPSET(0)\nPRINT SPUSED(IX)", expect: { stdout: "1" } }
+  - { name: alloc_direct_form, code: "IX=SPSET(0,0,16,16,1)\nPRINT IX", expect: { stdout: "0" } }
+  - { name: out_form_equals_func, code: "SPSET 0 OUT IX\nPRINT IX", expect: { stdout: "0" } }
+  # --- range forms (5/6): lowest free within [upper,lower] ---
+  - { name: range_lowest, code: "IX=SPSET(100,105,0)\nPRINT IX", expect: { stdout: "100" } }
+  - { name: range_skips_used, code: "SPSET 100,0\nIX=SPSET(100,105,0)\nPRINT IX", expect: { stdout: "101" } }
+  - { name: range_single_ok, code: "IX=SPSET(5,5,0)\nPRINT IX", expect: { stdout: "5" } }
+  - { name: range_full_neg1, code: "SPSET 5,0\nIX=SPSET(5,5,0)\nPRINT IX", expect: { stdout: "-1" } }
+  - { name: range_direct_form, code: "IX=SPSET(100,105,0,0,16,16,1)\nPRINT IX", expect: { stdout: "100" } }
+  # --- error guards ---
+  - { name: range_reversed, code: "X=SPSET(105,100,0)", expect: { error: { errnum: 4 } } }
+  - { name: uw_over_512, code: "SPSET 0,500,0,20,16", expect: { error: { errnum: 10 } } }
+  - { name: vh_over_512, code: "SPSET 0,0,500,16,20", expect: { error: { errnum: 10 } } }
+  - { name: uw_edge_512_ok, code: "SPSET 0,496,0,16,16\nPRINT SPUSED(0)", expect: { stdout: "1" } }
   - { name: mgmt_out_of_range, code: "SPSET 512,0", expect: { error: { errnum: 10 } } }
   - { name: mgmt_negative, code: "SPSET -1,0", expect: { error: { errnum: 10 } } }
   - { name: defn_out_of_range, code: "SPSET 0,4096", expect: { error: { errnum: 10 } } }

@@ -467,21 +467,23 @@ oracle to confirm exact output and promote to `hw_verified`.
 - [x] S-T8a CONTRADICTION RESOLVED · the corpus 1-argument no-OUT form `SPSET 510` (534NX3L6/TXT/DANMAKU3 line 380)
   is oracle-confirmed to raise errnum 4 (2026-06-22 s_t8a) — dead/buggy code behind the rare MPCOUNT!=2 branch.
   The disassembly's argcount-2..6 guard is correct; spec kept at errnum 4.
-- [ ] S-T8a sprite VISUAL/state side-effects (need framebuffer oracle O-T6): SPSET creation (template vs direct
-  image, attribute bits applied), SPSHOW/SPHIDE display-flag toggle,
-  SPPAGE render-page redirect, SPSET OUT -1 pool-exhaustion result, SPSET reinit (SPVAR -> 0). All disassembled
-  + documented; runtime visual confirmation queued.
-  (SPCLR slot-free + bulk clear-all (0-arg) RESOLVED 2026-06-24 M7-T2 — hw_verified via SPUSED read-back,
-  no framebuffer needed; SPCLR now confidence: hw_verified.)
-- [ ] M3-T1 SPSET direct-image source-rect overflow errnum · docs say `U+W` / `V+H` > 512 (rect runs off the
-  512-px sheet) raises an error; the exact errnum is unconfirmed. sb-core currently raises errnum 10 (the spec's
-  documented assumption). ORACLE: `SPSET 0,500,0,32,32,1|err` (U+W=532) and `SPSET 0,0,500,32,32,1|err` (V+H=532)
-  -> capture ERRNUM. If not 10, fix `rect()` in `crates/sb-core/src/builtins/sprite.rs` + spset.yaml errors.
-- [ ] M3-T1 SPSET auto-allocate scan tie-break · which free slot the OUT/function forms pick when several are free
-  (lowest-first assumed; the [upper,lower] range scan direction for forms 5/6). sb-core scans start→end and picks
-  the first free (lowest for whole-range forms 3/4). ORACLE: with sprites 0,2 free and 1 used, `X=SPSET(0):?X`
-  expects 0; range `SPSET(5,9,...)` with 5 used expects 6; reversed `SPSET(9,5,...)` direction. Confirm against
-  the OUT branch @0x141990; adjust `SpriteState::alloc` if the device picks differently.
+- [ ] S-T8a sprite VISUAL side-effects (need framebuffer oracle O-T6): the ATTRIBUTE bits actually applied
+  to the rendered sprite (rotation/flip/additive), and SPSET reinit clearing SPVAR -> 0 (the SPVAR reset is
+  separately checkable via the SPVAR scalar — queue). All disassembled + documented; runtime visual
+  confirmation queued.
+  (SPSET creation [template + direct + auto-allocate + range + OUT -1 pool-exhaustion] RESOLVED 2026-06-24
+  M7-T2 — hw_verified via SPUSED read-back + the auto-allocate return value, no framebuffer; SPSET now
+  confidence: hw_verified. SPCLR slot-free + bulk clear-all (0-arg) RESOLVED earlier the same day, same way.)
+- [x] M3-T1 SPSET direct-image source-rect overflow errnum RESOLVED (2026-06-24 M7-T2): `U+W`/`V+H` > 512 is
+  errnum 10 (matches sb-core's `rect()` assumption). hw_verified: SPSET 0,500,0,20,16 (U+W=520) and
+  SPSET 0,0,500,16,20 (V+H=520) -> errnum 10; the U+W==512 edge (SPSET 0,496,0,16,16) is accepted. Disasm:
+  cmp #0x44000000 (512.0) / bgt errnum-10 @0x141b44 (U+W) + @0x141b5c (V+H).
+- [x] M3-T1 SPSET auto-allocate scan tie-break RESOLVED (2026-06-24 M7-T2): the OUT/function forms pick the
+  LOWEST free slot (hw_verified IX=SPSET(0)->0, with 0,1 taken ->2; range IX=SPSET(100,105,0)->100, with 100
+  taken ->101, IX=SPSET(5,5,0)->5, full single-slot range ->-1). DISCOVERY: forms 5/6 require upper <= lower —
+  a reversed range IX=SPSET(105,100,0) raises errnum 4 (NOT a downward scan; cmp/ble @0x141a30). Fixed
+  `SpriteState::alloc` (forward-only) + added `alloc_range` errnum-4 guard in builtins/sprite.rs; SPSET now
+  confidence: hw_verified.
 - [x] S-T8b error + round-trip values HARVESTED (2026-06-22 s_t8b): mgmt out-of-range (512) -> errnum 10 for
   SPOFS/SPROT/SPSCALE/SPHOME/SPCHR; used-before-SPSET -> errnum 4 (all five); bad argcount -> errnum 4
   (SPOFS 0,0 / SPROT 0); SPCHR defn 4096 -> errnum 10. Round-trips: SPOFS 0,50,80 OUT->50,80; SPROT 0,45->45;

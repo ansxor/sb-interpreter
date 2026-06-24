@@ -383,15 +383,13 @@ impl SpriteState {
         );
     }
 
-    /// Find a free slot scanning the inclusive `[start, end]` range in the given order
-    /// (`start` toward `end`), returning the chosen management number or `None` if every
-    /// slot in the range is in use. Forms 3/4 pass the whole range `0..=511`.
+    /// Find a free slot scanning the inclusive `[start, end]` range low-to-high, returning
+    /// the chosen management number or `None` if every slot in the range is in use. Callers
+    /// always pass `start <= end`: forms 3/4 use the whole range `0..=511`, and forms 5/6
+    /// validate `upper <= lower` *before* calling — a reversed range is rejected as errnum 4
+    /// by the handler (`cmp upper,lower / ble ok` @0x141a28), never scanned downward.
     pub fn alloc(&self, start: usize, end: usize) -> Option<usize> {
-        if start <= end {
-            (start..=end).find(|&i| !self.sprites[i].active)
-        } else {
-            (end..=start).rev().find(|&i| !self.sprites[i].active)
-        }
+        (start..=end).find(|&i| !self.sprites[i].active)
     }
 
     /// `SPCLR mgmt` — release one slot (harmless if already free).
@@ -818,14 +816,16 @@ mod tests {
     }
 
     #[test]
-    fn alloc_respects_range_and_direction() {
+    fn alloc_scans_range_low_to_high() {
         let mut st = SpriteState::new();
-        // Range [10,20] returns the low end first.
+        // Range [10,20] returns the low end first, then the next free slot upward.
         assert_eq!(st.alloc(10, 20), Some(10));
         st.set_direct(10, 0, 0, 16, 16, 1);
         assert_eq!(st.alloc(10, 20), Some(11));
-        // Reversed range scans from the high end down.
-        assert_eq!(st.alloc(20, 10), Some(20));
+        // A single-slot range yields that slot when free, None when taken.
+        assert_eq!(st.alloc(5, 5), Some(5));
+        st.set_direct(5, 0, 0, 16, 16, 1);
+        assert_eq!(st.alloc(5, 5), None);
     }
 
     #[test]

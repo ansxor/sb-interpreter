@@ -59,8 +59,8 @@ fn defn(v: &Value) -> Result<i32, RuntimeError> {
 
 /// Validate a direct-image source rectangle: `U,V` in 0..511, `W,H` in 1..512, and the
 /// rectangle must fit on the 512-pixel sheet (`U+W <= 512`, `V+H <= 512`). Out of range →
-/// errnum 10 (the documented assumption; the exact errnum is oracle-pending, see
-/// `HARVEST_QUEUE.md`).
+/// errnum 10. hw_verified: `SPSET 0,500,0,20,16` (U+W=520) and `SPSET 0,0,500,16,20`
+/// (V+H=520) both raise errnum 10; the `U+W==512` edge (`SPSET 0,496,0,16,16`) is accepted.
 fn rect(u: i32, v: i32, w: i32, h: i32) -> Result<(), RuntimeError> {
     let ok = (0..SPRITE_COUNT as i32).contains(&u)
         && (0..SPRITE_COUNT as i32).contains(&v)
@@ -172,12 +172,17 @@ fn spset_alloc(sp: &mut SpriteState, args: &[Value]) -> Result<i32, RuntimeError
             let img = direct_image(u, v, w, h, a)?;
             (0, SPRITE_COUNT - 1, img)
         }
-        // Form 5 — upper,lower,defn.
-        [up, lo, d] => (mgmt(up)?, mgmt(lo)?, Image::Template(defn(d)?)),
+        // Form 5 — upper,lower,defn. The range bounds (and their ordering) are validated
+        // before the definition, matching the handler's check order @0x141a28.
+        [up, lo, d] => {
+            let (start, end) = alloc_range(up, lo)?;
+            (start, end, Image::Template(defn(d)?))
+        }
         // Form 6 — upper,lower,U,V,W,H,attr.
         [up, lo, u, v, w, h, a] => {
+            let (start, end) = alloc_range(up, lo)?;
             let img = direct_image(u, v, w, h, a)?;
-            (mgmt(up)?, mgmt(lo)?, img)
+            (start, end, img)
         }
         _ => return Err(illegal()),
     };
@@ -192,6 +197,19 @@ fn spset_alloc(sp: &mut SpriteState, args: &[Value]) -> Result<i32, RuntimeError
         // No free slot — the documented -1 "no available number" result.
         None => Ok(-1),
     }
+}
+
+/// Resolve + validate an explicit auto-allocate search range (forms 5/6). Both bounds must
+/// be valid management numbers (else errnum 10), and the first (`upper`) must be `<=` the
+/// second (`lower`): the handler compares them and only proceeds when `upper <= lower`,
+/// raising errnum 4 otherwise — it does NOT scan downward (`cmp upper,lower / ble ok` else
+/// `mov r0,#0x4` @0x141a28-0x141a44). hw_verified: `IX=SPSET(105,100,0)` → errnum 4.
+fn alloc_range(up: &Value, lo: &Value) -> Result<(usize, usize), RuntimeError> {
+    let (start, end) = (mgmt(up)?, mgmt(lo)?);
+    if start > end {
+        return Err(illegal());
+    }
+    Ok((start, end))
 }
 
 /// A resolved image specification for an auto-allocated sprite.
@@ -1170,6 +1188,44 @@ mod tests {
     /// Create sprite `slot` (SPSET slot,0) so SPOFS can operate on it.
     fn spset0(sp: &mut SpriteState, slot: i32) {
         spset(sp, &[Value::Int(slot), Value::Int(0)], 0).unwrap();
+    }
+
+    #[test]
+    fn spset_alloc_picks_lowest_and_rejects_reversed_range() {
+        // Auto-allocate returns the LOWEST free slot; a reversed [upper,lower] range is
+        // errnum 4 (NOT a downward scan). hw_verified sb-oracle batch 2026-06-24 (M7-T2):
+        // IX=SPSET(0)->0, with 0,1 taken ->2; IX=SPSET(5,5,0)->5; IX=SPSET(105,100,0)->errnum 4.
+        let mut sp = SpriteState::new();
+        // Whole-range form picks slot 0 first, then skips used slots.
+        assert_eq!(
+            spset(&mut sp, &[Value::Int(0)], 1).unwrap()[0],
+            Value::Int(0)
+        );
+        spset0(&mut sp, 1);
+        assert_eq!(
+            spset(&mut sp, &[Value::Int(0)], 1).unwrap()[0],
+            Value::Int(2)
+        );
+        // Single-slot range yields that slot; once full, -1.
+        assert_eq!(
+            spset(&mut sp, &[Value::Int(5), Value::Int(5), Value::Int(0)], 1).unwrap()[0],
+            Value::Int(5)
+        );
+        assert_eq!(
+            spset(&mut sp, &[Value::Int(5), Value::Int(5), Value::Int(0)], 1).unwrap()[0],
+            Value::Int(-1)
+        );
+        // Reversed range (upper > lower) → errnum 4.
+        assert_eq!(
+            spset(
+                &mut sp,
+                &[Value::Int(105), Value::Int(100), Value::Int(0)],
+                1
+            )
+            .unwrap_err()
+            .errnum,
+            4
+        );
     }
 
     #[test]
