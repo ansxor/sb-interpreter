@@ -1,0 +1,29 @@
+# GTRI filled-triangle side-effect harvest — GSPOIT read-back (framebuffer-free, same
+# method as gpset/gline/gbox/gfill). white=-460552, empty=0, red=-524288, blue=-16776968.
+#
+# mask5: small right triangle GTRI 100,100,104,100,100,104 (right angle at 100,100, legs
+# along y=100 and x=100, hypotenuse (104,100)-(100,104)). Read the full 5x5 box
+# (100..104 x 100..104) row-major: 25 lit-flags. Reveals the exact fill rule + edge inclusion.
+mask5|GCLS:W=RGB(255,255,255):GTRI 100,100,104,100,100,104,W:R$="":FOR DY=0 TO 4:FOR DX=0 TO 4:R$=R$+STR$(GSPOIT(100+DX,100+DY))+" ":NEXT:NEXT|R$|progstr
+# Same triangle, vertices given in a different order (should fill identically — winding-independent).
+mask5_order|GCLS:W=RGB(255,255,255):GTRI 100,104,104,100,100,100,W:R$="":FOR DY=0 TO 4:FOR DX=0 TO 4:R$=R$+STR$(GSPOIT(100+DX,100+DY))+" ":NEXT:NEXT|R$|progstr
+# Degenerate: 3 collinear horizontal points (10,200),(20,200),(30,200). Does it draw the
+# spanning line (10..30 @ y=200) or nothing? read endpoints + middle + a mid point + below.
+deg_horiz|GCLS:W=RGB(255,255,255):GTRI 10,200,20,200,30,200,W:R$=STR$(GSPOIT(10,200))+" "+STR$(GSPOIT(20,200))+" "+STR$(GSPOIT(30,200))+" "+STR$(GSPOIT(25,200))+" "+STR$(GSPOIT(15,201))|R$|progstr
+# Degenerate: 3 collinear diagonal points slope 1 (200,10)(205,15)(210,20). line or nothing?
+deg_diag|GCLS:W=RGB(255,255,255):GTRI 200,10,205,15,210,20,W:R$=STR$(GSPOIT(200,10))+" "+STR$(GSPOIT(205,15))+" "+STR$(GSPOIT(210,20))+" "+STR$(GSPOIT(202,12))+" "+STR$(GSPOIT(203,11))|R$|progstr
+# Degenerate: all three vertices coincide -> single point? read the point + a neighbor.
+deg_point|GCLS:W=RGB(255,255,255):GTRI 50,220,50,220,50,220,W:R$=STR$(GSPOIT(50,220))+" "+STR$(GSPOIT(51,220))|R$|progstr
+# Degenerate: two vertices coincide, third distinct -> a line segment (50,230)-(56,230)?
+deg_twocoincide|GCLS:W=RGB(255,255,255):GTRI 50,230,50,230,56,230,W:R$=STR$(GSPOIT(50,230))+" "+STR$(GSPOIT(53,230))+" "+STR$(GSPOIT(56,230))+" "+STR$(GSPOIT(53,231))|R$|progstr
+# Color: 6-arg form defaults to current GCOLOR (red). read an interior pixel.
+color_default|GCLS:GCOLOR RGB(255,0,0):GTRI 300,100,304,100,300,104:R$=STR$(GSPOIT(301,101))|R$|progstr
+# Color: 7-arg explicit blue interior.
+color_blue|GCLS:GTRI 300,120,304,120,300,124,RGB(0,0,255):R$=STR$(GSPOIT(301,121))|R$|progstr
+# Color: negative literal -1 = opaque white interior.
+color_neg|GCLS:GTRI 300,140,304,140,300,144,-1:R$=STR$(GSPOIT(301,141))|R$|progstr
+# Off-page huge triangle must NOT error (sentinel 42).
+clip_noerr|GCLS:GTRI -50,-50,999,999,500,-50,-1|42|prog
+# Partially off-page triangle still draws on-page pixels (page is 512 wide; visible <400).
+# Triangle straddling the right edge: (395,300)(405,300)(395,310). read on-page interior.
+clip_onpage|GCLS:GTRI 395,300,405,300,395,310,RGB(255,255,255):R$=STR$(GSPOIT(396,301))|R$|progstr

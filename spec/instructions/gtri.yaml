@@ -25,10 +25,12 @@ signatures:
 summary: "Draws a triangle from three vertices on the current graphic page and fills it with a color."
 
 semantics:
-  - "The triangle is FILLED (not just an outline) with the chosen color."
+  - "The triangle is FILLED (not just an outline) with the chosen color. The fill is the set of pixels inside-or-on all three edges — boundary pixels (vertices, all three edges, the hypotenuse) are INCLUSIVE (hw_verified via GSPOIT read-back: GTRI 100,100,104,100,100,104,white fills exactly the pixels with dx>=0,dy>=0,dx+dy<=4 — every vertex, the legs, and the full hypotenuse (104,100)/(103,101)/(102,102)/(101,103)/(100,104) are lit; (104,101)=dx4+dy1=5 and the outside corner (104,104) stay 0)."
+  - "The fill is WINDING-INDEPENDENT — the three vertices may be given in any order and produce the identical pixel set (hw_verified: GTRI 100,104,104,100,100,100,white reads back byte-identically to the order above). The rasterizer (FUN_00194120) sorts the vertices by y then x (@0x194164-0x1941cc) before scan-converting, so input order does not matter."
+  - "A DEGENERATE (zero-area / collinear) triangle still DRAWS — it lights the spanning line between its two most distant vertices (the middle vertex lies on that segment), NOT nothing. The handler's degenerate branch (@0x1942ec, reached when the sorted span collapses) routes to the line helpers FUN_00155f8c + FUN_0015cab0 (hw_verified: GTRI 10,200,20,200,30,200,white lights the whole row 10..30 @ y=200, (15,201) below stays 0; GTRI 200,10,205,15,210,20,white lights the slope-1 segment (200,10)/(205,15)/(210,20) — (203,11) off the line is 0). When all three vertices coincide a single pixel is plotted (GTRI 50,220,50,220,50,220,white -> only (50,220) lit). When two coincide, the segment to the third is drawn (GTRI 50,230,50,230,56,230,white lights the row 50..56 @ y=230)."
   - "Takes exactly 6 args (three vertices) or 7 args (+color) and returns no value. Any other argument count, or requesting a return value, raises errnum 4 (Illegal function call) — return-count [r4,#0xc] cmp #0 bne error @0x1554b8, argcount [r4,#0x4] cmp #6 (beq @0x1554cc) / cmp #7 (beq @0x1554d4) else mov r0,#0x4 (errnum 4) @0x1554e0."
-  - "With 6 args the color defaults to the current GCOLOR draw color (loaded from graphics-context field +0xc). With 7 args the popped 32-bit value is used. The color is NOT range-checked — a full 32-bit ARGB value (A=255 opaque, otherwise transparent); signed/&H/#CONSTANT operands are accepted (e.g. -1 = opaque white)."
-  - "Vertices may be off-screen / out of range; coordinates are integer-coerced from the popped args (real code passes float vertices, e.g. GTRI 19.5*8,...) and are clipped by the draw helper rather than rejected — no range error. The handler reads the graphics context via [[0x315d60]+0x20] (r6) and fetches the six vertex coordinates plus color through the standard arg-fetch vtable slot [r2,#0x40]."
+  - "With 6 args the color defaults to the current GCOLOR draw color (loaded from graphics-context field +0xc; @0x1555a8 ldreq r0,[r6,#0xc]). With 7 args the popped 32-bit value is used. The color is NOT range-checked — a full 32-bit ARGB value (A=255 opaque, otherwise transparent); signed/&H/#CONSTANT operands are accepted (e.g. -1 = opaque white). The fill color round-trips through device RGBA5551 EXACTLY like GPSET/GLINE/GBOX (rasterizer @0x194234: r=(c>>2)&0x3e, g=(c>>5)&0x7c0, b=(c>>8)&0xf800, alpha bit set only when (c>>0x18)==0xff) — hw_verified: GCOLOR-default RGB(255,0,0)->-524288, explicit RGB(0,0,255)->-16776968, -1->white -460552."
+  - "Vertices may be off-screen / out of range; coordinates are integer-coerced from the popped args (real code passes float vertices, e.g. GTRI 19.5*8,...) and are clipped by the draw helper rather than rejected — no range error (hw_verified: GTRI -50,-50,999,999,500,-50,-1 runs without error; a triangle straddling the right edge GTRI 395,300,405,300,395,310,white still lights the on-page interior (396,301)). The handler reads the graphics context via [[0x315d60]+0x20] (r6) and fetches the six vertex coordinates plus color through the standard arg-fetch vtable slot [r2,#0x40]; the rasterizer rejects the whole triangle only when it falls entirely outside the clip rect ([r4,#0x10..0x1c], @0x1941d4-0x194230)."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "argument count is not 6 or 7, or a return value is requested (used as a function)" }
@@ -38,15 +40,48 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst GTRI handler @0x15549c: graphics state ptr 0x1556d0->0x315d60, gfx-context = [[..]+0x20] (r6); return-count r1=[r4,#0xc] cmp #0 bne -> errnum 4 @0x1554b8; argcount r1=[r4,#0x4] cmp #6 beq @0x1554f0 (6-arg, default color), cmp #7 beq @0x1555b8 (7-arg), else mov r2,#0/mvn r1/mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x1554d8; coordinates fetched via vtable [r2,#0x40]; no range guard in the handler." }
   - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GTRI: draws a filled triangle on the active graphic page (3.5.0 structural cross-check only)." }
   - { type: community, ref: "sbsave corpus: GTRI appears ~513x. Confirms the 6-arg default-color form (~86 lines, e.g. 433J5XA3/TXT/ATMOS 'GTRI 0,0,160,0,80,240'), negative (-1) color (2RD4S3RJ/TXT/VERSION_1.3), and float-literal vertices (7343YJHX/TXT/-TG_PLAYER 'GTRI 19.5*8,...'). No real >7-arg form exists — software 3D rasterizers use nested-array vertices but never more than 7 top-level operands." }
+  - { type: disassembled, ref: "cia_3.6.0.lst triangle rasterizer FUN_00194120 (handler @0x1556c0 bl 0x194120): vertices sorted by y then x (@0x194164-0x1941cc); ARGB8888->RGBA5551 build @0x194234 (r=(c>>2)&0x3e, g=(c>>5)&0x7c0, b=(c>>8)&0xf800, alpha orreq #1 when (c>>0x18)==0xff); whole-triangle clip-reject vs clip rect [r4,#0x10..0x1c] @0x1941d4-0x194230 (bgt 0x1942e4 exit); DEGENERATE branch @0x1942ec routes to line helpers bl 0x00155f8c + bl 0x0015cab0; scanline fill loop @0x194374-0x194470 writes the color halfword strh r5,[r3]." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7b): GTRI 0,0,1,1,2 (5 args) -> errnum 4, errline 1; GTRI 0,0,1,1,2,2,3,4 (8 args) -> errnum 4; A=GTRI(0,0,1,1,2,2) (used as a function) -> errnum 4." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 49, harness/harvest/out/gtri.tsv + gtri_color.tsv) — fill side-effects via GSPOIT read-back (framebuffer-free, same method as gpset/gline/gbox/gfill). Fill mask GTRI 100,100,104,100,100,104,white = exactly dx+dy<=4 (vertices, both legs, full hypotenuse inclusive; (104,101)=0, (104,104)=0); winding-independent (vertex order 100,104/104,100/100,100 reads byte-identical). Degenerate draws a line: GTRI 10,200,20,200,30,200,white -> (10,200)/(20,200)/(30,200)/(25,200)=white, (15,201)=0; GTRI 200,10,205,15,210,20,white -> (200,10)/(205,15)/(210,20)/(202,12)=white, (203,11)=0; GTRI 50,220,50,220,50,220,white -> (50,220)=white,(51,220)=0; GTRI 50,230,50,230,56,230,white -> (50,230)/(53,230)/(56,230)=white,(53,231)=0. Color: 6-arg GCOLOR RGB(255,0,0) default -> -524288, 7-arg RGB(0,0,255) -> -16776968, -1 -> white -460552. Clip: GTRI -50,-50,999,999,500,-50,-1 no error; GTRI 395,300,405,300,395,310,white -> (396,301)=white." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7b); triangle side-effects need the framebuffer oracle (O-T6, queued).
+  # arg-count/return errors hw_verified (sb-oracle 2026-06-22 s_t7b); fill side-effects
+  # hw_verified via GSPOIT read-back (M7-T2 run 49, harness/harvest/out/gtri.tsv + gtri_color.tsv).
+  # white=-460552, empty=0, red=-524288, blue=-16776968 (RGBA5551 8->5, as GPSET/GLINE/GBOX).
   - { name: tri_default_color_ok, code: "GTRI 200,10,300,200,100,200", expect: { stdout: "" } }
   - { name: tri_explicit_color_ok, code: "GTRI 0,0,160,0,80,240,RGB(0,255,0)", expect: { stdout: "" } }
   - { name: tri_negative_color_ok, code: "GTRI 0,0,10,0,5,10,-1", expect: { stdout: "" } }
   - { name: five_args_errors, code: "GTRI 0,0,1,1,2", expect: { error: { errnum: 4 } } }
   - { name: eight_args_errors, code: "GTRI 0,0,1,1,2,2,3,4", expect: { error: { errnum: 4 } } }
   - { name: as_function_errors, code: "A=GTRI(0,0,1,1,2,2)", expect: { error: { errnum: 4 } } }
+  # --- fill mask: vertices + legs + full hypotenuse inclusive; outside corner clear ---
+  - { name: fill_vertex_a, code: "GTRI 100,100,104,100,100,104,RGB(255,255,255):PRINT GSPOIT(100,100)", expect: { stdout: "-460552" } }
+  - { name: fill_vertex_b, code: "GTRI 100,100,104,100,100,104,RGB(255,255,255):PRINT GSPOIT(104,100)", expect: { stdout: "-460552" } }
+  - { name: fill_vertex_c, code: "GTRI 100,100,104,100,100,104,RGB(255,255,255):PRINT GSPOIT(100,104)", expect: { stdout: "-460552" } }
+  - { name: fill_interior, code: "GTRI 100,100,104,100,100,104,RGB(255,255,255):PRINT GSPOIT(101,101)", expect: { stdout: "-460552" } }
+  - { name: fill_hypotenuse_mid, code: "GTRI 100,100,104,100,100,104,RGB(255,255,255):PRINT GSPOIT(102,102)", expect: { stdout: "-460552" } }
+  - { name: fill_hypotenuse_end, code: "GTRI 100,100,104,100,100,104,RGB(255,255,255):PRINT GSPOIT(101,103)", expect: { stdout: "-460552" } }
+  - { name: fill_outside_hyp, code: "GTRI 100,100,104,100,100,104,RGB(255,255,255):PRINT GSPOIT(104,101)", expect: { stdout: "0" } }
+  - { name: fill_outside_corner, code: "GTRI 100,100,104,100,100,104,RGB(255,255,255):PRINT GSPOIT(104,104)", expect: { stdout: "0" } }
+  # --- winding-independent: reversed vertex order fills the same interior pixel ---
+  - { name: order_interior, code: "GTRI 100,104,104,100,100,100,RGB(255,255,255):PRINT GSPOIT(101,101)", expect: { stdout: "-460552" } }
+  - { name: order_hypotenuse, code: "GTRI 100,104,104,100,100,100,RGB(255,255,255):PRINT GSPOIT(102,102)", expect: { stdout: "-460552" } }
+  # --- degenerate (collinear) draws the spanning line, not nothing ---
+  - { name: deg_horiz_start, code: "GTRI 10,200,20,200,30,200,RGB(255,255,255):PRINT GSPOIT(10,200)", expect: { stdout: "-460552" } }
+  - { name: deg_horiz_mid, code: "GTRI 10,200,20,200,30,200,RGB(255,255,255):PRINT GSPOIT(25,200)", expect: { stdout: "-460552" } }
+  - { name: deg_horiz_end, code: "GTRI 10,200,20,200,30,200,RGB(255,255,255):PRINT GSPOIT(30,200)", expect: { stdout: "-460552" } }
+  - { name: deg_horiz_off, code: "GTRI 10,200,20,200,30,200,RGB(255,255,255):PRINT GSPOIT(15,201)", expect: { stdout: "0" } }
+  - { name: deg_diag_mid, code: "GTRI 200,10,205,15,210,20,RGB(255,255,255):PRINT GSPOIT(205,15)", expect: { stdout: "-460552" } }
+  - { name: deg_diag_off, code: "GTRI 200,10,205,15,210,20,RGB(255,255,255):PRINT GSPOIT(203,11)", expect: { stdout: "0" } }
+  - { name: deg_point_hit, code: "GTRI 50,220,50,220,50,220,RGB(255,255,255):PRINT GSPOIT(50,220)", expect: { stdout: "-460552" } }
+  - { name: deg_point_off, code: "GTRI 50,220,50,220,50,220,RGB(255,255,255):PRINT GSPOIT(51,220)", expect: { stdout: "0" } }
+  - { name: deg_two_coincide_end, code: "GTRI 50,230,50,230,56,230,RGB(255,255,255):PRINT GSPOIT(56,230)", expect: { stdout: "-460552" } }
+  # --- color: 6-arg default uses GCOLOR; 7-arg explicit; -1 = white ---
+  - { name: color_default_red, code: "GCOLOR RGB(255,0,0):GTRI 300,100,304,100,300,104:PRINT GSPOIT(301,101)", expect: { stdout: "-524288" } }
+  - { name: color_explicit_blue, code: "GTRI 300,120,304,120,300,124,RGB(0,0,255):PRINT GSPOIT(301,121)", expect: { stdout: "-16776968" } }
+  - { name: color_neg_white, code: "GTRI 300,140,304,140,300,144,-1:PRINT GSPOIT(301,141)", expect: { stdout: "-460552" } }
+  # --- clipping: huge off-page triangle no error; partial draws on-page interior ---
+  - { name: clip_offscreen_no_error, code: "GTRI -50,-50,999,999,500,-50,-1:PRINT 42", expect: { stdout: "42" } }
+  - { name: clip_onpage_interior, code: "GTRI 395,300,405,300,395,310,RGB(255,255,255):PRINT GSPOIT(396,301)", expect: { stdout: "-460552" } }

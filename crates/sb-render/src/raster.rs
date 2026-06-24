@@ -68,8 +68,10 @@ impl GrpState {
 
     /// Bresenham line in device space (used by `GLINE`, `GBOX`, and the sector radii).
     fn line_dev(&mut self, x1: i32, y1: i32, x2: i32, y2: i32, h: u16) {
-        let dx = (x2 - x1).abs();
-        let dy = -(y2 - y1).abs();
+        // i64 deltas: extreme i32 endpoints (a degenerate GTRI line, or GLINE/GBOX with far
+        // coords) make `x2 - x1` overflow i32 — only the err accumulation needs the width.
+        let dx = (x2 as i64 - x1 as i64).abs();
+        let dy = -(y2 as i64 - y1 as i64).abs();
         let sx = if x1 < x2 { 1 } else { -1 };
         let sy = if y1 < y2 { 1 } else { -1 };
         let mut err = dx + dy;
@@ -202,8 +204,11 @@ impl GrpState {
 
     /// `GTRI x1,y1,x2,y2,x3,y3[,color]` — draw a FILLED triangle, using integer edge
     /// functions over the triangle's bounding box (a pixel is filled when it is on the same
-    /// side of all three edges; edges are inclusive). A degenerate (collinear) triangle has
-    /// zero area and draws nothing.
+    /// side of all three edges; edges are inclusive — winding-independent). A degenerate
+    /// (zero-area / collinear) triangle still draws the spanning line between its two most
+    /// distant vertices (a single pixel when all three coincide) — hw_verified M7-T2: the
+    /// handler's degenerate branch (@0x1942ec) routes to the line helpers (0x155f8c/0x15cab0),
+    /// so e.g. `GTRI 10,200,20,200,30,200` lights the row 10..30 @ y=200, not nothing.
     #[allow(clippy::too_many_arguments)]
     pub fn gtri(&mut self, x1: i32, y1: i32, x2: i32, y2: i32, x3: i32, y3: i32, color: u32) {
         let h = argb8888_to_rgba5551(color);
@@ -211,14 +216,27 @@ impl GrpState {
         // extremes (a fuzzer-found case, M7-T1) a difference reaches ~2^32 and its product
         // ~2^64 — past i64 — so the geometry is computed in i128. Only the sign/zero matters,
         // and i128 holds it exactly for every i32 input; results are identical in range.
-        let (x1, y1, x2, y2, x3, y3) = (
+        let (ax, ay, bx, by, cx, cy) = (
             x1 as i128, y1 as i128, x2 as i128, y2 as i128, x3 as i128, y3 as i128,
         );
-        // Signed area * 2; zero => degenerate (collinear) => nothing to fill.
-        let area = (x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1);
+        // Signed area * 2; zero => degenerate (collinear) => draw the spanning line.
+        let area = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
         if area == 0 {
+            // Collinear: draw the segment between the two farthest-apart vertices (it covers
+            // the middle one too). For coincident vertices the distance is 0 -> one pixel.
+            let v = [(x1, y1), (x2, y2), (x3, y3)];
+            let dist2 = |p: (i32, i32), q: (i32, i32)| {
+                let (dx, dy) = (p.0 as i128 - q.0 as i128, p.1 as i128 - q.1 as i128);
+                dx * dx + dy * dy
+            };
+            let (i, j) = [(0usize, 1usize), (0, 2), (1, 2)]
+                .into_iter()
+                .max_by_key(|&(a, b)| dist2(v[a], v[b]))
+                .unwrap();
+            self.line_dev(v[i].0, v[i].1, v[j].0, v[j].1, h);
             return;
         }
+        let (x1, y1, x2, y2, x3, y3) = (ax, ay, bx, by, cx, cy);
         let (minx, maxx) = (x1.min(x2).min(x3), x1.max(x2).max(x3));
         let (miny, maxy) = (y1.min(y2).min(y3), y1.max(y2).max(y3));
         // Clamp the scan box to the drawable region so a huge off-screen triangle is cheap.
@@ -401,16 +419,26 @@ mod tests {
     }
 
     #[test]
-    fn gtri_fills_interior_and_skips_degenerate() {
+    fn gtri_fills_interior_and_draws_degenerate_line() {
         let mut g = GrpState::new();
         g.gtri(0, 0, 10, 0, 0, 10, WHITE);
         assert_ne!(read(&g, 1, 1), 0); // clearly inside
         assert_ne!(read(&g, 0, 0), 0); // vertex
         assert_eq!(read(&g, 9, 9), 0); // outside the hypotenuse
-                                       // Degenerate (collinear) -> nothing drawn.
+                                       // Degenerate (collinear) -> draws the spanning line, not
+                                       // nothing (hw_verified M7-T2): the segment (0,0)-(10,10)
+                                       // covers the middle vertex; off-line pixels stay clear.
         let mut d = GrpState::new();
         d.gtri(0, 0, 5, 5, 10, 10, WHITE);
-        assert_eq!(d.pages[0].pixels.iter().filter(|&&p| p != 0).count(), 0);
+        assert_ne!(read(&d, 0, 0), 0); // endpoint
+        assert_ne!(read(&d, 5, 5), 0); // middle vertex on the line
+        assert_ne!(read(&d, 10, 10), 0); // far endpoint
+        assert_eq!(read(&d, 5, 6), 0); // off the line
+                                       // All three vertices coincident -> a single pixel.
+        let mut p = GrpState::new();
+        p.gtri(7, 7, 7, 7, 7, 7, WHITE);
+        assert_ne!(read(&p, 7, 7), 0);
+        assert_eq!(p.pages[0].pixels.iter().filter(|&&px| px != 0).count(), 1);
     }
 
     #[test]
