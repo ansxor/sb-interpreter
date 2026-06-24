@@ -26,6 +26,11 @@ semantics:
   - "With 4 args the color defaults to the current GCOLOR draw color (the 4-arg path loads it from the graphics-context draw-color field +0xc: ldreq r0,[r6,#0xc] / streq r0,[sp,#0x1c] @0x1531e0). With 5 args the popped 32-bit value is the color."
   - "The color is NOT range-checked — it is a full 32-bit ARGB value (8 bits each A,R,G,B); A=255 opaque, otherwise transparent. Signed/&H/#CONSTANT color operands are accepted (e.g. -1 = opaque white)."
   - "Corners may be given in any order and may be off-screen / out of range; coordinates are integer-coerced from the popped args and clipped by the draw helper rather than rejected — no range error. The handler reads the graphics context via [[0x315d60]+0x20] (r6), fetches the four coordinates plus color through the standard arg-fetch vtable slot [r2,#0x40], and passes them to the filled-rectangle draw helper bl 0x193dec @0x1532bc."
+  - "The WHOLE rectangle interior is lit — corners, edges AND interior (this is the GBOX-vs-GFILL distinction; hw_verified via GSPOIT read-back: GFILL 10,100,20,110,white lights all four corners (10,100)/(20,100)/(10,110)/(20,110), edge mids (15,100)/(15,110)/(10,105)/(20,105) AND the interior (15,105) + a just-inside pixel (15,101) = -460552, while only the outside pixels (9,100)/(21,110) stay 0). The span is inclusive on every edge."
+  - "Corner order is normalized — either pair of opposite corners fills the same rectangle (hw_verified: GFILL 20,110,10,100,white fills the identical box, interior (15,105) lit — matches the draw helper's swap @0x193e18/@0x193e28)."
+  - "The fill color round-trips through the device RGBA5551 format EXACTLY like GPSET/GLINE/GBOX (8->5 bit channel truncation; the fill helper @0x193dec builds the halfword: green = (c>>5)&0x7c0, red = (c>>2)&0x3e, blue = (c>>8)&0xf800, alpha bit set only when (c>>0x18)==0xff). hw_verified: white/-1 -> -460552, RGB(0,0,255) -> -16776968. With 4 args the color defaults to the current GCOLOR draw color (hw_verified: GCOLOR RGB(255,0,0):GFILL 40,100,45,105 reads back -524288 == the explicit-red form), filling corner AND interior alike."
+  - "A degenerate fill (start == end) plots a single pixel; a zero-width fill (x1==x2) fills a vertical segment and a zero-height fill (y1==y2) a horizontal segment (hw_verified: GFILL 60,60,60,60,white lights only (60,60), (61,61)=0; GFILL 70,70,70,75,white fills the column (70,70)/(70,72)/(70,75), (71,72)=0; GFILL 80,80,85,80,white fills the row (80,80)/(82,80)/(85,80), (82,81)=0)."
+  - "Off-page / partially-off-page fills do NOT error — the draw helper clips the span to the page window ([r6,#0x14]/[r6,#0x18]/[r6,#0x1c], @0x193e38-@0x193e78) rather than raising a range error (hw_verified: GFILL -50,-50,999,999,-1 runs without error; GFILL 395,130,405,140,white still fills the on-page edges + interior (399,130)/(399,135)/(399,140))."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "argument count is not 4 or 5, or a return value is requested (used as a function)" }
@@ -36,14 +41,56 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GFILL: fills a rectangle on the active graphic page (3.5.0 structural cross-check only)." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7c): GFILL 0,0,1 (3 args) -> errnum 4, errline 1; GFILL 0,0,1,1,2,3 (6 args) -> errnum 4; A=GFILL(0,0,1,1) (used as a function) -> errnum 4." }
   - { type: community, ref: "sbsave corpus: GFILL appears ~7860x. Confirms the 4-arg default-color form (~742 lines, e.g. 1K237KNV/TXT/FREEBGM_RWI2 'GFILL 0,240,400,480'), and #CONSTANT (1DVK34J/TXT/HNZTL 'GFILL 0,112,49,121,#BLACK'), &H hex (1DVK34J/TXT/HNZMJG 'GFILL ...,&HFF0000FF'), negative (2EVX5N4E/TXT/CALENDAR 'GFILL 0,0,319,15,-12961222'; -1) and array-element color operands (1DVK34J/TXT/HNZCDRV 'GFILL ...,C_CMR%[PH,2]') — all legal. No real form with a count other than 4 or 5." }
+  - { type: disassembled, ref: "cia_3.6.0.lst filled-rectangle draw helper @0x193dec (called by the GFILL handler @0x1532bc): corner normalization at entry — sub r5,r4,#0x1 / sub r0,r2,#0x1 / cmp r0,r5 / cpygt r2,r5 / cpyle r2,r0 / cpygt r5,r0 @0x193e10-@0x193e28 (and the y pair @0x193e2c-@0x193e38); each span clipped to the page window cmp r8,r5 / ldrle r7,[r6,#0x14] / cmp r1,r4 / ldrle r0,[r6,#0x1c] / cmp r8,r2 / cpygt r2,r8 ... @0x193e38-@0x193e78 (no range error, bgt 0x194038 skips on a fully-off span); ARGB8888->RGBA5551 build @0x193e80 — mov r1,#0x7c0 / mov r0,#0x3e / and r3,r1,r12,lsr #0x5 (green) / and r2,r0,r12,lsr #0x2 (red) / mov r0,#0xf800 / and r0,r0,r12,lsr #0x8 (blue) / orr r0,r0,r2, alpha bit set only for A==255 (mov r1,#0xff / cmp r1,r12,lsr #0x18 / orreq r0,r0,#0x1) — IDENTICAL channel layout to GPSET/GLINE/GBOX; spans rounded to 8-pixel tiles (bic r11,r4,#0x7 / bic r7,r2,#0x7 / bic r8,r1,#0x7 / bic r10,r5,#0x7 @0x193ec0-@0x193ed0) for the tiled framebuffer store." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 43, harness/harvest/out/gfill.tsv) — fill side-effects via GSPOIT read-back (framebuffer-free, same method as gpset/gline/gbox/gspoit). Interior filled (unlike GBOX): GFILL 10,100,20,110,white -> corners (10,100)/(20,100)/(10,110)/(20,110)=-460552, edge mids (15,100)/(15,110)/(10,105)/(20,105)=-460552, interior (15,105)=-460552, just-inside (15,101)=-460552, outside (9,100)/(21,110)=0. Corner-order: GFILL 20,110,10,100,white -> (10,100)/(20,110)/(15,105)=-460552 (same box). Color: RGB(0,0,255)->-16776968 (corner+interior (32,102)), -1->-460552, 4-arg default GCOLOR RGB(255,0,0):GFILL 40,100,45,105 -> (40,100)/(42,102)=-524288. Degenerate GFILL 60,60,60,60,white -> (60,60)=-460552, (61,61)=0; zero-width GFILL 70,70,70,75 -> (70,70)/(70,72)/(70,75)=-460552, (71,72)=0; zero-height GFILL 80,80,85,80 -> (80,80)/(82,80)/(85,80)=-460552, (82,81)=0. Clip: GFILL -50,-50,999,999,-1 no error; GFILL 395,130,405,140,white -> (399,130)/(399,135)/(399,140)=-460552." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7c); fill side-effects need the framebuffer oracle (O-T6, queued).
+  # arg-count/return errors hw_verified (sb-oracle 2026-06-22 s_t7c); fill pixel side-effects
+  # hw_verified via GSPOIT read-back (M7-T2 run 43, harness/harvest/out/gfill.tsv).
+  # white=-460552, red=-524288, blue=-16776968 (RGBA5551 8->5, identical to GPSET/GLINE/GBOX/GSPOIT).
   - { name: fill_default_color_ok, code: "GFILL 0,0,399,239", expect: { stdout: "" } }
   - { name: fill_explicit_color_ok, code: "GFILL 10,10,100,100,RGB(255,0,0)", expect: { stdout: "" } }
   - { name: fill_negative_color_ok, code: "GFILL 0,0,50,50,-1", expect: { stdout: "" } }
   - { name: three_args_errors, code: "GFILL 0,0,1", expect: { error: { errnum: 4 } } }
   - { name: six_args_errors, code: "GFILL 0,0,1,1,2,3", expect: { error: { errnum: 4 } } }
   - { name: as_function_errors, code: "A=GFILL(0,0,1,1)", expect: { error: { errnum: 4 } } }
+  # --- solid fill: corners + edge midpoints + INTERIOR all lit (unlike GBOX), outside clear ---
+  - { name: corner_tl, code: "GFILL 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(10,100)", expect: { stdout: "-460552" } }
+  - { name: corner_tr, code: "GFILL 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(20,100)", expect: { stdout: "-460552" } }
+  - { name: corner_bl, code: "GFILL 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(10,110)", expect: { stdout: "-460552" } }
+  - { name: corner_br, code: "GFILL 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(20,110)", expect: { stdout: "-460552" } }
+  - { name: top_edge_mid, code: "GFILL 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(15,100)", expect: { stdout: "-460552" } }
+  - { name: bottom_edge_mid, code: "GFILL 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(15,110)", expect: { stdout: "-460552" } }
+  - { name: left_edge_mid, code: "GFILL 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(10,105)", expect: { stdout: "-460552" } }
+  - { name: right_edge_mid, code: "GFILL 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(20,105)", expect: { stdout: "-460552" } }
+  - { name: interior_filled, code: "GFILL 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(15,105)", expect: { stdout: "-460552" } }
+  - { name: just_inside_filled, code: "GFILL 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(15,101)", expect: { stdout: "-460552" } }
+  - { name: outside_clear_tl, code: "GFILL 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(9,100)", expect: { stdout: "0" } }
+  - { name: outside_clear_br, code: "GFILL 10,100,20,110,RGB(255,255,255):PRINT GSPOIT(21,110)", expect: { stdout: "0" } }
+  # --- corner order normalized: reversed corners fill the same rectangle incl interior ---
+  - { name: reversed_corner, code: "GFILL 20,110,10,100,RGB(255,255,255):PRINT GSPOIT(10,100)", expect: { stdout: "-460552" } }
+  - { name: reversed_interior, code: "GFILL 20,110,10,100,RGB(255,255,255):PRINT GSPOIT(15,105)", expect: { stdout: "-460552" } }
+  # --- color: explicit blue (corner+interior); 4-arg default uses GCOLOR; negative literal = white ---
+  - { name: explicit_blue_corner, code: "GFILL 30,100,35,105,RGB(0,0,255):PRINT GSPOIT(30,100)", expect: { stdout: "-16776968" } }
+  - { name: explicit_blue_interior, code: "GFILL 30,100,35,105,RGB(0,0,255):PRINT GSPOIT(32,102)", expect: { stdout: "-16776968" } }
+  - { name: four_arg_uses_gcolor, code: "GCOLOR RGB(255,0,0):GFILL 40,100,45,105:PRINT GSPOIT(40,100)", expect: { stdout: "-524288" } }
+  - { name: four_arg_gcolor_interior, code: "GCOLOR RGB(255,0,0):GFILL 40,100,45,105:PRINT GSPOIT(42,102)", expect: { stdout: "-524288" } }
+  - { name: neg_color_is_white, code: "GFILL 50,100,55,105,-1:PRINT GSPOIT(52,102)", expect: { stdout: "-460552" } }
+  # --- degenerate forms: point / zero-width column / zero-height row (filled) ---
+  - { name: point_hit, code: "GFILL 60,60,60,60,RGB(255,255,255):PRINT GSPOIT(60,60)", expect: { stdout: "-460552" } }
+  - { name: point_off_clear, code: "GFILL 60,60,60,60,RGB(255,255,255):PRINT GSPOIT(61,61)", expect: { stdout: "0" } }
+  - { name: vseg_start, code: "GFILL 70,70,70,75,RGB(255,255,255):PRINT GSPOIT(70,70)", expect: { stdout: "-460552" } }
+  - { name: vseg_mid, code: "GFILL 70,70,70,75,RGB(255,255,255):PRINT GSPOIT(70,72)", expect: { stdout: "-460552" } }
+  - { name: vseg_end, code: "GFILL 70,70,70,75,RGB(255,255,255):PRINT GSPOIT(70,75)", expect: { stdout: "-460552" } }
+  - { name: vseg_side_clear, code: "GFILL 70,70,70,75,RGB(255,255,255):PRINT GSPOIT(71,72)", expect: { stdout: "0" } }
+  - { name: hseg_start, code: "GFILL 80,80,85,80,RGB(255,255,255):PRINT GSPOIT(80,80)", expect: { stdout: "-460552" } }
+  - { name: hseg_mid, code: "GFILL 80,80,85,80,RGB(255,255,255):PRINT GSPOIT(82,80)", expect: { stdout: "-460552" } }
+  - { name: hseg_end, code: "GFILL 80,80,85,80,RGB(255,255,255):PRINT GSPOIT(85,80)", expect: { stdout: "-460552" } }
+  - { name: hseg_below_clear, code: "GFILL 80,80,85,80,RGB(255,255,255):PRINT GSPOIT(82,81)", expect: { stdout: "0" } }
+  # --- clipping: off-page no error; partially-off box still fills on-page edges + interior ---
+  - { name: offscreen_no_error, code: "GFILL -50,-50,999,999,-1:PRINT 42", expect: { stdout: "42" } }
+  - { name: partial_clip_top, code: "GFILL 395,130,405,140,RGB(255,255,255):PRINT GSPOIT(399,130)", expect: { stdout: "-460552" } }
+  - { name: partial_clip_mid, code: "GFILL 395,130,405,140,RGB(255,255,255):PRINT GSPOIT(399,135)", expect: { stdout: "-460552" } }
+  - { name: partial_clip_bottom, code: "GFILL 395,130,405,140,RGB(255,255,255):PRINT GSPOIT(399,140)", expect: { stdout: "-460552" } }
