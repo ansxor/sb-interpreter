@@ -13,6 +13,7 @@ semantics:
   - "Written as a prefix to DEF: COMMON DEF USER, COMMON DEF USER(X), or COMMON DEF USER(X) OUT A,B."
   - "Without COMMON a DEF is private to its own slot; with COMMON it can be invoked from another slot (USE of that slot is required first)."
   - "Only affects visibility/scope; the function body and call semantics are those of [[def]]."
+  - "Cross-slot invocation is by name via [[call]] (`CALL \"name\"`): the running slot must `USE` the target slot, which must hold a loaded program; an un-USE'd slot or a non-COMMON DEF does not resolve → Undefined function (16). The call binds value args / returns OUT results / returns a value exactly like a same-slot DEF (implemented M6-T6). Whether a free (non-param/local) variable inside a COMMON DEF binds to the defining slot's globals or the caller's is oracle-pending (HARVEST_QUEUE)."
 
 errors: []
 

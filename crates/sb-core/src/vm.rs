@@ -143,6 +143,18 @@ struct Frame {
     func: usize,
     /// Whether the caller wants the function's return value left on the stack.
     wants_value: bool,
+    /// For a cross-slot `COMMON DEF` call (M6-T6): the slot the call came *from*, to
+    /// switch the active program/globals back to on return. `None` for a same-slot call.
+    caller_slot: Option<u8>,
+}
+
+/// A compiled program loaded into a non-running program SLOT (M6-T6), with its own
+/// globals storage. While a slot is the *active* (executing) context its program lives
+/// in [`Vm::program`]/[`Vm::globals`] and its slot entry is `None`; a cross-slot
+/// `COMMON DEF` call swaps it in.
+struct LoadedSlot {
+    program: Program,
+    globals: Vec<Cell>,
 }
 
 /// The stack VM.
@@ -244,10 +256,19 @@ pub struct Vm {
     /// is the running program; a host/test can seed any slot via [`Vm::set_slot_source`].
     prg_slots: [crate::builtins::prg::PrgSlot; 4],
     /// Which program SLOTs are marked *executable* by `USE` (M6-T6). Slot 0 (the running
-    /// program) is inherently usable; `USE 1`/`USE 2`/`USE 3` mark the others so a future
-    /// cross-slot CALL/GOSUB can resolve their DEFs/labels. The actual cross-slot dispatch
-    /// (and loading a compiled program into a USE'd slot) is the remaining multi-program work.
+    /// program) is inherently usable; `USE 1`/`USE 2`/`USE 3` mark the others so a
+    /// cross-slot `CALL "name"` can resolve their `COMMON DEF`s.
     slot_used: [bool; 4],
+    /// Compiled programs loaded into the non-running program SLOTs (M6-T6). A host/test
+    /// loads a slot's executable via [`Vm::load_slot_program`]; the *active* slot's entry
+    /// is `None` (its program is in [`Vm::program`]/[`Vm::globals`]). A `USE`'d slot's
+    /// `COMMON DEF`s become callable from another slot via `CALL "name"`.
+    slot_programs: [Option<LoadedSlot>; 4],
+    /// The program SLOT whose code is currently executing (M6-T6). 0 is the running
+    /// program; a cross-slot `COMMON DEF` call temporarily makes the target slot active
+    /// (its program/globals swapped into [`Vm::program`]/[`Vm::globals`]) and restores it
+    /// on return. Distinct from [`Vm::current_slot`] (the file-resource default slot).
+    active_slot: u8,
     /// The active `PRGEDIT` edit target: `(slot, current line index)`. `None` is the *cold*
     /// state — no PRGEDIT has run, so `PRGGET$`/`PRGSET`/`PRGINS`/`PRGDEL` raise errnum 38.
     /// In real SB this state is session-persistent (a shared global, see the `prgset` spec).
@@ -300,6 +321,8 @@ impl Vm {
             current_slot: 0,
             prg_slots: Default::default(),
             slot_used: [true, false, false, false],
+            slot_programs: Default::default(),
+            active_slot: 0,
             prg_edit: None,
             device: Default::default(),
         }
@@ -312,6 +335,24 @@ impl Vm {
             s.name = name.encode_utf16().collect();
             s.set_source(&source.encode_utf16().collect::<Vec<u16>>());
         }
+    }
+
+    /// Load a compiled program into a non-running program SLOT (M6-T6) so its
+    /// `COMMON DEF`s become callable cross-slot once the slot is `USE`'d. `slot` must be
+    /// 1..3 (slot 0 is the running program, which lives in the VM directly); other values
+    /// are ignored. The slot's globals are initialised to their declared-type zero, like
+    /// [`Vm::new`]. A host/test loads slots here; the in-program loader (`LOAD"PRGn:"`/
+    /// `EXEC`) that would fill them from storage is the deferred control-transfer model.
+    pub fn load_slot_program(&mut self, slot: u8, program: Program) {
+        if slot == 0 || slot as usize >= self.slot_programs.len() {
+            return;
+        }
+        let globals = program
+            .globals
+            .iter()
+            .map(|v| Value::cell(Value::default_for_suffix(v.name.suffix)))
+            .collect();
+        self.slot_programs[slot as usize] = Some(LoadedSlot { program, globals });
     }
 
     /// Whether program SLOT `slot` (0..3) is currently marked executable by `USE` (M6-T6).
@@ -511,7 +552,10 @@ impl Vm {
                     if let VmError::Sb { errnum, line } = e {
                         self.errnum = errnum as i32;
                         self.errline = line as i32;
-                        self.errprg = 0; // single-slot M1; multi-slot ERRPRG → M6.
+                        // ERRPRG = the slot whose code was executing when it halted (M6-T6).
+                        // A cross-slot `COMMON DEF` error reports its own slot; the running
+                        // program (the common case) is slot 0.
+                        self.errprg = self.active_slot as i32;
                     }
                     return Err(e);
                 }
@@ -867,11 +911,81 @@ impl Vm {
         out_argc: u8,
         wants_value: bool,
     ) -> Result<(), VmError> {
-        let func = self.program.function_index(name).ok_or(VmError::Sb {
+        self.invoke_user(name, argc, out_argc, wants_value)
+    }
+
+    /// Resolve a user-instruction name to `(target_slot, func_index)` (M6-T6). A function
+    /// in the *active* program resolves in-context (`None`); otherwise a `COMMON DEF` in a
+    /// `USE`'d, loaded slot resolves cross-slot (`Some(slot)`). A non-`COMMON` `DEF` is
+    /// private to its own slot, so it is only found in the active program. `None` → the
+    /// name is undefined (errnum 16). Slots are searched in ascending order.
+    fn resolve_user_function(&self, name: &Name) -> Option<(Option<u8>, usize)> {
+        if let Some(idx) = self.program.function_index(name) {
+            return Some((None, idx));
+        }
+        for slot in 0..self.slot_programs.len() {
+            if slot as u8 == self.active_slot || !self.slot_used[slot] {
+                continue;
+            }
+            if let Some(loaded) = &self.slot_programs[slot] {
+                if let Some(idx) = loaded.program.function_index(name) {
+                    if loaded.program.functions[idx].is_common {
+                        return Some((Some(slot as u8), idx));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Invoke a user instruction by name, switching to its slot's context first when it is
+    /// a cross-slot `COMMON DEF` (M6-T6). Shared by the static [`Op::CallUser`] path and
+    /// the dynamic [`Op::CallDynamic`] (`CALL "name"`). An unknown name → Undefined
+    /// function (16).
+    fn invoke_user(
+        &mut self,
+        name: &Name,
+        argc: u8,
+        out_argc: u8,
+        wants_value: bool,
+    ) -> Result<(), VmError> {
+        let (switch, func) = self.resolve_user_function(name).ok_or(VmError::Sb {
             errnum: ERR_UNDEFINED_FUNCTION,
             line: 0,
         })?;
-        self.invoke_function(func, argc, out_argc, wants_value)
+        match switch {
+            None => self.invoke_function(func, argc, out_argc, wants_value),
+            Some(target) => {
+                let caller = self.active_slot;
+                self.activate_slot(target);
+                self.invoke_function(func, argc, out_argc, wants_value)?;
+                // Tag the just-pushed frame so its return swaps the caller's context back.
+                if let Some(fr) = self.frames.last_mut() {
+                    fr.caller_slot = Some(caller);
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Make program SLOT `target` the active execution context (M6-T6): swap its
+    /// program/globals into [`Vm::program`]/[`Vm::globals`] and stash the previously-active
+    /// slot's into its slot entry. A no-op when `target` is already active.
+    fn activate_slot(&mut self, target: u8) {
+        if target == self.active_slot {
+            return;
+        }
+        let prev = self.active_slot as usize;
+        let loaded = self.slot_programs[target as usize]
+            .take()
+            .expect("activate_slot: target slot has no loaded program");
+        let prev_program = std::mem::replace(&mut self.program, loaded.program);
+        let prev_globals = std::mem::replace(&mut self.globals, loaded.globals);
+        self.slot_programs[prev] = Some(LoadedSlot {
+            program: prev_program,
+            globals: prev_globals,
+        });
+        self.active_slot = target;
     }
 
     /// `CALL "name" [,args] [OUT outs]` — dynamic dispatch (M6-T6): resolve a `DEF`
@@ -891,15 +1005,12 @@ impl Vm {
         let ident = String::from_utf16_lossy(name_val.as_str().map_err(sb)?).to_ascii_uppercase();
         // A user instruction name carries no type suffix.
         let name = Name::new(ident, Suffix::None);
-        let func = self.program.function_index(&name).ok_or(VmError::Sb {
-            errnum: ERR_UNDEFINED_FUNCTION,
-            line: 0,
-        })?;
         // Restore the value args in source order for `invoke_function` to bind.
         for v in args.into_iter().rev() {
             self.stack.push(v);
         }
-        self.invoke_function(func, argc, out_argc, wants_value)
+        // Resolves in the active program or, for a `COMMON DEF`, a `USE`'d slot (M6-T6).
+        self.invoke_user(&name, argc, out_argc, wants_value)
     }
 
     /// Push an activation [`Frame`] for function index `func` and jump to its entry,
@@ -945,6 +1056,8 @@ impl Vm {
             return_pc: self.pc,
             func,
             wants_value,
+            // A cross-slot call retags this after the push (see `invoke_user`).
+            caller_slot: None,
         });
         self.pc = self.program.functions[func].address;
         Ok(())
@@ -2740,11 +2853,17 @@ impl Vm {
             line: 0,
         })?;
         let f = &self.program.functions[frame.func];
-        // Read OUT-param results from their frame locals, in declaration order.
+        // Read OUT-param results from their frame locals, in declaration order. This must
+        // happen while the function's own slot is still active (its `functions` table).
         let nparams = f.params.len();
         let out_vals: Vec<Value> = (0..f.out_params.len())
             .map(|i| frame.locals[nparams + i].borrow().clone())
             .collect();
+        // Cross-slot `COMMON DEF` return (M6-T6): swap the caller's slot context back
+        // before resuming at its `return_pc` (an index into the caller's program).
+        if let Some(caller) = frame.caller_slot {
+            self.activate_slot(caller);
+        }
         self.pc = frame.return_pc;
         // Leave OUT results for the caller's pop targets (last OUT arg ends on top).
         for v in out_vals {
@@ -3917,6 +4036,103 @@ CALL "ADDOUT",2,3 OUT X"#);
         // The name operand must be a string; a numeric one → Type mismatch (8).
         let err = run_err("CALL 5");
         assert_eq!(err.errnum(), Some(8));
+    }
+
+    // ---- cross-slot COMMON DEF dispatch (M6-T6) ----
+
+    /// Compile a snippet (with the builtin registry) into a loadable slot program.
+    fn slot_program(src: &str) -> Program {
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        let ast = parse(src).expect("parse slot");
+        compile_with(&ast, &StdBuiltins).expect("compile slot")
+    }
+
+    /// Build the running (slot-0) program, load `src1` into slot 1, run, return the VM.
+    fn run_with_slot1(slot0: &str, slot1: &str) -> Vm {
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        let ast = parse(slot0).expect("parse slot0");
+        let program = compile_with(&ast, &StdBuiltins).expect("compile slot0");
+        let mut vm = Vm::new(program);
+        vm.load_slot_program(1, slot_program(slot1));
+        vm.run().expect("run");
+        vm
+    }
+
+    #[test]
+    fn common_def_is_callable_cross_slot_after_use() {
+        // documented (common.yaml): with COMMON a DEF is callable from another slot once
+        // that slot is USE'd; CALL "name" (call.yaml) is the by-name dispatch.
+        let vm = run_with_slot1(
+            "USE 1\nCALL \"SHOUT\"",
+            "COMMON DEF SHOUT\nPRINT \"HEY\"\nEND",
+        );
+        assert_eq!(vm.console_text(), "HEY");
+    }
+
+    #[test]
+    fn cross_slot_common_def_passes_args_and_out() {
+        // The call/return semantics are those of DEF (common.yaml): value args bind, OUT
+        // results come back — into the *caller's* slot-0 variable.
+        let vm = run_with_slot1(
+            "USE 1\nCALL \"ADD3\",10,20 OUT R\nPRINT R",
+            "COMMON DEF ADD3 A,B OUT C\nC=A+B+3\nEND",
+        );
+        assert_eq!(vm.console_text(), "33");
+    }
+
+    #[test]
+    fn cross_slot_call_without_use_is_undefined() {
+        // USE is required (common.yaml): a loaded-but-not-USE'd slot's COMMON DEF does not
+        // resolve → Undefined function (16).
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        let ast = parse("CALL \"SHOUT\"").expect("parse");
+        let program = compile_with(&ast, &StdBuiltins).expect("compile");
+        let mut vm = Vm::new(program);
+        vm.load_slot_program(1, slot_program("COMMON DEF SHOUT\nPRINT \"HEY\"\nEND"));
+        let err = vm.run().expect_err("must be undefined without USE");
+        assert_eq!(err.errnum(), Some(16));
+    }
+
+    #[test]
+    fn cross_slot_non_common_def_is_private() {
+        // Without COMMON a DEF is private to its own slot (common.yaml): even a USE'd slot's
+        // plain DEF is not visible cross-slot → Undefined function (16).
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        let ast = parse("USE 1\nCALL \"PRIV\"").expect("parse");
+        let program = compile_with(&ast, &StdBuiltins).expect("compile");
+        let mut vm = Vm::new(program);
+        vm.load_slot_program(1, slot_program("DEF PRIV\nPRINT \"NO\"\nEND"));
+        let err = vm
+            .run()
+            .expect_err("private DEF must not resolve cross-slot");
+        assert_eq!(err.errnum(), Some(16));
+    }
+
+    #[test]
+    fn cross_slot_call_restores_caller_context() {
+        // After the cross-slot COMMON DEF returns, execution resumes in slot 0 against its
+        // own globals — a following slot-0 statement still sees slot-0 state.
+        let vm = run_with_slot1(
+            "X=7\nUSE 1\nCALL \"NOTE\"\nPRINT X",
+            "COMMON DEF NOTE\nPRINT \"IN\";\nEND",
+        );
+        // slot-1's COMMON DEF printed "IN" (no newline, trailing `;`); resuming in slot 0,
+        // `PRINT X` still sees slot-0's X=7 → "IN7".
+        assert_eq!(vm.console_text(), "IN7");
+    }
+
+    #[test]
+    fn cross_slot_common_def_can_return_a_value() {
+        // A value-returning COMMON DEF used in an expression resolves cross-slot.
+        let vm = run_with_slot1(
+            "USE 1\nV=CALL(\"DBL\",21)\nPRINT V",
+            "COMMON DEF DBL(N)\nRETURN N*2\nEND",
+        );
+        assert_eq!(vm.console_text(), "42");
     }
 
     #[test]

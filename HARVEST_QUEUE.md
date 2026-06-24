@@ -654,6 +654,16 @@ oracle to confirm exact output and promote to `hw_verified`.
     from a USE'd slot; EXEC DIRECT-mode error (hypothesis errnum 43). USE/EXEC are parser
     special forms (keyword ids 332/331) with no body-readable handler, so the transfer
     semantics stay oracle-pending until a multi-slot harness exists.)
+    (UPDATE 2026-06-23, M6-T6: cross-slot COMMON DEF dispatch is now IMPLEMENTED to the
+    documented model — `CALL "name"` after `USE n` resolves a COMMON DEF in a loaded,
+    USE'd slot and invokes it with the same arg/OUT/return-value semantics as a same-slot
+    DEF; an un-USE'd slot or a non-COMMON DEF → Undefined function (16). The VM swaps the
+    target slot's program/globals into the active context for the call and restores the
+    caller's on return (`Vm::load_slot_program` seeds slots 1-3; 6 new vm.rs e2e tests).
+    STILL UNHARVESTED for COMMON specifically: whether a free (non-param/local) variable
+    referenced inside a COMMON DEF binds to the DEFINING slot's globals (what we implement)
+    or the CALLER's — needs a 2-slot oracle that shares a same-named global. EXEC whole-
+    program control transfer + the string-form program LOAD remain VmError::Unsupported.)
 
 - S-T12c Source read (PRGGET$/PRGNAME$/PRGSIZE): the error guards ARE hw_verified (batch
     2026-06-22, s_t12c): PRGGET$ with no active PRGEDIT -> errnum 38 (the no-PRGEDIT check
