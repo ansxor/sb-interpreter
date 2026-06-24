@@ -1513,3 +1513,11 @@ The *live device* outputs have no headless golden — sb-core returns faithful n
   spanning every sprite transform setter, not an SPOFS-only slice. Queue: harvest a PRINT-exact
   large-coordinate case per sprite setter, then decide whether to store coords as f32 in
   sb-render's `Sprite`. (SPOFS value/Z-range contract is otherwise hw_verified, M7-T2 run 14.)
+- **BG layer scale is f32 storage (BGSCALE)** — same situation as the sprite setters above: the
+  disassembly stores the per-layer X/Y scale as a 32-bit float (BGSCALE handler @0x166c4 reads
+  back [r0,#0x20] via `vcvt.f64.f32`), while sb-core's `BgLayer.scale_{x,y}` are f64. The M7-T2
+  run 17 round-trips (1.5/2.0/0.5/0.4/4/0.25/0/-1, layer-independent, default 1.0) are all exact
+  for both representations at the 6-sig-figure `STR$` readback. Only a scale below the f32
+  mantissa step (harvestable via `PRINT` %.8f) could distinguish them; folded into the same
+  "store transforms as f32" refactor decision as the sprite setters. (BGSCALE value contract is
+  otherwise hw_verified, M7-T2 run 17.)
