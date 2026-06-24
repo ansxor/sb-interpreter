@@ -253,15 +253,21 @@ impl BgState {
     }
 
     /// `BGGET(layer, x, y, 1)` — read a cell addressed by **pixel** coordinates: the pixel is
-    /// converted to a char coordinate by flooring `pixel / tileSize`, then wrapped modulo the
-    /// map dimensions (so a scrolled / off-map read never panics). The pixel→char rounding
-    /// and the wrap are oracle-pending; this models a repeating (wrapping) map. The caller
-    /// has validated the layer.
+    /// converted to a char coordinate by flooring `pixel / tileSize` (no wrap, no error). A
+    /// resulting char coordinate outside the map reads as the empty cell **0** — pixel mode is
+    /// NOT range-checked (unlike char mode), so an off-map read returns 0 instead of raising.
+    /// hw_verified (sb-oracle 2026-06-24): on a 32×32 / tile-16 layer `BGGET(0,512,16,1)` → 0
+    /// (char col 32 off-map) and `BGGET(0,-1,16,1)` → 0, while px 496..511 read char col 31.
+    /// The caller has validated the layer.
     pub fn cell_pixel(&self, layer: usize, px: i32, py: i32) -> u16 {
         let l = &self.layers[layer];
-        let cx = px.div_euclid(l.tile_size).rem_euclid(l.width);
-        let cy = py.div_euclid(l.tile_size).rem_euclid(l.height);
-        l.cell(cx, cy)
+        let cx = px.div_euclid(l.tile_size);
+        let cy = py.div_euclid(l.tile_size);
+        if l.in_cell(cx, cy) {
+            l.cell(cx, cy)
+        } else {
+            0
+        }
     }
 
     /// `BGOFS layer, x, y [,z]` — set a layer's scroll offset (and optional depth).
@@ -645,16 +651,21 @@ mod tests {
     }
 
     #[test]
-    fn pixel_coord_converts_and_wraps() {
+    fn pixel_coord_floors_no_wrap_offmap_zero() {
+        // hw_verified (sb-oracle 2026-06-24): pixel mode floors px/tile with NO wrap; an
+        // off-map char coordinate reads the empty cell 0 (no range error).
         let mut st = BgState::new();
         st.resize(0, 4, 4, 16); // 64x64 px map
         st.layers[0].set_cell(1, 2, 42);
         // Pixel (16..31, 32..47) maps to char (1, 2).
         assert_eq!(st.cell_pixel(0, 20, 40), 42);
-        // Wrap: pixel one full map width over lands on the same cell.
-        assert_eq!(st.cell_pixel(0, 20 + 64, 40), 42);
-        // Negative pixel floors then wraps.
-        assert_eq!(st.cell_pixel(0, 20 - 64, 40), 42);
+        assert_eq!(st.cell_pixel(0, 16, 32), 42);
+        assert_eq!(st.cell_pixel(0, 31, 47), 42);
+        // No wrap: one full map width over is off-map -> 0 (real SB does NOT repeat here).
+        assert_eq!(st.cell_pixel(0, 20 + 64, 40), 0);
+        // Negative pixel floors to a negative char -> off-map -> 0.
+        assert_eq!(st.cell_pixel(0, -1, 40), 0);
+        assert_eq!(st.cell_pixel(0, 20 - 64, 40), 0);
     }
 
     #[test]

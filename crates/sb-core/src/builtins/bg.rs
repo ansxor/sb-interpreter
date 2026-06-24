@@ -162,7 +162,8 @@ pub fn bgput(
 
 /// `BGGET(layer, x, y [,coordFlag])` — read one cell's 16-bit screen data (function only, 3
 /// or 4 args, 1 return). `coordFlag` 0 (default) = char-unit BG coords (range-checked,
-/// errnum 10); 1 = pixel coords (converted to char by flooring `pixel/tileSize`, wrapped).
+/// errnum 10); 1 = pixel coords (converted to char by flooring `pixel/tileSize`, no wrap,
+/// off-map reads the empty cell 0 — pixel mode is not range-checked).
 /// Use as a statement, or a bad argument count, raises errnum 4; the layer must be in 0..3
 /// (errnum 10).
 pub fn bgget(bg: &BgState, args: &[Value], ret_count: usize) -> Result<Vec<Value>, RuntimeError> {

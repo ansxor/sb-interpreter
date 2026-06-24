@@ -16,7 +16,9 @@ summary: "Returns the screen data of a BG character at (X,Y) on one layer — th
 
 semantics:
   - "Function only with exactly 3 OR 4 arguments: a return value must be requested (return-count [r4,#0xc] == 1, cmp #0x1 @0x163fd4); the argument count must be 3 (cmp #0x3 @0x163fec) or 4 (cmp #0x4 @0x163ff4). Any other count, or use as a statement, raises errnum 4 (Illegal function call) — mov r0,#0x4 @0x164004."
-  - "COORD FLAG (optional 4th argument): when present it is evaluated as an Integer first (getter @0x16400c) and stored; when omitted it defaults to 0. Flag 0 = X,Y are BG-screen (character) coordinates; flag 1 (non-zero) = X,Y are screen (pixel) coordinates, converted to character coordinates by dividing by the layer's tile size (pixel path @0x1640c4: load coords, bl 0x28e1a0 divide)."
+  - "COORD FLAG (optional 4th argument): when present it is evaluated as an Integer first (getter @0x16400c) and stored; when omitted it defaults to 0. Flag 0 = X,Y are BG-screen (character) coordinates; flag 1 (non-zero) = X,Y are screen (pixel) coordinates, converted to character coordinates by FLOORING X/tileSize and Y/tileSize (pixel path @0x1640c4: load coords, bl 0x28e1a0 divide)."
+  - "PIXEL MODE (flag 1) is NOT range-checked and does NOT wrap: the floored char coordinate is read directly, and an off-map result reads the empty cell value 0 (no errnum 10). hw_verified — on a 32x32 / tile-16 layer (map = 512x512 px) BGGET(0,512,16,1) and BGGET(0,-1,16,1) both return 0, while px 496..511 read char column 31, and px 528 (one tile past a full map width) returns 0 rather than wrapping back to column 1. Char mode (flag 0), by contrast, range-checks X/Y and raises errnum 10 when off-map."
+  - "VALUE: the return is the full 16-bit packed screen data exactly as written by BGPUT/BGFILL, widened to a non-negative Integer (0..65535). It is NOT masked to the character field — rotation bits b12-13 (#BGROT90=&H1000/#BGROT180=&H2000/#BGROT270=&H3000) and flip bits b14 (#BGREVH=&H4000) / b15 (#BGREVV=&H8000) round-trip verbatim. hw_verified: BGPUT 0,0,0,&H8123 -> BGGET=33059 (&H8123, char 291 + #BGREVV); &HFFFF -> 65535; &H3064 -> 12388 (char 100 + #BGROT270). A BGPUT value above 16 bits is stored masked to its low 16 bits (BGPUT &H1FFFF -> BGGET 65535), and a hex-string screen-data operand round-trips (BGPUT 0,6,6,\"1234\" -> 4660). An untouched cell reads 0."
   - "LAYER must be in 0..3: range-checked by the shared layer getter FUN_001e2504 (bl @0x164034); a value < 0 or >= the live BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560."
   - "In character-coordinate mode (flag 0) the coordinate is range-checked: X<0 (cmp X,#0 blt @0x1640fc) or X>=the layer's map width ([r2,#0x10], cmp width,X bgt = ok @0x164108) raises errnum 10 (Out of range) — mov r0,#0xa, r1=#1 @0x164114. Y is checked likewise against the map height."
   - "Return value is the 16-bit screen data stored in the cell: bits b0-b11 = character number (0-4095, display cycle 1024); rotation bits decode to #BGROT0/#BGROT90/#BGROT180/#BGROT270; horizontal flip = #BGREVH; vertical flip = #BGREVV. It is the same packed value BGPUT/BGFILL accept."
@@ -32,13 +34,38 @@ sources:
   - { type: community, ref: "sbsave corpus: ~250 calls, all 3-arg (~132x) or 4-arg (~109x). The 4-arg coordFlag is dominated by flag=1 pixel mode (~80x, used for collision/platformer reads, e.g. 'BGGET(0,CX[PLAYER]-BGX,CY[PLAYER]-BGY,1)' in 13D4DV3V/TXT/MAIN_PRG_V2) with explicit flag=0 char mode rarer (~29x); confirms both documented coordinate modes. No 2-arg or 5+-arg form. (oracle-pending: pixel->char conversion rounding, queued)" }
 
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9b): C=BGGET(4,0,0) -> errnum 10 (layer out of range); BGGET 0,0,0 used as a statement -> errnum 4 (Illegal function call). Valid BGSCREEN 0,32,32:C=BGGET(0,0,0) raises nothing. All errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2): BGPUT-then-BGGET read-back VALUE contract, framebuffer-free, 20 cases 0 mismatch (harness/harvest/out/bgget_rt.tsv + bgget_rt2.tsv). Char round-trip BGPUT 0,5,5,291 -> 291; full 16-bit packed value preserved incl. rotation/flip attr bits: &H8123 -> 33059, &H1064 -> 4196 (#BGROT90), &H3064 -> 12388 (#BGROT270), &HC005 -> 49157 (#BGREVH+#BGREVV), &HFFFF -> 65535; BGPUT value >16 bits masked low: &H1FFFF -> 65535; hex-string operand BGPUT 0,6,6,\"1234\" -> 4660; untouched cell -> 0. PIXEL mode (flag 1) floors px/tile with NO wrap and is NOT range-checked: on a 32x32/tile-16 layer px 16->char1 / px 31->char1 / px 496..511->char31, tile-8 px16->char2, but px 512 -> 0, px -1 -> 0, py 512 -> 0, px 528 -> 0 (off-map reads empty cell, never wraps, never raises). Explicit flag 0 matches the default. Drove a sb-render fix: cell_pixel had wrapped via rem_euclid (wrong) — now floors with no wrap, off-map -> 0." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Read-back values depend on prior BGPUT writes and need the BG oracle (O-T6, queued); error
-  # expects below are hw_verified (sb-oracle 2026-06-22 s_t9b).
+  # Shapes/errors hw_verified (sb-oracle 2026-06-22 s_t9b).
   - { name: get_ok_3arg, code: "BGSCREEN 0,32,32\nC=BGGET(0,0,0)", expect: { stdout: "" } }
   - { name: get_ok_4arg, code: "BGSCREEN 0,32,32\nC=BGGET(0,0,0,0)", expect: { stdout: "" } }
   - { name: layer_out_of_range, code: "C=BGGET(4,0,0)", expect: { error: { errnum: 10 } } }
   - { name: as_statement_errors, code: "BGGET 0,0,0", expect: { error: { errnum: 4 } } }
+  # BGPUT-then-BGGET read-back VALUE contract, hw_verified (sb-oracle 2026-06-24, M7-T2;
+  # harness/harvest/out/bgget_rt.tsv + bgget_rt2.tsv).
+  - { name: char_round_trip, code: "BGSCREEN 0,32,32\nBGPUT 0,5,5,291\nPRINT BGGET(0,5,5)", expect: { stdout: "291" } }
+  # Full 16-bit packed value: char field + rotation/flip attr bits round-trip verbatim.
+  - { name: packed_revv, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,&H8123\nPRINT BGGET(0,0,0)", expect: { stdout: "33059" } }
+  - { name: rot90, code: "BGSCREEN 0,32,32\nBGPUT 0,1,1,&H1064\nPRINT BGGET(0,1,1)", expect: { stdout: "4196" } }
+  - { name: rot270, code: "BGSCREEN 0,32,32\nBGPUT 0,1,1,&H3064\nPRINT BGGET(0,1,1)", expect: { stdout: "12388" } }
+  - { name: revh_revv, code: "BGSCREEN 0,32,32\nBGPUT 0,2,2,&HC005\nPRINT BGGET(0,2,2)", expect: { stdout: "49157" } }
+  - { name: all_attr, code: "BGSCREEN 0,32,32\nBGPUT 0,3,3,&HFFFF\nPRINT BGGET(0,3,3)", expect: { stdout: "65535" } }
+  # A BGPUT value above 16 bits is stored masked to its low 16 bits.
+  - { name: high_bits_dropped, code: "BGSCREEN 0,32,32\nBGPUT 0,4,4,&H1FFFF\nPRINT BGGET(0,4,4)", expect: { stdout: "65535" } }
+  # Untouched cell reads 0; hex-string screen-data operand round-trips.
+  - { name: empty_cell, code: "BGSCREEN 0,32,32\nPRINT BGGET(0,10,10)", expect: { stdout: "0" } }
+  - { name: hexstr_put, code: "BGSCREEN 0,32,32\nBGPUT 0,6,6,\"1234\"\nPRINT BGGET(0,6,6)", expect: { stdout: "4660" } }
+  - { name: flag0_explicit, code: "BGSCREEN 0,32,32\nBGPUT 0,7,7,555\nPRINT BGGET(0,7,7,0)", expect: { stdout: "555" } }
+  # PIXEL mode (flag 1): floor(px/tile), NO wrap, NOT range-checked; off-map reads the empty cell 0.
+  - { name: pixel_basic, code: "BGSCREEN 0,32,32\nBGPUT 0,1,1,42\nPRINT BGGET(0,16,16,1)", expect: { stdout: "42" } }
+  - { name: pixel_subtile, code: "BGSCREEN 0,32,32\nBGPUT 0,1,1,42\nPRINT BGGET(0,31,31,1)", expect: { stdout: "42" } }
+  - { name: pixel_lastcol_hi, code: "BGSCREEN 0,32,32\nBGPUT 0,31,1,88\nPRINT BGGET(0,511,16,1)", expect: { stdout: "88" } }
+  - { name: pixel_tile8, code: "BGSCREEN 0,32,32,8\nBGPUT 0,2,2,99\nPRINT BGGET(0,16,16,1)", expect: { stdout: "99" } }
+  - { name: pixel_offmap_x, code: "BGSCREEN 0,32,32\nBGPUT 0,0,1,88\nPRINT BGGET(0,512,16,1)", expect: { stdout: "0" } }
+  - { name: pixel_offmap_wrap, code: "BGSCREEN 0,32,32\nBGPUT 0,1,1,42\nPRINT BGGET(0,528,16,1)", expect: { stdout: "0" } }
+  - { name: pixel_neg, code: "BGSCREEN 0,32,32\nBGPUT 0,31,1,77\nPRINT BGGET(0,-16,16,1)", expect: { stdout: "0" } }
+  - { name: pixel_neg1, code: "BGSCREEN 0,32,32\nBGPUT 0,0,1,88\nPRINT BGGET(0,-1,16,1)", expect: { stdout: "0" } }
+  - { name: pixel_offmap_y, code: "BGSCREEN 0,32,32\nBGPUT 0,1,0,88\nPRINT BGGET(0,16,512,1)", expect: { stdout: "0" } }

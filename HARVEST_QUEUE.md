@@ -22,11 +22,12 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   (which sb-core already supports). This is a cross-instruction parser refinement, not a single
   slice — a value-only family (GCOLOR's own value contract is hw_verified + frozen).
 
-- [ ] M3-T4 (BGGET pixel-coord read) · The pixel→char conversion rounding (flag=1) and the
-  off-map read behavior are not framebuffer-harvested. assumption: char coord = floor(pixel /
-  tileSize) via `div_euclid`, then the cell index is wrapped modulo the map width/height
-  (a repeating map, no error). Confirm the rounding (truncate vs floor) + whether off-map
-  reads wrap, clamp, or return 0.
+- [x] M3-T4 (BGGET pixel-coord read) · RESOLVED 2026-06-24 (M7-T2, sb-oracle). Pixel mode
+  (flag=1) = floor(pixel / tileSize) per axis (`div_euclid`), NO wrap, NOT range-checked: an
+  off-map char coordinate reads the empty cell 0 (never wraps, never raises). Drove a fix —
+  sb-render `cell_pixel` had wrapped via `rem_euclid` (wrong); now floors + returns 0 off-map.
+  Also confirmed BGGET returns the FULL 16-bit packed screen-data (char + #BGROT*/#BGREV* attr
+  bits) verbatim, no mod-1024 displayed-value collapse. Frozen in spec/tests via bgget.yaml.
 - [ ] M3-T4 (BGFILL out-of-bounds rectangle) · The handler shows no coordinate range guard
   (only the layer check). assumption: the fill rectangle's corners are normalized (min/max)
   and CLAMPED to the map bounds, so an OOB rectangle fills only its in-bounds intersection
@@ -553,12 +554,15 @@ oracle to confirm exact output and promote to `hw_verified`.
   errnum 10 / used-as-statement -> errnum 4; BGCOPY layer-oob -> errnum 10 / 5-arg -> errnum 4;
   BGCLIP layer-oob -> errnum 10 / 3-arg -> errnum 4; all valid forms NOERR, errline 1). Need the
   BG framebuffer oracle (O-T6) for:
-  - BGPUT/BGFILL screen-data exact bit layout: the docs say rotation is at b12-b13, but the named
-    constants #BGROT90=&H0800 / #BGROT180=&H1000 / #BGROT270=&H2000 (constants.yaml) place rotation
-    at b11-b13. Confirm via BGPUT a value then BGGET it back which bits the engine keeps/decodes.
-  - BGGET round-trip after BGPUT (read back the exact packed screen-data value); char-number cycle-1024
-    behavior (does BGGET return the stored 0-4095 or the mod-1024 displayed value?).
-  - BGGET pixel-mode (coordFlag=1) pixel->char conversion: rounding and which tile size is used.
+  - [RESOLVED 2026-06-24, M7-T2 via BGGET read-back] BGPUT screen-data bit layout: rotation IS at
+    b12-13 (#BGROT90=&H1000 confirmed — BGPUT &H1064 -> BGGET 4196 = char 100 + &H1000; &H3064 ->
+    12388 = char 100 + &H3000), flips #BGREVH=&H4000 b14 / #BGREVV=&H8000 b15. BGGET returns the
+    FULL stored 16-bit packed value verbatim (NOT the mod-1024 displayed value): &HFFFF -> 65535;
+    a BGPUT value >16 bits is stored masked to its low 16 bits (&H1FFFF -> 65535). (The earlier
+    &H0800-placement guess above was wrong; constants.yaml &H1000/&H2000/&H3000 is correct.)
+  - [RESOLVED 2026-06-24, M7-T2] BGGET pixel-mode (coordFlag=1): floor(px/tileSize) per axis, NO
+    wrap, NOT range-checked — off-map reads the empty cell 0. Tile size = the layer's BGSCREEN
+    tile size (tile-8 px16 -> char2). Drove a sb-render cell_pixel fix (was rem_euclid wrap).
   - BGFILL/BGCOPY rectangle semantics: inclusive corners, reversed start/end ordering, out-of-bounds
     coordinate clamp vs error (no errnum seen in the handler), and BGCOPY overlapping src/dst.
   - BGCLIP clip rectangle visible effect and the internal layer-id (layer+2) mapping.
