@@ -640,7 +640,14 @@ pub fn bgcoord(bg: &BgState, args: &[Value], ret_count: usize) -> Result<Vec<Val
         return Err(out_of_range());
     }
     let (dx, dy) = bg.coord(layer, sx.to_real()?, sy.to_real()?, mode);
-    Ok(vec![Value::Real(dx), Value::Real(dy)])
+    // The handler stores each converted component to its OUT variable via `vcvt.s32.f32`
+    // (FUN_0028defc @0x28df5c/@0x28df70) — truncated toward zero to a 32-bit integer
+    // (hw_verified M7-T2: BGCOORD 0,16.5,16.5,0 OUT -> 16,16). Mode 1 already floors to an
+    // integral tile index; truncating it is a no-op.
+    Ok(vec![
+        Value::Int(dx.trunc() as i32),
+        Value::Int(dy.trunc() as i32),
+    ])
 }
 
 /// Store a list of 16-bit cell values into a numeric `dest` array (`BGSAVE`), auto-expanding

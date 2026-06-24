@@ -12,8 +12,9 @@
 //! - tile cells — `BGPUT` (write one cell), `BGGET` (read one cell, char- or pixel-coord),
 //!   `BGFILL` (fill a rectangle), `BGCLR` (clear one layer or all);
 //! - per-layer transforms — `BGOFS` (scroll offset + depth Z), `BGROT` (rotation,
-//!   normalized mod 360), `BGSCALE` (X/Y enlargement, unclamped), `BGHOME` (rotation/scale
-//!   pivot), `BGCOLOR` (ARGB multiply tint), `BGSHOW`/`BGHIDE` (visibility), and `BGCLIP`
+//!   normalized mod 360), `BGSCALE` (X/Y enlargement, unclamped), `BGHOME` (display origin —
+//!   an additive translation, not a scale/rotation pivot, per `BGCOORD`),
+//!   `BGCOLOR` (ARGB multiply tint), `BGSHOW`/`BGHIDE` (visibility), and `BGCLIP`
 //!   (display-area rectangle, in pixels).
 //!
 //! Animation/coordinate-conversion/load-save (`BGANIM`/`BGCOORD`/`BGCOPY`/…, M3-T5) build on
@@ -80,7 +81,9 @@ pub struct BgLayer {
     /// Enlargement scale (`BGSCALE`), 1.0 = 100%. Stored unclamped (no 0.5–2.0 guard).
     pub scale_x: f64,
     pub scale_y: f64,
-    /// Display origin / rotation-scale pivot, in pixels (`BGHOME`).
+    /// Display origin, in pixels (`BGHOME`) — an additive translation of the converted
+    /// display coordinate (NOT a scale/rotation pivot; the pivot is the layer origin 0,0,
+    /// hw_verified via `BGCOORD`, M7-T2).
     pub home_x: i32,
     pub home_y: i32,
     /// ARGB8888 multiply tint (`BGCOLOR`); default opaque white (`&HFFFFFFFF`) = unchanged.
@@ -292,7 +295,8 @@ impl BgState {
         l.scale_y = sy;
     }
 
-    /// `BGHOME layer, x, y` — set a layer's display origin (rotation/scale pivot).
+    /// `BGHOME layer, x, y` — set a layer's display origin (an additive translation of the
+    /// converted display coordinate; NOT a scale/rotation pivot — see `coord`).
     pub fn set_home(&mut self, layer: usize, x: i32, y: i32) {
         let l = &mut self.layers[layer];
         l.home_x = x;
@@ -518,9 +522,19 @@ impl BgState {
     /// BG-screen in character units. Mode 2: display → BG-screen in pixel units. The caller
     /// has validated the layer and mode 0..2.
     ///
-    /// The structural affine transform (so modes round-trip with the transforms) is
-    /// implemented here; the EXACT converted values are oracle-pending (no BG framebuffer
-    /// harvest, O-T6 — see `HARVEST_QUEUE.md`).
+    /// The forward map (mode 0) matches the disassembled handler structure
+    /// `display = offset + scale·rotate(bg)` where the scale/rotation pivot is the layer
+    /// ORIGIN (0,0) — NOT `BGHOME` — and the additive `offset` is `home - ofs`
+    /// (`FUN_0028defc` @0x28df48: `out = [obj+0x24] + scale·(rot·(src-pivot))`, pivot
+    /// `[obj+0x34]`=0). This was hw_verified for the non-rotation contract via the oracle
+    /// (M7-T2): scroll subtracts in mode 0 / adds in the inverse, `BGHOME` is a pure
+    /// translation (not a pivot), and `BGSCALE` enlarges about the origin. The EXACT rotation
+    /// matrix/table (`[0x306de0]`, indexed non-trivially by the angle) is NOT yet pinned — a
+    /// `BGROT 90` of `(16,0)` returns `(-1,15)`, not a clean 90° rotation — so the rotated
+    /// path stays a best-effort standard rotation about the origin, oracle-pending with the
+    /// BG framebuffer effect (O-T6 — see `HARVEST_QUEUE.md`). The continuous (`f64`) result is
+    /// returned here; the handler truncates each component toward zero to an integer before it
+    /// reaches the OUT variables (done by the caller, `builtins::bg::bgcoord`).
     pub fn coord(&self, layer: usize, src_x: f64, src_y: f64, mode: i32) -> (f64, f64) {
         let l = &self.layers[layer];
         let (hx, hy) = (l.home_x as f64, l.home_y as f64);
@@ -528,33 +542,31 @@ impl BgState {
         let rad = (l.rot as f64).to_radians();
         let (sin, cos) = rad.sin_cos();
         match mode {
-            // BG-screen pixel -> display pixel: scale + rotate about home, then add the
-            // scroll origin.
+            // BG-screen pixel -> display pixel: rotate + scale about the ORIGIN, then add the
+            // display origin (BGHOME) and subtract the scroll (BGOFS).
             0 => {
-                let (px, py) = (src_x - hx, src_y - hy);
-                let (px, py) = (px * l.scale_x, py * l.scale_y);
-                let rx = px * cos - py * sin;
-                let ry = px * sin + py * cos;
-                (rx + hx + ox, ry + hy + oy)
+                let rx = src_x * cos - src_y * sin;
+                let ry = src_x * sin + src_y * cos;
+                (rx * l.scale_x + hx - ox, ry * l.scale_y + hy - oy)
             }
             // display pixel -> BG-screen: inverse of mode 0. Mode 1 reports character units
             // (pixel / tile size), mode 2 reports pixel units.
             _ => {
-                let (px, py) = (src_x - hx - ox, src_y - hy - oy);
-                // Inverse rotation.
-                let rx = px * cos + py * sin;
-                let ry = -px * sin + py * cos;
-                // Inverse scale (guard a zero scale).
-                let bx = if l.scale_x != 0.0 {
-                    rx / l.scale_x
+                // Undo the display origin (add back the scroll, subtract the home origin).
+                let (px, py) = (src_x - hx + ox, src_y - hy + oy);
+                // Inverse scale (guard a zero scale), then inverse rotation about the origin.
+                let sx = if l.scale_x != 0.0 {
+                    px / l.scale_x
                 } else {
                     0.0
-                } + hx;
-                let by = if l.scale_y != 0.0 {
-                    ry / l.scale_y
+                };
+                let sy = if l.scale_y != 0.0 {
+                    py / l.scale_y
                 } else {
                     0.0
-                } + hy;
+                };
+                let bx = sx * cos + sy * sin;
+                let by = -sx * sin + sy * cos;
                 if mode == 1 {
                     let ts = l.tile_size.max(1) as f64;
                     ((bx / ts).floor(), (by / ts).floor())
@@ -882,5 +894,32 @@ mod tests {
         let (cx, cy) = st.coord(0, dx, dy, 1);
         assert_eq!(cx, (bx / 16.0).floor());
         assert_eq!(cy, (by / 16.0).floor());
+    }
+
+    #[test]
+    fn coord_value_contract_no_rotation() {
+        // hw_verified non-rotation value contract (M7-T2, bgcoord_rt.tsv).
+        let mut st = BgState::new();
+        // Default state: mode 0 is identity, mode 1 floors display/tile, mode 2 is identity.
+        assert_eq!(st.coord(0, 16.0, 16.0, 0), (16.0, 16.0));
+        assert_eq!(st.coord(0, 200.0, 120.0, 1), (12.0, 7.0));
+        assert_eq!(st.coord(0, 15.0, 15.0, 1), (0.0, 0.0));
+        assert_eq!(st.coord(0, 16.0, 16.0, 2), (16.0, 16.0));
+        // BGOFS: scroll SUBTRACTS in mode 0, ADDS back in the inverse.
+        st.set_ofs(0, 8, 8, None);
+        assert_eq!(st.coord(0, 0.0, 0.0, 0), (-8.0, -8.0));
+        assert_eq!(st.coord(0, 16.0, 16.0, 0), (8.0, 8.0));
+        assert_eq!(st.coord(0, 8.0, 8.0, 2), (16.0, 16.0));
+        // BGHOME: a pure additive translation (not a pivot).
+        let mut st = BgState::new();
+        st.set_home(0, 16, 16);
+        assert_eq!(st.coord(0, 16.0, 16.0, 0), (32.0, 32.0));
+        assert_eq!(st.coord(0, 32.0, 32.0, 0), (48.0, 48.0));
+        assert_eq!(st.coord(0, 16.0, 16.0, 2), (0.0, 0.0));
+        // BGSCALE: enlarges about the ORIGIN (0,0), not BGHOME.
+        let mut st = BgState::new();
+        st.set_scale(0, 2.0, 2.0);
+        assert_eq!(st.coord(0, 16.0, 16.0, 0), (32.0, 32.0));
+        assert_eq!(st.coord(0, 32.0, 32.0, 2), (16.0, 16.0));
     }
 }

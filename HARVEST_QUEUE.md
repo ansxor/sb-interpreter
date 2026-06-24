@@ -1259,9 +1259,14 @@ the conformance gate; the following runtime OUTPUTS need the BG framebuffer/tran
   is unverified (the disassembled per-channel switch has no case for them).
 - **BGCHK mid-animation bit values** — which `#CHK*` bit is set while a given channel runs
   (need a running BGANIM + the layer flags-word read).
-- **BGCOORD converted values** — the exact mode 0/1/2 affine transform output (scroll/rot/
-  scale/home). A structural affine is implemented (round-trips with the transforms); the
-  pixel-exact values, rotation pivot convention, and char-unit rounding are unverified.
+- **BGCOORD ROTATION (BGROT) interaction** — RESOLVED for the non-rotation contract
+  (hw_verified M7-T2 2026-06-24, bgcoord_rt.tsv → bgcoord.yaml: scroll subtracts in mode 0 /
+  adds in the inverse, BGHOME is a pure translation, BGSCALE pivots at the origin, OUT values
+  truncate toward zero, mode 1 floors to tile units). STILL UNVERIFIED: the rotated path — a
+  BGROT 0,90 of BG point (16,0) returns display (-1,15), which is not a clean origin rotation;
+  the matrix comes from a lookup table [0x306de0] indexed non-trivially by the angle. Harvest a
+  grid of BGROT angles × points (and the on-screen pivot effect) once the BG framebuffer oracle
+  (O-T6) lands; until then the rotated branch is a best-effort standard rotation about origin.
 - **BGCOPY out-of-bounds behavior** — cells whose source/destination falls off the map are
   currently skipped (source captured first so overlap is safe); the real clamp/wrap is
   unverified.

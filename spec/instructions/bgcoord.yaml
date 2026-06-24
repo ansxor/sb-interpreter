@@ -22,7 +22,10 @@ semantics:
   - "LAYER must be in 0..3: evaluated and range-checked by the shared BG-layer getter FUN_001e2504 (bl @0x1664d4). A value < 0 or >= the BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560."
   - "MODE must be 0, 1 or 2. The handler switches on the mode value (cmp #0 @0x16653c, cmp #1 @0x166544, cmp #2 @0x16654c) and for any other value raises errnum 10 (Out of range) — mov r0,#0xa @0x16655c -> bl 0x1fffdc @0x166560."
   - "Mode 0 converts BG-screen coordinates to display coordinates (helper bl 0x0015f0a0 @0x16659c). Mode 1 converts display coordinates to BG-screen coordinates in character (tile) units (helper bl 0x0015f11c @0x166608). Mode 2 converts display coordinates to BG-screen coordinates in pixel units. All conversions apply the layer's current scroll/rotation/scale/origin so they round-trip with BGOFS/BGROT/BGSCALE/BGHOME."
-  - "The two converted values DX,DY are written back to the OUT variables via the layer's variable-store method ([obj,#0x14] @0x1665ac/@0x1665c8). BGCOORD reads layer state only; it does not modify the layer."
+  - "FORWARD MAP (mode 0), hw_verified for the non-rotation contract (M7-T2): display = home + scale*rotate(bg) - ofs, with the scale/rotation PIVOT at the layer ORIGIN (0,0), NOT BGHOME. So with no rotation/scale BG point P maps to display P + BGHOME - BGOFS: BGCOORD 0,16,16,0 -> 16,16 (default); BGOFS 0,8,8 then BGCOORD 0,0,0,0 -> -8,-8 and BGCOORD 0,16,16,0 -> 8,8 (scroll SUBTRACTS); BGHOME 0,16,16 then BGCOORD 0,16,16,0 -> 32,32 and BGCOORD 0,32,32,0 -> 48,48 (BGHOME is a pure translation, not a pivot); BGSCALE 0,2,2 then BGCOORD 0,16,16,0 -> 32,32 (enlarges about the origin). The forward helper FUN_0028defc computes out = [obj+0x24] + scale*(rotate(src - pivot[obj+0x34])) with pivot 0."
+  - "INVERSE MAP (modes 1 & 2), hw_verified non-rotation (M7-T2): undo the display origin (bg_pixel = (display - home + ofs) / scale, inverse-rotated), so the scroll ADDS back: BGOFS 0,8,8 then BGCOORD 0,8,8,2 -> 16,16; BGOFS 0,16,16 then BGCOORD 0,32,32,1 -> 3,3; BGHOME 0,16,16 then BGCOORD 0,16,16,2 -> 0,0; BGSCALE 0,2,2 then BGCOORD 0,32,32,2 -> 16,16. Mode 1 then FLOORS the BG-pixel result to a tile index by dividing by the layer tile size (default 16): BGCOORD 0,16,16,1 -> 1,1; BGCOORD 0,15,15,1 -> 0,0; BGCOORD 0,31,31,1 -> 1,1; BGCOORD 0,200,120,1 -> 12,7. Mode 2 reports BG pixels: BGCOORD 0,16,16,2 -> 16,16."
+  - "The two converted values DX,DY are written back to the OUT variables via the layer's variable-store method ([obj,#0x14] @0x1665ac/@0x1665c8) as INTEGERS, each truncated toward zero (vcvt.s32.f32 in FUN_0028defc @0x28df5c/@0x28df70, hw_verified M7-T2): BGCOORD 0,16.5,16.5,0 -> 16,16; BGCOORD 0,16.5,16.5,2 -> 16,16; mode 1 already floors (BGCOORD 0,16.9,16.9,1 -> 1,1). BGCOORD reads layer state only; it does not modify the layer. A fresh layer (after ACLS) has identity transforms, and NO BGSCREEN is required (BG layers 0..3 always exist), so BGCOORD 1,16,16,1 -> 1,1 on a fresh state."
+  - "ROTATION (BGROT) interaction is NOT yet pinned: a BGROT 0,90 of BG point (16,0) returns display (-1,15) (mode 0), which is not a clean 90-degree rotation of (16,0) about any obvious pivot — the rotation matrix comes from a lookup table [0x306de0] indexed non-trivially by the angle. The exact rotated values + the on-screen pivot effect are oracle-pending with the BG framebuffer (O-T6), queued in HARVEST_QUEUE.md; the implementation applies a best-effort standard rotation about the origin so modes still round-trip."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "fewer than 2 OUT variables are given, or the argument count is not 3 or 4" }
@@ -34,13 +37,32 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG coordinate conversion (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus: ~160 calls — 4-arg with explicit Mode 'BGCOORD 0,BGX,BGY,1 OUT DX,DY' (mode 1 most common ~135x, e.g. 4D2X3KQV/TXT/PP3_D_RACE; mode 0 ~31x; mode 2 'BGCOORD L,X,Y,2 OUT ...' 4DH3R4R3/TXT/BOXTESTV3.2 ~1x), and the 3-arg no-Mode form 'BGCOORD 0,FX,FY OUT VX,VY' (~6x, EDD3E3GJ/TXT/HNZRDJ, NK4PX4AD/TXT/ZEROTANK) confirming Mode defaults to 0. Expression args 'BGCOORD 3,FLOOR(EX/16),FLOOR(EY/16),0 OUT DX,DY'. (oracle-pending: exact converted values per mode, queued)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9c): BGCOORD 4,0,0,0 OUT DX,DY -> errnum 10 (layer); BGSCREEN 0,32,32:BGCOORD 0,0,0,3 OUT DX,DY -> errnum 10 (mode>2 out of range); :BGCOORD 0,16,16,0 OUT DX,DY and the 3-arg default-mode :BGCOORD 0,16,16 OUT DX,DY both raise nothing, confirming Mode is optional (defaults to 0). All errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2, bgcoord_rt.tsv, 29 cases, 0 mismatch): non-rotation value contract. Default state mode 0 identity (16,16->16,16; 100,50->100,50; -8,-8->-8,-8), mode 1 floor(display/16) (16->1, 15->0, 31->1, 200,120->12,7), mode 2 identity. Scroll: BGOFS 8,8 then mode 0 0,0->-8,-8 / 16,16->8,8 (SUBTRACTS); mode 2 8,8->16,16, mode 1 (BGOFS 16,16) 32,32->3,3 (ADDS in inverse). BGHOME 16,16 then mode 0 16,16->32,32 / 32,32->48,48 (pure translation), mode 2 16,16->0,0. BGSCALE 2,2 then mode 0 16,16->32,32, mode 2 32,32->16,16 (pivot at origin 0,0). OUT integers truncate toward zero: 16.5,16.5 mode 0->16,16, mode 2->16,16, 16.9,16.9 mode 1->1,1. Fresh layer (no BGSCREEN) BGCOORD 1,16,16,1->1,1. ROTATION not pinned: BGROT 90 of (16,0) mode 0 -> -1,15 (queued, O-T6)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Conversion output values need the BG framebuffer/transform oracle (O-T6, queued). Errors
-  # and the 3-arg default-mode form derive from the disassembly arg/mode guards.
-  - { name: convert_ok_mode0, code: "BGSCREEN 0,32,32\nBGCOORD 0,16,16,0 OUT DX,DY", expect: { stdout: "" } }
-  - { name: convert_ok_default_mode, code: "BGSCREEN 0,32,32\nBGCOORD 0,16,16 OUT DX,DY", expect: { stdout: "" } }
+  # hw_verified non-rotation value contract (M7-T2, bgcoord_rt.tsv) via in-VM OUT readback.
+  # The exact ROTATED values + the on-screen pivot effect need the BG framebuffer oracle
+  # (O-T6, queued in HARVEST_QUEUE.md), so no rotation case is frozen here.
+  - { name: mode0_identity, code: "BGCOORD 0,16,16,0 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "16,16" } }
+  - { name: mode0_default_mode, code: "BGCOORD 0,16,16 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "16,16" } }
+  - { name: mode0_neg, code: "BGCOORD 0,-8,-8,0 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "-8,-8" } }
+  - { name: mode0_trunc_toward_zero, code: "BGCOORD 0,16.5,16.5,0 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "16,16" } }
+  - { name: mode1_floor, code: "BGCOORD 0,16,16,1 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "1,1" } }
+  - { name: mode1_floor_sub_tile, code: "BGCOORD 0,15,15,1 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "0,0" } }
+  - { name: mode1_floor_200_120, code: "BGCOORD 0,200,120,1 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "12,7" } }
+  - { name: mode1_frac_floor, code: "BGCOORD 0,16.9,16.9,1 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "1,1" } }
+  - { name: mode2_identity, code: "BGCOORD 0,16,16,2 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "16,16" } }
+  - { name: ofs_mode0_subtracts, code: "BGOFS 0,8,8:BGCOORD 0,0,0,0 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "-8,-8" } }
+  - { name: ofs_mode0_point, code: "BGOFS 0,8,8:BGCOORD 0,16,16,0 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "8,8" } }
+  - { name: ofs_mode2_adds, code: "BGOFS 0,8,8:BGCOORD 0,8,8,2 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "16,16" } }
+  - { name: ofs_mode1_adds, code: "BGOFS 0,16,16:BGCOORD 0,32,32,1 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "3,3" } }
+  - { name: home_mode0_translation, code: "BGHOME 0,16,16:BGCOORD 0,16,16,0 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "32,32" } }
+  - { name: home_mode0_offset, code: "BGHOME 0,16,16:BGCOORD 0,32,32,0 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "48,48" } }
+  - { name: home_mode2_subtracts, code: "BGHOME 0,16,16:BGCOORD 0,16,16,2 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "0,0" } }
+  - { name: scale_mode0_pivot_origin, code: "BGSCALE 0,2,2:BGCOORD 0,16,16,0 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "32,32" } }
+  - { name: scale_mode2_inverse, code: "BGSCALE 0,2,2:BGCOORD 0,32,32,2 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "16,16" } }
+  - { name: fresh_layer_no_bgscreen, code: "BGCOORD 1,16,16,1 OUT DX,DY:PRINT STR$(DX);\",\";STR$(DY)", expect: { stdout: "1,1" } }
   - { name: layer_out_of_range, code: "BGCOORD 4,0,0,0 OUT DX,DY", expect: { error: { errnum: 10 } } }
   - { name: mode_out_of_range, code: "BGSCREEN 0,32,32\nBGCOORD 0,0,0,3 OUT DX,DY", expect: { error: { errnum: 10 } } }
