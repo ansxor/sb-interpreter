@@ -111,6 +111,10 @@ pub fn acls(console: &mut Console, args: &[Value], wants_value: bool) -> Result<
     console.fg = DEFAULT_FG;
     console.bg = DEFAULT_BG;
     console.set_attr(0);
+    // ACLS restores the console font size (WIDTH) to the 8px default — hw_verified:
+    // `WIDTH 16:ACLS:WIDTH()` -> 8 (sb-oracle, acls.yaml). FONTDEF custom glyphs reset too.
+    console.set_font_size(8);
+    console.reset_font();
     console.cls();
     Ok(())
 }

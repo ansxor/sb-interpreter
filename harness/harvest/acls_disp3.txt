@@ -1,0 +1,3 @@
+baseline_disp1|XSCREEN 2:DISPLAY 1|DISPLAY()|prog
+disp_acls_from0|XSCREEN 2:DISPLAY 0:ACLS|DISPLAY()|prog
+disp_acls_settle|XSCREEN 2:DISPLAY 1:ACLS:WAIT 2|DISPLAY()|prog

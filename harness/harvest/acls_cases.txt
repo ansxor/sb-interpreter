@@ -1,0 +1,15 @@
+# ACLS reset-to-defaults harvest (M7-T2). prog mode = isolated program (ACLS resets state).
+# Default values after a no-arg ACLS:
+acls_def_backcolor|ACLS|BACKCOLOR()|prog
+acls_def_width|ACLS|WIDTH()|prog
+acls_def_gcolor|ACLS|GCOLOR()|prog
+acls_def_display|ACLS|DISPLAY()|prog
+acls_def_tabstep|ACLS|TABSTEP()|prog
+# Reset PROOF: set a non-default value, ACLS, read it back -> default:
+acls_reset_backcolor|BACKCOLOR &HFF112233:ACLS|BACKCOLOR()|prog
+acls_reset_width|WIDTH 16:ACLS|WIDTH()|prog
+acls_reset_gcolor|GCOLOR RGB(1,2,3):ACLS|GCOLOR()|prog
+acls_reset_tabstep|TABSTEP 8:ACLS|TABSTEP()|prog
+# 3-arg selective form: does it still reset the draw state? (mask never sets bit 0x1)
+acls_3arg_backcolor|BACKCOLOR &HFF112233:ACLS 1,1,1|BACKCOLOR()|prog
+acls_3arg_width|WIDTH 16:ACLS 1,0,0|WIDTH()|prog

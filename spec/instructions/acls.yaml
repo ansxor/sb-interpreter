@@ -21,6 +21,8 @@ semantics:
   - "The reset is driven by a bitmask passed to the shared worker FUN_0014f10c (cpy r0,r4 / bl 0x14f10c @0x14ceb0). The no-arg form passes mask 0 (mov r4,#0x0 @0x14cdec), which the worker treats as the complete reset (tst r0,#0x1 is false -> beq @0x14f144 takes the full console/graphics reset path; bit 0x1 is never set by ACLS itself)."
   - "The 3-arg form (@0x14ce18) evaluates the three operands to sp[0]/sp[4]/sp[8] via the arg vtable (blx [r2,#0x40]), tracking the arg index in r7 (0,1,2) so a mid-eval continuation is re-entrant (str r7,[r6] @0x14ce7c). It then folds each operand into the mask r4 by truthiness: sp[0]!=0 -> r4=0x2 (movne r4,#0x2 @0x14ce94), sp[4]!=0 -> r4|=0x4 (orrne @0x14cea0), sp[8]!=0 -> r4|=0x8 (orrne @0x14cea8). Because the mask uses bits 0x2/0x4/0x8 (never bit 0x1), the worker still runs its main reset path; the higher bits gate later sections whose exact subsystem mapping is undocumented (oracle-pending)."
   - "ACLS is a statement returning nothing (the handler always returns 0 via mov r0,#0x0 @0x14ceb8). It does not touch BGM/sound state (documented). The full visual effect (font/sprite/BG reload, screen clears, palette/fade reset) is screen state with no scalar oracle golden; what is pinned here is the accepted arg counts (0 or 3), the errnum-4 guard, and the mask construction."
+  - "Reset-to-defaults — scalar-observable draw settings, all hw_verified by reset-proof (set a non-default value, ACLS, read it back; sb-oracle): GCOLOR -> &HFFFFFFFF (-1, opaque white) — `GCOLOR RGB(1,2,3):ACLS:?GCOLOR()` -> -1; BACKCOLOR -> 0 — `BACKCOLOR &HFF112233:ACLS:?BACKCOLOR()` -> 0; WIDTH (console font size) -> 8 — `WIDTH 16:ACLS:?WIDTH()` -> 8; DISPLAY (active output screen) -> 0 — `XSCREEN 2:DISPLAY 1:ACLS:DISPLAY()` -> 0 (the documented XSCREEN 0 / DISPLAY / VISIBLE 1,1,1,1 reset). The undocumented 3-arg selective form performs the same draw-state reset (mask bits 0x2/0x4/0x8 never gate the main path): `BACKCOLOR &HFF112233:ACLS 1,1,1:?BACKCOLOR()` -> 0, `WIDTH 16:ACLS 1,0,0:?WIDTH()` -> 8."
+  - "TABSTEP is NOT reset by ACLS — it is a writable system variable that survives ACLS (`TABSTEP=8:ACLS:TABSTEP` -> 8, and a bare `ACLS:TABSTEP` leaves a previously-set 8 intact). Consistent with the documented reset sequence, which lists WIDTH/COLOR/BACKCOLOR/etc. but never TABSTEP."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "the argument count is not 0 or 3 (e.g. ACLS with 1 or 2 arguments), or ACLS is used where a return value is expected" }
@@ -31,13 +33,25 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst ACLS reset worker FUN_0014f10c @0x14f10c: tst r0,#0x1 (@0x14f110) — bit 0 (never set by ACLS) gates an alternate path; beq @0x14f144 takes the full reset, storing console size {0x200,4} (stmia @0x14f150), clearing flags strb r0,[r6,#0x4]/[r6,#0x5], and resetting the draw-state block at [0x14f524] (str r5,[r4,#0x9c]/[r4,#0xfc]/[r4,#0x100]/[r4,#0x10c], strb r5,[r4,#0xf8]/[r4,#0xf9] @0x14f194-0x14f1bc) — confirming the mask-0 no-arg form performs the documented full reset" }
   - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d ACLS reset sequence (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bACLS\\b[ ]+[0-9]'): the undocumented 3-arg form is real and common — `ACLS 1,1,0` (TB53F344/TXT/IO.LIB), `ACLS 1,1,1` (TXCX43JJ/TXT/FREEBGM_RWI-), `ACLS 1,0,0` (QRY34XVD/TXT/-MAP_EDIT-, QRY34XVD/TXT/-SCR_EDIT-). The bare `ACLS` no-arg form is the overwhelming majority. No 1- or 2-arg form appears (consistent with the errnum-4 guard). Per-flag meaning unproven (no oracle): queued." }
-  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11d): `ACLS 1` (1 arg) and `ACLS 1,1` (2 args) both raise errnum 4 (Illegal function call, errline 1), confirming the handler accepts only 0 or 3 arguments. The no-arg full reset and the 3-arg selective-reset effect are screen state with no scalar golden (queued)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11d): `ACLS 1` (1 arg) and `ACLS 1,1` (2 args) both raise errnum 4 (Illegal function call, errline 1), confirming the handler accepts only 0 or 3 arguments." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-24 (M7-T2, harness/harvest/out/acls{,_tabstep,_disp3}.tsv): the reset-to-defaults headline is scalar-observable via getter read-back. Reset-proofs (set non-default -> ACLS -> read): GCOLOR RGB(1,2,3):ACLS -> GCOLOR()=-1 (and &HFF00FF00 -> -1); BACKCOLOR &HFF112233:ACLS -> BACKCOLOR()=0; WIDTH 16:ACLS -> WIDTH()=8; XSCREEN 2:DISPLAY 1:ACLS(:WAIT) -> DISPLAY()=0 (baseline XSCREEN 2:DISPLAY 1 -> 1 confirms the set). 3-arg form resets identically (ACLS 1,1,1 -> BACKCOLOR()=0; ACLS 1,0,0 -> WIDTH()=8). NEGATIVE: TABSTEP=8:ACLS -> TABSTEP=8 (ACLS does NOT reset the TABSTEP sysvar). Drove a sb-core fix: ACLS now resets GCOLOR/WIDTH/DISPLAY and no longer (wrongly) resets TABSTEP." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # The no-arg form and the corpus-verified 3-arg form are accepted; the visual reset
-  # itself has no scalar golden, so the assertable behavior is the arg-count guard:
-  # 1 or 2 args -> errnum 4 (hw_verified via sb-oracle batch s_t11d).
+  # Arg-count guard: 1 or 2 args -> errnum 4 (hw_verified via sb-oracle batch s_t11d).
   - { name: one_arg_err, code: "ACLS 1", expect: { error: { errnum: 4 } } }
   - { name: two_args_err, code: "ACLS 1,1", expect: { error: { errnum: 4 } } }
+  # Reset-to-defaults — scalar-observable via getter read-back (hw_verified, M7-T2 2026-06-24).
+  # Reset-proofs: set a non-default value, ACLS, read it back -> the power-on default.
+  - { name: reset_gcolor, code: "GCOLOR RGB(1,2,3):ACLS:PRINT GCOLOR()", expect: { stdout: "-1" } }
+  - { name: reset_backcolor, code: "BACKCOLOR &HFF112233:ACLS:PRINT BACKCOLOR()", expect: { stdout: "0" } }
+  - { name: reset_width, code: "WIDTH 16:ACLS:PRINT WIDTH()", expect: { stdout: "8" } }
+  - { name: reset_display, code: "XSCREEN 2:DISPLAY 1:ACLS:PRINT DISPLAY()", expect: { stdout: "0" } }
+  - { name: def_gcolor, code: "ACLS:PRINT GCOLOR()", expect: { stdout: "-1" } }
+  - { name: def_width, code: "ACLS:PRINT WIDTH()", expect: { stdout: "8" } }
+  # TABSTEP is a sysvar that survives ACLS (NOT reset) — negative case.
+  - { name: tabstep_not_reset, code: "TABSTEP=8:ACLS:PRINT TABSTEP", expect: { stdout: "8" } }
+  # The undocumented 3-arg selective form performs the same draw-state reset.
+  - { name: arg3_reset_backcolor, code: "BACKCOLOR &HFF112233:ACLS 1,1,1:PRINT BACKCOLOR()", expect: { stdout: "0" } }
+  - { name: arg3_reset_width, code: "WIDTH 16:ACLS 1,0,0:PRINT WIDTH()", expect: { stdout: "8" } }

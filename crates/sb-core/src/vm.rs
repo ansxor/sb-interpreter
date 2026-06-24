@@ -2233,9 +2233,17 @@ impl Vm {
             }
             "ACLS" => {
                 cons::acls(&mut self.console, &args, wants_value)?;
-                // ACLS resets the wider screen draw state too (not just the console grid).
+                // ACLS resets the wider screen draw state too (not just the console grid),
+                // all hw_verified via reset-proofs (`<set>:ACLS:<get>()`, sb-oracle, acls.yaml):
+                //   BACKCOLOR -> 0   (`BACKCOLOR &HFF112233:ACLS:?BACKCOLOR()` -> 0)
+                //   GCOLOR    -> &HFFFFFFFF / -1 default white (`GCOLOR RGB(1,2,3):ACLS:?GCOLOR()` -> -1)
+                //   DISPLAY   -> 0   (`XSCREEN 2:DISPLAY 1:ACLS:DISPLAY()` -> 0; the documented
+                //                     XSCREEN 0 / DISPLAY / VISIBLE 1,1,1,1 reset = ScreenConfig::new)
+                // TABSTEP is NOT reset (`TABSTEP=8:ACLS:TABSTEP` -> 8, stays a sysvar), so we
+                // deliberately leave self.tabstep alone — the old `tabstep = 4` here was wrong.
                 self.back_color = 0;
-                self.tabstep = 4;
+                self.grp.color = 0xFFFF_FFFF;
+                self.screen = ScreenConfig::new();
                 Ok(Some(Value::Void))
             }
             "INKEY$" => Ok(Some(cons::inkey(&mut self.input, &args)?)),
@@ -5191,6 +5199,26 @@ H$=HEX$(255)"#);
         // The no-arg form and the corpus-verified 3-arg form both run; no error.
         run(r#"COLOR 3,4:PRINT "X":ACLS"#);
         run("ACLS 1,1,0");
+    }
+
+    #[test]
+    fn acls_resets_draw_settings_but_not_tabstep() {
+        // hw_verified (acls.yaml, M7-T2 2026-06-24): ACLS restores the scalar draw settings
+        // to their power-on defaults (GCOLOR -> -1 white, BACKCOLOR -> 0, WIDTH -> 8,
+        // DISPLAY -> 0) but leaves the writable TABSTEP sysvar untouched.
+        let vm = run(
+            "GCOLOR RGB(1,2,3):BACKCOLOR &HFF112233:WIDTH 16:XSCREEN 2:DISPLAY 1:TABSTEP=8:ACLS\n\
+             G=GCOLOR():B=BACKCOLOR():W=WIDTH():D=DISPLAY():T=TABSTEP",
+        );
+        assert_eq!(int(&vm, "G"), -1);
+        assert_eq!(int(&vm, "B"), 0);
+        assert_eq!(int(&vm, "W"), 8);
+        assert_eq!(int(&vm, "D"), 0);
+        assert_eq!(int(&vm, "T"), 8);
+        // The 3-arg selective form resets identically.
+        let vm = run("BACKCOLOR &HFF112233:WIDTH 16:ACLS 1,1,1\nB=BACKCOLOR():W=WIDTH()");
+        assert_eq!(int(&vm, "B"), 0);
+        assert_eq!(int(&vm, "W"), 8);
     }
 
     #[test]

@@ -746,10 +746,16 @@ oracle to confirm exact output and promote to `hw_verified`.
     is now hw_verified — `BACKCOLOR()` returns the stored color masked to 24 bits (`& &H00FFFFFF`,
     the alpha/high byte is dropped; no channel swap); DISPLAY() get returns the active screen id
     (0 Upper default, 1 after XSCREEN 2:DISPLAY 1). Both bumped to top-level hw_verified.
-    STILL UNHARVESTED — screen-state, no scalar oracle golden: ACLS no-arg full reset vs the
-    undocumented 3-arg selective reset (per-flag bitmask meaning of `ACLS f1,f2,f3` — bits
-    0x2/0x4/0x8 into worker 0x14f10c — is unknown); VISIBLE actual layer-visibility effect; the
-    rendered border color BACKCOLOR produces and the physical screen DISPLAY targets. DIRECT-MODE-ONLY (RUN harness can't reach
+    HARVESTED 2026-06-24 (M7-T2): ACLS reset-to-defaults is scalar-observable via getter
+    read-back — ACLS (and the 3-arg `ACLS 1,1,1` / `ACLS 1,0,0`) resets GCOLOR->-1, BACKCOLOR->0,
+    WIDTH->8, DISPLAY->0, and (negative) does NOT reset the TABSTEP sysvar. ACLS bumped to
+    top-level hw_verified; drove a sb-core fix (added GCOLOR/WIDTH/DISPLAY reset, removed a wrong
+    TABSTEP=4 reset). STILL UNHARVESTED — screen-state, no scalar oracle golden: the per-flag
+    bitmask MEANING of `ACLS f1,f2,f3` (which subsystem each of bits 0x2/0x4/0x8 into worker
+    0x14f10c gates — only confirmed all three forms still perform the MAIN draw reset, not the
+    per-flag differences); the font/sprite/BG reload + both-screen palette/fade reset; VISIBLE
+    actual layer-visibility effect; the rendered border color BACKCOLOR produces and the physical
+    screen DISPLAY targets. DIRECT-MODE-ONLY (RUN harness can't reach
     these, run in program mode): DISPLAY in DIRECT mode -> errnum 43, and XSCREEN 4 in DIRECT mode
     -> errnum 43 — both pinned from the disassembly but need a DIRECT-mode oracle path.
 
@@ -1198,9 +1204,11 @@ oracle to confirm exact output and promote to `hw_verified`.
   O-T6).
 - **LOCATE Z depth**: the depth operand is range-validated (-256.0..1024.0 → errnum 10) but
   not modeled by the 2-D console grid; z-ordering arrives with the compositor (M2).
-- **ACLS full reset**: resets the console color/attr/grid + VM back_color/tabstep here. The
-  full documented visual reset (font/sprite/BG reload, both screens, fade/palette) and the
-  undocumented 3-arg per-flag selective reset are screen state — oracle-pending (O-T6).
+- **ACLS full reset**: resets console color/attr/grid + font size (WIDTH) + custom font, and
+  VM back_color->0 / GCOLOR->-1 / DISPLAY->0 (screen config) — all hw_verified (acls.yaml,
+  M7-T2 2026-06-24). It does NOT reset the TABSTEP sysvar. The full documented VISUAL reset
+  (font/sprite/BG reload, both screens, fade/palette) and the undocumented 3-arg per-flag
+  selective reset's per-bit meaning are screen state — oracle-pending (O-T6).
 
 ## M1-T14 / arithmetic — constant int*int overflow folds to Double
 - **Compile-time int*int overflow promotes to Double on real SB.** Oracle 2026-06-23:
