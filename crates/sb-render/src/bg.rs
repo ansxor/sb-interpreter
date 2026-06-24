@@ -42,6 +42,23 @@ pub const BG_VAR_COUNT: usize = 8;
 /// Number of `BGANIM` target channels (`target & 7`). BG uses 0 XY, 1 Z, 4 R, 5 S, 6 C,
 /// 7 V; unlike sprites it has NO UV(2) or definition-I(3) channel (those indices stay None).
 pub const BG_ANIM_CHANNELS: usize = 8;
+
+/// Map a raw `BGANIM` channel (`target & 7`: 0 XY, 1 Z, 4 R, 5 S, 6 C, 7 V) to its
+/// **compacted** `BGCHK` flags-word bit index. BG packs its 6 channels into bits 0..5
+/// (XY=0, Z=1, R=2, S=3, C=4, V=5 → values 1/2/4/8/16/32), unlike the sprite `1<<channel`
+/// layout — see [`BgState::anim_status`] for the disassembly cites. UV(2)/I(3) are rejected
+/// upstream (errnum 4) so they never reach here.
+fn bg_anim_bit(channel: usize) -> u32 {
+    match channel {
+        0 => 0, // XY
+        1 => 1, // Z
+        4 => 2, // R
+        5 => 3, // S
+        6 => 4, // C
+        7 => 5, // V
+        _ => channel as u32,
+    }
+}
 /// Default graphic page BG tiles are sampled from (`BGPAGE` default = GRP5).
 pub const BG_PAGE_DEFAULT: u8 = 5;
 /// Initial map width for a layer, in char units (`BGSCREEN` initial 25×15 — sized to fill
@@ -375,10 +392,16 @@ impl BgState {
         }
     }
 
-    /// `BGCHK(layer)` — the animation-status bitmask: bit `c` is set when channel `c` has a
-    /// running (not finished) `BGANIM`. A stopped layer (`BGSTOP`) reads 0. The bit positions
-    /// match the documented `#CHK*` constants (XY=1, Z=2, R=16, S=32, C=64, V=128 — i.e.
-    /// `1 << channel`).
+    /// `BGCHK(layer)` — the animation-status bitmask: a bit is set when the corresponding
+    /// channel has a running (not finished) `BGANIM`. A stopped layer (`BGSTOP`) reads 0.
+    ///
+    /// BG uses a **compacted** bit layout, NOT the sprite `1 << channel`: the BGANIM handler's
+    /// per-channel switch (jump table @0x164dbc) ORs a packed bit into the layer flags word —
+    /// XY→0x1, Z→0x2, R→0x4, S→0x8, C→0x10, V→0x20 (the `orr r0,r0,#…` sites in cases
+    /// @0x164ddc/4e5c/4eb0/4ef4/4f44/4f84), and BGCHK returns that word raw. So R/S/C/V are
+    /// bits 2/3/4/5 (4/8/16/32), NOT the documented #CHKR/S/C/V 16/32/64/128 (those are the
+    /// SPRITE layout, where channels are contiguous 0..7). hw_verified (M7-T2 run 53,
+    /// `bganim.tsv`); the run-35 `R=16…` extrapolation was wrong (it only confirmed XY=1).
     pub fn anim_status(&self, layer: usize) -> i32 {
         let l = &self.layers[layer];
         if l.anim_stopped {
@@ -388,7 +411,7 @@ impl BgState {
         for (ch, slot) in l.anims.iter().enumerate() {
             if let Some(a) = slot {
                 if !a.done {
-                    bits |= 1 << ch;
+                    bits |= 1 << bg_anim_bit(ch);
                 }
             }
         }
@@ -803,10 +826,11 @@ mod tests {
     fn anim_status_bits_and_stop() {
         let mut st = BgState::new();
         assert_eq!(st.anim_status(0), 0);
-        // Z (channel 1) + R (channel 4) running -> bits (1<<1)|(1<<4) = 18.
+        // Z (channel 1) + R (channel 4) running -> compacted bits Z=1<<1, R=1<<2 = 6
+        // (NOT the sprite 1<<channel = 18 — hw_verified M7-T2 run 53, BGANIM bganim_multi_zr=6).
         st.set_anim(0, 1, false, &[10.0, 5.0], 0).unwrap();
         st.set_anim(0, 4, false, &[10.0, 90.0], 0).unwrap();
-        assert_eq!(st.anim_status(0), (1 << 1) | (1 << 4));
+        assert_eq!(st.anim_status(0), (1 << 1) | (1 << 2));
         // Stopping a layer freezes the advance and reads 0.
         st.set_anim_stopped(0, true);
         assert_eq!(st.anim_status(0), 0);

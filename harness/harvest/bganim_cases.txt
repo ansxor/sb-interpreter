@@ -1,0 +1,42 @@
+# BGANIM channel-activation value contract (M7-T2), observed through BGCHK (which returns a
+# `1<<channel` running-bit mask). An endless inline BGANIM (loop=0) flags the target channel
+# running immediately (the flag is set at the BGANIM call, before the first advancing frame —
+# run 35), so BGCHK reads the bit with NO VSYNC. ACLS resets BG anim state (flags persist
+# across RUNs). Resolves the run-35-queued #CHKZ/R/S/C/V bits.
+# --- numeric target -> channel bit ---
+bganim_num_xy|ACLS:BGANIM 0,0,60,100,100,0|BGCHK(0)|prog
+bganim_num_z|ACLS:BGANIM 0,1,60,100,0|BGCHK(0)|prog
+bganim_num_r|ACLS:BGANIM 0,4,60,90,0|BGCHK(0)|prog
+bganim_num_s|ACLS:BGANIM 0,5,60,2,2,0|BGCHK(0)|prog
+bganim_num_c|ACLS:BGANIM 0,6,60,100,0|BGCHK(0)|prog
+bganim_num_v|ACLS:BGANIM 0,7,60,100,0|BGCHK(0)|prog
+# --- string target -> same channel bit ---
+bganim_str_xy|ACLS:BGANIM 0,"XY",60,100,100,0|BGCHK(0)|prog
+bganim_str_z|ACLS:BGANIM 0,"Z",60,100,0|BGCHK(0)|prog
+bganim_str_r|ACLS:BGANIM 0,"R",60,90,0|BGCHK(0)|prog
+bganim_str_s|ACLS:BGANIM 0,"S",60,2,2,0|BGCHK(0)|prog
+bganim_str_c|ACLS:BGANIM 0,"C",60,100,0|BGCHK(0)|prog
+bganim_str_v|ACLS:BGANIM 0,"V",60,100,0|BGCHK(0)|prog
+# --- relative forms ('+8' / '+' suffix) keep the SAME channel (the +8 bit is masked off) ---
+bganim_rel_str_xy|ACLS:BGANIM 0,"XY+",60,100,100,0|BGCHK(0)|prog
+bganim_rel_str_r|ACLS:BGANIM 0,"R+",60,90,0|BGCHK(0)|prog
+bganim_rel_num_xy|ACLS:BGANIM 0,8,60,100,100,0|BGCHK(0)|prog
+bganim_rel_num_r|ACLS:BGANIM 0,12,60,90,0|BGCHK(0)|prog
+# --- multiple channels OR together ---
+bganim_multi_zr|ACLS:BGANIM 0,1,60,100,0:BGANIM 0,4,60,90,0|BGCHK(0)|prog
+bganim_multi_xyv|ACLS:BGANIM 0,"XY",60,100,100,0:BGANIM 0,"V",60,100,0|BGCHK(0)|prog
+# --- per-layer independence ---
+bganim_layer1_self|ACLS:BGANIM 1,0,60,100,100,0|BGCHK(1)|prog
+bganim_layer1_iso|ACLS:BGANIM 1,0,60,100,100,0|BGCHK(0)|prog
+# --- discovery: BG has no UV(2)/I(3) channel (sprites do). Does it error, and with which errnum? ---
+bganim_uv_num|BGANIM 0,2,60,100,100,0|err
+bganim_i_num|BGANIM 0,3,60,100,0|err
+bganim_uv_str|BGANIM 0,"UV",60,100,100,0|err
+bganim_i_str|BGANIM 0,"I",60,100,0|err
+bganim_neg_target|BGANIM 0,-1,60,100,0|err
+# --- shape / range / type guards (already hw_verified s_t9d; re-frozen) ---
+bganim_too_few|BGANIM 0,"XY"|err
+bganim_layer_oor|BGANIM 4,"XY",10,0,0|err
+bganim_layer_neg|BGANIM -1,"XY",10,0,0|err
+bganim_ret_ctx|R=BGANIM(0,"XY",10,0,0)|err
+bganim_type_mismatch|DIM AR[1]:BGANIM 0,AR,10,0,0|err

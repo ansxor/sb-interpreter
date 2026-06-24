@@ -36,6 +36,7 @@ semantics:
   - "Relative flag and channel: and r0,r1,#0x7 masks the target to the channel 0..7 (str [sp,#0x2c] @0x164d7c-0x164d80); mov r12,r1, lsl #0x1c isolates bit 3 (the +8 / '+' relative flag) and cmp r0,#0x8 tests the relative add (@0x164d90-0x164d9c). A per-channel switch builds the keyframe list for the chosen channel and sets that channel's anim-active flag in the layer record."
   - "Keyframe data is read from the variadic/array/DATA source for the chosen channel (XY/S = 2 items per keyframe, Z/R/C/V = 1) using each layer's current runtime value as the base for relative animation. Up to 32 keyframes per target (documented cap). Time is the per-keyframe duration: positive = hold that many frames, negative = linear interpolation over |time| frames. The per-layer record stride is 0xe3*8 bytes from base [[0x315d60]+0x5c] (mov r3,#0xe3 / mul / ... @0x164d8c-0x164da0)."
   - "The animation starts on the frame FOLLOWING the BGANIM call (documented), and runs once unless a Loop count is given; Loop 0 means loop endlessly. BGSTOP pauses it and BGSTART resumes it (they toggle the layer-record stop bit 0x40, see [[bgstop]]/[[bgstart]]); BGCHK reads which channels are running ([[bgchk]])."
+  - "The anim-active flag bit each channel sets is COMPACTED, not the sprite `1<<channel`: the per-channel switch (jump table @0x164dbc) ORs into the layer flags word [r4,#0x0] — case 0 XY `orr r0,r0,#0x1` @0x164e44, case 1 Z `orr #0x2` @0x164ea4, case 4 R `orr #0x4` @0x164ee8, case 5 S `orr #0x8` @0x164f38, case 6 C `orr #0x10` @0x164f78, case 7 V `orr #0x20` @0x164fbc; cases 2 (UV) and 3 (I) jump to the shared errnum-4 site @0x164fc8 (`mov r0,#0x4 / bl 0x1fffdc`). So BGCHK reads XY=1, Z=2, R=4, S=8, C=16, V=32 (bits 0..5) — NOT the documented #CHKR/S/C/V 16/32/64/128 (which are the SPRITE [[spchk]] layout). The relative `+8`/`+`-suffix bit is masked off by `and r0,r1,#0x7` before the switch, so a relative animation sets the SAME channel bit. hw_verified — see the M7-T2 run-53 source. BG has no UV(2)/I(3) channel, so BGANIM target 2/3 (or string \"UV\"/\"I\") raises errnum 4."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "fewer than 3 arguments are given, the call is used in a return context, or the resolved target number is negative" }
@@ -48,14 +49,48 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer animation state/data (3.5.0 structural cross-check only); SpriteAnimTarget-equivalent enum shared with the sprite path." }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGANIM '): 123 files, 568 lines. Confirms numeric target `BGANIM 0,7,-120,0.75,1` (2XVV233J/TXT/GAME.PRG), string target `BGANIM 0,\"XY\",-60,BX[0],BY[0],1` (1DVK34J/TXT/HNZHS), RELATIVE string targets `BGANIM 0,\"R+\",-T,-ANG,1` (1DVK34J/TXT/HNZHS) and `BGANIM 0,\"XY+\",-120,-16,0,0` (1233728E/TXT/MG_DOG), color animation `BGANIM 0,\"C\",1,RGB(0,255,0),-180/2,...` (1DVENVAE/TXT/PICS_R1_1V), inline multi-keyframe `BGANIM 1,\"XY\",7,15,15,1,0,0,-120,15,15,0` (1DVK34J/TXT/HNZTL), variable layer `BGANIM I,\"XY\",-T,X*16,Y*16` (43AE1XG3/TXT/@BACKUP.PRG) — proving these forms are LEGAL syntax. Exact interpolation output is oracle-pending." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9d): BGANIM 0,\"XY\" (2 args) -> errnum 4; BGANIM 4,\"XY\",10,0,0 -> errnum 10; BGANIM -1,\"XY\",10,0,0 -> errnum 10. All errline 1. Runtime interpolation output is oracle-pending (no BG framebuffer harvest, O-T6)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 53, harness/harvest/out/bganim.tsv, read back through BGCHK which returns the running-channel mask). CHANNEL→BIT is COMPACTED (resolves the run-35-queued #CHKZ/R/S/C/V bits and CORRECTS the run-35 `R=16/S=32/C=64/V=128` extrapolation, which had only confirmed XY=1): numeric target 0/1/4/5/6/7 -> BGCHK 1/2/4/8/16/32; string target \"XY\"/\"Z\"/\"R\"/\"S\"/\"C\"/\"V\" -> same 1/2/4/8/16/32; relative \"XY+\"/\"R+\"/8/12 -> same channel bit 1/1/4/4 (the +8 bit is masked off); multiple channels OR (Z+R=6, XY+V=33); per-layer independence (BGANIM 1,0,… -> BGCHK(1)=1, BGCHK(0)=0). Guards: BGANIM 0,2 / 0,3 / 0,\"UV\" / 0,\"I\" (no UV/I channel on BG) and a negative target 0,-1 -> errnum 4 errline 1; too-few-args / return-context -> errnum 4; layer 4 / -1 -> errnum 10; a non-number/non-string target (array) -> errnum 8. The interpolated runtime position/value is still oracle-pending (no BG framebuffer harvest, O-T6) — only the channel-activation contract is hw_verified." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Error / no-error cases derived from the disassembly gates; runtime animation output is oracle-pending (no BG framebuffer harvest, O-T6).
-  - { name: anim_string_target, code: "BGSCREEN 0,32,32\nBGANIM 0,\"XY\",-60,200,100,-30,50,20", expect: { stdout: "" } }
-  - { name: anim_numeric_target, code: "BGSCREEN 0,32,32\nBGANIM 0,4,-10,0", expect: { stdout: "" } }
-  - { name: anim_relative_suffix, code: "BGSCREEN 0,32,32\nBGANIM 0,\"R+\",-30,90", expect: { stdout: "" } }
+  # Channel-activation contract, hw_verified through BGCHK (M7-T2 run 53). BGANIM flags the
+  # target channel running immediately (read with no VSYNC); the COMPACTED BG bit layout is
+  # XY=1, Z=2, R=4, S=8, C=16, V=32. The interpolated runtime VALUE is oracle-pending (O-T6).
+  # `stdout` is the console scrape (trailing newline trimmed) so `PRINT BGCHK(0)` reads e.g. "4".
+  # --- numeric target -> compacted bit ---
+  - { name: num_xy_bit, code: "BGANIM 0,0,60,100,100,0\nPRINT BGCHK(0)", expect: { stdout: "1" } }
+  - { name: num_z_bit, code: "BGANIM 0,1,60,100,0\nPRINT BGCHK(0)", expect: { stdout: "2" } }
+  - { name: num_r_bit, code: "BGANIM 0,4,60,90,0\nPRINT BGCHK(0)", expect: { stdout: "4" } }
+  - { name: num_s_bit, code: "BGANIM 0,5,60,2,2,0\nPRINT BGCHK(0)", expect: { stdout: "8" } }
+  - { name: num_c_bit, code: "BGANIM 0,6,60,100,0\nPRINT BGCHK(0)", expect: { stdout: "16" } }
+  - { name: num_v_bit, code: "BGANIM 0,7,60,100,0\nPRINT BGCHK(0)", expect: { stdout: "32" } }
+  # --- string target -> same compacted bit ---
+  - { name: str_xy_bit, code: "BGANIM 0,\"XY\",60,100,100,0\nPRINT BGCHK(0)", expect: { stdout: "1" } }
+  - { name: str_z_bit, code: "BGANIM 0,\"Z\",60,100,0\nPRINT BGCHK(0)", expect: { stdout: "2" } }
+  - { name: str_r_bit, code: "BGANIM 0,\"R\",60,90,0\nPRINT BGCHK(0)", expect: { stdout: "4" } }
+  - { name: str_s_bit, code: "BGANIM 0,\"S\",60,2,2,0\nPRINT BGCHK(0)", expect: { stdout: "8" } }
+  - { name: str_c_bit, code: "BGANIM 0,\"C\",60,100,0\nPRINT BGCHK(0)", expect: { stdout: "16" } }
+  - { name: str_v_bit, code: "BGANIM 0,\"V\",60,100,0\nPRINT BGCHK(0)", expect: { stdout: "32" } }
+  # --- relative forms ('+8' / '+') keep the SAME channel bit (the +8 bit is masked off) ---
+  - { name: rel_str_xy_bit, code: "BGANIM 0,\"XY+\",60,100,100,0\nPRINT BGCHK(0)", expect: { stdout: "1" } }
+  - { name: rel_str_r_bit, code: "BGANIM 0,\"R+\",60,90,0\nPRINT BGCHK(0)", expect: { stdout: "4" } }
+  - { name: rel_num_xy_bit, code: "BGANIM 0,8,60,100,100,0\nPRINT BGCHK(0)", expect: { stdout: "1" } }
+  - { name: rel_num_r_bit, code: "BGANIM 0,12,60,90,0\nPRINT BGCHK(0)", expect: { stdout: "4" } }
+  # --- multiple channels OR together ---
+  - { name: multi_zr_bits, code: "BGANIM 0,1,60,100,0\nBGANIM 0,4,60,90,0\nPRINT BGCHK(0)", expect: { stdout: "6" } }
+  - { name: multi_xyv_bits, code: "BGANIM 0,\"XY\",60,100,100,0\nBGANIM 0,\"V\",60,100,0\nPRINT BGCHK(0)", expect: { stdout: "33" } }
+  # --- per-layer independence ---
+  - { name: layer1_self, code: "BGANIM 1,0,60,100,100,0\nPRINT BGCHK(1)", expect: { stdout: "1" } }
+  - { name: layer1_isolation, code: "BGANIM 1,0,60,100,100,0\nPRINT BGCHK(0)", expect: { stdout: "0" } }
+  # --- BG has no UV(2)/I(3) channel: target 2/3 (num) or "UV"/"I" (str) -> errnum 4 ---
+  - { name: uv_channel_rejected, code: "BGANIM 0,2,60,100,100,0", expect: { error: { errnum: 4 } } }
+  - { name: i_channel_rejected, code: "BGANIM 0,3,60,100,0", expect: { error: { errnum: 4 } } }
+  - { name: uv_string_rejected, code: "BGANIM 0,\"UV\",60,100,100,0", expect: { error: { errnum: 4 } } }
+  - { name: negative_target, code: "BGANIM 0,-1,60,100,0", expect: { error: { errnum: 4 } } }
+  # --- shape / range / type guards (hw_verified s_t9d + run 53) ---
   - { name: too_few_args, code: "BGSCREEN 0,32,32\nBGANIM 0,\"XY\"", expect: { error: { errnum: 4 } } }
+  - { name: return_context, code: "R=BGANIM(0,\"XY\",10,0,0)", expect: { error: { errnum: 4 } } }
   - { name: layer_out_of_range, code: "BGANIM 4,\"XY\",10,0,0", expect: { error: { errnum: 10 } } }
   - { name: layer_negative, code: "BGANIM -1,\"XY\",10,0,0", expect: { error: { errnum: 10 } } }
+  - { name: target_type_mismatch, code: "DIM AR[1]\nBGANIM 0,AR,10,0,0", expect: { error: { errnum: 8 } } }

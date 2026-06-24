@@ -618,8 +618,11 @@ oracle to confirm exact output and promote to `hw_verified`.
     bgstartstop_rt.tsv): a running XY BGANIM gives BGCHK=1 (#CHKXY, raw `1<<channel`, no shift), goes 0
     under BGSTOP (one-layer + all-layer + named-layer isolation), back to 1 under BGSTART; idempotent;
     shape guards BGSTART/BGSTOP `1,2` & return-ctx -> errnum 4. Frozen in bgstart/bgstop/bgchk.yaml.
-    [Remaining: the Z/R/S/C/V mid-anim bits + confirming BG omits #CHKUV(4)/#CHKI(8) — same probe with
-    those targets; the on-screen animation transform stays O-T6-pending.]
+    [Z/R/S/C/V mid-anim bits RESOLVED 2026-06-24 (M7-T2 run 53, bganim.tsv): the BG layout is
+    COMPACTED, not raw `1<<channel` — XY=1, Z=2, R=4, S=8, C=16, V=32 (the run-35 `R=16…`
+    extrapolation here was WRONG; corrected in bgchk/bganim.yaml + sb-render bg.rs). BG omits
+    #CHKUV(4)/#CHKI(8): target 2/3 or "UV"/"I" -> errnum 4. The on-screen animation transform
+    stays O-T6-pending.]
   - BGANIM interpolation output (positive hold vs negative linear interp), Loop 0 endless, the
     "@label" DATA form and relative "+" semantics against rendered layer transform.
   - BGFUNC callback dispatch via CALL BG (CALLIDX = layer number); errnum 4/8 for unresolvable /
@@ -985,8 +988,9 @@ oracle to confirm exact output and promote to `hw_verified`.
   Open items the model marks oracle-pending:
   - SPCHK part RESOLVED 2026-06-24 (spstartstop_rt.tsv): an XY SPANIM gives SPCHK=1 (#CHKXY), so
     `(flags>>17)&0xFF` is confirmed (SPANIM's XY anim-active bit 0x20000 = bit 17 → SPCHK bit 0). The
-    BGCHK low-byte XY bit RESOLVED 2026-06-24 (M7-T2 run 35, bgstartstop_rt.tsv): a running XY BGANIM
-    gives BGCHK=1 (#CHKXY, raw `1<<channel`), 0 under BGSTOP, 1 under BGSTART. Z/R/S/C/V bits still pending.
+    BGCHK channel bits FULLY RESOLVED 2026-06-24 (M7-T2 run 35 XY + run 53 all six, bganim.tsv): a
+    running BGANIM sets a COMPACTED bit (XY=1, Z=2, R=4, S=8, C=16, V=32 — NOT raw `1<<channel`; the
+    run-35 raw-extrapolation was wrong), 0 under BGSTOP, restored under BGSTART.
   - Sprite SPVAR out-of-range variable number (outside 0–7): does it error (which errnum) or
     wrap/no-op? No visible guard at the SPVAR store site (BGVAR DOES guard 0–7).
   - SPHITINFO 3-variable OUT form (TM,X1,Y1) — accepted by the handler, undocumented; confirm legal + values.
@@ -1310,11 +1314,11 @@ the conformance gate; the following runtime OUTPUTS need the BG framebuffer/tran
 - **BGANIM interpolation output** — the exact per-frame hold/interpolate values written back
   to a layer's scroll/Z/rot/scale/color/var channel (incl. rounding of the integer channels).
   Implemented via the shared `KeyframeAnim` engine; structural advance is unit-tested.
-- **BGANIM channel 2/3 (UV/I) errnum** — BG has no UV/definition-I channel; a numeric target
-  2/3 or string "UV"/"I" is currently rejected as Illegal function call (4). The real errnum
-  is unverified (the disassembled per-channel switch has no case for them).
-- **BGCHK mid-animation bit values** — which `#CHK*` bit is set while a given channel runs
-  (need a running BGANIM + the layer flags-word read).
+- ~~**BGANIM channel 2/3 (UV/I) errnum**~~ — RESOLVED 2026-06-24 (M7-T2 run 53): target 2/3 or
+  string "UV"/"I" -> errnum 4 (the per-channel switch cases 2/3 jump to the shared errnum-4 site
+  @0x164fc8). sb-core's existing errnum-4 rejection is correct. Frozen in bganim.yaml.
+- ~~**BGCHK mid-animation bit values**~~ — RESOLVED 2026-06-24 (M7-T2 run 53): COMPACTED layout
+  XY=1/Z=2/R=4/S=8/C=16/V=32 (not raw `1<<channel`). Frozen in bganim/bgchk.yaml.
 - **BGCOORD ROTATION (BGROT) interaction** — RESOLVED for the non-rotation contract
   (hw_verified M7-T2 2026-06-24, bgcoord_rt.tsv → bgcoord.yaml: scroll subtracts in mode 0 /
   adds in the inverse, BGHOME is a pure translation, BGSCALE pivots at the origin, OUT values
