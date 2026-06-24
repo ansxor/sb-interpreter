@@ -14,7 +14,10 @@ semantics:
   - "Takes 0 or 1 argument and returns no value; requesting a return value (used as a function) raises errnum 4 (Illegal function call) — return-count guard ldr [r0,#0xc] cmp #0 / bne @0x1552e4..@0x1552ec; an argument count other than 0 or 1 also raises errnum 4 (cmp #0 / cmp #1 @0x1552f4 else mov r0,#0x4 @0x155310)."
   - "With no argument, the whole page is filled with black (color 0) — the no-arg path passes color 0 (mov r1,#0) to the fill helper bl 0x18ffcc @0x155318."
   - "With one argument, the page is filled with that ARGB color code (the popped 32-bit value [sp] is passed straight to the fill helper @0x155358); the color is NOT range-checked — it is a full 32-bit ARGB value (8 bits each for A,R,G,B), where A=255 is opaque and any other A is transparent (see GCOLOR)."
-  - "Clears only the graphic page selected by GPAGE for manipulation; the console screen (CLS) and other GRP pages are unaffected — graphic and console screens are managed separately."
+  - "Clears only the graphic page selected by GPAGE for manipulation; the console screen (CLS) and other GRP pages are unaffected — graphic and console screens are managed separately. hw_verified: drawing on GRP0, then GPAGE 0,1 / GCLS RGB(0,0,255) / GPAGE 0,0 leaves GRP0's pixel intact (GSPOIT(5,5) still red) while page 1 holds the fill — only the manip page is touched."
+  - "The fill covers the ENTIRE manipulation page (the full 512×512 GRP page, not just the 400×240 visible area): after GCLS RGB(255,0,0), GSPOIT reads the fill color at (0,0), the visible corner (399,239), AND the far page edge (511,511). hw_verified via GSPOIT read-back."
+  - "The fill color is the 32-bit ARGB code converted to the framebuffer's RGBA5551 (top 5 bits of each of R,G,B; 1 alpha bit) by the fill helper @0x18ffcc — IDENTICAL to GPSET/GFILL/GCIRCLE/GPAINT. The 8→5 truncation drops the low 3 bits of each channel (RGB(255,255,255)→GSPOIT -460552 / 0xFFF8F8F8, RGB(0,255,0)→-16713728 / 0xFF00F800), and the alpha bit is set ONLY when the input alpha byte is exactly 255: opaque RGB(0,0,0)=&HFF000000 reads back -16777216 (0xFF000000, alpha set), whereas a non-opaque &H80FF0000 (A=128) reads back 16252928 (0x00F80000, alpha stripped to 0). hw_verified."
+  - "The no-argument form passes literal color 0 (mov r1,#0 → transparent black, alpha bit 0), which is DISTINCT from GCLS RGB(0,0,0) (opaque black): no-arg GCLS over a filled region reads back 0, while GCLS RGB(0,0,0) reads back -16777216. hw_verified via GSPOIT read-back."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "more than one argument is given, or a return value is requested (used as a function)" }
@@ -23,13 +26,39 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/gcls.md (GCLS [Color code] — fills the whole graphic screen with black, or with an ARGB color code, e.g. GCLS RGB(32,32,32))" }
   - { type: disassembled, ref: "cia_3.6.0.lst GCLS handler @0x1552d4: return-count r1=[r0,#0xc] cmp #0, bne -> errnum 4 (mov r0,#0x4 @0x155310); argcount r1=[r0,#0x4] cmp #0 beq no-arg @0x155318 (mov r1,#0 black + bl 0x18ffcc fill), cmp #1 beq 1-arg @0x155330 (pop color -> [sp], bl 0x18ffcc @0x155360), else errnum 4 @0x155304; no range check on the color value." }
   - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GCLS: fills the active graphic page (3.5.0 structural cross-check only); sbsave corpus: GCLS #NAME / GCLS &Hxxxxxxxx / GCLS var color operands are common (legal integer colors)." }
+  - { type: disassembled, ref: "cia_3.6.0.lst GCLS fill helper FUN_0018ffcc (bl 0x18ffcc @0x155318/@0x155360): builds RGBA5551 from the ARGB8888 color in r1 — and r3,#0x3e,r1 lsr#0x2 (G low), and r12,#0x7c0,r1 lsr#0x5, and r2,#0xf800,r1 lsr#0x8 (R), orr-combined @0x18fffc; alpha test mov r0,#0xff / cmp r0,r1,lsr#0x18 / orreq r0,r0,#0x1 @0x190000 sets the 1 alpha bit ONLY when the input alpha byte == 0xff; then a clipped span-fill loop (bl 0x1d670c) writes that 16-bit value across the page. IDENTICAL conversion to the GPSET/GFILL builders." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7a): A=GCLS() (used as a function) -> errnum 4, errline 1; GCLS 0,0 (2 args) -> errnum 4, errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 46, harness/harvest/out/gcls.tsv): fill side-effects via GSPOIT read-back (progstr, ACLS-cleared). GCLS RGB(255,0,0) fills the whole page -> GSPOIT(0,0)=(399,239)=(511,511)=-524288; no-arg GCLS over a GFILL region -> 0 (transparent black); GCLS RGB(0,0,255) overwrites a prior pixel + blanks alike -> -16776968; RGBA5551 trunc RGB(255,255,255)->-460552, RGB(0,255,0)->-16713728; opaque RGB(0,0,0)->-16777216 vs non-opaque &H80FF0000->16252928 (alpha bit only when A==255); GPAGE-isolated GCLS leaves the other page intact (GSPOIT(5,5)=-524288) while the cleared page holds the fill (-16776968). 9/9 confirmed, 0 mismatch." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # error/argument-count expects are hw_verified (sb-oracle 2026-06-22 s_t7a); fill side-effects need the framebuffer oracle.
+  # error/argument-count expects hw_verified (sb-oracle 2026-06-22 s_t7a); fill pixel side-effects
+  # hw_verified via GSPOIT read-back (M7-T2 run 46, harness/harvest/out/gcls.tsv).
+  # red=-524288, white=-460552, blue=-16776968, green=-16713728 (RGBA5551 8->5, identical to
+  # GPSET/GFILL/GSPOIT). Each side-effect case ACLS-clears first (matches the oracle harvest;
+  # harmless on sb-core's already-clean page).
   - { name: clear_black_ok, code: "GCLS", expect: { stdout: "" } }
   - { name: clear_color_ok, code: "GCLS RGB(32,32,32)", expect: { stdout: "" } }
   - { name: as_function_errors, code: "A=GCLS()", expect: { error: { errnum: 4 } } }
   - { name: too_many_args_errors, code: "GCLS 0,0", expect: { error: { errnum: 4 } } }
+  # --- GCLS color fills the WHOLE manipulation page (corners + far page edge 511,511) ---
+  - { name: fill_whole_origin, code: "ACLS:GCLS RGB(255,0,0):PRINT GSPOIT(0,0)", expect: { stdout: "-524288" } }
+  - { name: fill_whole_visible_corner, code: "ACLS:GCLS RGB(255,0,0):PRINT GSPOIT(399,239)", expect: { stdout: "-524288" } }
+  - { name: fill_whole_page_edge, code: "ACLS:GCLS RGB(255,0,0):PRINT GSPOIT(511,511)", expect: { stdout: "-524288" } }
+  # --- no-arg GCLS fills BLACK 0 (transparent black, A=0) -> clears prior drawing ---
+  - { name: noarg_clears_interior, code: "ACLS:GFILL 10,10,30,30,RGB(255,0,0):GCLS:PRINT GSPOIT(20,20)", expect: { stdout: "0" } }
+  - { name: noarg_clears_edge, code: "ACLS:GFILL 10,10,30,30,RGB(255,0,0):GCLS:PRINT GSPOIT(10,10)", expect: { stdout: "0" } }
+  # --- GCLS color overwrites whatever was drawn (a prior pixel + a blank pixel both take the fill) ---
+  - { name: color_overwrites_drawn, code: "ACLS:GPSET 100,100,RGB(255,0,0):GCLS RGB(0,0,255):PRINT GSPOIT(100,100)", expect: { stdout: "-16776968" } }
+  - { name: color_overwrites_blank, code: "ACLS:GPSET 100,100,RGB(255,0,0):GCLS RGB(0,0,255):PRINT GSPOIT(0,0)", expect: { stdout: "-16776968" } }
+  # --- RGBA5551 truncation round-trip: white + a fresh green ---
+  - { name: fill_white_trunc, code: "ACLS:GCLS RGB(255,255,255):PRINT GSPOIT(50,50)", expect: { stdout: "-460552" } }
+  - { name: fill_green_trunc, code: "ACLS:GCLS RGB(0,255,0):PRINT GSPOIT(50,50)", expect: { stdout: "-16713728" } }
+  # --- OPAQUE black RGB(0,0,0)=&HFF000000 (A=255) -> alpha bit set, reads -16777216 (NOT the no-arg 0) ---
+  - { name: opaque_black, code: "ACLS:GCLS RGB(0,0,0):PRINT GSPOIT(50,50)", expect: { stdout: "-16777216" } }
+  # --- alpha rule: A != 255 -> RGBA5551 alpha bit 0 (transparent). &H80FF0000 (A=128, red) reads with A=0 ---
+  - { name: nonopaque_alpha_stripped, code: "ACLS:GCLS &H80FF0000:PRINT GSPOIT(50,50)", expect: { stdout: "16252928" } }
+  # --- GCLS clears ONLY the manipulation page: fill page 1, page 0's prior pixel survives ---
+  - { name: manip_only_pg0_preserved, code: "ACLS:GPSET 5,5,RGB(255,0,0):GPAGE 0,1:GCLS RGB(0,0,255):GPAGE 0,0:PRINT GSPOIT(5,5)", expect: { stdout: "-524288" } }
+  - { name: manip_other_page_filled, code: "ACLS:GPAGE 0,1:GCLS RGB(0,0,255):PRINT GSPOIT(100,100)", expect: { stdout: "-16776968" } }
