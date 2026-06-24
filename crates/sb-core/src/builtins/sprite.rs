@@ -750,6 +750,125 @@ pub fn sphome(
     }
 }
 
+/// `SPCHR` — set or read an EXISTING sprite's character (image) definition. The form family is
+/// chosen first by the return count (cia_3.6.0.lst handler @0x13ee4c: `r7=[r0,#0xc]` return
+/// count, `r6=[r0,#0x4]` argcount):
+///
+/// - **SET** (`ret_count == 0`, argcount >= 2 else errnum 4):
+///   - 1 param after mgmt → **form 1** (template): re-image from `SPDEF` template `defn`
+///     (0..4095 else errnum 10) — copies U,V,W,H, origin→home, defno, and attribute bits 1-5,
+///     preserving display + transform.
+///   - 2..5 params → **form 2** (direct image): `U,[V],[W],[H],[attr]`. W,H default 16 when
+///     absent; the attribute applies bits 1-5 only (display preserved); `defno` becomes 0. Any
+///     param may be left EMPTY (a bare comma → `Value::Void`) to keep the sprite's current value
+///     rather than the default. `U+W` / `V+H` over 512 raises errnum 10.
+/// - **GET** (`ret_count >= 1`, argcount == 1 else errnum 4): selected by the OUT count —
+///   1 → DEFNO, 2 → U,V, 3 → U,V,Attribute, 4 → U,V,W,H, 5 → U,V,W,H,Attribute; 6+ → errnum 4.
+///   The 3-return form's third value is the ATTRIBUTE, NOT the width (`and r1,r0,#0x3f`
+///   @0x13f774). W,H round-trip the source rectangle verbatim regardless of rotation (the SET
+///   and GET rotation-swaps cancel — hw_verified: rot90/180/270 of W=32,H=8 all read back 32,8).
+///
+/// The sprite must exist (errnum 4 "used before SPSET"); mgmt ∉ 0..511 is errnum 10.
+/// hw_verified (sb-oracle 2026-06-24, harness/harvest/out/spchr_rt*.tsv).
+pub fn spchr(
+    sp: &mut SpriteState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    // Argcount is validated by family first (matching the handler's `cmp r6` guards), before the
+    // management number is range-checked.
+    if ret_count == 0 {
+        if args.len() < 2 {
+            return Err(illegal());
+        }
+    } else if args.len() != 1 {
+        return Err(illegal());
+    }
+    let slot = mgmt(&args[0])?;
+    if !sp.is_used(slot) {
+        return Err(illegal());
+    }
+    if ret_count == 0 {
+        let rest = &args[1..];
+        match rest.len() {
+            // Form 1 — re-image from an SPDEF template.
+            1 => {
+                let d = defn(&rest[0])?;
+                sp.chr_template(slot, d);
+            }
+            // Form 2 — direct image (2..5 params: U,[V],[W],[H],[attr]).
+            2..=5 => {
+                let cur = &sp.sprites[slot];
+                // Resolve each field: an empty (`Void`) param keeps the current value; W,H
+                // default to 16 when the param is ABSENT (a shorter argcount).
+                let u = keep_or(&rest[0], cur.u)?;
+                let v = keep_or(&rest[1], cur.v)?;
+                let w = keep_default(rest.get(2), cur.w, SPRITE_DEFAULT_WH)?;
+                let h = keep_default(rest.get(3), cur.h, SPRITE_DEFAULT_WH)?;
+                rect(u, v, w, h)?;
+                // The attribute (bits 1-5 only; display preserved): absent → cleared to the
+                // default (bits 1-5 = 0), empty (`Void`) → keep current, else apply.
+                let s = &mut sp.sprites[slot];
+                s.u = u;
+                s.v = v;
+                s.w = w;
+                s.h = h;
+                // A direct-image SPCHR drops the template association (DEFNO reads back 0).
+                s.defno = 0;
+                match rest.get(4) {
+                    None => s.set_attr_keep_display(0),
+                    Some(Value::Void) => {}
+                    Some(a) => s.set_attr_keep_display(a.to_int()?),
+                }
+            }
+            _ => return Err(illegal()),
+        }
+        Ok(vec![])
+    } else {
+        let s = &sp.sprites[slot];
+        let out = match ret_count {
+            1 => vec![Value::Int(s.defno)],
+            2 => vec![Value::Int(s.u), Value::Int(s.v)],
+            3 => vec![Value::Int(s.u), Value::Int(s.v), Value::Int(s.get_attr())],
+            4 => vec![
+                Value::Int(s.u),
+                Value::Int(s.v),
+                Value::Int(s.w),
+                Value::Int(s.h),
+            ],
+            5 => vec![
+                Value::Int(s.u),
+                Value::Int(s.v),
+                Value::Int(s.w),
+                Value::Int(s.h),
+                Value::Int(s.get_attr()),
+            ],
+            _ => return Err(illegal()),
+        };
+        Ok(out)
+    }
+}
+
+/// Resolve a present SET parameter that may be left empty: an empty (`Value::Void`) arg keeps
+/// the sprite's `current` value; otherwise it is read as an integer (a non-numeric → errnum 8).
+fn keep_or(v: &Value, current: i32) -> Result<i32, RuntimeError> {
+    if matches!(v, Value::Void) {
+        Ok(current)
+    } else {
+        v.to_int()
+    }
+}
+
+/// Resolve an OPTIONAL SET parameter: ABSENT (a shorter argcount) → `default`; present but
+/// EMPTY (`Value::Void`) → keep the `current` value; present → read as an integer.
+fn keep_default(v: Option<&Value>, current: i32, default: i32) -> Result<i32, RuntimeError> {
+    match v {
+        None => Ok(default),
+        Some(Value::Void) => Ok(current),
+        Some(x) => x.to_int(),
+    }
+}
+
 /// `SPPAGE` — select (SET) or read (GET) the global graphic page the sprite system renders
 /// onto. Two forms chosen by the return count (cia_3.6.0.lst handler @0x142ad0):
 ///
@@ -1254,6 +1373,60 @@ mod tests {
         spofs(&mut sp, &[n(0.0), n(0.0), n(0.0), n(500.0)], 0).unwrap();
         spofs(&mut sp, &[n(0.0), n(9.0), n(9.0)], 0).unwrap();
         assert_eq!(spofs(&mut sp, &[n(0.0)], 3).unwrap()[2], n(500.0));
+    }
+
+    #[test]
+    fn spchr_value_contract() {
+        // The framebuffer-free SPCHR value contract. hw_verified sb-oracle 2026-06-24
+        // (harness/harvest/out/spchr_rt*.tsv).
+        let i = Value::Int;
+        let mut sp = SpriteState::new();
+        spset0(&mut sp, 0);
+        // Direct set + GET U,V,W,H,A round-trip.
+        spchr(&mut sp, &[i(0), i(64), i(64), i(32), i(32), i(1)], 0).unwrap();
+        let g5 = spchr(&mut sp, &[i(0)], 5).unwrap();
+        assert_eq!(g5, vec![i(64), i(64), i(32), i(32), i(1)]);
+        // The 3-return form's THIRD value is the ATTRIBUTE, not the width.
+        assert_eq!(
+            spchr(&mut sp, &[i(0)], 3).unwrap(),
+            vec![i(64), i(64), i(1)]
+        );
+        // A direct-image SPCHR clears DEFNO to 0; a template SPCHR sets it to the template #.
+        assert_eq!(spchr(&mut sp, &[i(0)], 1).unwrap(), vec![i(0)]);
+        spchr(&mut sp, &[i(0), i(42)], 0).unwrap();
+        assert_eq!(spchr(&mut sp, &[i(0)], 1).unwrap(), vec![i(42)]);
+        // Attribute SET applies bits 1-5 only; display bit b00 is preserved (stays shown).
+        spchr(&mut sp, &[i(0), i(64), i(64), i(16), i(16), i(0x20)], 0).unwrap();
+        spchr(
+            &mut sp,
+            &[
+                i(0),
+                Value::Void,
+                Value::Void,
+                Value::Void,
+                Value::Void,
+                i(0x08),
+            ],
+            0,
+        )
+        .unwrap();
+        assert_eq!(spchr(&mut sp, &[i(0)], 5).unwrap()[4], i(9)); // 8 | preserved display 1
+                                                                  // Skip-empty keeps current U,V; absent W,H default to 16.
+        spchr(&mut sp, &[i(0), i(64), i(64), i(32), i(32), i(1)], 0).unwrap();
+        spchr(&mut sp, &[i(0), Value::Void, Value::Void, i(8), i(8)], 0).unwrap();
+        assert_eq!(
+            spchr(&mut sp, &[i(0)], 4).unwrap(),
+            vec![i(64), i(64), i(8), i(8)]
+        );
+        // Errors: U+W over 512 → errnum 10; a 6-OUT GET → errnum 4; used-before-SPSET → 4.
+        assert_eq!(
+            spchr(&mut sp, &[i(0), i(500), i(0), i(20), i(16), i(1)], 0)
+                .unwrap_err()
+                .errnum,
+            10
+        );
+        assert_eq!(spchr(&mut sp, &[i(0)], 6).unwrap_err().errnum, 4);
+        assert_eq!(spchr(&mut sp, &[i(5)], 1).unwrap_err().errnum, 4);
     }
 
     #[test]

@@ -246,6 +246,31 @@ impl Sprite {
         self.additive = attr & 0x20 != 0;
     }
 
+    /// Apply an `SPCHR` attribute argument: the rotation/flip/blend bits (b01-b05) ONLY,
+    /// **leaving the display bit (b00) untouched**. Unlike `SPSET`, the `SPCHR` attribute does
+    /// NOT control whether the sprite is shown — the disassembled SET path masks the existing
+    /// flags with `bic r1,r1,#0x3e` (clear bits 1-5) then ORs the new bits, so b00 is preserved
+    /// (cia_3.6.0.lst SPCHR @0x13f004-0x13f00c). The live display state is changed only by
+    /// `SPSHOW`/`SPHIDE`. hw_verified (sb-oracle 2026-06-24): `SPCHR 0,...,&H08` reads back A=9
+    /// (= 8 | the preserved display bit), `...,0` reads back A=1, `...,&H3F` reads back 63.
+    pub fn set_attr_keep_display(&mut self, attr: i32) {
+        self.rot90 = ((attr >> 1) & 0x03) as u8;
+        self.flip_h = attr & 0x08 != 0;
+        self.flip_v = attr & 0x10 != 0;
+        self.additive = attr & 0x20 != 0;
+    }
+
+    /// Recompose the attribute bitfield (b00-b05) from the decoded flags — what the `SPCHR ...
+    /// OUT ...,A` GET form returns: `flags & 0x3F`, so the b00 it reports is the LIVE display
+    /// state (disassembled GET `ldrb r0,[r4,#0x4]; and r1,r0,#0x3f` @0x13f774).
+    pub fn get_attr(&self) -> i32 {
+        (self.display as i32)
+            | ((self.rot90 as i32) << 1)
+            | ((self.flip_h as i32) << 3)
+            | ((self.flip_v as i32) << 4)
+            | ((self.additive as i32) << 5)
+    }
+
     /// Read an `SPANIM` channel's current value(s) as floats (the relative/interpolation
     /// base). Channels: 0 XY, 1 Z, 2 UV, 3 I (definition), 4 R, 5 S, 6 C, 7 V.
     fn read_channel(&self, channel: usize) -> Vec<f64> {
@@ -381,6 +406,30 @@ impl SpriteState {
             t.attr,
             defno,
         );
+    }
+
+    /// `SPCHR mgmt, defn` (form 1) — re-image an EXISTING sprite from an `SPDEF` template
+    /// without re-creating it. Copies the template's source rectangle (U,V,W,H), origin →
+    /// home, and definition number, and applies the template's attribute bits 1-5 (rotation/
+    /// flip/blend), **preserving** the sprite's current display state and ALL of its transform
+    /// (position, scale, rotation, vars, color). Unlike [`set_template`] (which resets the slot
+    /// via `create`), this only touches the image-related fields — the disassembled form-1 path
+    /// writes home [0x18], the source rect (via FUN_00200650), defno, the template flag 0x40 and
+    /// the attribute, and leaves the transform alone (cia_3.6.0.lst SPCHR @0x13ef64). The caller
+    /// guarantees the slot is active and `defno` is in 0..4095. hw_verified (sb-oracle
+    /// 2026-06-24): template `SPDEF 100,40,48,24,32,7,9,&H21` → after `SPCHR 0,100` reads back
+    /// U,V,W,H=40,48,24,32, DEFNO=100, home 7,9, A=33; a prior `SPOFS 0,50,60` survives (50,60).
+    pub fn chr_template(&mut self, mgmt: usize, defno: i32) {
+        let t = self.spdef[defno as usize];
+        let s = &mut self.sprites[mgmt];
+        s.u = t.u;
+        s.v = t.v;
+        s.w = t.w;
+        s.h = t.h;
+        s.home_x = t.origin_x as f64;
+        s.home_y = t.origin_y as f64;
+        s.defno = defno;
+        s.set_attr_keep_display(t.attr);
     }
 
     /// Find a free slot scanning the inclusive `[start, end]` range low-to-high, returning

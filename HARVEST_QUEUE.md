@@ -490,9 +490,14 @@ oracle to confirm exact output and promote to `hw_verified`.
   SPSCALE 0,2,0.5 OUT->2,0.5; SPHOME 0,16,16 OUT->16,16; SPCHR 0,64,64,16,16,1 OUT U,V->64,64 and full->64,64,32,32,1.
   KEY FINDING: SPROT does NOT wrap/normalize — SPROT 0,-25->-25, SPROT 0,450->450, SPROT 0,11.2->11 (truncated, verbatim).
   Spec semantics corrected; raised those sources to hw_verified.
-- [ ] S-T8b remaining oracle-pending (need framebuffer oracle O-T6 or extra cases): SPOFS Z-depth round-trip
-  (3-var OUT X,Y,Z value), SPCHR U+W/V+H>512 errnum (assumed 10, matching SPSET), SPCHR form-1 template round-trip
-  (SPCHR mgmt,defn then OUT U,V/DEFNO — needs an SPDEF setup), and the actual on-screen transform (visible render).
+- [x] SPCHR full VALUE contract HARVESTED + IMPLEMENTED (2026-06-24, M7-T2 run 27): U+W/V+H>512 -> errnum 10
+  (was assumed); form-1 template round-trip (copies source rect + origin->home + attr bits1-5 + defno, preserves
+  position); GET DEFNO (template#/SPSET defn/0-after-direct); 3-return form = U,V,ATTRIBUTE not width; attr SET
+  preserves display bit b00; W,H round-trip verbatim through rotation; skip-empty keeps current / absent defaults.
+  SPCHR was UNimplemented in sb-core — now implemented (builtins/sprite.rs::spchr + sb-render chr_template/
+  set_attr_keep_display/get_attr), in IN_SCOPE_SPRITES, spchr.yaml -> hw_verified. TSVs spchr_rt*.tsv.
+- [ ] S-T8b remaining oracle-pending (need framebuffer oracle O-T6): SPOFS Z-depth round-trip
+  (3-var OUT X,Y,Z value) and the actual on-screen transform (visible render).
 - [ ] S-T8c remaining oracle-pending (needs framebuffer/composite oracle O-T6, not a VALUE harvest): the actual
   SPANIM on-screen animation output — keyframe interpolation values, negative-time linear-interp curve, the
   per-frame timing ("starts on the frame following SPANIM"), relative ("+"/+8) base accumulation, and Loop 0

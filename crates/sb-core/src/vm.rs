@@ -2480,6 +2480,7 @@ impl Vm {
             "SPSCALE" => spr::spscale(&mut self.sprites, &args, ret_count),
             "SPROT" => spr::sprot(&mut self.sprites, &args, ret_count),
             "SPHOME" => spr::sphome(&mut self.sprites, &args, ret_count),
+            "SPCHR" => spr::spchr(&mut self.sprites, &args, ret_count),
             "SPPAGE" => spr::sppage(&mut self.sprites, &args, ret_count),
             "SPCOL" => spr::spcol(&mut self.sprites, &args, ret_count),
             "SPCOLVEC" => spr::spcolvec(&mut self.sprites, &args, ret_count),
