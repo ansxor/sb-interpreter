@@ -24,7 +24,9 @@
 //! - **Type mismatch** (8): a `BGFILL`/`BGPUT` screen-data argument that is neither a number
 //!   nor a string, or a non-numeric `BGCOLOR` color.
 //! - **Out of range** (10): a layer ∉ 0..3, a `BGSCREEN` width/height < 1 or area > 16383, a
-//!   `BGPAGE` page ∉ 0..5, or a `BGPUT`/`BGGET` (char-coord) cell off the map.
+//!   `BGPAGE` page ∉ 0..5, a `BGPUT`/`BGGET` (char-coord) cell off the map, or a `BGFILL`
+//!   numeric screen-data value ∉ 0..65535 (BGFILL range-checks the value; BGPUT masks it,
+//!   and BGFILL clamps off-map *coords* rather than erroring).
 //! - **String too long** (41): a `BGFILL`/`BGPUT` screen-data string that is too long to
 //!   parse.
 
@@ -48,9 +50,10 @@ fn layer(v: &Value) -> Result<usize, RuntimeError> {
     }
 }
 
-/// Resolve a `BGPUT`/`BGFILL` screen-data operand to a 16-bit cell value. A number uses its
-/// low 16 bits; a string is parsed as a (≤4-digit) hexadecimal value `"0000".."FFFF"`. An
-/// over-long string raises errnum 41; a non-number / non-string raises errnum 8. The exact
+/// Resolve a `BGPUT` screen-data operand to a 16-bit cell value. A number uses its low 16
+/// bits (so a value above 16 bits is stored masked, e.g. `&H1FFFF`→`65535` — hw_verified
+/// BGGET 2026-06-24); a string is parsed as a (≤4-digit) hexadecimal value `"0000".."FFFF"`.
+/// An over-long string raises errnum 41; a non-number / non-string raises errnum 8. The exact
 /// behavior for malformed hex is oracle-pending (here it parses leniently to 0 — see
 /// `HARVEST_QUEUE.md`).
 fn screen_data(v: &Value) -> Result<u16, RuntimeError> {
@@ -64,6 +67,26 @@ fn screen_data(v: &Value) -> Result<u16, RuntimeError> {
             let parsed = i64::from_str_radix(text.trim(), 16).unwrap_or(0);
             Ok((parsed & 0xFFFF) as u16)
         }
+        _ => Err(type_mismatch()),
+    }
+}
+
+/// Resolve a `BGFILL` screen-data operand to a 16-bit cell value. UNLIKE `BGPUT`, a NUMERIC
+/// value is range-checked to `0..=65535` and raises errnum 10 (Out of range) outside it —
+/// including any negative value (handler @0x165504 `cmp r0,#0x10000` / `bcc`, else
+/// `mov r0,#0xa`). The string-hex (errnum 41 if over-long) and type-mismatch (errnum 8) paths
+/// match `BGPUT`. hw_verified 2026-06-24 (M7-T2 `bgfill_rt.tsv`: `65536`/`-1`→errnum 10,
+/// `65535` ok, array→errnum 8).
+fn screen_data_fill(v: &Value) -> Result<u16, RuntimeError> {
+    match v {
+        Value::Int(_) | Value::Real(_) => {
+            let n = v.to_int()?;
+            if !(0..=0xFFFF).contains(&n) {
+                return Err(out_of_range());
+            }
+            Ok(n as u16)
+        }
+        Value::Str(_) => screen_data(v),
         _ => Err(type_mismatch()),
     }
 }
@@ -189,9 +212,13 @@ pub fn bgget(bg: &BgState, args: &[Value], ret_count: usize) -> Result<Vec<Value
 }
 
 /// `BGFILL layer, startX, startY, endX, endY, screenData` — fill a rectangle of cells (6
-/// args, no return value). The corners are normalized + clamped to the map; the screen data
-/// may be a number or a 4-digit hex string (errnum 41 if too long, 8 if a wrong type). A
-/// return value or a bad argument count is errnum 4; the layer must be in 0..3 (errnum 10).
+/// args, no return value). The corners are normalized (reversed corners swapped) + clamped to
+/// the map and the coordinates are NEVER range-checked (a fully-off-map rect writes nothing) —
+/// hw_verified 2026-06-24 (M7-T2 `bgfill_rt.tsv`). The screen data may be a number or a 4-digit
+/// hex string (errnum 41 if too long, 8 if a wrong type); a NUMERIC value is range-checked to
+/// `0..=65535` (errnum 10 outside, including negatives — `screen_data_fill`, unlike `BGPUT`
+/// which masks). A return value or a bad argument count is errnum 4; the layer must be in
+/// 0..3 (errnum 10).
 pub fn bgfill(
     bg: &mut BgState,
     args: &[Value],
@@ -206,7 +233,7 @@ pub fn bgfill(
     };
     let layer = layer(l)?;
     let (sx, sy, ex, ey) = (sx.to_int()?, sy.to_int()?, ex.to_int()?, ey.to_int()?);
-    let data = screen_data(data)?;
+    let data = screen_data_fill(data)?;
     bg.fill(layer, sx, sy, ex, ey, data);
     Ok(vec![])
 }
@@ -920,6 +947,89 @@ mod tests {
             .unwrap_err()
             .errnum,
             10
+        );
+    }
+
+    #[test]
+    fn bgfill_value_contract() {
+        // hw_verified 2026-06-24 (M7-T2 bgfill_rt.tsv): inclusive rect, reversed-corner
+        // normalization, coord clamp with NO errnum, and the numeric-data 0..65535 range
+        // guard (errnum 10) that distinguishes BGFILL from BGPUT (which masks).
+        let mut bg = BgState::new();
+        bgscreen(&mut bg, &[int(0), int(32), int(32)], 0).unwrap();
+        let get = |bg: &BgState, x: i32, y: i32| bgget(bg, &[int(0), int(x), int(y)], 1).unwrap();
+
+        // Reversed corners fill the same inclusive rect; cells just outside stay 0.
+        bgfill(
+            &mut bg,
+            &[int(0), int(10), int(10), int(5), int(5), int(777)],
+            0,
+        )
+        .unwrap();
+        assert_eq!(get(&bg, 7, 7), vec![int(777)]);
+        assert_eq!(get(&bg, 5, 5), vec![int(777)]);
+        assert_eq!(get(&bg, 10, 10), vec![int(777)]);
+        assert_eq!(get(&bg, 4, 4), vec![int(0)]);
+        assert_eq!(get(&bg, 11, 11), vec![int(0)]);
+
+        // High coords clamp to size-1 (40→31), no errnum.
+        bgfill(
+            &mut bg,
+            &[int(0), int(28), int(28), int(40), int(40), int(55)],
+            0,
+        )
+        .unwrap();
+        assert_eq!(get(&bg, 31, 31), vec![int(55)]);
+        // Negative coords clamp to 0.
+        bgfill(
+            &mut bg,
+            &[int(0), int(-5), int(-5), int(2), int(2), int(66)],
+            0,
+        )
+        .unwrap();
+        assert_eq!(get(&bg, 0, 0), vec![int(66)]);
+        assert_eq!(get(&bg, 2, 2), vec![int(66)]);
+        assert_eq!(get(&bg, 3, 3), vec![int(0)]);
+
+        // Numeric data is range-checked 0..=65535 (errnum 10) — negatives and ≥65536 both fire.
+        assert_eq!(get(&bg, 1, 1), vec![int(66)]); // (1,1) was inside the prior fill
+        bgfill(
+            &mut bg,
+            &[int(0), int(1), int(1), int(1), int(1), int(0xFFFF)],
+            0,
+        )
+        .unwrap();
+        assert_eq!(get(&bg, 1, 1), vec![int(0xFFFF)]);
+        assert_eq!(
+            bgfill(
+                &mut bg,
+                &[int(0), int(0), int(0), int(1), int(1), int(0x1_0000)],
+                0
+            )
+            .unwrap_err()
+            .errnum,
+            10
+        );
+        assert_eq!(
+            bgfill(
+                &mut bg,
+                &[int(0), int(0), int(0), int(1), int(1), int(-1)],
+                0
+            )
+            .unwrap_err()
+            .errnum,
+            10
+        );
+        // A wrong-typed data argument is errnum 8 (type mismatch).
+        assert_eq!(
+            bgfill(
+                &mut bg,
+                &[int(0), int(0), int(0), int(1), int(1), Value::Void],
+                0
+            )
+            .unwrap_err()
+            .errnum,
+            8
         );
     }
 

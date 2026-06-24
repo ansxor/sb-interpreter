@@ -18,15 +18,15 @@ summary: "Fills a rectangular region of one BG layer's tilemap with a single BG 
 semantics:
   - "Statement only with exactly 6 arguments: if a return value is requested (used as a function) or the argument count is not 6, the handler raises errnum 4 (Illegal function call) — argcount [r4,#0x4] cmp #0x6 with cmpeq return-count [r4,#0xc],#0, else mov r0,#0x4 @0x165350."
   - "LAYER must be in 0..3: the layer is evaluated and range-checked by the shared layer getter FUN_001e2504 (bl @0x165368); a value < 0 or >= the live BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560."
-  - "The four coordinates (startX, startY, endX, endY) are evaluated as Integers (getters @0x165378-0x1653f4). The fill rectangle is inclusive of both corners; the documented coordinate range is 0..(BGSCREEN size - 1) for each axis."
-  - "SCREEN DATA (6th argument) may be a number OR a string. If a string is supplied (type tag ldrb [r0,#0x2] != 0 @0x165434) it is parsed as a 4-digit hexadecimal value (\"0000\"-\"FFFF\") via the layer's string-to-data method (blx [r0,#0x50] @0x165468); a string that is too long raises errnum 41 (String too long) — cmp #0x2000 bls (ok) else mov r0,#0x29 @0x165484; a non-string/non-number type raises errnum 8 (Type mismatch) — mov r0,#0x8 @0x165498. The low 16 bits become the cell value written into every cell of the rectangle."
+  - "The four coordinates (startX, startY, endX, endY) are evaluated as Integers (getters @0x165378-0x1653f4) and are NOT range-checked: the fill helper (FUN_0015fcc0, bl @0x1654c8) NORMALIZES the corners (swaps so start<=end on each axis — `cmp r1,r3`/swap @0x15fcc4-0x15fcf4, `cmp r2,r12`/swap @0x15fcf8-0x15fd08) and CLAMPS the rectangle to [0, size-1] on each axis (movlt 0 @0x15fd2c/@0x15fd34, cpygt size-1 @0x15fd3c/@0x15fd48); a rectangle entirely off the map writes nothing (early-out @0x15fdb8). No errnum is raised for an out-of-range coordinate (the helper has no error-call site) — this differs from BGPUT, which range-checks X/Y to errnum 10. The fill is inclusive of both (normalized) corners. hw_verified 2026-06-24."
+  - "SCREEN DATA (6th argument) may be a number OR a string. A NUMERIC value is range-checked to 0..65535 (the numeric path @0x1654e4 evaluates the value to sp+0x2c, then cmp #0x10000 bcc = ok @0x165504-0x16550c, else mov r0,#0xa errnum 10 @0x165518): a value >= 65536 OR a negative value (unsigned-compared) raises errnum 10 (Out of range). This DIFFERS from BGPUT, whose numeric screen-data is stored masked to its low 16 bits. If a string is supplied (type tag ldrb [r0,#0x2] != 0 @0x165434) it is parsed as a 4-digit hexadecimal value (\"0000\"-\"FFFF\") via the layer's string-to-data method (blx [r0,#0x50] @0x165468); a string that is too long raises errnum 41 (String too long) — cmp #0x2000 bls (ok) else mov r0,#0x29 @0x165484; a non-string/non-number type raises errnum 8 (Type mismatch) — mov r0,#0x8 @0x165498. The (validated) 16-bit value is written verbatim into every cell of the rectangle (full char + rotation/flip attribute bits, hw_verified via BGGET read-back). hw_verified 2026-06-24."
   - "Screen-data bit layout is the same as BGPUT: bits b0-b11 = character number 0-4095 (display repeats with a cycle of 1024); rotation via #BGROT0/#BGROT90/#BGROT180/#BGROT270; horizontal flip #BGREVH; vertical flip #BGREVV. Character number 0 fills with empty/transparent cells."
   - "BGFILL only writes tilemap cells; it does not change the layer size (BGSCREEN), visibility, scroll or graphic page."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "used as a function (return requested) or the argument count is not 6" }
   - { errnum: 8, name: "Type mismatch", when: "the screen-data argument is neither a number nor a string" }
-  - { errnum: 10, name: "Out of range", when: "the layer is not in 0..3" }
+  - { errnum: 10, name: "Out of range", when: "the layer is not in 0..3, or a NUMERIC screen-data value is outside 0..65535 (negative or >= 65536). Out-of-range fill COORDINATES are NOT an error — they are clamped." }
   - { errnum: 41, name: "String too long", when: "the screen-data string argument is too long to parse" }
 
 sources:
@@ -36,12 +36,34 @@ sources:
   - { type: community, ref: "sbsave corpus: ~95 calls, all 6-arg. screenData is commonly a numeric variable/expression and also a STRING variable holding the 4-digit hex form (e.g. 'BGFILL 0,X+I*2,Y,X+I*2+1,Y+1,N$' in RRWECV3V/TXT/CYB_MANUAL, 'BGFILL 1,X,Y,X+2,Y+2,S$' in NDE453D3/TXT/UR_SHOGI_PRT), confirming the string path applies to runtime string values. No 7+-arg form. (oracle-pending: exact fill side effect, queued)" }
 
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9b): BGFILL 4,0,0,1,1,1 -> errnum 10 (layer out of range), errline 1. Valid BGSCREEN 0,32,32:BGFILL 0,0,0,19,15,1024 raises nothing." }
+  - { type: hw_verified, ref: "sb-oracle progcase/errcase 2026-06-24 (M7-T2 bgfill_rt.tsv): BGFILL writes the inclusive rectangle via BGGET read-back. Geometry: BGFILL 0,5,5,10,10,1024 -> cells (7,7)/(5,5)/(10,10)=1024, (4,5)/(5,4)/(11,10)/(10,11)/(0,0)=0; reversed corners BGFILL 0,10,10,5,5,777 -> same rect; single cell BGFILL 0,3,3,3,3,42 -> only (3,3). Coords clamp, NO errnum: BGFILL 0,28,28,40,40,55 on a 32x32 map -> (28,28)/(30,30)/(31,31)=55 (40 clamps to 31); BGFILL 0,-5,-5,2,2,66 -> (0,0)/(2,2)=66, (3,3)=0; fully off-map BGFILL 0,40,40,50,50,99 writes nothing (no error). Data: hex string \"C040\"=49216, &HFFFF round-trips 65535, 65535 ok. Numeric data range guard -> errnum 10 errline 1: 65536 and -1 both raise; type mismatch DIM Z[2]:BGFILL 0,0,0,1,1,Z -> errnum 8 errline 1." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Tilemap fill side effects need the BG framebuffer oracle (O-T6, queued); error expects below
-  # are hw_verified (sb-oracle 2026-06-22 s_t9b).
+  # Error expects hw_verified (sb-oracle 2026-06-22 s_t9b); fill VALUE contract hw_verified
+  # via BGGET read-back (sb-oracle 2026-06-24, M7-T2; harness/harvest/out/bgfill_rt.tsv).
   - { name: fill_ok_num, code: "BGSCREEN 0,32,32\nBGFILL 0,0,0,19,15,1024", expect: { stdout: "" } }
   - { name: fill_ok_hexstr, code: "BGSCREEN 0,32,32\nBGFILL 0,5,5,10,10,\"C040\"", expect: { stdout: "" } }
   - { name: layer_out_of_range, code: "BGFILL 4,0,0,1,1,1", expect: { error: { errnum: 10 } } }
+  # Inclusive rectangle; cells just outside stay 0 (center, start corner, just-past-end).
+  - { name: fill_inclusive, code: "BGSCREEN 0,32,32\nBGFILL 0,5,5,10,10,1024\nPRINT BGGET(0,7,7);\",\";BGGET(0,5,5);\",\";BGGET(0,11,10)", expect: { stdout: "1024,1024,0" } }
+  # Reversed corners fill the same rect.
+  - { name: fill_reversed_corners, code: "BGSCREEN 0,32,32\nBGFILL 0,10,10,5,5,777\nPRINT BGGET(0,7,7);\",\";BGGET(0,10,10);\",\";BGGET(0,4,4)", expect: { stdout: "777,777,0" } }
+  # Single-cell fill writes exactly one cell.
+  - { name: fill_single_cell, code: "BGSCREEN 0,32,32\nBGFILL 0,3,3,3,3,42\nPRINT BGGET(0,3,3);\",\";BGGET(0,2,3)", expect: { stdout: "42,0" } }
+  # Out-of-range coords clamp to the map (40 -> size-1=31), NO errnum.
+  - { name: fill_hi_coord_clamp, code: "BGSCREEN 0,32,32\nBGFILL 0,28,28,40,40,55\nPRINT BGGET(0,31,31);\",\";BGGET(0,30,30)", expect: { stdout: "55,55" } }
+  # Negative coords clamp to 0.
+  - { name: fill_neg_coord_clamp, code: "BGSCREEN 0,32,32\nBGFILL 0,-5,-5,2,2,66\nPRINT BGGET(0,0,0);\",\";BGGET(0,2,2);\",\";BGGET(0,3,3)", expect: { stdout: "66,66,0" } }
+  # A rectangle entirely off the map writes nothing and does not error.
+  - { name: fill_fully_oob, code: "BGSCREEN 0,32,32\nBGFILL 0,40,40,50,50,99\nPRINT BGGET(0,31,31);\",\";BGGET(0,0,0)", expect: { stdout: "0,0" } }
+  # Hex-string and full-16-bit data round-trip; numeric data 65535 is the inclusive max.
+  - { name: fill_hex_string, code: "BGSCREEN 0,32,32\nBGFILL 0,1,1,2,2,\"C040\"\nPRINT BGGET(0,1,1);\",\";BGGET(0,2,2)", expect: { stdout: "49216,49216" } }
+  - { name: fill_full16, code: "BGSCREEN 0,32,32\nBGFILL 0,0,0,1,1,&HFFFF\nPRINT BGGET(0,0,0)", expect: { stdout: "65535" } }
+  - { name: fill_data_max_ok, code: "BGSCREEN 0,32,32\nBGFILL 0,0,0,0,0,65535\nPRINT BGGET(0,0,0)", expect: { stdout: "65535" } }
+  # Numeric screen-data is range-checked 0..65535 -> errnum 10 (BGFILL-specific; BGPUT masks).
+  - { name: data_too_big_err, code: "BGSCREEN 0,32,32\nBGFILL 0,0,0,1,1,65536", expect: { error: { errnum: 10 } } }
+  - { name: data_negative_err, code: "BGSCREEN 0,32,32\nBGFILL 0,0,0,1,1,-1", expect: { error: { errnum: 10 } } }
+  # A wrong-typed screen-data argument is errnum 8.
+  - { name: data_type_mismatch, code: "DIM Z[2]\nBGFILL 0,0,0,1,1,Z", expect: { error: { errnum: 8 } } }

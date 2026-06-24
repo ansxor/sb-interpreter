@@ -28,10 +28,13 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   sb-render `cell_pixel` had wrapped via `rem_euclid` (wrong); now floors + returns 0 off-map.
   Also confirmed BGGET returns the FULL 16-bit packed screen-data (char + #BGROT*/#BGREV* attr
   bits) verbatim, no mod-1024 displayed-value collapse. Frozen in spec/tests via bgget.yaml.
-- [ ] M3-T4 (BGFILL out-of-bounds rectangle) · The handler shows no coordinate range guard
-  (only the layer check). assumption: the fill rectangle's corners are normalized (min/max)
-  and CLAMPED to the map bounds, so an OOB rectangle fills only its in-bounds intersection
-  (never errors, never panics). Confirm vs an errnum-10 / no-op / wrap behavior.
+- [x] M3-T4 (BGFILL out-of-bounds rectangle) · RESOLVED 2026-06-24 (M7-T2 run 32, hw_verified
+  via BGGET read-back). Corners ARE normalized (min/max — reversed start/end fill the same rect)
+  and CLAMPED to [0, size-1]; an OOB rectangle fills only its in-bounds intersection and a
+  fully-off-map rect writes nothing — NEVER errors on coords (no errnum-10, no wrap). NEW
+  finding: a NUMERIC screen-data value is range-checked to 0..65535 → errnum 10 (65536/-1
+  raise; differs from BGPUT which masks). Fixed sb-core (`screen_data_fill`) + froze 12 cases
+  in bgfill.yaml. TSV bgfill_rt.tsv.
 - [x] M3-T4 (BGOFS Z clamp) · RESOLVED 2026-06-24 (M7-T2 run 13, hw_verified). Z is NOT
   clamped — it is RANGE-CHECKED to -256..1024 inclusive and a value outside raises errnum 10
   (1025/-257/2000/-1000 -> errnum 10 errline 1; 1024/-256 stored verbatim). X,Y ARE stored
