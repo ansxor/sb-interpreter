@@ -577,8 +577,11 @@ oracle to confirm exact output and promote to `hw_verified`.
   - BGSAVE auto-grow: pass a too-small 1-D array, confirm it is resized to width*height elements.
   - BGLOAD 3-arg / 7-arg trailing numeric argument: what does it mean (start offset/index into the
     source array?) and its valid range (handler range-checks against r6=[0x165e3c], r7=r6>>20).
-  - BGCOLOR set-then-get round trip: BGCOLOR 0,RGB(255,0,0) then C=BGCOLOR(0) -> expect the stored
-    32-bit code (and whether the ignored alpha byte is masked off or returned verbatim).
+  - [x] BGCOLOR set-then-get round trip — RESOLVED 2026-06-24 (M7-T2 run 15, hw_verified,
+    bgcolor_rt.tsv): the stored 32-bit code is returned VERBATIM — the alpha byte is NOT masked
+    off (decisive contrast with BACKCOLOR's 24-bit strip). &H7F112233->&H7F112233, -1->&HFFFFFFFF,
+    &H80FF8040->&H80FF8040, default &HFFFFFFFF. Confirms apply helper FUN_001163c8 `str r1,[+0x30]`
+    (no AND mask). Frozen in bgcolor.yaml; confidence flipped to hw_verified.
 
 - [ ] S-T10a BGM playback — audio output has NO deterministic emulator golden (O-T7: SB can't
   render audio to disk; emulator audio is real-time/timing-dependent). Specs pin call shape +

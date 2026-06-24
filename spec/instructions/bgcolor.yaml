@@ -22,6 +22,7 @@ semantics:
   - "LAYER must be in 0..3 in both forms: evaluated and range-checked by the shared BG-layer getter FUN_001e2504 (bl @0x16636c set / @0x1663e8 get). A value < 0 or >= the BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560. Per-layer state stride is 0xe3 doublewords (mul r0,r0,#0xe3), state ptr 0x315d60 [0x166438]."
   - "SET: the color is read as an integer (blx [obj,#0x40] @0x166390); a non-numeric color sets the type-error arg index ([0x305628]=1 @0x16639c) and raises errnum 8 (Type mismatch). The 32-bit value is then applied to the layer via the BG-color setter bl 0x001163c8 @0x1663c8. The whole 32 bits are taken as ARGB=8888; the alpha byte is ignored (no semitransparent BG), and the on-screen result is the color code multiplied by each original pixel color — so RGB(255,255,255)/&HFFFFFFFF leaves the layer unchanged and darker codes tint it. SET returns nothing (mov r0,#0 @0x1663d0)."
   - "GET: reads the layer's current color [state,#0x30] @0x166418 and stores it to the OUT/return variable via the variable-store method [arg,#0x14] @0x166428. Equivalent function syntax C=BGCOLOR(layer) yields the same return-count-1 path."
+  - "Color is stored VERBATIM as a full 32 bits — the alpha byte is NOT masked off (the decisive contrast with BACKCOLOR, which strips to 24 bits on read). The apply helper FUN_001163c8 does a plain `str r1,[state,#0x30]` (load-compare-store, no AND mask) and GET reads the same word back, so SET→GET is a bit-exact round-trip of all 32 bits. hw_verified (sb-oracle 2026-06-24): &H7F112233 -> 7F112233 (NOT 00112233), -1 -> FFFFFFFF (NOT 00FFFFFF), &H80FF8040 -> 80FF8040, 0 -> 0. The default per-layer color is &HFFFFFFFF (opaque white = no tint). Each of the 4 layers always exists (no BGSCREEN required — BGCOLOR 2,&H44556677 on a fresh state reads back &H44556677) and is independent."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "the argument/return shape is neither (2 args, 0 return) nor (1 arg, 1 return)" }
@@ -32,16 +33,24 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/bgcolor.md (BGCOLOR (1) 'Sets the BG display color' BGCOLOR Layer, Color code — Layer 0-3; 32-bit ARGB=8888, 'the alpha value is not valid (Semitransparent representation is not allowed)', 'the actual display color will be the color code multiplied by the original pixel color', e.g. BGCOLOR 1,RGB(255,0,0); BGCOLOR (2) 'Gets the BG display color' BGCOLOR Layer OUT C32 — returns current 32-bit ARGB, e.g. BGCOLOR 1 OUT C)" }
   - { type: disassembled, ref: "cia_3.6.0.lst BGCOLOR handler @0x166304: return-count [r4,#0xc] ==0 -> SET @0x166338, ==1 && argcount==1 -> GET @0x1663d8, else mov r0,#0x4 errnum 4 @0x16634c; SET argcount cmp #2 @0x16633c else errnum 4; layer eval+range bl 0x1e2504 (errnum 10 @0x1e2560); SET color via blx [obj,#0x40] @0x166390 non-numeric -> [0x305628]=1 errnum 8 @0x16639c, apply bl 0x1163c8 @0x1663c8, return mov r0,#0 @0x1663d0; GET reads [state,#0x30] @0x166418 stores via [arg,#0x14] @0x166428; per-layer stride mul r0,r0,#0xe3, state ptr 0x315d60 [0x166438], err-arg ptr 0x305628 [0x166440]." }
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG color handling (3.5.0 structural cross-check only)" }
-  - { type: community, ref: "sbsave corpus: ~849 calls — overwhelmingly the SET form 'BGCOLOR layer,RGB(r,g,b)' (literal or variable/expr layer, e.g. 'BGCOLOR J,RGB(255-I,255-I,255-I)' in 43AE1XG3/TXT/AXE), plus 4-arg 'BGCOLOR 0,RGB(0,50,100,200)' (alpha component, ignored for BG, ~28x e.g. 1BWX7ENV/TXT/AND-OS), hex 'BGCOLOR L,&HFF606060' (~24x 43XP43Q3/TXT/MG_AQUASP), color-constant 'BGCOLOR 2,#WHITE' (~30x 1DVK34J/TXT/HNZTL), variable 'BGCOLOR 0,BGCOL', and negative 'BGCOLOR L,-1' (=&HFFFFFFFF, ~5x DKE8QD41/TXT/PP3_BIKE). The GET form appears as the FUNCTION syntax 'BGCOLOR(0)' (~10x, e.g. BGANIM 0,\"C\",-40,BGCOLOR(0),... in JKX3N5KX/TXT/HOME) — confirming BGCOLOR(layer) returns the current color. (oracle-pending: get-after-set round trip + on-screen tint, queued)" }
+  - { type: community, ref: "sbsave corpus: ~849 calls — overwhelmingly the SET form 'BGCOLOR layer,RGB(r,g,b)' (literal or variable/expr layer, e.g. 'BGCOLOR J,RGB(255-I,255-I,255-I)' in 43AE1XG3/TXT/AXE), plus 4-arg 'BGCOLOR 0,RGB(0,50,100,200)' (alpha component, ignored for BG, ~28x e.g. 1BWX7ENV/TXT/AND-OS), hex 'BGCOLOR L,&HFF606060' (~24x 43XP43Q3/TXT/MG_AQUASP), color-constant 'BGCOLOR 2,#WHITE' (~30x 1DVK34J/TXT/HNZTL), variable 'BGCOLOR 0,BGCOL', and negative 'BGCOLOR L,-1' (=&HFFFFFFFF, ~5x DKE8QD41/TXT/PP3_BIKE). The GET form appears as the FUNCTION syntax 'BGCOLOR(0)' (~10x, e.g. BGANIM 0,\"C\",-40,BGCOLOR(0),... in JKX3N5KX/TXT/HOME) — confirming BGCOLOR(layer) returns the current color. (on-screen tint still oracle-pending — needs the BG framebuffer golden O-T6.)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9e): BGCOLOR 4,RGB(0,0,0) -> errnum 10, BGCOLOR -1,RGB(0,0,0) -> errnum 10 (layer out of range). Both errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (bgcolor_rt): SET->GET round-trip is a full-32-bit verbatim pass — alpha NEVER stripped. Default BGCOLOR(0)=&HFFFFFFFF; BGCOLOR 0,&H7F112233->&H7F112233; BGCOLOR 0,-1->&HFFFFFFFF; BGCOLOR 0,&H80FF8040->&H80FF8040; BGCOLOR 0,0->0; function form C=BGCOLOR(0) reads &H12345678 after BGCOLOR 0,&H12345678; layer 3 round-trips &HABCDEF01; layers independent (BGCOLOR 0,&H11111111:BGCOLOR 1,&H22222222 -> BGCOLOR(0)=&H11111111); no BGSCREEN needed (BGCOLOR 2,&H44556677 reads back on a fresh state). errnum guards: BGCOLOR 0,\"X\" (string color) -> errnum 8 errline 1; BGCOLOR 0,1,2 (3-arg SET) -> errnum 4 errline 1." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # The on-screen tint and the set->get round-trip value need the BG framebuffer oracle (O-T6,
-  # queued). Error/argcount guards derive from the disassembly.
-  - { name: set_ok, code: "BGSCREEN 0,32,32\nBGCOLOR 0,RGB(255,0,0)", expect: { stdout: "" } }
-  - { name: get_func_ok, code: "BGSCREEN 0,32,32\nC=BGCOLOR(0)", expect: { stdout: "" } }
-  - { name: get_out_ok, code: "BGSCREEN 0,32,32\nBGCOLOR 0 OUT C", expect: { stdout: "" } }
+  # SET->GET value round-trip + errnum guards are hw_verified (sb-oracle 2026-06-24 bgcolor_rt).
+  # The on-screen tint (color-code * pixel) still needs the BG framebuffer oracle (O-T6, queued).
+  - { name: color_default_white, code: "PRINT HEX$(BGCOLOR(0),8)", expect: { stdout: "FFFFFFFF" } }
+  - { name: color_round_trip_full32, code: "BGCOLOR 0,&H7F112233\nPRINT HEX$(BGCOLOR(0),8)", expect: { stdout: "7F112233" } }
+  - { name: color_neg1_full, code: "BGCOLOR 0,-1\nPRINT HEX$(BGCOLOR(0),8)", expect: { stdout: "FFFFFFFF" } }
+  - { name: color_high_alpha, code: "BGCOLOR 0,&H80FF8040\nPRINT HEX$(BGCOLOR(0),8)", expect: { stdout: "80FF8040" } }
+  - { name: color_zero, code: "BGCOLOR 0,0\nPRINT HEX$(BGCOLOR(0),8)", expect: { stdout: "00000000" } }
+  - { name: color_out_form, code: "BGCOLOR 0,&H12345678\nBGCOLOR 0 OUT C\nPRINT HEX$(C,8)", expect: { stdout: "12345678" } }
+  - { name: color_layer3, code: "BGCOLOR 3,&HABCDEF01\nPRINT HEX$(BGCOLOR(3),8)", expect: { stdout: "ABCDEF01" } }
+  - { name: color_independence, code: "BGCOLOR 0,&H11111111\nBGCOLOR 1,&H22222222\nPRINT HEX$(BGCOLOR(0),8)", expect: { stdout: "11111111" } }
+  - { name: color_type_mismatch, code: "BGCOLOR 0,\"X\"", expect: { error: { errnum: 8 } } }
+  - { name: color_set_argc, code: "BGCOLOR 0,1,2", expect: { error: { errnum: 4 } } }
   - { name: layer_out_of_range, code: "BGCOLOR 4,RGB(0,0,0)", expect: { error: { errnum: 10 } } }
   - { name: layer_negative, code: "BGCOLOR -1,RGB(0,0,0)", expect: { error: { errnum: 10 } } }
