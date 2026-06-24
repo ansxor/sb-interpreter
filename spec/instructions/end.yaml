@@ -1,26 +1,40 @@
 id: END
 kind: statement
 category: Control
-version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
 
 signatures:
   - args: []
-    note: "END — terminates the running program."
+    note: "END — terminates the running program. Takes no arguments (a trailing operand is a Syntax error)."
 
-summary: "Ends the program, stopping execution."
+summary: "Ends the program, stopping execution immediately. Any statements after END — whether textually later, on the same `:`-separated line, or reached by fall-through — are not executed, including code in any enclosing loop or subroutine: END fully unwinds the call/loop stack and returns the system to its idle (DIRECT-mode) state. Unlike STOP it is a clean, non-resumable termination. END takes no arguments."
 
 semantics:
-  - "Halts the program immediately; statements after END (textually or by fall-through) are not executed."
-  - "Used to stop before subroutine/label definitions that follow the main code."
-  - "Unlike STOP, END is a clean termination and is not resumable with CONT."
+  - "Halts the program immediately: execution stops at END and statements after it (textually, on the same `:`-separated line, or reached by fall-through) are not executed. hw_verified: writing `A` then END then re-writing the same target leaves the first value (the post-END statement never runs); `X:END:Y` on one line leaves `X` (the mid-line END stops the rest of the line)."
+  - "END inside an enclosing FOR/WHILE/REPEAT loop terminates the whole program — it does NOT just exit the loop and continue: hw_verified `FOR I=0 TO 5 / <record I> / END / NEXT` records only `0` (the first iteration runs, then END halts; the loop never advances)."
+  - "END inside a GOSUB subroutine (or a DEF) terminates the whole program — it does NOT act like RETURN: hw_verified `GOSUB @S / ... / @S / <record \"S\"> / END` records `S`; control never returns to the caller, so the post-GOSUB code never runs. END fully unwinds the GOSUB/call stack."
+  - "END in a single-line `IF ... THEN ... : END` (the THEN clause) halts when the condition is taken: hw_verified `IF 1 THEN <record \"T\">:END` followed by a later line records `T` (the later line is skipped)."
+  - "Used to stop the main program before the trailing label/subroutine definitions (the classic `<main code> / END / @SUBROUTINES` layout): the labelled section after END is reachable only by GOTO/GOSUB, never by fall-through."
+  - "Unlike [[stop]], END is a clean termination and is not resumable with CONT."
+  - "END is a bare keyword with NO arguments: a trailing operand (`END 1`) raises errnum 3 (Syntax error) errline 1 — hw_verified. (errnum 3 is the binary's 'Syntax error'; see [[errors]].)"
 
-errors: []
+errors:
+  - { errnum: 3, name: "Syntax error", when: "END is given a trailing argument (e.g. `END 1`) — END takes no operands" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/end.md (exits the program)" }
-  - { type: disassembled, ref: "cia_3.6.0.lst END is a parser keyword (token @0x2ed5a4), not in the builtin dispatch table; halts the VM cleanly" }
+  - { type: disassembled, ref: "cia_3.6.0.lst END is a parser keyword (token @0x2ed5a4), not in the builtin dispatch table; the compiler emits a halt opcode that stops the VM cleanly (no resume)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) 2026-06-24 (M7-T2; harness/harvest/out/end.tsv). Each program SAVEs a sentinel to a result file BEFORE the END and (would) overwrite it AFTER, so the file proves whether the post-END code ran. HALT + SKIP: `SAVE \"A\" / END / SAVE \"AB\"` -> file is \"A\" (the post-END SAVE never fired); `SAVE \"X\":END:SAVE \"Y\"` -> \"X\" (mid-line END halts the rest of the line). LOOP UNWIND: `FOR I=0 TO 5 / SAVE STR$(I) / END / NEXT` -> \"0\" (only the first iteration; END halts inside the loop). SUBROUTINE UNWIND: `GOSUB @S / SAVE \"M\" / END / @S / SAVE \"S\" / END` -> \"S\" (END inside the GOSUB terminates the whole program; control never returns, \"M\" never saved). THEN CLAUSE: `IF 1 THEN SAVE \"T\":END` then a later `SAVE \"AFTER\"` -> \"T\" (END in the taken THEN clause halts; the later line is skipped). ARG SHAPE: `END 1` -> errnum 3 (Syntax error) errline 1 (END takes no operands). sb-core reproduces every case (console-text equivalents) with no code change." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
+  # hw_verified via sb-oracle 2026-06-24 (M7-T2, harness/harvest/out/end.tsv). The oracle
+  # programs SAVE sentinels to prove which branch ran; these stdout equivalents assert the same
+  # halt semantics and are replayed by IN_SCOPE_CONTROL.
   - { name: halts, code: "PRINT \"A\"\nEND\nPRINT \"B\"", expect: { stdout: "A" } }
+  - { name: halt_midline, code: "PRINT \"X\":END:PRINT \"Y\"", expect: { stdout: "X" } }
+  - { name: halt_in_for, code: "FOR I=0 TO 5\nPRINT I\nEND\nNEXT", expect: { stdout: "0" } }
+  - { name: halt_in_gosub, code: "GOSUB @S\nPRINT \"M\"\nEND\n@S\nPRINT \"S\"\nEND", expect: { stdout: "S" } }
+  - { name: halt_in_then, code: "IF 1 THEN PRINT \"T\":END\nPRINT \"U\"", expect: { stdout: "T" } }
+  - { name: takes_no_args, code: "END 1", expect: { error: { errnum: 3 } } }
