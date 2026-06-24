@@ -33,13 +33,19 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d DISPLAY (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bDISPLAY\\b'): SET form `DISPLAY 0` (~7000 hits) and `DISPLAY 1` (~6100 hits) are ubiquitous; GET form `DISPLAY()` real (~750 hits). 1-arg SET and 0-arg GET only (other apparent matches like DISPLAY$ / DISPLAYD are identifier substrings, discarded). DISPLAY 1 appears alongside XSCREEN 2/3 usage, consistent with the mode-dependent range rule." }
   - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11d): `DISPLAY 0,1` (2 args) raises errnum 4 (Illegal function call, errline 1), confirming the SET path requires exactly 1 argument; `XSCREEN 0:DISPLAY 1` raises errnum 10 (Out of range, errline 1), confirming DISPLAY 1 is rejected when XSCREEN 0 leaves the Touch Screen unavailable. (Programs run via RUN, i.e. program mode, so the errnum-43 DIRECT-mode guard is not exercised here.)" }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-23 (M7-T2 screen_get, prog form `... : ?DISPLAY()`): the GET form returns the currently selected screen id — `?DISPLAY()` with no prior SET -> 0 (Upper is the boot default), `DISPLAY 0:?DISPLAY()` -> 0, and `XSCREEN 2:DISPLAY 1:?DISPLAY()` -> 1 (the Touch Screen is selectable once XSCREEN 2 exposes it). Confirms GET returns the active DISPLAY target (0 or 1)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Which physical screen is targeted has no scalar golden. The assertable behaviors are
-  # the misuse guard (errnum 4) and — when XSCREEN keeps the Touch Screen unavailable — the
+  # The misuse guard (errnum 4) and — when XSCREEN keeps the Touch Screen unavailable — the
   # DISPLAY 1 range error (errnum 10), both hw_verified via sb-oracle batch s_t11d. The
   # DIRECT-mode errnum 43 needs a DIRECT-mode harness (queued).
   - { name: two_args_err, code: "DISPLAY 0,1", expect: { error: { errnum: 4 } } }
   - { name: touch_unavailable_err, code: "XSCREEN 0:DISPLAY 1", expect: { error: { errnum: 10 } } }
+  # GET form (value goldens, hw_verified via sb-oracle batch 2026-06-23): DISPLAY() returns
+  # the active output-screen id — 0 (Upper) by default, 1 once XSCREEN 2 selects the Touch
+  # Screen. Which physical screen is targeted is screen state; the returned id is a scalar.
+  - { name: get_default, code: "PRINT DISPLAY()", expect: { stdout: "0" } }
+  - { name: get_after_set0, code: "DISPLAY 0:PRINT DISPLAY()", expect: { stdout: "0" } }
+  - { name: get_touch, code: "XSCREEN 2:DISPLAY 1:PRINT DISPLAY()", expect: { stdout: "1" } }

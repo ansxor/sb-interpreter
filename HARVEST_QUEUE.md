@@ -624,11 +624,14 @@ oracle to confirm exact output and promote to `hw_verified`.
     the disassembly (buffer 0x01B20000, ~261760-byte cap, state struct 0x315C18).
   - S-T11d Screen control (ACLS/BACKCOLOR/DISPLAY/VISIBLE/XSCREEN): the arg-count guards
     (errnum 4) and range checks (XSCREEN mode/sprites/BG and DISPLAY-1-without-touch errnum 10)
-    are hw_verified (s_t11d). UNHARVESTED — all screen-state, no scalar oracle golden:
-    ACLS no-arg full reset vs the undocumented 3-arg selective reset (per-flag bitmask meaning
-    of `ACLS f1,f2,f3` — bits 0x2/0x4/0x8 into worker 0x14f10c — is unknown); BACKCOLOR set/get
-    color-code round-trip (the exact RGB()/alpha encoding `BACKCOLOR()` returns); DISPLAY/VISIBLE
-    actual targeted-screen and layer-visibility effects. DIRECT-MODE-ONLY (RUN harness can't reach
+    are hw_verified (s_t11d). HARVESTED 2026-06-23 (M7-T2 run 2): BACKCOLOR set/get round-trip
+    is now hw_verified — `BACKCOLOR()` returns the stored color masked to 24 bits (`& &H00FFFFFF`,
+    the alpha/high byte is dropped; no channel swap); DISPLAY() get returns the active screen id
+    (0 Upper default, 1 after XSCREEN 2:DISPLAY 1). Both bumped to top-level hw_verified.
+    STILL UNHARVESTED — screen-state, no scalar oracle golden: ACLS no-arg full reset vs the
+    undocumented 3-arg selective reset (per-flag bitmask meaning of `ACLS f1,f2,f3` — bits
+    0x2/0x4/0x8 into worker 0x14f10c — is unknown); VISIBLE actual layer-visibility effect; the
+    rendered border color BACKCOLOR produces and the physical screen DISPLAY targets. DIRECT-MODE-ONLY (RUN harness can't reach
     these, run in program mode): DISPLAY in DIRECT mode -> errnum 43, and XSCREEN 4 in DIRECT mode
     -> errnum 43 — both pinned from the disassembly but need a DIRECT-mode oracle path.
 
@@ -1068,9 +1071,11 @@ oracle to confirm exact output and promote to `hw_verified`.
 - **INKEY$ live keypress**: returns "" headless (no key buffer). A real buffered-key result
   is real-time keyboard state — no deterministic golden; only the empty + arg-count (errnum 4)
   cases are pinned.
-- **BACKCOLOR color round-trip + rendered border**: SET stores / GET returns the user RGB
-  code verbatim (round-trip). The internal channel byte-swap and the actual rendered
-  border/clear color are screen state — harvest the round-trip value + border pixel (O-T6).
+- **BACKCOLOR color round-trip + rendered border**: HARVESTED 2026-06-23 (M7-T2 run 2) — the
+  GET value is hw_verified: `BACKCOLOR()` returns the stored color masked to 24 bits
+  (`& &H00FFFFFF`; the alpha/high byte is dropped, no channel swap). sb-core fixed to mask on
+  SET. Only the actual rendered border/clear-color pixel remains screen state (border pixel via
+  O-T6).
 - **LOCATE Z depth**: the depth operand is range-validated (-256.0..1024.0 → errnum 10) but
   not modeled by the 2-D console grid; z-ordering arrives with the compositor (M2).
 - **ACLS full reset**: resets the console color/attr/grid + VM back_color/tabstep here. The

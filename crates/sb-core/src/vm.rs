@@ -3084,9 +3084,13 @@ impl Vm {
     }
 
     /// `BACKCOLOR` — the SET form (statement, exactly 1 argument) stores the background
-    /// color code; the GET form (function, 0 arguments) returns it. The handler round-trips
-    /// the user's RGB code, so we store and return it verbatim. Any other call shape →
-    /// errnum 4 (`backcolor.yaml`, hw_verified).
+    /// color code; the GET form (function, 0 arguments) returns it. The hardware keeps only a
+    /// 24-bit RGB border color: the GET round-trip drops the high (alpha) byte, so
+    /// `BACKCOLOR RGB(64,128,128):?BACKCOLOR()` returns `&H408080` (= 4227200), not the
+    /// `&HFF408080` the user passed — even a non-`0xFF` high byte (`BACKCOLOR &H7F112233` →
+    /// `&H112233`) is stripped. We mask the stored value to 24 bits on SET so the kept color
+    /// matches what the hardware retains. Any other call shape → errnum 4 (`backcolor.yaml`,
+    /// hw_verified via sb-oracle batch 2026-06-23).
     fn backcolor(&mut self, args: &[Value], wants_value: bool) -> Result<Value, RuntimeError> {
         if wants_value {
             if !args.is_empty() {
@@ -3097,7 +3101,7 @@ impl Vm {
             if args.len() != 1 {
                 return Err(crate::builtins::illegal());
             }
-            self.back_color = args[0].to_int()?;
+            self.back_color = args[0].to_int()? & 0x00FF_FFFF;
             Ok(Value::Void)
         }
     }
@@ -5148,9 +5152,32 @@ H$=HEX$(255)"#);
 
     #[test]
     fn backcolor_round_trips() {
-        // SET then GET returns the stored color code.
+        // SET then GET returns the stored color code (low 24 bits — fits, unchanged).
         let vm = run("BACKCOLOR 12345\nA=BACKCOLOR()");
         assert_eq!(int(&vm, "A"), 12345);
+    }
+
+    #[test]
+    fn backcolor_get_strips_alpha() {
+        // The hardware keeps only a 24-bit RGB border color: the GET round-trip drops the
+        // high (alpha) byte (sb-oracle batch 2026-06-23, `backcolor.yaml` hw_verified).
+        // RGB(64,128,128) = &HFF408080 -> &H408080 = 4227200.
+        assert_eq!(
+            int(&run("BACKCOLOR RGB(64,128,128)\nA=BACKCOLOR()"), "A"),
+            4227200
+        );
+        // RGB(16,32,64) = &HFF102040 -> &H102040 = 1056832 (clean strip, no channel swap).
+        assert_eq!(
+            int(&run("BACKCOLOR RGB(16,32,64)\nA=BACKCOLOR()"), "A"),
+            1056832
+        );
+        // A non-0xFF high byte is dropped just the same: &H7F112233 -> &H112233.
+        assert_eq!(
+            int(&run("BACKCOLOR &H7F112233\nA=BACKCOLOR()"), "A"),
+            0x11_2233
+        );
+        // -1 = &HFFFFFFFF -> &HFFFFFF = 16777215.
+        assert_eq!(int(&run("BACKCOLOR -1\nA=BACKCOLOR()"), "A"), 16_777_215);
     }
 
     // ---- Screen configuration: XSCREEN/DISPLAY/VISIBLE/HARDWARE (M4-T4) ----

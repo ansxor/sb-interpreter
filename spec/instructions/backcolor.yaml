@@ -10,16 +10,16 @@ signatures:
     note: "BACKCOLOR color — set the background (border/clear) color."
   # Form 2 — function: GET the current background color.
   - args: []
-    returns: { type: integer, desc: "The color code of the background color currently set (same 8-bit-per-channel RGB encoding as the setter accepts)." }
+    returns: { type: integer, desc: "The 24-bit RGB color code of the background color currently set. Only the low three bytes (R,G,B) are kept: the high (alpha) byte the setter received is dropped, so RGB(64,128,128) (= &HFF408080) reads back as &H408080 (= 4227200)." }
     note: "c = BACKCOLOR() — read the current background color code."
 
-summary: "Sets or reads the screen background color (the color shown behind/around the console, graphics, BG and sprite layers). The statement form `BACKCOLOR color` sets it from an RGB color code — usually built with RGB(r,g,b), e.g. BACKCOLOR RGB(64,128,128) — or a direct numeric value with an 8-bit channel for each of R, G and B. The function form `c = BACKCOLOR()` returns the color code currently set, in the same encoding. The form is chosen by call shape: a statement with one argument writes; a zero-argument function call reads."
+summary: "Sets or reads the screen background color (the color shown behind/around the console, graphics, BG and sprite layers). The statement form `BACKCOLOR color` sets it from an RGB color code — usually built with RGB(r,g,b), e.g. BACKCOLOR RGB(64,128,128) — or a direct numeric value with an 8-bit channel for each of R, G and B. The function form `c = BACKCOLOR()` returns the color code currently set as a 24-bit RGB value — the high (alpha) byte is dropped, so after BACKCOLOR RGB(64,128,128) it returns &H408080, not the &HFF408080 RGB() produced. The form is chosen by call shape: a statement with one argument writes; a zero-argument function call reads."
 
 semantics:
   - "Form selection by call shape: the handler reads the result count [r4,#0xc] (ldr r0,[r0,#0xc] @0x14ccdc). result==0 -> beq @0x14cd0c (statement/SET path); result==1 with argcount [r4,#0x4]==0 (cmp r0,#0x1 / ldreq r0,[r4,#0x4] / cmpeq r0,#0x0 @0x14cce8) -> beq @0x14cd80 (function/GET path); any other shape raises errnum 4 (Illegal function call: mov r0,#0x4 @0x14cd04 -> b 0x1fffdc @0x14cd08)."
   - "SET path (@0x14cd0c): the argument count must be exactly 1 (cmp r0,#0x1 @0x14cd10 / beq @0x14cd2c), else errnum 4 (mov r0,#0x4 @0x14cd20 -> bl 0x1fffdc). The single operand is evaluated via the arg vtable (blx [r2,#0x40] @0x14cd40) into sp[0]; an eval continuation (r0!=0) stores 0 and returns (strne @0x14cd4c). The color code is then byte-reordered into the hardware's internal channel order — r0 is split into byte lanes (lsl #8/#16/#24, lsr #24/#8, orr @0x14cd54-0x14cd70) — and handed to the setter (bl 0x14ed64 @0x14cd74); the handler returns 0 (mov r0,#0x0 @0x14cd78)."
-  - "GET path (@0x14cd80): the current color is fetched from the getter (bl 0x14ed3c @0x14cd84) and byte-reordered back (and r1,r0,#0xff00 / and r2,r0,#0xff / lsl #8 / orr @0x14cd88-0x14cd98) into the user-facing 8-bit-per-channel RGB color code before being delivered through the result slot. So `BACKCOLOR()` round-trips the same encoding `BACKCOLOR color` accepts: e.g. after BACKCOLOR RGB(64,128,128), BACKCOLOR() returns RGB(64,128,128)."
-  - "The reorder steps are an internal RGBA<->ABGR (or equivalent) channel swap; user-visible values are the standard SmileBASIC color codes produced by RGB(). The actual rendered border/clear color is screen state (no scalar golden); what is pinned here is the SET/GET call-shape selection, the exactly-1-arg SET guard, the errnum-4 misuse guard, and the encoding round-trip."
+  - "GET path (@0x14cd80): the current color is fetched from the getter (bl 0x14ed3c @0x14cd84) and byte-reordered back (and r1,r0,#0xff00 / and r2,r0,#0xff / lsl #8 / orr @0x14cd88-0x14cd98) into the user-facing RGB color code before being delivered through the result slot. The reorder rebuilds only the three RGB bytes — there is no high/alpha byte in the hardware's stored border color, so the result is always a 24-bit value (low 0x00FFFFFF). The round trip therefore DROPS the high byte the setter received: `BACKCOLOR RGB(64,128,128)` then `BACKCOLOR()` returns &H408080 (= 4227200), NOT the &HFF408080 that RGB() produced. hw_verified — see the 2026-06-23 oracle source."
+  - "The strip is a clean mask to 24 bits, not a channel swap: RGB(16,32,64) (= &HFF102040) reads back as &H102040 (R stays in the high RGB byte), and an arbitrary non-0xFF high byte is dropped just the same — `BACKCOLOR &H7F112233` -> &H112233, `BACKCOLOR -1` (&HFFFFFFFF) -> &HFFFFFF. The actual rendered border/clear color is screen state (no scalar golden); what is pinned (and hw_verified) is the SET/GET call-shape selection, the exactly-1-arg SET guard, the errnum-4 misuse guard, and the GET value = stored color & &H00FFFFFF."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "the call shape is neither (statement, exactly 1 argument) nor (function, 0 arguments) — e.g. BACKCOLOR with no argument as a statement, BACKCOLOR with 2+ arguments, or BACKCOLOR() used with arguments" }
@@ -29,13 +29,24 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst BACKCOLOR handler @0x14ccd4: result [r4,#0xc] (ldr @0x14ccdc) ==0 -> beq @0x14cd0c (SET) / ==1 & argcount [r4,#0x4]==0 (cmp r0,#0x1 / ldreq r0,[r4,#0x4] / cmpeq r0,#0x0 @0x14cce8) -> beq @0x14cd80 (GET) / else mov r0,#0x4 errnum 4 (@0x14cd04 -> b 0x1fffdc @0x14cd08); SET argcount==1 guard (cmp r0,#0x1 @0x14cd10) else errnum 4 (mov r0,#0x4 @0x14cd20); arg eval blx [r2,#0x40] @0x14cd40 -> sp[0], byte reorder (lsl#8/#16/#24, lsr#24/#8, orr @0x14cd54-0x14cd70) -> setter bl 0x14ed64 @0x14cd74, return 0 (@0x14cd78); GET getter bl 0x14ed3c @0x14cd84, reorder (and #0xff00 / and #0xff / lsl#8 / orr @0x14cd88-0x14cd98). literals [0x14cdb4], [0x14cdb0]" }
   - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d BACKCOLOR (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBACKCOLOR\\b'): SET form dominant with RGB() (BACKCOLOR RGB(0,0,0), BACKCOLOR RGB(255,255,255)), direct numeric (BACKCOLOR 0), and named color constants (BACKCOLOR BLACK, BACKCOLOR BLUE — integer constants). GET form real: `C=BACKCOLOR()` / `BACKCOLOR(`. All SET uses are exactly one operand; GET is always zero-arg — consistent with the call-shape guard. No 2-arg form found." }
-  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11d): `BACKCOLOR` as a statement with no argument and `BACKCOLOR 0,1` (2 args) both raise errnum 4 (Illegal function call, errline 1), confirming the SET path requires exactly 1 argument. The set/returned color value round-trip has no scalar golden yet (queued)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t11d): `BACKCOLOR` as a statement with no argument and `BACKCOLOR 0,1` (2 args) both raise errnum 4 (Illegal function call, errline 1), confirming the SET path requires exactly 1 argument." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-23 (M7-T2 screen_get, prog form `BACKCOLOR c : ?BACKCOLOR()`): the SET/GET round trip returns the stored color masked to 24 bits (high/alpha byte dropped). RGB(64,128,128)->4227200 (&H408080), RGB(255,255,255)->16777215 (&HFFFFFF), RGB(255,0,0)->16711680 (&HFF0000), RGB(16,32,64)->1056832 (&H102040, no channel swap), RGB(1,2,3)->66051 (&H010203), &HFF123456->1193046 (&H123456), &H7F112233->1122867 (&H112233, non-0xFF high byte also stripped), -1 (&HFFFFFFFF)->16777215 (&HFFFFFF), BACKCOLOR 0->0. The default background color at RUN start is 0 (?BACKCOLOR() with no prior SET -> 0). Confirms GET = stored & &H00FFFFFF." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # The rendered color is screen state (no scalar golden). The assertable behavior is the
-  # call-shape / arg-count guard: a no-argument BACKCOLOR statement and a multi-argument
-  # form both raise errnum 4 (hw_verified via sb-oracle batch s_t11d).
+  # Misuse guards: a no-argument BACKCOLOR statement and a multi-argument form both raise
+  # errnum 4 (hw_verified via sb-oracle batch s_t11d).
   - { name: no_arg_statement_err, code: "BACKCOLOR", expect: { error: { errnum: 4 } } }
   - { name: two_args_err, code: "BACKCOLOR 0,1", expect: { error: { errnum: 4 } } }
+  # SET/GET round trip (value goldens, hw_verified via sb-oracle batch 2026-06-23): the
+  # rendered color is screen state, but the value BACKCOLOR() returns is a scalar golden —
+  # the stored color masked to 24 bits (the high/alpha byte is dropped).
+  - { name: get_default, code: "PRINT BACKCOLOR()", expect: { stdout: "0" } }
+  - { name: rt_rgb, code: "BACKCOLOR RGB(64,128,128):PRINT BACKCOLOR()", expect: { stdout: "4227200" } }
+  - { name: rt_white, code: "BACKCOLOR RGB(255,255,255):PRINT BACKCOLOR()", expect: { stdout: "16777215" } }
+  - { name: rt_red, code: "BACKCOLOR RGB(255,0,0):PRINT BACKCOLOR()", expect: { stdout: "16711680" } }
+  - { name: rt_asym, code: "BACKCOLOR RGB(16,32,64):PRINT BACKCOLOR()", expect: { stdout: "1056832" } }
+  - { name: rt_high_byte, code: "BACKCOLOR &H7F112233:PRINT BACKCOLOR()", expect: { stdout: "1122867" } }
+  - { name: rt_neg, code: "BACKCOLOR -1:PRINT BACKCOLOR()", expect: { stdout: "16777215" } }
+  - { name: rt_zero, code: "BACKCOLOR 0:PRINT BACKCOLOR()", expect: { stdout: "0" } }
