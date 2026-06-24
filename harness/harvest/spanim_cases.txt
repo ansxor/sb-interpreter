@@ -1,0 +1,43 @@
+# SPANIM channel-activation value contract (M7-T2), observed through SPCHK (hw_verified — returns
+# the sprite running-bit mask = (slot_flags>>17)&0xFF). The sprite has all 8 contiguous channels
+# (XY,Z,UV,I,R,S,C,V), so SPANIM's per-channel anim-active orr (XY=0x20000 bit17 .. V=0x1000000
+# bit24, disasm switch @0x142120) maps to SPCHK = 1<<channel = the documented #CHK* bits
+# (1/2/4/8/16/32/64/128) — UNLIKE BG, whose layout is compacted (run 53). The flag is set at the
+# SPANIM call (before the first advancing frame), so SPCHK reads the bit with NO VSYNC; an endless
+# inline anim (loop=0) avoids any once-play timing ambiguity. SPCLR resets sprite state per RUN.
+# --- numeric target -> channel bit ---
+spanim_num_xy|SPCLR:SPSET 0,0:SPANIM 0,0,60,100,100,0|SPCHK(0)|prog
+spanim_num_z|SPCLR:SPSET 0,0:SPANIM 0,1,60,100,0|SPCHK(0)|prog
+spanim_num_uv|SPCLR:SPSET 0,0:SPANIM 0,2,60,50,50,0|SPCHK(0)|prog
+spanim_num_i|SPCLR:SPSET 0,0:SPANIM 0,3,60,1,0|SPCHK(0)|prog
+spanim_num_r|SPCLR:SPSET 0,0:SPANIM 0,4,60,90,0|SPCHK(0)|prog
+spanim_num_s|SPCLR:SPSET 0,0:SPANIM 0,5,60,2,2,0|SPCHK(0)|prog
+spanim_num_c|SPCLR:SPSET 0,0:SPANIM 0,6,60,15,0|SPCHK(0)|prog
+spanim_num_v|SPCLR:SPSET 0,0:SPANIM 0,7,60,5,0|SPCHK(0)|prog
+# --- string target -> same channel bit ---
+spanim_str_xy|SPCLR:SPSET 0,0:SPANIM 0,"XY",60,100,100,0|SPCHK(0)|prog
+spanim_str_uv|SPCLR:SPSET 0,0:SPANIM 0,"UV",60,50,50,0|SPCHK(0)|prog
+spanim_str_i|SPCLR:SPSET 0,0:SPANIM 0,"I",60,1,0|SPCHK(0)|prog
+spanim_str_v|SPCLR:SPSET 0,0:SPANIM 0,"V",60,5,0|SPCHK(0)|prog
+# --- relative forms ('+8' / '+' suffix) keep the SAME channel (the +8 bit is masked off) ---
+spanim_rel_str_xy|SPCLR:SPSET 0,0:SPANIM 0,"XY+",60,100,100,0|SPCHK(0)|prog
+spanim_rel_str_v|SPCLR:SPSET 0,0:SPANIM 0,"V+",60,5,0|SPCHK(0)|prog
+spanim_rel_num_xy|SPCLR:SPSET 0,0:SPANIM 0,8,60,100,100,0|SPCHK(0)|prog
+spanim_rel_num_r|SPCLR:SPSET 0,0:SPANIM 0,12,60,90,0|SPCHK(0)|prog
+# --- multiple channels OR together ---
+spanim_multi_zr|SPCLR:SPSET 0,0:SPANIM 0,1,60,100,0:SPANIM 0,4,60,90,0|SPCHK(0)|prog
+spanim_multi_xyv|SPCLR:SPSET 0,0:SPANIM 0,"XY",60,100,100,0:SPANIM 0,"V",60,5,0|SPCHK(0)|prog
+spanim_multi_uvi|SPCLR:SPSET 0,0:SPANIM 0,2,60,50,50,0:SPANIM 0,3,60,1,0|SPCHK(0)|prog
+# --- per-sprite independence ---
+spanim_sp1_self|SPCLR:SPSET 1,0:SPANIM 1,0,60,100,100,0|SPCHK(1)|prog
+spanim_sp1_iso|SPCLR:SPSET 0,0:SPSET 1,0:SPANIM 1,0,60,100,100,0|SPCHK(0)|prog
+# --- shape / range / type / data guards (errnum capture) ---
+spanim_before_spset|SPCLR:SPANIM 5,"XY",10,0,0|err
+spanim_too_few|SPSET 0,0:SPANIM 0,"XY"|err
+spanim_mgmt_oor|SPSET 0,0:SPANIM 512,"XY",10,0,0|err
+spanim_mgmt_neg|SPSET 0,0:SPANIM -1,"XY",10,0,0|err
+spanim_neg_target|SPSET 0,0:SPANIM 0,-1,10,5|err
+spanim_bad_target_str|SPSET 0,0:SPANIM 0,"ZZ",10,5|err
+spanim_zero_time|SPSET 0,0:SPANIM 0,"XY",0,100,50|err
+spanim_ret_ctx|SPSET 0,0:R=SPANIM(0,"XY",10,0,0)|err
+spanim_type_mismatch|SPSET 0,0:DIM AR[1]:SPANIM 0,AR,10,0,0|err

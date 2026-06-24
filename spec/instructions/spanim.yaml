@@ -36,10 +36,11 @@ semantics:
   - "Relative flag and channel: mov r1,r0,lsl#0x1c then r8=r1,lsr#0x1f extracts bit 3 (the +8 / '+' relative flag); and r0,r0,#0x7 masks the target to the channel 0..7 (@0x1420ec-0x1420f4). A switch over the 8 channels (switchD @0x142118, jump table @0x142120) builds the per-channel keyframe list and sets the channel's anim-active flag bit in [r4,#0x4] (e.g. orr #0x20000 for XY @0x142188, orr #0x40000 for Z @0x1421dc)."
   - "Keyframe list is built from the variadic data by helpers FUN_001ee360 / FUN_001ee1a8 (the number of data arguments is r6-2, sub r1,r6,#0x2 @0x142178); each channel reads the sprite's current value (e.g. vldr.32 s0,[r4,#0x30]/[r4,#0x34] for XY, vcvt.s32.f32) as the base for relative animation. Up to 32 keyframes are accepted per target (documented cap). Time is the per-keyframe duration: positive = hold that many frames, negative = linear interpolation over |time| frames."
   - "The animation starts on the frame FOLLOWING the SPANIM call (documented), and runs once unless a Loop count is given; Loop 0 means loop endlessly. SPSTOP pauses it and SPSTART resumes it (they toggle the 0x2000000 stop bit, see [[spstop]]/[[spstart]])."
+  - "SPCHK readback (hw_verified 2026-06-24, spanim.tsv): the per-channel anim-active orr bits are CONTIGUOUS — XY 0x20000 (bit 17), Z 0x40000, UV 0x80000, I 0x100000, R 0x200000, S 0x400000, C 0x800000, V 0x1000000 (bit 24) — and [[spchk]] returns (flags>>17)&0xFF, so SPCHK = `1<<channel` = the documented #CHK* bits (XY 1, Z 2, UV 4, I 8, R 16, S 32, C 64, V 128). The flag is set AT the SPANIM call (before the first advancing frame), so SPCHK reads the bit immediately with no VSYNC. Multiple channels OR together (Z+R → SPCHK 18, XY+V → 129, UV+I → 12). Unlike BG (whose layout is compacted, no UV/I channel — run 53), the sprite layout has all 8 channels and matches the docs exactly. Numeric and string targets, and the relative '+8'/trailing-'+' forms, all set the same channel bit (the +8 bit is masked off by `and r0,r0,#0x7`). Animations are per-sprite-slot independent."
 
 errors:
-  - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET, fewer than 3 arguments are given, fewer than one keyframe's worth of data is supplied for the channel, the call is used in a return context, or the resolved target number is negative" }
-  - { errnum: 8, name: "Type mismatch", when: "the target argument is neither a number nor a valid target string, or a keyframe data value is not numeric" }
+  - { errnum: 4, name: "Illegal function call", when: "the sprite has not been SPSET, fewer than 3 arguments are given, fewer than one keyframe's worth of data is supplied for the channel, the call is used in a return context, the resolved target number is negative, an unknown target string is given, or the target argument is a non-number/non-string value such as an array. hw_verified (spanim.tsv): a whole-array target gives errnum 4 here — UNLIKE BGANIM, which gives errnum 8 for the same array-target shape (a genuine handler difference; SPANIM's array target never reaches the keyframe-data type check)." }
+  - { errnum: 8, name: "Type mismatch", when: "a keyframe DATA value is not numeric (hw_verified: `SPANIM 0,\"XY\",10,\"S\",5` → errnum 8). NOTE: a non-number/non-string TARGET argument is errnum 4 (see above), NOT errnum 8." }
   - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511, or a keyframe time/item is outside the ±32768 fixed-point range" }
   - { errnum: 39, name: "Animation is too long", when: "more than 32 keyframes are supplied for the target" }
   - { errnum: 40, name: "Illegal animation data", when: "a keyframe has a zero duration (time == 0)" }
@@ -50,17 +51,49 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst SPANIM keyframe builders (M3-T2): inline/array builder FUN @0x163a00 — fewer than one keyframe's data cmp r6,#0x3 / bge @0x163a20 else mov r0,#0x4 @0x163a34 (errnum 4); keyframe count r4=data/stride cmp r4,#0x20 / ble else mov r0,#0x27 @0x163a68 (errnum 39 too long); the per-keyframe store loop @0x1638e0-0x1639d0 sxth-truncates each time/item to 16 bits and range-checks ±32768 -> mov r0,#0xa @0x163960 (errnum 10), and a zero time cmp r1,#0 / beq @0x1639d4 -> mov r0,#0x28 @0x1639e4 (errnum 40 illegal animation data); the relative add (add r0,r0,parent_xy @0x1639a8) confirms the +8 base. DATA-form builder FUN @0x163cf0 — count must be a whole number of keyframes cmn r1,r0 / beq else mov r0,#0x4 @0x163d38, >32 mov r0,#0x27 @0x163d54, bad item type mov r0,#0x8 @0x163d98." }
   - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteAnimState/SpriteAnimData, SpriteAnimTarget enum (XY..V, .relative flag), setAnimation(loop) (3.5.0 structural cross-check only)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8c): SPCLR:SPANIM 5,\"XY\",10,0,0 -> errnum 4 (used before SPSET); SPSET 0,0:SPANIM 0,\"XY\" -> errnum 4 (fewer than 3 args); SPSET 0,0:SPANIM 512,\"XY\",10,0,0 -> errnum 10 (mgmt out of range)." }
-  - { type: community, ref: "sbsave corpus: SPANIM used heavily. Confirms numeric targets `SPANIM 254,6,-10,0` (e.g. ______LAUNCHER), string targets `SPANIM 0,\"UV\",8,...`, RELATIVE string target `SPANIM SPN%,\"XY+\"` and `SPANIM 250,\"I+\",\"@_WALK10\"`, the DATA-label form `SPANIM 115,3,\"@ANIM_M1\"`, inline-vararg form `SPANIM 0,\"XY\",-60,200,100,-30,50,20`, negative time (smooth) `SPANIM 0,\"UV\",-1,0+UGH,72`, fractional items `SPANIM 0,5,-15,.8,.8`, and array-element values `SPANIM 10,6,30,0,-10,CYMA_THMSCH%[12]` — proving these forms are LEGAL syntax. Exact interpolation output is oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (spanim.tsv, M7-T2): channel-activation contract read back through [[spchk]] = (flags>>17)&0xFF. Each numeric target 0..7 sets SPCHK exactly 1/2/4/8/16/32/64/128 (the docs' #CHK* bits — sprite layout is the full contiguous 8 channels, NOT BG's compacted layout); string targets XY/UV/I/V → same 1/4/8/128; relative forms (\"XY+\"/\"V+\"/8/12) keep the same channel (1/128/1/16); multiple SPANIMs OR (Z+R=18, XY+V=129, UV+I=12); per-sprite independence (SPANIM on sprite 1 leaves SPCHK(0)=0). Guards: before-SPSET / too-few-args / unknown-target-string \"ZZ\" / negative-target / return-context → errnum 4 errline 1; mgmt 512 / -1 → errnum 10; zero-time keyframe → errnum 40; a NON-NUMERIC KEYFRAME value (`SPANIM 0,\"XY\",10,\"S\",5`) → errnum 8 errline 1. KEY DISCOVERY: a whole-array TARGET (`DIM AR[2]:SPANIM 0,AR,10,0,0`) → errnum 4 (NOT errnum 8 — BGANIM gives 8 for the identical shape; caught a sb-core bug where the shared parse_target returned errnum 8 for both)." }
+  - { type: community, ref: "sbsave corpus: SPANIM used heavily. Confirms numeric targets `SPANIM 254,6,-10,0` (e.g. ______LAUNCHER), string targets `SPANIM 0,\"UV\",8,...`, RELATIVE string target `SPANIM SPN%,\"XY+\"` and `SPANIM 250,\"I+\",\"@_WALK10\"`, the DATA-label form `SPANIM 115,3,\"@ANIM_M1\"`, inline-vararg form `SPANIM 0,\"XY\",-60,200,100,-30,50,20`, negative time (smooth) `SPANIM 0,\"UV\",-1,0+UGH,72`, fractional items `SPANIM 0,5,-15,.8,.8`, and array-element values `SPANIM 10,6,30,0,-10,CYMA_THMSCH%[12]` — proving these forms are LEGAL syntax. The management number is any integer EXPRESSION: function calls `SPANIM SPVAR(N,3),\"C\",...` / `SPANIM SPHITSP(CALLIDX),5,...` / `SPANIM RND(6)+50,\"XY\",...` and arithmetic array indices `SPANIM MONMN[NUMMON-1],\"I\",...` (verified word-boundary rg, ~28 fn-call + 314 arith-index uses). Exact interpolation output is oracle-pending." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Error cases hw_verified (sb-oracle 2026-06-22 s_t8c); runtime animation output is oracle-pending (no framebuffer harvest).
-  - { name: anim_ok, code: "SPSET 0,0\nSPANIM 0,\"XY\",-60,200,100,-30,50,20", expect: { stdout: "" } }
-  - { name: anim_numeric_target, code: "SPSET 0,0\nSPANIM 0,6,-10,0", expect: { stdout: "" } }
+  # --- SPCHK channel-bit readback (hw_verified 2026-06-24, spanim.tsv): sprite has all 8
+  # contiguous channels, so each SPANIM target sets SPCHK = 1<<channel = the documented #CHK* bit.
+  - { name: chk_num_xy, code: "SPSET 0,0\nSPANIM 0,0,60,100,100,0\nPRINT SPCHK(0)", expect: { stdout: "1" } }
+  - { name: chk_num_z, code: "SPSET 0,0\nSPANIM 0,1,60,100,0\nPRINT SPCHK(0)", expect: { stdout: "2" } }
+  - { name: chk_num_uv, code: "SPSET 0,0\nSPANIM 0,2,60,50,50,0\nPRINT SPCHK(0)", expect: { stdout: "4" } }
+  - { name: chk_num_i, code: "SPSET 0,0\nSPANIM 0,3,60,1,0\nPRINT SPCHK(0)", expect: { stdout: "8" } }
+  - { name: chk_num_r, code: "SPSET 0,0\nSPANIM 0,4,60,90,0\nPRINT SPCHK(0)", expect: { stdout: "16" } }
+  - { name: chk_num_s, code: "SPSET 0,0\nSPANIM 0,5,60,2,2,0\nPRINT SPCHK(0)", expect: { stdout: "32" } }
+  - { name: chk_num_c, code: "SPSET 0,0\nSPANIM 0,6,60,15,0\nPRINT SPCHK(0)", expect: { stdout: "64" } }
+  - { name: chk_num_v, code: "SPSET 0,0\nSPANIM 0,7,60,5,0\nPRINT SPCHK(0)", expect: { stdout: "128" } }
+  # string targets resolve to the same channel bit
+  - { name: chk_str_xy, code: "SPSET 0,0\nSPANIM 0,\"XY\",60,100,100,0\nPRINT SPCHK(0)", expect: { stdout: "1" } }
+  - { name: chk_str_uv, code: "SPSET 0,0\nSPANIM 0,\"UV\",60,50,50,0\nPRINT SPCHK(0)", expect: { stdout: "4" } }
+  - { name: chk_str_i, code: "SPSET 0,0\nSPANIM 0,\"I\",60,1,0\nPRINT SPCHK(0)", expect: { stdout: "8" } }
+  - { name: chk_str_v, code: "SPSET 0,0\nSPANIM 0,\"V\",60,5,0\nPRINT SPCHK(0)", expect: { stdout: "128" } }
+  # relative forms ('+8' / trailing '+') keep the SAME channel (the +8 bit is masked off)
+  - { name: chk_rel_str_xy, code: "SPSET 0,0\nSPANIM 0,\"XY+\",60,100,100,0\nPRINT SPCHK(0)", expect: { stdout: "1" } }
+  - { name: chk_rel_str_v, code: "SPSET 0,0\nSPANIM 0,\"V+\",60,5,0\nPRINT SPCHK(0)", expect: { stdout: "128" } }
+  - { name: chk_rel_num_xy, code: "SPSET 0,0\nSPANIM 0,8,60,100,100,0\nPRINT SPCHK(0)", expect: { stdout: "1" } }
+  - { name: chk_rel_num_r, code: "SPSET 0,0\nSPANIM 0,12,60,90,0\nPRINT SPCHK(0)", expect: { stdout: "16" } }
+  # multiple channels OR together in the running-bit mask
+  - { name: chk_multi_zr, code: "SPSET 0,0\nSPANIM 0,1,60,100,0\nSPANIM 0,4,60,90,0\nPRINT SPCHK(0)", expect: { stdout: "18" } }
+  - { name: chk_multi_xyv, code: "SPSET 0,0\nSPANIM 0,\"XY\",60,100,100,0\nSPANIM 0,\"V\",60,5,0\nPRINT SPCHK(0)", expect: { stdout: "129" } }
+  - { name: chk_multi_uvi, code: "SPSET 0,0\nSPANIM 0,2,60,50,50,0\nSPANIM 0,3,60,1,0\nPRINT SPCHK(0)", expect: { stdout: "12" } }
+  # per-sprite independence
+  - { name: chk_sp1_self, code: "SPSET 1,0\nSPANIM 1,0,60,100,100,0\nPRINT SPCHK(1)", expect: { stdout: "1" } }
+  - { name: chk_sp1_iso, code: "SPSET 0,0\nSPSET 1,0\nSPANIM 1,0,60,100,100,0\nPRINT SPCHK(0)", expect: { stdout: "0" } }
+  # --- shape / range / type / data guards (hw_verified 2026-06-24, spanim.tsv) ---
   - { name: before_spset, code: "SPCLR\nSPANIM 5,\"XY\",10,0,0", expect: { error: { errnum: 4 } } }
   - { name: too_few_args, code: "SPSET 0,0\nSPANIM 0,\"XY\"", expect: { error: { errnum: 4 } } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPANIM 512,\"XY\",10,0,0", expect: { error: { errnum: 10 } } }
-  # Data-build errnums confirmed in the keyframe builders (disassembled @0x163a00/@0x1639e4).
-  - { name: zero_time_illegal, code: "SPSET 0,0\nSPANIM 0,\"XY\",0,100,50", expect: { error: { errnum: 40 } } }
+  - { name: mgmt_negative, code: "SPSET 0,0\nSPANIM -1,\"XY\",10,0,0", expect: { error: { errnum: 10 } } }
+  - { name: neg_target, code: "SPSET 0,0\nSPANIM 0,-1,10,5", expect: { error: { errnum: 4 } } }
   - { name: bad_target_string, code: "SPSET 0,0\nSPANIM 0,\"ZZ\",10,5", expect: { error: { errnum: 4 } } }
+  # Zero-time keyframe → errnum 40 (keyframe builder @0x1639e4).
+  - { name: zero_time_illegal, code: "SPSET 0,0\nSPANIM 0,\"XY\",0,100,50", expect: { error: { errnum: 40 } } }
+  # A whole-array target → errnum 4 (NOT errnum 8 — distinct from BGANIM); caught a sb-core bug.
+  - { name: array_target_illegal, code: "SPSET 0,0\nDIM AR[2]\nSPANIM 0,AR,10,0,0", expect: { error: { errnum: 4 } } }
+  # A non-numeric keyframe DATA value → errnum 8 (the only errnum-8 path).
+  - { name: nonnumeric_keyframe, code: "SPSET 0,0\nSPANIM 0,\"XY\",10,\"S\",5", expect: { error: { errnum: 8 } } }

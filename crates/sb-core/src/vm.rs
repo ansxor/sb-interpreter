@@ -2794,7 +2794,18 @@ impl Vm {
         let mgmt_v = &args[0];
         let target_v = &args[1];
         // The channel (resolved from the target) gives items-per-keyframe for flattening.
-        let (channel, _relative) = spr::parse_target(target_v).map_err(sb)?;
+        // SPANIM rejects a non-number/non-string target (e.g. an array) with errnum 4 — NOT
+        // the errnum 8 that the shared `parse_target` (and BGANIM, hw_verified=8) use. The
+        // array never reaches SPANIM's keyframe-data type check, which is the only errnum-8
+        // path here (non-numeric keyframe value). hw_verified (2026-06-24, spanim.tsv):
+        // `DIM AR[2]:SPANIM 0,AR,...` → errnum 4; `SPANIM 0,"XY",10,"S",5` → errnum 8.
+        let (channel, _relative) = spr::parse_target(target_v).map_err(|e| {
+            sb(if e.errnum == ERR_TYPE_MISMATCH {
+                crate::builtins::illegal()
+            } else {
+                e
+            })
+        })?;
         let stride = 1 + spr::anim_items(channel);
 
         let (data, loop_count): (Vec<f64>, i32) = match &args[2] {
