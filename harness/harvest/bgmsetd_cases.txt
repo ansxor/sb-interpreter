@@ -1,0 +1,31 @@
+# BGMSETD harvest — headless-deterministic contract (call shape / tune range / label type /
+# MML-compile error 47). Audio realization is O-T7 (no golden). Each case runs alone via `err`.
+# A valid (NOERR) form proves register-only succeeds; the guards pin the errnum surface.
+
+# --- ACCEPTED forms (expect NOERR) ---
+valid_literal|@M:DATA "CDEFG":DATA 0:BGMSETD 128,"@M"|err
+valid_min|@M:DATA "C":DATA 0:BGMSETD 128,"@M"|err
+valid_max|@M:DATA "C":DATA 0:BGMSETD 255,"@M"|err
+valid_strvar|@M:DATA "CDE":DATA 0:L$="@M":BGMSETD 200,L$|err
+valid_labellit|@M:DATA "CDE":DATA 0:BGMSETD 128,@M|err
+valid_chanprefix|@M:DATA "CDE":DATA 0:BGMSETD 128,"1:@M"|err
+
+# --- TUNE range guards (errnum 10) — tune checked before label, no DATA needed ---
+tune_low|BGMSETD 127,"@L"|err
+tune_high|BGMSETD 256,"@L"|err
+tune_neg|BGMSETD -1,"@L"|err
+
+# --- LABEL type guard (errnum 8) — numeric 2nd arg ---
+numeric_label|BGMSETD 128,5|err
+
+# --- SHAPE guards (errnum 4) ---
+one_arg|BGMSETD 128|err
+three_args|BGMSETD 128,"@L",1|err
+return_ctx|A=BGMSETD(128,"@L")|err
+
+# --- MML compile failure (errnum 47) — DATA block with unknown MML token ---
+bad_mml|@M:DATA "X":DATA 0:BGMSETD 128,"@M"|err
+bad_mml2|@M:DATA "Z9":DATA 0:BGMSETD 128,"@M"|err
+
+# --- OPEN QUESTION: missing label (sb-core assumes errnum 14 Undefined label) ---
+missing_label|BGMSETD 128,"@NOPE"|err

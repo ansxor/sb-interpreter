@@ -237,12 +237,13 @@ const IN_SCOPE_INPUT: &[&str] = &["BUTTON", "STICK", "STICKEX", "BREPEAT", "TOUC
 /// MML-compile error (`BGMSET` malformed MML → errnum 47), `BGMVAR`'s write-vs-read form
 /// selection (stopped read → -1), and `BGMCHK`'s stopped → 0 boolean. The *audible* output of
 /// playback has no deterministic emulator golden (O-T7), so none of the inline spec cases
-/// assert it (they expect empty `stdout`, a `0`/`-1` value, or an errnum). `BGMSETD` is folded
-/// PARTIALLY via `IN_SCOPE_PARTIAL`: its arg-shape (→ 4) / tune-range (→ 10) / non-string-label
-/// (→ 8) guards replay green now; only its `basic` happy-path case (`BGMSETD 128,"@MMLTOP"`)
-/// is excluded — it has no matching `DATA` block, so `sb-core` faithfully raises Undefined
-/// label (errnum 14, the RESTORE-shared lookup) rather than the spec's assumed empty stdout
-/// (oracle-pending — queued in `HARVEST_QUEUE.md`). Listed by id.
+/// assert it (they expect empty `stdout`, a `0`/`-1` value, or an errnum). `BGMSETD`'s whole
+/// contract is now fully in scope (M7-T2 hw_verified, harness/harvest/out/bgmsetd.tsv): its
+/// accepted forms (literal / string-var / bare-label-literal / channel-prefix labels), its
+/// tune-range (→ 10) / non-string-label (→ 8) / arg-shape (→ 4) / illegal-MML (→ 47) guards,
+/// AND the resolved open question — a **missing** label (`BGMSETD 128,"@NOPE"`, no matching
+/// `DATA` block) returns NOERR, registering an empty tune rather than raising Undefined label
+/// (errnum 14). `sb-core` was corrected to match. Listed by id.
 /// The SFX / voice commands (M5-T4) extend the in-scope set: `BEEP` (preset sound effect),
 /// `TALK`/`TALKCHK`/`TALKSTOP` (speech transport), `EFCSET`/`EFCON`/`EFCOFF`/`EFCWET` (the
 /// music effector over `EffectState`), and `WAVSET`/`WAVSETA` (user MML instruments
@@ -316,7 +317,6 @@ const IN_SCOPE_DEVICE: &[&str] = &[
 /// cases fold in now. Tuples are `(spec id, &[excluded case names])`.
 const IN_SCOPE_PARTIAL: &[(&str, &[&str])] = &[
     ("LOCATE", &["x_edge_50_ok"]),
-    ("BGMSETD", &["basic"]),
     ("TALKCHK", &["bare_statement_syntax_error"]),
 ];
 

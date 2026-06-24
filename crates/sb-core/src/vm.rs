@@ -2374,23 +2374,23 @@ impl Vm {
         let raw = String::from_utf16_lossy(&label);
         let after_chan = raw.rsplit(':').next().unwrap_or(&raw);
         let name = after_chan.trim_start_matches('@').to_ascii_uppercase();
+        // A missing label is NOT an error (hw_verified: real SB 3.6.0 returns NOERR for
+        // `BGMSETD 128,"@NOPE"` with no matching DATA block — M7-T2): the label lookup yields
+        // no MML, an empty tune is compiled and registered. Only a present label gathers DATA.
         let idx = self
             .program
             .data_labels
             .iter()
             .find(|(n, _)| *n == name)
-            .map(|(_, i)| *i)
-            .ok_or(VmError::Sb {
-                errnum: ERR_UNDEFINED_LABEL,
-                line: 0,
-            })?;
+            .map(|(_, i)| *i);
         // Gather consecutive string DATA items, stopping at the first numeric item (the
         // documented terminator) or the end of the pool.
         let mut mml = String::new();
-        let mut k = idx;
-        while let Some(Const::Str(s)) = self.program.data.get(k) {
-            mml.push_str(&String::from_utf16_lossy(s));
-            k += 1;
+        if let Some(mut k) = idx {
+            while let Some(Const::Str(s)) = self.program.data.get(k) {
+                mml.push_str(&String::from_utf16_lossy(s));
+                k += 1;
+            }
         }
         let song = compile_mml(&mml).map_err(sb)?;
         self.audio.register_tune(tune, song);
@@ -5957,9 +5957,11 @@ H$=HEX$(255)"#);
     }
 
     #[test]
-    fn bgmsetd_undefined_label_is_errnum_14() {
-        // No matching DATA block → Undefined label (the RESTORE-shared lookup), errnum 14.
-        assert_eq!(run_b_err("BGMSETD 128,\"@NOPE\"").errnum(), Some(14));
+    fn bgmsetd_missing_label_is_noerr() {
+        // hw_verified (real SB 3.6.0, M7-T2 harness/harvest/out/bgmsetd.tsv): a label with no
+        // matching DATA block is NOT an error — the RESTORE-shared lookup yields no MML, so an
+        // empty tune is registered and the statement returns NOERR (not Undefined label / 14).
+        run_b("BGMSETD 128,\"@NOPE\"");
     }
 
     #[test]

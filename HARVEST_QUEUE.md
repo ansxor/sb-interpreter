@@ -681,8 +681,12 @@ oracle to confirm exact output and promote to `hw_verified`.
   - BGMSET: DONE (hw_verified M7-T2 run 63, harness/harvest/out/bgmset.tsv) — tune out of
     128..255 -> 10; non-string 2nd arg -> 8; wrong argcount (1 or 3) + return-context -> 4;
     malformed MML ("X"/"Z9") -> 47. Top-level confidence flipped (registration is fully headless).
-  - BGMSETD: tune number out of 128..255 -> errnum 10; non-string 2nd arg -> errnum 8;
-    wrong arg count (1 or 3) -> errnum 4; malformed MML -> errnum 47 (Illegal MML).
+  - BGMSETD: DONE (hw_verified M7-T2, harness/harvest/out/bgmsetd.tsv — 16/16) — tune out of
+    128..255 -> 10; non-string 2nd arg -> 8; wrong argcount (1 or 3) + return-context -> 4;
+    malformed MML in the DATA block -> 47. Accepted forms NOERR: literal/string-var/bare-label-
+    literal/channel-prefix labels. **Missing label (`BGMSETD 128,"@NOPE"`, no matching DATA) ->
+    NOERR** (register-only empty tune, NOT errnum 14) — sb-core corrected. Top-level confidence
+    flipped (registration is fully headless). Only BGMSETD's *audio* realization stays O-T7.
   - BGMCLEAR: DONE (hw_verified M7-T2 run 62) — tune out of 128..255 -> 10; >=2 args -> 4 (0-arg clears all, no error).
   - BEEP: sound number in the 134..223 gap or >383 -> errnum 10; freq outside -32768..32767,
     volume outside 0..127, pan outside 0..127 -> errnum 10; >4 args -> errnum 4. ALSO verify the
@@ -1464,11 +1468,11 @@ deterministic (tested). Per O-T7 there is NO emulator audio golden, so the items
 The call shapes + arg ranges + the MML-compile error (47) are disassembled and tested; the
 *runtime transport values* below are sb-core's documented assumptions (per the specs) and want
 a live SB 3.6.0 read:
-- **BGMSETD undefined label** — sb-core raises Undefined label (errnum 14) for `BGMSETD tune,"@L"`
-  with no matching DATA block (the RESTORE-shared lookup `bl 0x1ee960`). The `bgmsetd.yaml` `basic`
-  case assumes empty stdout; the real errnum/behavior on a missing label is unconfirmed (excluded
-  from the conformance gate via `IN_SCOPE_PARTIAL` until harvested). Verify whether a missing label
-  errors (14) or silently no-ops.
+- **BGMSETD missing label — RESOLVED (hw_verified M7-T2, harness/harvest/out/bgmsetd.tsv).**
+  Real SB 3.6.0 returns **NOERR** for `BGMSETD 128,"@NOPE"` with no matching DATA block — it
+  silently no-ops (registers an empty tune), it does NOT raise Undefined label (14). sb-core
+  was corrected (`call_bgmsetd`: a missing label now gathers empty MML instead of erroring) and
+  the whole `bgmsetd.yaml` contract is now in the conformance gate (out of `IN_SCOPE_PARTIAL`).
 - **BGMCHK playing value** — the exact non-zero value while a track plays (sb-core returns 1; docs
   say TRUE — could be a richer flag). The STOPPED surface is now **hw_verified** (M7-T2 2026-06-24):
   `BGMCHK(0)`/`BGMCHK()`/`BGMCHK(7)` all → 0, track 8/-1 → errnum 10, statement form + 2-arg →

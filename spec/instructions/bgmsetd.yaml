@@ -18,6 +18,7 @@ semantics:
   - "Arg index 1 = the label value. Its value-type byte [r12,#0x2] is checked (ldrb r0,[r12,#0x2] / cmp r0,#0x0 / beq @0x1a3458): a non-string (numeric) value raises errnum 8 (Type mismatch) (mov r0,#0x8 / bl 0x1fffdc @0x1a3458-0x1a3464). A string value is fetched via its accessor (ldr r2,[r12,#0x50] / blx r2 @0x1a3424-0x1a3428)."
   - "The label is resolved against the DATA table like RESTORE (bl 0x1ee960 @0x1a3440 — the shared label-lookup used by RESTORE) and the gathered MML is fetched (bl 0x1a0fbc @0x1a3480). The tune id is tagged (add r1,r0,#0x1000000 / add r1,r1,#0xb1 @0x1a3494-0x1a349c) and compiled via bl 0x1d475c (@0x1a34c0). On compile failure (cmp r4,#0x0 / beq) the detail is fetched (bl 0x1d450c) and errnum 47 (Illegal MML) is raised (mov r0,#0x2f / bl 0x1fffdc @0x1a34ec). A temporary is freed via bl 0x1eac30 (@0x1a34cc)."
   - "Because the read uses the shared RESTORE machinery, the program's DATA read pointer is moved; per the docs RESTORE must be re-issued before subsequent READ. Does NOT play the tune — register only; play with [[bgmplay]], clear with [[bgmclear]]. The inline-literal-MML variant is [[bgmset]]. MML grammar = S-C5; audio realization has no deterministic emulator golden (O-T7)."
+  - "A label that does NOT resolve to any DATA block is NOT an error: hw_verified `BGMSETD 128,\"@NOPE\"` with no matching label returns NOERR (the RESTORE-shared lookup yields no MML, so an empty tune is registered). The label may be a string literal (`\"@M\"`), a string variable, OR a bare label literal (`@M`, which evaluates to the string \"@M\" — the dominant corpus form, e.g. `BGMSETD 128,@AL_NOM`), and may carry a leading channel prefix (`\"1:@M\"`); all are accepted (hw_verified)."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "argument count is not exactly 2, or BGMSETD is used in a return context" }
@@ -29,16 +30,36 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/bgmsetd.md (`BGMSETD User-defined tune number,\"@Label string\"` — tune 128-255; MML registered via DATA \"...\", DATA block ended by a numeric DATA value; internally handled like RESTORE so RESTORE must be used to READ afterward; ~2-frame delay after BGMPLAY; example `BGMSETD 128,\"@MMLTOP\"`)" }
   - { type: disassembled, ref: "cia_3.6.0.lst BGMSETD handler @0x1a339c: argcount [r6,#0x4] cmp r0,#0x2 / result-count [r6,#0xc] cmpeq r0,#0x0 beq @0x1a33d4 else errnum 4 errline -1 (mov r0,#0x4 @0x1a33bc); tune via bl 0x1eec7c min r3=#0x80 max #0xff @0x1a33d4-0x1a33ec (errnum 10); label value-type byte ldrb r0,[r12,#0x2] cmp #0x0 beq @0x1a3458 -> errnum 8 (mov r0,#0x8); label resolved via RESTORE-shared lookup bl 0x1ee960 @0x1a3440 + MML gather bl 0x1a0fbc @0x1a3480; id tagged add r1,r0,#0x1000000 / add r1,r1,#0xb1, compile bl 0x1d475c @0x1a34c0, on failure errnum 47 mov r0,#0x2f @0x1a34ec; temp freed bl 0x1eac30 @0x1a34cc" }
   - { type: disassembled, ref: "cia_3.6.0.lst shared integer-arg range helper FUN_001eec7c @0x1eec7c: bounds-checks value against min r3 and max [sp,#0x18], raising errnum 10 (mov r0,#0xa / b 0x1fffdc @0x1eeccc) — enforces the 128..255 tune bound" }
+  - { type: hw_verified, ref: "real SB 3.6.0 (Azahar 2026-06-24, harness/harvest/out/bgmsetd.tsv — 16/16, 0 mismatch). ACCEPTED forms NOERR: `@M:DATA \"CDEFG\":DATA 0:BGMSETD 128,\"@M\"` (literal label), tune min 128 / max 255, string-var label `L$=\"@M\":BGMSETD 200,L$`, bare label literal `BGMSETD 128,@M`, channel-prefix `BGMSETD 128,\"1:@M\"`. TUNE-range guards errnum 10 errline 1: 127 (below 128), 256 (above 255), -1 (negative). LABEL-type guard errnum 8 errline 1: numeric 2nd arg `BGMSETD 128,5`. SHAPE guards errnum 4 errline 1: 1 arg, 3 args, return context `A=BGMSETD(128,\"@M\")`. ILLEGAL-MML guards errnum 47 errline 1: DATA block `DATA \"X\"` / `DATA \"Z9\"` (unknown MML). MISSING label `BGMSETD 128,\"@NOPE\"` (no matching DATA) → NOERR — register-only with no MML, NOT errnum 14." }
   - { type: community, ref: "osb/SMILEBASIC/sound.d BGM registration (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGMSETD\\b'): 376 files — the documented 2-arg label form dominates: literal label `BGMSETD 255,\"@MML\"`, string-var label `BGMSETD 255,@MML` and `BGMSETD 128,@BGM30`, computed label `BGMSETD 128+I,\"@SE\"+STR$(I)`, and labels with a leading channel prefix `BGMSETD 128,\"1:@MML\"` / `BGMSETD 217,\"1:@BGM96\"`; tune number is routinely a variable/expression. Proves the syntax is legal; runtime audio output unproven (no oracle, O-T7)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Call shape, argument ranges and error conditions read from the disassembly handler body.
-  # Audio output is not deterministically harvestable (O-T7); these pin the statement contract.
-  - { name: basic, code: 'BGMSETD 128,"@MMLTOP"', expect: { stdout: "" } }
+  # Whole call-shape + tune-range + label-type + MML-compile + missing-label contract,
+  # hw_verified against real SB 3.6.0 (Azahar 2026-06-24, harness/harvest/out/bgmsetd.tsv —
+  # 16/16, 0 mismatch). BGMSETD only registers a tune (no playback here), so its observable
+  # surface is fully headless-deterministic (the audio realization is O-T7, not asserted).
+  # ACCEPTED forms (NOERR) — need a real DATA block under the label:
+  - { name: valid_literal, code: "@M\nDATA \"CDEFG\"\nDATA 0\nBGMSETD 128,\"@M\"", expect: { stdout: "" } }
+  - { name: tune_min, code: "@M\nDATA \"C\"\nDATA 0\nBGMSETD 128,\"@M\"", expect: { stdout: "" } }
+  - { name: tune_max, code: "@M\nDATA \"C\"\nDATA 0\nBGMSETD 255,\"@M\"", expect: { stdout: "" } }
+  - { name: var_label, code: "@M\nDATA \"CDE\"\nDATA 0\nL$=\"@M\":BGMSETD 200,L$", expect: { stdout: "" } }
+  - { name: label_literal, code: "@M\nDATA \"CDE\"\nDATA 0\nBGMSETD 128,@M", expect: { stdout: "" } }
+  - { name: channel_prefix, code: "@M\nDATA \"CDE\"\nDATA 0\nBGMSETD 128,\"1:@M\"", expect: { stdout: "" } }
+  # MISSING label is NOT an error (resolves the long-standing open question):
+  - { name: missing_label, code: 'BGMSETD 128,"@NOPE"', expect: { stdout: "" } }
+  # TUNE-range guards (errnum 10) — tune checked before the label, no DATA block needed:
   - { name: tune_too_low, code: 'BGMSETD 127,"@L"', expect: { error: { errnum: 10 } } }
   - { name: tune_too_high, code: 'BGMSETD 256,"@L"', expect: { error: { errnum: 10 } } }
+  - { name: tune_negative, code: 'BGMSETD -1,"@L"', expect: { error: { errnum: 10 } } }
+  # LABEL type guard (errnum 8) — numeric 2nd arg, checked before resolution:
   - { name: numeric_label_arg, code: "BGMSETD 128,5", expect: { error: { errnum: 8 } } }
+  # SHAPE guards (errnum 4):
   - { name: one_arg, code: "BGMSETD 128", expect: { error: { errnum: 4 } } }
+  - { name: three_args, code: 'BGMSETD 128,"@L",1', expect: { error: { errnum: 4 } } }
+  - { name: used_as_function, code: 'A=BGMSETD(128,"@L")', expect: { error: { errnum: 4 } } }
+  # ILLEGAL-MML guards (errnum 47) — DATA block compiles to a bad MML token:
+  - { name: bad_mml, code: "@M\nDATA \"X\"\nDATA 0\nBGMSETD 128,\"@M\"", expect: { error: { errnum: 47 } } }
+  - { name: bad_mml_unknown_cmd, code: "@M\nDATA \"Z9\"\nDATA 0\nBGMSETD 128,\"@M\"", expect: { error: { errnum: 47 } } }
