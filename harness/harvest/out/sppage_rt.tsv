@@ -1,0 +1,12 @@
+sppage_default	4
+sppage_rt0	0
+sppage_rt1	1
+sppage_rt2	2
+sppage_rt3	3
+sppage_rt5	ERROR prog case halted (no result — runtime error?)
+sppage_set_noarg_err	errnum=0 errline=-1
+sppage_set_2arg_err	errnum=4 errline=1
+sppage_get_1arg_err	errnum=4 errline=1
+sppage_high_err	errnum=10 errline=1
+sppage_low_err	errnum=10 errline=1
+sppage_rt5	5

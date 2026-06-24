@@ -214,6 +214,9 @@ pub const BUILTIN_NAMES: &[&str] = &[
     // (`A=SPROT(mgmt)`), so it must be a known builtin to compile as a call, not a variable.
     "SPOFS",
     "SPROT",
+    // SPPAGE (M7-T2) selects/reads the global sprite render page; its GET is a 0-arg
+    // function form (`P=SPPAGE()`), so it must be a known builtin to compile as a call.
+    "SPPAGE",
     // Sprite collision + definition templates (M3-T3): SPCOL/SPCOLVEC configure a sprite's
     // collision rect/mask/velocity; SPHITSP/SPHITRC test for collisions; SPHITINFO reads the
     // result; SPCHK reads the animation-status bitmask; SPDEF manages the definition-template

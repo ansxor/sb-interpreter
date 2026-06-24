@@ -188,6 +188,7 @@ const IN_SCOPE_SPRITES: &[&str] = &[
     "SPSCALE",
     "SPROT",
     "SPHOME",
+    "SPPAGE",
     "SPCOL",
     "SPCOLVEC",
     "SPCHK",

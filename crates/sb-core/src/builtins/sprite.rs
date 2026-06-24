@@ -732,6 +732,41 @@ pub fn sphome(
     }
 }
 
+/// `SPPAGE` — select (SET) or read (GET) the global graphic page the sprite system renders
+/// onto. Two forms chosen by the return count (cia_3.6.0.lst handler @0x142ad0):
+///
+/// - `ret_count == 0`, exactly 1 arg → SET: the page is fetched through the bounded-integer
+///   getter (lower 0, upper 5 — `mov r1,#0x5` / `mov r3,#0x0` @0x142b1c) so a value < 0 or
+///   > 5 raises errnum 10 (Out of range); the accepted page is committed globally.
+/// - `ret_count == 1`, 0 args → GET: returns the current page (`[[0x315d60]+0x4c]`,
+///   @0x142b54-0x142b70), default GRP4.
+///
+/// Any other (return-count, arg-count) shape raises errnum 4 (Illegal function call).
+pub fn sppage(
+    sp: &mut SpriteState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count == 0 {
+        if args.len() != 1 {
+            return Err(illegal());
+        }
+        let page = args[0].to_int()?;
+        if !(0..=5).contains(&page) {
+            return Err(out_of_range());
+        }
+        sp.page = page as u8;
+        Ok(vec![])
+    } else if ret_count == 1 {
+        if !args.is_empty() {
+            return Err(illegal());
+        }
+        Ok(vec![Value::Int(i32::from(sp.page))])
+    } else {
+        Err(illegal())
+    }
+}
+
 // -- collision (M3-T3) --------------------------------------------------------
 
 /// The `SPCOL` scale-adjustment flag: a Void (skipped `,,`) field is the default FALSE,
@@ -1358,5 +1393,31 @@ mod tests {
         sphome(&mut sp, &[n(1.0), n(7.0), n(8.0)], 0).unwrap();
         let g0 = sphome(&mut sp, &[n(0.0)], 2).unwrap();
         assert_eq!((g0[0].clone(), g0[1].clone()), (n(5.0), n(6.0)));
+    }
+
+    #[test]
+    fn sppage_round_trip_and_guards() {
+        // SPPAGE is the global sprite render page: GET (ret_count 1, 0 args) defaults to GRP4;
+        // SET (ret_count 0, 1 arg) round-trips 0..5 verbatim, out of that range → errnum 10;
+        // any other (ret,arg) shape → errnum 4. hw_verified sb-oracle 2026-06-24 (sppage_rt).
+        let mut sp = SpriteState::new();
+        // Fresh default = 4 (GRP4).
+        assert_eq!(sppage(&mut sp, &[], 1).unwrap(), vec![Value::Int(4)]);
+        // Round-trip every valid page 0..5.
+        for p in 0..=5 {
+            sppage(&mut sp, &[n(f64::from(p))], 0).unwrap();
+            assert_eq!(sppage(&mut sp, &[], 1).unwrap(), vec![Value::Int(p)]);
+        }
+        // Out of range → errnum 10.
+        assert_eq!(sppage(&mut sp, &[n(6.0)], 0).unwrap_err().errnum, 10);
+        assert_eq!(sppage(&mut sp, &[n(-1.0)], 0).unwrap_err().errnum, 10);
+        // Wrong (return, arg) shape → errnum 4: SET with 0 args, SET with 2 args, GET with 1 arg.
+        assert_eq!(sppage(&mut sp, &[], 0).unwrap_err().errnum, 4);
+        assert_eq!(sppage(&mut sp, &[n(1.0), n(2.0)], 0).unwrap_err().errnum, 4);
+        assert_eq!(sppage(&mut sp, &[n(0.0)], 1).unwrap_err().errnum, 4);
+        // A new sprite captures the current global page.
+        sppage(&mut sp, &[n(2.0)], 0).unwrap();
+        spset0(&mut sp, 0);
+        assert_eq!(sp.sprites[0].page, 2);
     }
 }

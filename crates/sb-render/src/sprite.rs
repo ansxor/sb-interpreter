@@ -297,6 +297,11 @@ pub struct SpriteState {
     pub spdef: Vec<SpdefEntry>,
     /// The shared `SPHIT*` collision-result record `SPHITINFO` reads back.
     pub hit: HitInfo,
+    /// The global graphic page the sprite system renders onto (`SPPAGE`, 0..=5; default
+    /// GRP4). One value for the whole system — the disassembled GET reads it back from
+    /// `[[0x315d60]+0x4c]`. New sprites capture it at `SPSET` time into their per-slot
+    /// [`Sprite::page`].
+    pub page: u8,
 }
 
 impl Default for SpriteState {
@@ -312,6 +317,7 @@ impl SpriteState {
             sprites: vec![Sprite::default(); SPRITE_COUNT],
             spdef: vec![SpdefEntry::default(); SPDEF_TEMPLATE_COUNT],
             hit: HitInfo::default(),
+            page: SPRITE_PAGE_DEFAULT,
         }
     }
 
@@ -347,6 +353,9 @@ impl SpriteState {
             h,
             home_x: home.0 as f64,
             home_y: home.1 as f64,
+            // New sprites sample the page the sprite system is currently rendering onto
+            // (the global `SPPAGE`, default GRP4).
+            page: self.page,
             ..Sprite::default()
         };
         sp.set_attr(attr);

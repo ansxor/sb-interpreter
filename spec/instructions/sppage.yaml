@@ -30,12 +30,19 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/sprite.d sprite-page / GRP4-default mapping (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus: the function form P=SPPAGE() appears ~59x (e.g. GPAGE 0,SPPAGE() in 7343YJHX/TXT/-TG_PLAYER) and the statement form SPPAGE n ~237x, both with literal and expression operands (e.g. SPPAGE MD+1 in 227EVK4V/TXT/SBSMILE) — confirms both forms are legal." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8a): SPPAGE 6 -> errnum 10, errline 1; SPPAGE -1 -> errnum 10 (page out of range 0..5)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2, sppage_rt): the SET->GET value contract. Fresh default SPPAGE()=4 (GRP4). Verbatim round-trip `SPPAGE n : SPPAGE()` for n in {0,1,2,3,5} -> n (the page is stored/read with no transform). Shape guards: `SPPAGE 1,2` (SET, 2 args) -> errnum 4 errline 1; `R=SPPAGE(0)` (GET, 1 arg) -> errnum 4 errline 1 (the disassembled (ret,arg)-shape guard @0x142b04). The non-headless on-screen render-target effect (which GRP a sprite is composited onto) still needs the O-T6 sprite framebuffer golden." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # SET/GET round-trip is disassembled (no sprite-framebuffer harvest yet); error expects are hw_verified (sb-oracle 2026-06-22 s_t8a).
-  - { name: roundtrip_set_get, code: 'SPPAGE 5\nP=SPPAGE()\nPRINT P', expect: { stdout: "5" } }
-  - { name: default_page, code: 'P=SPPAGE()\nPRINT P', expect: { stdout: "4" } }
+  # SET/GET value contract + shape/range guards are hw_verified (sb-oracle: s_t8a range, M7-T2 sppage_rt value/shape).
+  - { name: default_page, code: "P=SPPAGE()\nPRINT P", expect: { stdout: "4" } }
+  - { name: roundtrip_set_get_0, code: "SPPAGE 0\nPRINT SPPAGE()", expect: { stdout: "0" } }
+  - { name: roundtrip_set_get_1, code: "SPPAGE 1\nPRINT SPPAGE()", expect: { stdout: "1" } }
+  - { name: roundtrip_set_get_2, code: "SPPAGE 2\nPRINT SPPAGE()", expect: { stdout: "2" } }
+  - { name: roundtrip_set_get_3, code: "SPPAGE 3\nPRINT SPPAGE()", expect: { stdout: "3" } }
+  - { name: roundtrip_set_get_5, code: "SPPAGE 5\nP=SPPAGE()\nPRINT P", expect: { stdout: "5" } }
+  - { name: set_two_args_illegal, code: "SPPAGE 1,2", expect: { error: { errnum: 4 } } }
+  - { name: get_one_arg_illegal, code: "R=SPPAGE(0)", expect: { error: { errnum: 4 } } }
   - { name: page_out_of_range_high, code: "SPPAGE 6", expect: { error: { errnum: 10 } } }
   - { name: page_out_of_range_low, code: "SPPAGE -1", expect: { error: { errnum: 10 } } }
