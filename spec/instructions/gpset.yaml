@@ -19,9 +19,11 @@ summary: "Plots a single pixel on the current graphic (manipulation) page, using
 semantics:
   - "Takes exactly 2 args (x,y) or 3 args (x,y,color) and returns no value. Any other argument count, or requesting a return value (used as a function), raises errnum 4 (Illegal function call) — return-count [r4,#0xc] cmp #0 / bne error @0x153dac, argcount [r4,#0x4] cmp #2 (beq @0x153dbc) / cmp #3 (beq @0x153dc4) else mov r0,#0x4 (errnum 4) @0x153dd0."
   - "With 2 args the color defaults to the current graphic draw color set by GCOLOR (the 2-arg path loads it from the graphics-context draw-color field +0xc: ldreq r0,[r6,#0xc] / streq r0,[sp,#0x8] @0x153e1c). With 3 args the popped 32-bit value is used as the color directly."
-  - "The color is NOT range-checked — it is a full 32-bit ARGB value (8 bits each A,R,G,B); A=255 is opaque, any other alpha is transparent (same convention as GCOLOR/GCLS). Signed and &H literals are accepted as colors (e.g. -1 = &HFFFFFFFF = opaque white)."
-  - "Coordinates are integer-coerced from the popped arguments (the standard arg-fetch vtable slot [r2,#0x40]); real code passes floating-point and array/expression operands freely (e.g. GPSET CX-0.5,Y). The exact float->int rounding for fractional coordinates is left to the framebuffer oracle (queued)."
-  - "Draws onto the graphic page currently selected for manipulation by GPAGE; the dispatch reads the graphics context via [[0x315d60]+0x20] and passes x,y,color to the pixel-draw helper bl 0x194044 @0x153ea0. Out-of-range / off-screen coordinates are clipped by the draw helper, not rejected — no range error is raised (real programs plot at e.g. 511,511)."
+  - "The color is NOT range-checked — it is a full 32-bit ARGB value (8 bits each A,R,G,B). The pixel is stored verbatim into the page's RGBA5551 framebuffer (a direct overwrite, NOT an alpha-blend or transparent-skip): GPSET-ing a non-opaque color OVER an existing opaque pixel replaces it (hw_verified: white then &H000000FF reads back &H000000F8). Signed and &H literals are accepted as colors (e.g. -1 = &HFFFFFFFF = opaque white)."
+  - "Color round-trips through the device RGBA5551 format (8->5 bit channel truncation, same as GSPOIT/GCOLOR): the value read back via GSPOIT differs from the drawn ARGB — each channel keeps its top 5 bits (R 255->248, G 100->96), and the 1-bit alpha is set ONLY when the source alpha == 255 (fully opaque). hw_verified: GPSET x,y,RGB(255,0,0) -> GSPOIT &HFFF80000; RGB(0,100,0) -> &HFF006000; an alpha of 1..254 stores a clear alpha bit (GPSET x,y,&H00FF0000 -> reads back &H00F80000; &HFE000000 -> 0) — so only 255 round-trips as opaque."
+  - "Coordinates are integer-coerced from the popped arguments (the standard arg-fetch vtable slot [r2,#0x40]); real code passes floating-point and array/expression operands freely (e.g. GPSET CX-0.5,Y). Fractional coordinates are FLOORED (rounded down), not rounded-to-nearest (hw_verified via GSPOIT read-back: GPSET 60.9,60.9 plots pixel (60,60), leaving (61,61) empty)."
+  - "With 2 args the color defaults to the current GCOLOR draw color (hw_verified: GCOLOR RGB(255,0,0):GPSET x,y reads back the same &HFFF80000 as GPSET x,y,RGB(255,0,0))."
+  - "Draws onto the graphic page currently selected for manipulation by GPAGE; the dispatch reads the graphics context via [[0x315d60]+0x20] and passes x,y,color to the pixel-draw helper bl 0x194044 @0x153ea0. Out-of-range / off-screen coordinates are clipped by the draw helper, not rejected — no range error is raised (hw_verified: GPSET 999,999,-1 does not error; GPSET 511,511 inside the 512x512 page draws + reads back)."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "argument count is not 2 or 3, or a return value is requested (used as a function)" }
@@ -32,14 +34,29 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GPSET: plots one pixel on the active graphic page (3.5.0 structural cross-check only)." }
   - { type: community, ref: "sbsave corpus: GPSET appears ~2063x. Confirms the 2-arg default-color form (~462 'GPSET x,y' lines, e.g. NZ53Y3AJ/TXT/SIMPLEDRAW), &H/#CONSTANT/RGB() and negative (-1) color operands (e.g. 2RD4S3RJ/TXT/GAME 'GPSET X,Y,-1'), float coordinates (13D4DV3V/TXT/MAIN_PRG_V2), and off-screen coords (GPSET 511,511,#WHITE) — all legal." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7b): GPSET 100 (1 arg) -> errnum 4, errline 1; GPSET 1,2,3,4 (4 args) -> errnum 4; A=GPSET(1,1) (used as a function) -> errnum 4." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 40, harness/harvest/out/gpset.tsv + gpset_alpha.tsv) — pixel side-effect via GSPOIT read-back (framebuffer-free, same method as gspoit s_c2). Round-trip: GPSET x,y,RGB(255,0,0)->GSPOIT -524288 (&HFFF80000), RGB(0,0,255)->-16776968 (&HFF0000F8), RGB(0,100,0)->-16752640 (&HFF006000), RGB(255,255,255)/-1->-460552 (&HFFF8F8F8). 2-arg default color: GCOLOR RGB(255,0,0):GPSET x,y -> -524288 (== explicit red), confirming the [r6,#0xc] draw-color default. Coords FLOORED: GPSET 60.9,60.9,white -> GSPOIT(60,60)=-460552, GSPOIT(61,61)=0. Off-page no error: GPSET 999,999,-1 -> sentinel 42 captured (no halt). Edge pixel: GPSET 511,511,white -> GSPOIT(511,511)=-460552. Alpha: GPSET x,y,&H00FF0000 -> 16252928 (&H00F80000, pixel written, alpha bit clear); transparent OVER opaque -> overwrites (white then &H000000FF -> 248=&H000000F8); alpha bit set ONLY for A==255 (&H80000000/&HFE000000 read back 0)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7b); pixel side-effects need the framebuffer oracle (O-T6, queued).
+  # arg-count errors hw_verified (s_t7b); pixel side-effects hw_verified via GSPOIT read-back
+  # (M7-T2 run 40, gpset.tsv + gpset_alpha.tsv). Round-trip colors pass through RGBA5551 8->5.
   - { name: plot_default_color_ok, code: "GPSET 100,50", expect: { stdout: "" } }
   - { name: plot_explicit_color_ok, code: "GPSET 100,50,RGB(0,255,255)", expect: { stdout: "" } }
   - { name: plot_negative_color_ok, code: "GPSET 10,10,-1", expect: { stdout: "" } }
   - { name: one_arg_errors, code: "GPSET 100", expect: { error: { errnum: 4 } } }
   - { name: four_args_errors, code: "GPSET 1,2,3,4", expect: { error: { errnum: 4 } } }
   - { name: as_function_errors, code: "A=GPSET(1,1)", expect: { error: { errnum: 4 } } }
+  # --- pixel side-effect round-trips (hw_verified) ---
+  - { name: roundtrip_red, code: "GPSET 50,50,RGB(255,0,0):PRINT GSPOIT(50,50)", expect: { stdout: "-524288" } }
+  - { name: roundtrip_blue, code: "GPSET 52,52,RGB(0,0,255):PRINT GSPOIT(52,52)", expect: { stdout: "-16776968" } }
+  - { name: roundtrip_green, code: "GPSET 54,54,RGB(0,100,0):PRINT GSPOIT(54,54)", expect: { stdout: "-16752640" } }
+  - { name: two_arg_uses_gcolor, code: "GCOLOR RGB(255,0,0):GPSET 53,53:PRINT GSPOIT(53,53)", expect: { stdout: "-524288" } }
+  - { name: neg_color_is_white, code: "GPSET 70,70,-1:PRINT GSPOIT(70,70)", expect: { stdout: "-460552" } }
+  - { name: float_coord_floors_hit, code: "GPSET 60.9,60.9,RGB(255,255,255):PRINT GSPOIT(60,60)", expect: { stdout: "-460552" } }
+  - { name: float_coord_floors_miss, code: "GPSET 60.9,60.9,RGB(255,255,255):PRINT GSPOIT(61,61)", expect: { stdout: "0" } }
+  - { name: offscreen_no_error, code: "GPSET 999,999,-1:PRINT 42", expect: { stdout: "42" } }
+  - { name: edge_pixel_511, code: "GPSET 511,511,RGB(255,255,255):PRINT GSPOIT(511,511)", expect: { stdout: "-460552" } }
+  - { name: alpha_zero_still_writes, code: "GPSET 80,80,&H00FF0000:PRINT GSPOIT(80,80)", expect: { stdout: "16252928" } }
+  - { name: transparent_overwrites_opaque, code: "GPSET 81,81,RGB(255,255,255):GPSET 81,81,&H000000FF:PRINT GSPOIT(81,81)", expect: { stdout: "248" } }
+  - { name: alpha_bit_only_at_255, code: "GPSET 92,92,&H80000000:PRINT GSPOIT(92,92)", expect: { stdout: "0" } }

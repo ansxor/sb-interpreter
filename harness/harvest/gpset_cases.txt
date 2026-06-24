@@ -1,0 +1,21 @@
+# GPSET pixel side-effect harvest — read back via GSPOIT (framebuffer-free).
+# Round-trip values pass through RGBA5551 8->5 truncation (see gspoit s_c2).
+rt_red|GPSET 50,50,RGB(255,0,0)|GSPOIT(50,50)|prog
+rt_white|GPSET 51,51,RGB(255,255,255)|GSPOIT(51,51)|prog
+rt_blue|GPSET 52,52,RGB(0,0,255)|GSPOIT(52,52)|prog
+rt_green|GPSET 54,54,RGB(0,100,0)|GSPOIT(54,54)|prog
+# 2-arg form must use the current GCOLOR draw color (expect == rt_red).
+gcolor_default|GCOLOR RGB(255,0,0):GPSET 53,53|GSPOIT(53,53)|prog
+# negative color literal == &HFFFFFFFF opaque white (expect == rt_white).
+neg_color|GPSET 70,70,-1|GSPOIT(70,70)|prog
+# Float coordinate rounding (queued open question): floor vs round? 60.9 -> 60 or 61?
+float_lo|GPSET 60.9,60.9,RGB(255,255,255)|GSPOIT(60,60)|prog
+float_hi|GPSET 60.9,60.9,RGB(255,255,255)|GSPOIT(61,61)|prog
+# Off-screen: drawing far off-page must NOT error (capture sentinel 42).
+clip_noerr|GPSET 999,999,-1|42|prog
+# Edge pixel within the 512x512 page draws + reads back.
+edge_511|GPSET 511,511,RGB(255,255,255)|GSPOIT(511,511)|prog
+# Alpha < 255: is the pixel still written? read back its code.
+alpha_zero_red|GPSET 80,80,&H00FF0000|GSPOIT(80,80)|prog
+# Transparent draw OVER an opaque pixel: overwrite or skip?
+alpha_over_opaque|GPSET 81,81,RGB(255,255,255):GPSET 81,81,&H000000FF|GSPOIT(81,81)|prog

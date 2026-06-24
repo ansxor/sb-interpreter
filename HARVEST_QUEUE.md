@@ -96,6 +96,13 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   **S-T7c** "visual side-effects (framebuffer path)" above. When O-T6 grows a framebuffer/PNG
   golden path (M2-T5), harvest per-primitive goldens and pixel-diff the rasterizers against
   real SB 3.6.0, correcting any algorithm that diverges.
+  - **PARTIALLY RESOLVED 2026-06-24 (M7-T2 run 40): GPSET (single pixel) is fully hw_verified
+    via GSPOIT scalar read-back (framebuffer-free, no PNG golden needed).** Pixel write +
+    RGBA5551 8->5 round-trip, 2-arg GCOLOR default, **float→int coordinate rounding = FLOOR**
+    (GPSET 60.9 plots pixel 60), off-page clip (no error), direct overwrite (non-opaque over
+    opaque replaces), and alpha-bit = (A==255) all confirmed → gpset.yaml hw_verified. The
+    multi-pixel rasterizers (GLINE/GBOX/GFILL/GCIRCLE/GTRI/GPAINT) remain the open work — their
+    coverage shape is checkable the same way (GSPOIT-sample known cells) without the PNG golden.
 
 - [ ] M2-T5 / GLINE + GTRI diagonal rasterization DIVERGES from the device — RE the handler.
   The M2-T5 golden gate is live and the committed goldens are **hw_verified oracle GRP
@@ -392,11 +399,13 @@ oracle to confirm exact output and promote to `hw_verified`.
   GTRI 0,0,1,1,2 / 0,0,1,1,2,2,3,4 / A=GTRI(...); GCIRCLE 100,100 / 1,1,1,0,45,1,2,3 /
   A=GCIRCLE(100,100,30). Matches the disasm guards (errnum 4 sites @0x153dd0/@0x153318/
   @0x15514c/@0x1554e0/@0x154a80).
-- [ ] S-T7b visual side-effects (framebuffer path) · the actual pixels GPSET/GLINE/GBOX/GTRI/
-  GCIRCLE draw, the default-color path (current GCOLOR), float-coordinate rounding, GCIRCLE arc
-  vs sector geometry + angle normalization (negative / >360 wrap, where 0deg points), and
-  radius<=0 no-op are pixel effects — need the framebuffer oracle (O-T6, not yet in the skill).
-  Behavior is from docs + disassembly + corpus.
+- [ ] S-T7b visual side-effects (framebuffer path) · the actual pixels GLINE/GBOX/GTRI/
+  GCIRCLE draw, GCIRCLE arc vs sector geometry + angle normalization (negative / >360 wrap,
+  where 0deg points), and radius<=0 no-op are pixel effects — checkable via GSPOIT scalar
+  read-back (no PNG golden) but not yet harvested. Behavior is from docs + disassembly + corpus.
+  **GPSET RESOLVED 2026-06-24 (M7-T2 run 40, hw_verified via GSPOIT read-back):** single-pixel
+  write + RGBA5551 round-trip, the GCOLOR default-color path, and FLOOR float-coordinate
+  rounding all confirmed → gpset.yaml hw_verified.
 
 - [x] S-T7c arg-count guards · HARVESTED 2026-06-22 (sb-oracle batch s_t7c → specs hw_verified):
   all 9 confirmed errnum 4 / errline 1 — GFILL 0,0,1 / 0,0,1,1,2,3 / A=GFILL(0,0,1,1);

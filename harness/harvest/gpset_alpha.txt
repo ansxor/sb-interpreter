@@ -1,0 +1,5 @@
+# Alpha-bit storage threshold in RGBA5551: which source alpha sets the stored 1-bit alpha?
+a1|GPSET 90,90,&H01000000|GSPOIT(90,90)|prog
+a127|GPSET 91,91,&H7F000000|GSPOIT(91,91)|prog
+a128|GPSET 92,92,&H80000000|GSPOIT(92,92)|prog
+a254|GPSET 93,93,&HFE000000|GSPOIT(93,93)|prog
