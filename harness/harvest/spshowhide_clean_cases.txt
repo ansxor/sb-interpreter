@@ -1,0 +1,4 @@
+# Re-harvest the active-bit (not-SPSET) guard in ISOLATION: ACLS clears all sprite state first
+# so slot 0 is guaranteed inactive (the batch run leaked an SPSET 0 from earlier cases).
+sh_before_spset_clean|ACLS:SPSHOW 0|err
+hd_before_spset_clean|ACLS:SPHIDE 0|err

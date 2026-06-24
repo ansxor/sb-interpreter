@@ -24,13 +24,23 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/sphide.md (SPHIDE Management number 0-511 — Hides a sprite; 'This only hides the sprite; it continues to exist'; 'If used before SPSET, an error will occur'; e.g. SPHIDE 43)" }
   - { type: disassembled, ref: "cia_3.6.0.lst SPHIDE handler @0x142694: arg-count r1=[r0,#0x4] cmp #1 + return-count [r0,#0xc] cmp #0 beq body @0x1426c8 else mov r2,#0/mvn r1/mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x1426b0; mgmt fetched via sprite-index getter bl 0x1eece0 (out-of-range -> mov r0,#0xa errnum 10 @0x1eed3c, count=[[0x315d60]+0x48]); slot = base[0x142768] + mgmt*2296 (rsb *31 / add lsl#8 *287 / add lsl#3) @0x1426e8; active-flag tst [slot+0x4],#0x80000000 beq @0x14274c -> mov r0,#0x4 (errnum 4, sprite not SPSET); hide via bl 0x17e674 / bl 0x17e344 @0x142724 (sprite-base ptr 0x142764/0x142768)." }
   - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteData display/active flag handling (3.5.0 structural cross-check only)" }
-  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8a): SPHIDE 0 with no prior SPSET -> errnum 4, errline 1 (confirms the active-bit guard); SPHIDE 512 -> errnum 10 (mgmt out of range)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (harness/harvest/out/spshowhide.tsv + spshowhide_clean.tsv): full call-shape + mgmt-range + active-bit contract, 8/8 confirmed (identical to SPSHOW, the inverse twin). SPSET 0,0:SPHIDE 0 and SPSET 511,0:SPHIDE 511 -> NOERR (both mgmt endpoints, after SPSET); ACLS:SPHIDE 0 (no prior SPSET, clean state) -> errnum 4 errline 1 (active-bit guard); SPHIDE 512 / SPHIDE -1 -> errnum 10 errline 1 (mgmt out of range); SPHIDE (0 args) / SPHIDE 0,1 (2 args) / A=SPHIDE(0) (return context) -> errnum 4 errline 1 (arg-count==1 & return-count==0 gate). NOTE: the active-bit guard MUST be harvested with a leading ACLS — a back-to-back run after an SPSET 0 case leaks the active slot and SPHIDE 0 then returns NOERR (state-leakage trap, cf. run 66 STOP); the isolated ACLS run reproduces the documented errnum 4 (also matches s_t8a 2026-06-22). The hide side effect stays O-T6 (no deterministic framebuffer golden)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8a): SPHIDE 0 with no prior SPSET -> errnum 4, errline 1 (active-bit guard); SPHIDE 512 -> errnum 10 (mgmt out of range)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # hide side-effect needs the sprite-framebuffer oracle (O-T6, queued); error expects are hw_verified (sb-oracle 2026-06-22 s_t8a).
+  # The hide side effect needs the sprite framebuffer oracle (O-T6, queued); the call-shape +
+  # mgmt-range + active-bit (not-SPSET) contract below is hw_verified (sb-oracle 2026-06-22 s_t8a +
+  # 2026-06-24 batch, harness/harvest/out/spshowhide{,_clean}.tsv) and IS the whole
+  # headless-observable surface of this display setter.
   - { name: hide_after_spset_ok, code: "SPSET 0,0\nSPHIDE 0", expect: { stdout: "" } }
+  # Top mgmt endpoint (511) is accepted after SPSET 511.
+  - { name: hide_after_spset_max, code: "SPSET 511,0\nSPHIDE 511", expect: { stdout: "" } }
+  # No prior SPSET on the slot -> active-bit guard fires (errnum 4).
   - { name: hide_before_spset_errors, code: "SPHIDE 0", expect: { error: { errnum: 4 } } }
   - { name: mgmt_out_of_range, code: "SPHIDE 512", expect: { error: { errnum: 10 } } }
   - { name: mgmt_negative, code: "SPHIDE -1", expect: { error: { errnum: 10 } } }
+  - { name: missing_arg, code: "SPHIDE", expect: { error: { errnum: 4 } } }
+  - { name: two_args_error, code: "SPHIDE 0,1", expect: { error: { errnum: 4 } } }
+  - { name: return_context_error, code: "A=SPHIDE(0)", expect: { error: { errnum: 4 } } }

@@ -1,0 +1,21 @@
+# SPSHOW/SPHIDE call-shape + mgmt-range + active-bit (not-SPSET) error contract (M7-T2 headless surface).
+# |err mode: acceptance -> errored=false; error -> errored=true+errnum.
+# The visibility side effect itself is NOT harvestable (O-T6); this pins the statement contract,
+# which (per the BGSHOW/BGHIDE/BGMSTOP pure-state-setter precedent) IS the whole headless-observable
+# surface — PLUS the sprite-specific active-bit guard (errnum 4 when the slot was not SPSET).
+sh_after_spset|SPSET 0,0:SPSHOW 0|err
+sh_after_spset_max|SPSET 511,0:SPSHOW 511|err
+sh_before_spset|SPSHOW 0|err
+sh_oor_high|SPSHOW 512|err
+sh_oor_neg|SPSHOW -1|err
+sh_no_args|SPSHOW|err
+sh_2args|SPSHOW 0,1|err
+sh_func|A=SPSHOW(0)|err
+hd_after_spset|SPSET 0,0:SPHIDE 0|err
+hd_after_spset_max|SPSET 511,0:SPHIDE 511|err
+hd_before_spset|SPHIDE 0|err
+hd_oor_high|SPHIDE 512|err
+hd_oor_neg|SPHIDE -1|err
+hd_no_args|SPHIDE|err
+hd_2args|SPHIDE 0,1|err
+hd_func|A=SPHIDE(0)|err
