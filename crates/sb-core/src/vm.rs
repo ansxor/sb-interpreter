@@ -5067,6 +5067,33 @@ H$=HEX$(255)"#);
     }
 
     #[test]
+    fn print_comma_from_tab_boundary_advances_full_step() {
+        // hw_verified (M7-T2 run 5): a cursor already sitting on a TABSTEP boundary still
+        // advances a full step. "ABCD" fills cols 0-3, the comma from col 4 jumps to col 8.
+        assert_eq!(out(r#"PRINT "ABCD","Z""#), "ABCD    Z");
+    }
+
+    #[test]
+    fn print_semicolon_number_then_string_no_gap() {
+        // hw_verified (M7-T2 run 5): integer %d, no trailing space, `;` no-gap -> "5X".
+        assert_eq!(out(r#"PRINT 5;"X""#), "5X");
+        assert_eq!(out("PRINT -7"), "-7");
+    }
+
+    #[test]
+    fn print_trailing_comma_suppresses_newline() {
+        // hw_verified (M7-T2 run 5): a trailing `,` suppresses the closing newline, so the
+        // next PRINT shares the row; "X" at col 0, tab to col 4, "Y".
+        assert_eq!(out(r#"PRINT "X",:PRINT "Y""#), "X   Y");
+    }
+
+    #[test]
+    fn print_bare_emits_one_blank_line() {
+        // hw_verified (M7-T2 run 5): a bare PRINT emits exactly one line break.
+        assert_eq!(out("PRINT \"A\"\nPRINT\nPRINT \"B\""), "A\n\nB");
+    }
+
+    #[test]
     fn print_question_alias() {
         assert_eq!(out(r#"?"Q""#), "Q");
     }

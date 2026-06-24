@@ -1,0 +1,52 @@
+# Oracle-harvested fixtures for PRINT (hw_verified) — real SmileBASIC 3.6.0 (Azahar),
+# M7-T2 run 5 (2026-06-24). Harvested via run_case.py batch (progstr): each case runs a
+# PRINT, then reconstructs the row-0 console text with CHR$(CHKCHR(I,0)) up to CSRX (and
+# reads CSRX/CSRY directly) — so these are the REAL rendered cells, not an inferred value.
+#
+# Confirmed against real SB 3.6.0:
+#   * Integer items format with C %d — NO leading/trailing space: PRINT 42 -> "42",
+#     PRINT -7 -> "-7", PRINT 0 -> "0", PRINT 100 -> CSRX=3.
+#   * `;` concatenates with no gap: PRINT "A";"B" -> "AB", PRINT 5;"X" -> "5X",
+#     PRINT 1;2;3 -> "123".
+#   * `,` tab-advances to the next multiple of TABSTEP (default 4, ?TABSTEP -> 4):
+#     PRINT "A","B" -> "A   B" (A at col 0, B at col 4). Already ON a boundary still
+#     advances a full step: PRINT "ABCD","Z" -> "ABCD    Z" (ABCD fills 0-3, the comma
+#     from col 4 advances to col 8, Z at col 8). CSRX after `PRINT "A",` = 4;
+#     after `PRINT "ABCD",` = 8.
+#   * A trailing `;` or `,` suppresses the closing newline (cursor stays on the row):
+#     LOCATE 0,3:PRINT "X"; -> CSRY=3; PRINT "X", -> CSRY=3; PRINT "X","Y" share a row.
+#   * No trailing separator emits one newline: LOCATE 0,3:PRINT "X" -> CSRY=4, CSRX=0.
+#   * A bare PRINT (no items) emits exactly one line break: LOCATE 0,3:PRINT -> CSRY=4.
+# Harvest TSVs: harness/harvest/out/print_out.tsv, print_out2.tsv. sb-core already
+# matches every case below.
+tests:
+  - name: "integer_no_leading_space"
+    code: "PRINT 42"
+    expect: { stdout: "42" }
+  - name: "negative_integer"
+    code: "PRINT -7"
+    expect: { stdout: "-7" }
+  - name: "zero"
+    code: "PRINT 0"
+    expect: { stdout: "0" }
+  - name: "semicolon_concat"
+    code: 'PRINT "A";"B"'
+    expect: { stdout: "AB" }
+  - name: "semicolon_num_then_string"
+    code: 'PRINT 5;"X"'
+    expect: { stdout: "5X" }
+  - name: "semicolon_ints"
+    code: "PRINT 1;2;3"
+    expect: { stdout: "123" }
+  - name: "comma_tab_to_tabstep"
+    code: 'PRINT "A","B"'
+    expect: { stdout: "A   B" }
+  - name: "comma_tab_from_boundary_advances_full_step"
+    code: 'PRINT "ABCD","Z"'
+    expect: { stdout: "ABCD    Z" }
+  - name: "comma_trailing_suppresses_newline"
+    code: 'PRINT "X",:PRINT "Y"'
+    expect: { stdout: "X   Y" }
+  - name: "bare_print_emits_one_blank_line"
+    code: "PRINT \"A\"\nPRINT\nPRINT \"B\""
+    expect: { stdout: "A\n\nB" }

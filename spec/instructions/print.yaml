@@ -17,7 +17,7 @@ semantics:
   - "A Double item is formatted by the PRINT number formatter @0x180a50 with C sprintf(\"%.8f\", x) — fixed notation, up to 8 fractional digits, NEVER exponential — then trailing zeros and a bare trailing '.' are stripped. This is DISTINCT from STR$ (which uses %g / 6 sig figs): PRINT 12345678.0 shows \"12345678\" (STR$ -> \"1.23457e+07\"), PRINT 0.00001 shows \"0.00001\" (STR$ -> \"1e-05\"), PRINT 3.14159265 shows \"3.14159265\". Values below ~5e-9 round to \"0\"; signed zero is kept (PRINT -0.0 -> \"-0\"). (M7-T4)"
   - "A string item is printed verbatim (string print path @0x1e996c)."
   - "Separator `;` concatenates the next item immediately, with NO space inserted (separator subtype 0: clears the trailing-newline flag, no cursor advance)."
-  - "Separator `,` advances the cursor to the next tab stop before the next item — the stop width is the TABSTEP system variable (separator subtype 1: tab-advance helper @0x180dbc)."
+  - "Separator `,` advances the cursor to the next tab stop before the next item — the stop is the next column that is a STRICTLY-greater multiple of the TABSTEP system variable (default 4), so a cursor already sitting on a boundary advances a full step (separator subtype 1: tab-advance helper @0x180dbc). hw_verified: PRINT \"A\",\"B\" -> \"A   B\" (B at col 4); PRINT \"ABCD\",\"Z\" -> \"ABCD    Z\" (the comma from col 4 advances to col 8)."
   - "After all items, PRINT emits a line break (CRLF/scroll) UNLESS the statement text ended with a `;` or `,` separator, in which case the trailing newline is suppressed (trailing-newline flag r7 at @0x14b848 → newline @0x1eedc4 only when set)."
   - "PRINT with no expressions just emits a line break."
   - "Printing past the bottom row scrolls the console up by one line (console-model behavior; see the console concept)."
@@ -32,8 +32,9 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/console.d PRINT: prints items, `;` no-gap, `,` to next tab column, trailing separator suppresses newline (3.5.0 structural cross-check only)" }
   - { type: disassembled, ref: "PRINT Double formatter @0x180a50: vmov r2,r3,d0; adr r1,0x180b0c (fmt string bytes 25 2e 38 66 = \"%.8f\"); sprintf @0x1e5784 into the console scratch buffer; then a back-scanning trim loop @0x180a8c walks from the end stripping '0' (0x30) and a single '.' (0x2e) before emitting. So the format is %.8f with trailing-zero/dot trim, never %g/exponential." }
   - { type: hw_verified, ref: "sb-oracle console read-back 2026-06-23 (PRINT then CHKCHR scrape row 0): PRINT 12345678.0=\"12345678\", PRINT 3.14159265=\"3.14159265\", PRINT 0.00001=\"0.00001\", PRINT 1.0/3.0=\"0.33333333\", PRINT 0.5=\"0.5\", PRINT 180.0=\"180\", PRINT 0.000000001=\"0\", PRINT 0.00000001=\"0.00000001\", PRINT 100000000000.0=\"100000000000\", PRINT 0.123456785=\"0.12345678\", PRINT -0.0=\"-0\", PRINT SQR(2)=\"1.41421356\"" }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-24 (M7-T2 run 5) — separator/integer/newline semantics via CHR$(CHKCHR(I,0)) row reconstruction + CSRX/CSRY read-back (harness/harvest/out/print_out.tsv, print_out2.tsv): Integer item formats with %d, no leading/trailing space (PRINT 42=\"42\", PRINT -7=\"-7\", PRINT 0=\"0\", PRINT 100 -> CSRX=3). `;` concatenates no-gap (PRINT \"A\";\"B\"=\"AB\", PRINT 5;\"X\"=\"5X\", PRINT 1;2;3=\"123\"). `,` advances to the next strictly-greater multiple of TABSTEP (?TABSTEP=4): PRINT \"A\",\"B\"=\"A   B\" (CSRX after `PRINT \"A\",`=4), PRINT \"ABCD\",\"Z\"=\"ABCD    Z\" (CSRX after `PRINT \"ABCD\",`=8 — advances a full step from a boundary). Trailing `;`/`,` suppresses the closing newline (LOCATE 0,3 then `PRINT \"X\";`/`PRINT \"X\",` -> CSRY=3); no trailing separator emits one newline (`PRINT \"X\"` -> CSRY=4, CSRX=0); a bare `PRINT` emits exactly one line break (CSRY=4). Frozen in spec/tests/print.yaml." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
   - { name: string_literal, code: 'PRINT "HI"', expect: { stdout: "HI" } }
