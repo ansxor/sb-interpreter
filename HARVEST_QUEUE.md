@@ -670,10 +670,19 @@ oracle to confirm exact output and promote to `hw_verified`.
     to the previous program); an empty slot stays Syntax error (3). The EXEC'd program runs
     against its own globals; ERRPRG reports the target slot. 5 new vm.rs e2e tests. STILL
     VmError::Unsupported / UNHARVESTED (need a ≥2-slot oracle harness, NOT a single injected
-    program): the string FORM 1 file LOAD (needs a compile-from-storage hook threading the
-    builtin registry), the running-slot RESTART, the nested END-returns-across-slots rule, and
+    program): the running-slot RESTART, the nested END-returns-across-slots rule, and
     the per-slot vs shared variable-scoping confirmation. EXEC DIRECT-mode error (hypothesis
     errnum 43) also unharvested.)
+    (UPDATE 2026-06-23, M6-T6: the EXEC/USE FORM 1 string `"PRGn:file"` file LOAD is now
+    IMPLEMENTED (`Vm::compile_slot_file` — reads the TXT body from storage, parses + lowers it
+    with the in-VM `StdBuiltins` pipeline, no external host hook). `EXEC "PRGn:file"` into a
+    non-running slot loads + transfers control; `USE "PRGn:file"` loads + marks the slot
+    executable so its COMMON DEFs resolve cross-slot via `CALL "name"`. 7 new vm.rs e2e tests.
+    Two corpus/oracle-pending bits remain: (a) which errnum a *malformed* stored program raises
+    on load — we map a parse/compile failure to Syntax error (3) as a hypothesis; (b) the
+    bare-name (no `PRGn:`) default-slot selection and the slot-0-as-non-running-target edge stay
+    VmError::Unsupported. The documented success path itself needs no oracle — it is deterministic
+    over MemStorage.)
 
 - S-T12c Source read (PRGGET$/PRGNAME$/PRGSIZE): the error guards ARE hw_verified (batch
     2026-06-22, s_t12c): PRGGET$ with no active PRGEDIT -> errnum 38 (the no-PRGEDIT check

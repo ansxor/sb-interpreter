@@ -1075,6 +1075,25 @@ impl Vm {
     ///
     /// Loading the compiled program into the slot — so its DEFs/labels resolve from a
     /// cross-slot `CALL`/`GOSUB` — is the remaining multi-program model (queued, `HARVEST_QUEUE.md`).
+    /// Compile a stored program file into a loadable [`Program`] for a slot (M6-T6
+    /// string-form `EXEC`/`USE`). The TXT body is read from the current project's storage
+    /// (UTF-8, like `LOAD "TXT:"`), parsed, and lowered with the standard builtin set — the
+    /// in-VM `parse`→`compile_with` pipeline, so no external compile hook is needed. The
+    /// caller has already confirmed the file exists. A program that fails to parse/compile
+    /// maps to Syntax error (3) — the exact errnum for a malformed stored program is
+    /// oracle-pending (queued, `HARVEST_QUEUE.md`).
+    fn compile_slot_file(&self, name: &str) -> Result<Program, VmError> {
+        let body = self
+            .storage
+            .read(&self.current_project, Folder::Txt, name)
+            .map_err(|_| sb(RuntimeError::new(ERR_LOAD_FAILED)))?;
+        let src = String::from_utf8_lossy(&body);
+        let ast = crate::parser::parse(&src)
+            .map_err(|_| sb(RuntimeError::new(crate::builtins::ERR_SYNTAX)))?;
+        crate::compiler::compile_with(&ast, &crate::builtins::StdBuiltins)
+            .map_err(|_| sb(RuntimeError::new(crate::builtins::ERR_SYNTAX)))
+    }
+
     fn do_use(&mut self, v: Value) -> Result<(), VmError> {
         if let Value::Str(s) = &v {
             let s = String::from_utf16_lossy(s);
@@ -1096,6 +1115,14 @@ impl Vm {
             }
             match slot_opt {
                 Some(slot) => {
+                    // Load the slot's program from storage so its `COMMON DEF`s become
+                    // resolvable cross-slot (the documented effect of marking a slot
+                    // executable). Slot 0 as a *non-running* target is the post-EXEC edge —
+                    // `load_slot_program` ignores it — so its program load stays queued.
+                    if slot != 0 {
+                        let prog = self.compile_slot_file(name)?;
+                        self.load_slot_program(slot, prog);
+                    }
                     self.slot_used[slot as usize] = true;
                     Ok(())
                 }
@@ -1124,18 +1151,20 @@ impl Vm {
     ///   slot with a loaded program transfers control to it ([`Vm::exec_transfer`], documented);
     ///   an *empty* non-running slot → Syntax error (3) (`EXEC 1` on a fresh, empty slot); the
     ///   *running* slot would restart the current program (transfer, deferred).
-    /// * **resource string** `EXEC "[PRGn:]file"`: an unknown resource type / bad PRG index /
-    ///   empty name → 4; a missing file → Load failed (46); an existing file would load + run it
-    ///   (the file LOAD needs a compile hook — deferred).
+    /// * **resource string** `EXEC "PRGn:file"`: an unknown resource type / bad PRG index /
+    ///   empty name → 4; a missing file → Load failed (46); an existing file in a `PRGn:` slot
+    ///   distinct from the running one is read from storage, compiled in-VM, loaded into that
+    ///   slot, and run ([`Vm::compile_slot_file`] + [`Vm::exec_transfer`], documented form 1).
     ///
-    /// The numeric loaded-slot transfer is the documented single-level model. The remaining
-    /// pieces — the string-form file LOAD, the running-slot restart, the
-    /// `END`-returns-across-slots rule, and per-slot vs shared variable scoping — are not
-    /// body-readable in the disassembly and stay oracle-pending (queued, `HARVEST_QUEUE.md`).
+    /// The numeric loaded-slot transfer and the string-form `PRGn:` file LOAD are the
+    /// documented single-level model. The remaining pieces — the running-slot restart, the
+    /// bare-name default-slot load, the `END`-returns-across-slots rule, and per-slot vs
+    /// shared variable scoping — are not body-readable in the disassembly and stay
+    /// oracle-pending (queued, `HARVEST_QUEUE.md`).
     fn do_exec(&mut self, v: Value) -> Result<(), VmError> {
         if let Value::Str(s) = &v {
             let s = String::from_utf16_lossy(s);
-            let (_slot_opt, name) =
+            let (slot_opt, name) =
                 parse_prg_operand(&s).map_err(|errnum| sb(RuntimeError::new(errnum)))?;
             if !self
                 .storage
@@ -1143,9 +1172,21 @@ impl Vm {
             {
                 return Err(sb(RuntimeError::new(ERR_LOAD_FAILED)));
             }
-            Err(VmError::Unsupported(
-                "EXEC \"file\" (load + execute / control transfer) — M6 multi-program model",
-            ))
+            match slot_opt {
+                // A `PRGn:` slot distinct from the running one: load the file's program into
+                // that slot and transfer control to it (documented form 1, "Loads and
+                // executes a program"). The running slot (restart) and the bare-name default
+                // slot remain the deferred multi-program model.
+                Some(slot) if slot != self.current_slot && slot != 0 => {
+                    let prog = self.compile_slot_file(name)?;
+                    self.load_slot_program(slot, prog);
+                    self.exec_transfer(slot);
+                    Ok(())
+                }
+                _ => Err(VmError::Unsupported(
+                    "EXEC \"file\" into the running or default slot (restart / default-slot load) — M6 multi-program model",
+                )),
+            }
         } else {
             let n = v.to_int().map_err(sb)?;
             if !(0..=3).contains(&n) {
@@ -4220,6 +4261,101 @@ CALL "ADDOUT",2,3 OUT X"#);
         assert_eq!(vm.errprg(), 1);
     }
 
+    // ---- EXEC / USE string-form file LOAD (M6-T6) ----
+
+    /// Build a slot-0 program, seed `files` (name → source) into the VM's `MemStorage`
+    /// (project `DEFAULT`, TXT folder), run it, and return the result.
+    fn run_with_txt(slot0: &str, files: &[(&str, &str)]) -> Result<Vm, VmError> {
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        use crate::storage::{MemStorage, Storage, DEFAULT_PROJECT};
+        let mut store = MemStorage::default();
+        for (name, body) in files {
+            store
+                .write(DEFAULT_PROJECT, Folder::Txt, name, body.as_bytes())
+                .expect("seed txt");
+        }
+        let ast = parse(slot0).expect("parse slot0");
+        let program = compile_with(&ast, &StdBuiltins).expect("compile slot0");
+        let mut vm = Vm::new(program);
+        vm.set_storage(Box::new(store));
+        vm.run()?;
+        Ok(vm)
+    }
+
+    #[test]
+    fn exec_string_loads_prg_slot_and_transfers_control() {
+        // documented (exec.yaml form 1): `EXEC "PRGn:file"` loads the file's program into
+        // slot n and runs it. Control transfers — the loaded program runs; the slot-0
+        // statement after EXEC is abandoned (impossible to return to the previous program).
+        let vm = run_with_txt(
+            "PRINT \"A\";\nEXEC \"PRG1:SUB\"\nPRINT \"NEVER\"",
+            &[("SUB", "PRINT \"B\"\nEND")],
+        )
+        .expect("run");
+        assert_eq!(vm.console_text(), "AB");
+    }
+
+    #[test]
+    fn exec_string_runs_loaded_program_against_its_own_globals() {
+        // The EXEC'd program runs with the loaded slot's own globals — slot 0's X is not
+        // visible (matches the numeric-transfer scoping).
+        let vm = run_with_txt("X=99\nEXEC \"PRG2:SUB\"", &[("SUB", "PRINT X\nEND")]).expect("run");
+        assert_eq!(vm.console_text(), "0");
+    }
+
+    #[test]
+    fn exec_string_missing_file_is_load_failed() {
+        // hw_verified (exec.yaml): a `PRGn:` resource naming an absent file → Load failed (46).
+        let err = run_with_txt("EXEC \"PRG1:NOPE\"", &[])
+            .err()
+            .expect("missing file");
+        assert_eq!(err.errnum(), Some(46));
+    }
+
+    #[test]
+    fn exec_string_into_running_slot_stays_deferred() {
+        // The running-slot restart (`EXEC "PRG0:…"` from slot 0) is the deferred model — it
+        // must not silently no-op; it stays `Unsupported` until the restart rule is grounded.
+        let err = run_with_txt("EXEC \"PRG0:SUB\"", &[("SUB", "PRINT 1\nEND")])
+            .err()
+            .expect("running-slot restart deferred");
+        assert!(matches!(err, VmError::Unsupported(_)));
+    }
+
+    #[test]
+    fn use_string_loads_common_def_callable_cross_slot() {
+        // documented (use.yaml + common.yaml): `USE "PRGn:file"` loads + marks the slot
+        // executable, so a COMMON DEF in that file resolves via `CALL "name"` from slot 0.
+        let vm = run_with_txt(
+            "USE \"PRG1:LIB\"\nCALL \"SHOUT\"",
+            &[("LIB", "COMMON DEF SHOUT\nPRINT \"HEY\"\nEND")],
+        )
+        .expect("run");
+        assert_eq!(vm.console_text(), "HEY");
+    }
+
+    #[test]
+    fn use_string_loaded_common_def_passes_args_and_out() {
+        // The loaded COMMON DEF carries full DEF call semantics: value args bind, OUT results
+        // return into the caller's slot-0 variable.
+        let vm = run_with_txt(
+            "USE \"PRG3:LIB\"\nCALL \"ADD\",4,5 OUT R\nPRINT R",
+            &[("LIB", "COMMON DEF ADD A,B OUT C\nC=A+B\nEND")],
+        )
+        .expect("run");
+        assert_eq!(vm.console_text(), "9");
+    }
+
+    #[test]
+    fn use_string_missing_file_is_load_failed() {
+        // hw_verified (use.yaml): a valid non-running slot whose file is absent → Load failed (46).
+        let err = run_with_txt("USE \"PRG1:NOPE\"", &[])
+            .err()
+            .expect("missing file");
+        assert_eq!(err.errnum(), Some(46));
+    }
+
     #[test]
     fn unbounded_recursion_is_stack_overflow() {
         // A DEF that always recurses must trip Stack overflow (errnum 5).
@@ -5506,18 +5642,19 @@ PRGDEL -1"#,
     }
 
     #[test]
-    fn exec_valid_target_is_unsupported_pending_multi_program_model() {
-        // The actual control transfer (load + run / running-slot restart) is the deferred
-        // multi-program model — left unsupported rather than faked. It is NOT a SmileBASIC
+    fn exec_string_prg_slot_loads_from_storage_and_transfers() {
+        // documented form 1 (M6-T6): a program SAVE'd to TXT storage and then EXEC'd via
+        // `EXEC "PRGn:file"` is loaded from storage, compiled in-VM, and run — control
+        // transfers, so the loaded program's output appears.
+        let vm = run_b("SAVE \"TXT:PROG\",\"PRINT 1\"\nEXEC \"PRG1:PROG\"");
+        assert_eq!(vm.console_text(), "1");
+    }
+
+    #[test]
+    fn exec_running_slot_restart_is_unsupported_pending() {
+        // EXEC of the running slot would restart the current program — the deferred
+        // multi-program model, left unsupported rather than faked. It is NOT a SmileBASIC
         // runtime error, so it carries no errnum.
-        let vm = run_b("SAVE \"TXT:PROG\",\"PRINT 1\"");
-        // Re-run with the file present so EXEC reaches the transfer path.
-        assert!(matches!(
-            run_b_err("SAVE \"TXT:PROG\",\"PRINT 1\"\nEXEC \"PRG1:PROG\""),
-            VmError::Unsupported(_)
-        ));
-        let _ = vm;
-        // EXEC of the running slot would restart the current program → also deferred.
         assert!(matches!(run_b_err("EXEC 0"), VmError::Unsupported(_)));
     }
 }
