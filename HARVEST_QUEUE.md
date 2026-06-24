@@ -684,6 +684,19 @@ oracle to confirm exact output and promote to `hw_verified`.
     VmError::Unsupported. The documented success path itself needs no oracle — it is deterministic
     over MemStorage.)
 
+    (UPDATE 2026-06-23, M6-T6: the numeric RUNNING-slot RESTART `EXEC 0` is now IMPLEMENTED to
+    the documented model (`Vm::restart_active_slot`): re-initialise the running slot's globals to
+    their declared-type zeros + discard all execution state (DEF/GOSUB/operand stacks, DATA
+    cursor) + jump to the top — a fresh re-run, the corpus "restart the game" idiom (HNZBUS
+    `EXEC 0`). Deterministic VM e2e test uses a DAT file counter (persists across the restart) to
+    terminate after 2 passes. STILL ORACLE-PENDING: whether real SB clears variables on `EXEC 0`
+    (sb-core clears — the only coherent restart, otherwise the re-run's `DIM` would redim) vs
+    preserves them. The single-program oracle harness CANNOT confirm this: a self-restart needs a
+    persistent counter across the restart, which means mid-program SAVEs whose confirm dialogs the
+    harness only clears once → the next restart's SAVE dialog hangs. Needs the deferred multi-slot
+    / file-diff harness. The STRING running/default-slot file LOAD (`EXEC "PRG0:…"`) stays
+    VmError::Unsupported.)
+
 - S-T12c Source read (PRGGET$/PRGNAME$/PRGSIZE): the error guards ARE hw_verified (batch
     2026-06-22, s_t12c): PRGGET$ with no active PRGEDIT -> errnum 38 (the no-PRGEDIT check
     precedes the arg-count check, so PRGGET$(0) without PRGEDIT is also 38); PRGGET$(0) WITH an

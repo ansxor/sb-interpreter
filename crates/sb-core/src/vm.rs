@@ -1150,16 +1150,16 @@ impl Vm {
     /// * **numeric slot** `EXEC n`: `n` outside 0..3 → Out of range (10); a valid *non-running*
     ///   slot with a loaded program transfers control to it ([`Vm::exec_transfer`], documented);
     ///   an *empty* non-running slot → Syntax error (3) (`EXEC 1` on a fresh, empty slot); the
-    ///   *running* slot would restart the current program (transfer, deferred).
+    ///   *running* slot restarts the current program ([`Vm::restart_active_slot`]).
     /// * **resource string** `EXEC "PRGn:file"`: an unknown resource type / bad PRG index /
     ///   empty name → 4; a missing file → Load failed (46); an existing file in a `PRGn:` slot
     ///   distinct from the running one is read from storage, compiled in-VM, loaded into that
     ///   slot, and run ([`Vm::compile_slot_file`] + [`Vm::exec_transfer`], documented form 1).
     ///
-    /// The numeric loaded-slot transfer and the string-form `PRGn:` file LOAD are the
-    /// documented single-level model. The remaining pieces — the running-slot restart, the
-    /// bare-name default-slot load, the `END`-returns-across-slots rule, and per-slot vs
-    /// shared variable scoping — are not body-readable in the disassembly and stay
+    /// The numeric loaded-slot transfer, the numeric running-slot restart, and the string-form
+    /// `PRGn:` file LOAD are the documented single-level model. The remaining pieces — the
+    /// string-form running/default-slot file LOAD, the `END`-returns-across-slots rule, and
+    /// per-slot vs shared variable scoping — are not body-readable in the disassembly and stay
     /// oracle-pending (queued, `HARVEST_QUEUE.md`).
     fn do_exec(&mut self, v: Value) -> Result<(), VmError> {
         if let Value::Str(s) = &v {
@@ -1193,9 +1193,13 @@ impl Vm {
                 return Err(sb(RuntimeError::new(ERR_OUT_OF_RANGE)));
             }
             if n as u8 == self.current_slot {
-                return Err(VmError::Unsupported(
-                    "EXEC <running slot> (program restart / control transfer) — M6 multi-program model",
-                ));
+                // `EXEC <running slot>` (e.g. `EXEC 0`) restarts the running program from the
+                // top — the corpus "restart the game" idiom (`EXEC 0` in 1DVK34J/TXT/HNZBUS,
+                // `IF DIALOG(...)<0 THEN END ELSE EXEC 0`). Documented "Loads and executes a
+                // program"; since you cannot return to the previous program, this is a fresh
+                // re-run of the same slot.
+                self.restart_active_slot();
+                return Ok(());
             }
             // A valid non-running slot. If a program is loaded there (host/test seeded it via
             // `Vm::load_slot_program`, or a future `LOAD "PRGn:…"`), EXEC transfers control to
@@ -1219,11 +1223,38 @@ impl Vm {
     /// program ends, the run ends.
     ///
     /// The nested `END`-returns-across-slots rule (a program EXEC'd into another slot returning
-    /// to its launcher), the running-slot *restart*, the string-form file LOAD, and DIRECT-mode
-    /// gating remain oracle-pending (queued, `HARVEST_QUEUE.md`).
+    /// to its launcher) and DIRECT-mode gating remain oracle-pending (queued,
+    /// `HARVEST_QUEUE.md`). The running-slot *restart* is [`Vm::restart_active_slot`].
     fn exec_transfer(&mut self, target: u8) {
         self.activate_slot(target);
         self.current_slot = target;
+        self.pc = 0;
+        self.frames.clear();
+        self.gosub.clear();
+        self.stack.clear();
+        self.data_cursor = 0;
+    }
+
+    /// `EXEC <running slot>` restart (M6-T6) — re-run the active program from the top. Unlike
+    /// [`Vm::exec_transfer`] there is no slot swap (the target *is* the running program); the
+    /// program's globals are re-initialised to their declared-type zeros — a fresh run, the
+    /// documented "Loads and executes a program" — and all execution state (the `DEF` frame
+    /// stack, `GOSUB` stack, operand stack, and `DATA` read cursor) is discarded before the PC
+    /// jumps to the top. This mirrors what re-running re-executes (`DIM`/variable init), the
+    /// only coherent meaning of a restart: a restart that kept old variable values would just
+    /// be a `GOTO @TOP`. Per-slot I/O state (graphics/sprites/console/system variables) is not
+    /// touched, matching `exec_transfer`.
+    ///
+    /// Grounded on docs + the corpus restart idiom (no body-readable handler, single-`P` oracle
+    /// can't drive a self-restart without a hang); whether real SB clears variables on `EXEC 0`
+    /// vs preserves them is queued for a multi-slot oracle confirm (`HARVEST_QUEUE.md`).
+    fn restart_active_slot(&mut self) {
+        self.globals = self
+            .program
+            .globals
+            .iter()
+            .map(|v| Value::cell(Value::default_for_suffix(v.name.suffix)))
+            .collect();
         self.pc = 0;
         self.frames.clear();
         self.gosub.clear();
@@ -5651,10 +5682,23 @@ PRGDEL -1"#,
     }
 
     #[test]
-    fn exec_running_slot_restart_is_unsupported_pending() {
-        // EXEC of the running slot would restart the current program — the deferred
-        // multi-program model, left unsupported rather than faked. It is NOT a SmileBASIC
-        // runtime error, so it carries no errnum.
-        assert!(matches!(run_b_err("EXEC 0"), VmError::Unsupported(_)));
+    fn exec_running_slot_restart_reruns_from_top() {
+        // `EXEC 0` restarts the running program from the top (corpus "restart the game"
+        // idiom, 1DVK34J/TXT/HNZBUS). A DAT file counter persists across the restart (storage
+        // is not touched), so the program terminates on the 2nd pass; the global `A` is
+        // re-initialised to its declared-type zero each run — a fresh re-run — so it reads 1
+        // (not 2) at the end. "XX" on the (un-cleared) console witnesses the two passes.
+        let vm = run_b(
+            "DIM C[1]\n\
+             IF CHKFILE(\"DAT:K\") THEN LOAD\"DAT:K\",C\n\
+             C[0]=C[0]+1\n\
+             SAVE\"DAT:K\",C\n\
+             A=A+1\n\
+             ?\"X\";\n\
+             IF C[0]>=2 THEN END\n\
+             EXEC 0",
+        );
+        assert_eq!(vm.console_text(), "XX");
+        assert_eq!(int(&vm, "A"), 1);
     }
 }
