@@ -1,0 +1,15 @@
+# M7-T5: per-builtin static return type — does BUILTIN(int_arg)+1 promote or wrap?
+# promote => static Real-typed; wrap (-2147483648) => static Integer-typed.
+floor_int_arg|FLOOR(2147483647)+1
+floor_dbl_arg|FLOOR(2147483647.0)+1
+abs_int_arg|ABS(-2147483647)+1
+val_int_arg|VAL("2147483647")+1
+sgn_int|SGN(2147483647)*2147483647+1
+int_int_arg|INT(2147483647)+1
+ceil_int|CEIL(2147483647)+1
+round_int|ROUND(2147483647)+1
+# float family: do they statically force promote even when sum overflows?
+sin_zero_plus|SIN(0)+2147483647+1
+sqr_one_plus|SQR(2147483647)*0+2147483647+1
+# direct value: is FLOOR(int) itself Int or Real-tagged (via *1.0 detection)
+floor_int_self|FLOOR(2147483647)

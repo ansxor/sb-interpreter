@@ -14,15 +14,18 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   2026-06-24, overflow.yaml): a `%`+suffix-less / `%`+Real mix PROMOTES (`A%=2147483647:B=1
   :A%+B → 2.14748e+09`; `A%*B → 4e+09`; `A%+1.0 → 2.14748e+09`). Confirms sb-core's "promote
   iff EITHER operand `is_real_typed`" rule was already correct; froze as conformance cases.
-- [ ] M7-T5 (overflow promotion — builtin/sysvar return types) · The static return type is
-  PER-BUILTIN. Harvested (sb-oracle 2026-06-24): `FLOOR()` is **Real**-typed →
-  `FLOOR(2147483647.0)+1 → 2.14748e+09` (promotes); `ABS()` and `VAL()` are **Integer**-typed
-  → `ABS(-2147483647)+1` / `VAL("2147483647")+1 → -2147483648` (wrap). sb-core conservatively
-  treats ALL call/ref/sysvar results as NOT real-typed (→ wrapping), so ABS/VAL are correct
-  but FLOOR (and the rest of the Real-returning math family — SIN/COS/SQR/RND/… untested) are
-  WRONG. ABS/VAL frozen in overflow.yaml. · assumption: keep wrapping until each builtin's
-  static return type is harvested into a real-return-type table, then teach `is_real_typed`'s
-  Call arm to consult it.
+- [x] M7-T5 (overflow promotion — builtin/sysvar return types) · RESOLVED hw_verified
+  (sb-oracle 2026-06-24, `harness/harvest/m7t5_builtin_rettype.txt` → out tsv): there is **NO**
+  static "Real-return" override — the earlier "FLOOR() is Real-typed" reading was a
+  misinterpretation of the Double-arg case. A builtin's promote/wrap is decided by the RUNTIME
+  type of its result, like any other operand. The disambiguating integer-arg cases:
+  `FLOOR(2147483647)+1 → -2147483648` (WRAPS — Int in→Int out), `FLOOR(2147483647.0)+1 →
+  2.14748e+09` (PROMOTES — Double in→Double out); `ABS`/`VAL`/`SGN`/`CEIL`/`ROUND` int-arg all
+  WRAP (type-preserving Integer); `SIN(0)+2147483647+1` / `SQR(2147483647)*0+2147483647+1 →
+  2.14748e+09` (PROMOTE — genuinely Double-returning). sb-core's conservative "calls are NOT
+  real-typed, rely on the runtime Double" rule already matches the oracle on every case — so no
+  per-builtin return-type table is needed. Froze all 9 cases in overflow.yaml; sysvars are
+  integer-valued and never reach 2³¹ so their wrap path stands (no observable promotion case).
 - [ ] M7-T5 (overflow promotion — FOR counter, oracle-confirm) · `INC`/`DEC` promotion is now
   hw_verified + implemented (overflow.yaml `inc_*`/`dec_*`; suffix-less promotes, `%` wraps).
   The FOR counter step add now uses the SAME rule (compiler `name_is_real_typed(var) ||

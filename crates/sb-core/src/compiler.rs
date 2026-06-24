@@ -1423,10 +1423,15 @@ impl<'a> Compiler<'a> {
 /// suffix-less variable is the dynamic "Number" type — it can hold an Int or a Double at
 /// runtime, and the promoting path handles both (a runtime Int promotes only on overflow).
 ///
-/// Unknown sources — function/array-call results, `VAR()` refs, and system variables —
-/// conservatively default to NOT real-typed (i32-wrapping, the pre-existing behavior) to
-/// avoid changing untested cases; the mixed-operand and builtin-return-type corners are
-/// queued in `HARVEST_QUEUE.md`.
+/// Function/array-call results, `VAR()` refs, and system variables conservatively default
+/// to NOT real-typed (i32-wrapping). hw_verified (sb-oracle 2026-06-24,
+/// `m7t5_builtin_rettype`): this is CORRECT for builtins — there is no static "Real-return"
+/// override. A builtin's promote/wrap is decided by the RUNTIME type of its result, exactly
+/// like any other operand: a type-preserving func (FLOOR/ABS/VAL/SGN/CEIL/ROUND) returns an
+/// Int for an int arg so `+1` wraps (`FLOOR(2147483647)+1 → -2147483648`) and a Double for a
+/// Double arg so `+1` promotes (`FLOOR(2147483647.0)+1 → 2147483648.0`), while a genuinely
+/// Double-returning func (SIN/COS/SQR/…) always returns a Double so an overflowing sum
+/// promotes via runtime-Double propagation — no per-builtin return-type table is needed.
 /// Static Real/Number-typing of a bare variable name (the FOR counter target). Mirrors the
 /// `Var` arm of [`is_real_typed`]: a suffix-less / `#` user variable is Number-typed, a `%`/`$`
 /// one is not (and a reserved system variable stays on the wrapping path).

@@ -93,14 +93,43 @@ cases:
   - name: mix_pct_mul_suffixless_promotes
     code: 'A%=2000000000:B=2:PRINT STR$(A%*B)'
     expect: { stdout: "4e+09" }         # hw_verified mix_pct_mul_sl (4000000000.0)
-  # --- builtin return type carries into +/-/*: ABS()/VAL() are Integer-typed -> WRAP ---
-  #     (FLOOR() is Real-typed -> promotes; the full per-builtin table is queued.)
+  # --- builtin return type: there is NO static "Real-return" override (hw_verified
+  #     2026-06-24, m7t5_builtin_rettype). A builtin's promote/wrap behavior is decided
+  #     entirely by the RUNTIME type of its result, exactly like any other operand:
+  #       * Type-preserving funcs (FLOOR/ABS/VAL/SGN/CEIL/ROUND: Integer in -> Integer
+  #         out) return an Int at runtime for an int arg, so +1 WRAPS.
+  #       * The same funcs given a Double arg return a Double, so +1 PROMOTES.
+  #       * Genuinely Double-returning math (SIN/COS/SQR/...) always returns a Double, so
+  #         a sum overflowing i32 PROMOTES via runtime-Double propagation.
+  #     i.e. sb-core's "calls keep wrapping (is_real_typed Call arm = false), rely on the
+  #     runtime Double" rule is correct — no per-builtin real-return-type table is needed.
+  - name: floor_int_arg_is_integer_typed_wraps
+    code: 'PRINT FLOOR(2147483647)+1'
+    expect: { stdout: "-2147483648" }   # hw_verified floor_int_arg (Int in->Int out, wraps)
+  - name: floor_dbl_arg_promotes
+    code: 'PRINT STR$(FLOOR(2147483647.0)+1)'
+    expect: { stdout: "2.14748e+09" }   # hw_verified floor_dbl_arg (Double in->Double out)
   - name: abs_result_is_integer_typed_wraps
     code: 'PRINT ABS(-2147483647)+1'
-    expect: { stdout: "-2147483648" }   # hw_verified builtin_abs_plus (Integer-typed)
+    expect: { stdout: "-2147483648" }   # hw_verified abs_int_arg (Integer-typed)
   - name: val_result_is_integer_typed_wraps
     code: 'PRINT VAL("2147483647")+1'
-    expect: { stdout: "-2147483648" }   # hw_verified builtin_val_plus (Integer-typed)
+    expect: { stdout: "-2147483648" }   # hw_verified val_int_arg (Integer-typed)
+  - name: sgn_result_is_integer_typed_wraps
+    code: 'PRINT SGN(2147483647)*2147483647+1'
+    expect: { stdout: "-2147483648" }   # hw_verified sgn_int (Integer-typed)
+  - name: ceil_int_arg_is_integer_typed_wraps
+    code: 'PRINT CEIL(2147483647)+1'
+    expect: { stdout: "-2147483648" }   # hw_verified ceil_int (Integer-typed)
+  - name: round_int_arg_is_integer_typed_wraps
+    code: 'PRINT ROUND(2147483647)+1'
+    expect: { stdout: "-2147483648" }   # hw_verified round_int (Integer-typed)
+  - name: sin_double_result_promotes
+    code: 'PRINT STR$(SIN(0)+2147483647+1)'
+    expect: { stdout: "2.14748e+09" }   # hw_verified sin_zero_plus (Double-returning)
+  - name: sqr_double_result_promotes
+    code: 'PRINT STR$(SQR(2147483647)*0+2147483647+1)'
+    expect: { stdout: "2.14748e+09" }   # hw_verified sqr_one_plus (Double-returning)
   # --- shift count is not masked; >> is arithmetic ---
   - name: shl_sign_bit
     code: 'PRINT 1<<31'
