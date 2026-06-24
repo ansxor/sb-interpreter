@@ -19,7 +19,7 @@ summary: "Sets or reads the rotation angle of one BG layer, in degrees clockwise
 semantics:
   - "Two forms, selected by the requested return count [r4,#0xc]. Return count 0 selects the SET form, which requires exactly 2 arguments (Layer,Angle) — cmp argcount,#2 @0x1648cc. A return count of 1 with exactly 1 argument selects the OUT/get form — cmp [r4,#0xc],#1 / cmpeq argcount,#1 @0x1648bc-0x1648c0 (beq @0x1649a8). Any other shape raises errnum 4 (Illegal function call, mov r0,#0x4 / bl 0x1fffdc @0x1648d4-0x1648e0)."
   - "LAYER must be in 0..3 in both forms: evaluated and range-checked by the shared BG-layer getter FUN_001e2504 (bl @0x1648fc set / @0x1649b8 get). A value < 0 or >= the BG-layer count [[0x315d60]+0x60] (= 4) raises errnum 10 (Out of range) — mov r0,#0xa @0x1e2560."
-  - "ANGLE is normalized modulo 360 before being stored. The handler computes angle mod 360 with a reciprocal-multiply (smlal/asr by a magic constant @0x164938-0x16495c) and corrects a negative remainder by adding 360 (#0x168) — adds r0,r0,... / addmi r0,r0,#0x168 @0x16495c-0x164968. So -90 stores as 270 and 450 stores as 90; the stored/returned angle is always in 0..359."
+  - "ANGLE is fetched through the integer getter (a fractional input truncates TOWARD ZERO to an integer first) and then normalized modulo 360 before being stored. The handler computes angle mod 360 with a reciprocal-multiply (smlal/asr by a magic constant @0x164938-0x16495c) and corrects a negative remainder by adding 360 (#0x168) — adds r0,r0,... / addmi r0,r0,#0x168 @0x16495c-0x164968 — i.e. a truncated-toward-zero (C `%`) remainder with a +360 fixup, so the stored/returned angle is always in 0..359. hw_verified (sb-oracle 2026-06-24): 45->45, 180->180, 359->359, 360->0, 361->1, 450->90, 720->0, -1->359, -90->270, -360->0, -450->270, 100000->280, and the fractional 450.9->90 / -90.9->270 (truncate-then-mod). The default angle of a fresh layer is 0."
   - "Setting the angle clears bit 2 of the layer's transform flag word (bic r1,r1,#4 @0x164988) and then applies the rotation via the layer's set-rotation helper (bl 0x001163ac @0x164998). Rotation pivots around the layer origin (BGHOME); BGROT 0,0 is no rotation."
   - "BGROT changes only rotation; it does not change scroll (BGOFS), scale (BGSCALE), origin (BGHOME) or visibility. The OUT form returns the normalized angle as an Integer."
 
@@ -31,16 +31,35 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/bgrot.md (BGROT Layer,Angle — 'Rotates the BG screen'; Layer 0-3; Angle rotation angle (clockwise) 0-360; form 2 BGROT Layer OUT R — 'Gets rotation information'; R 0-360; e.g. BGROT 0,180 and BGROT 0 OUT R)" }
   - { type: disassembled, ref: "cia_3.6.0.lst BGROT handler @0x164898: form select via return-count [r4,#0xc] — SET requires argcount==2 (cmp r0,#2 @0x1648cc), OUT requires retcount==1 && argcount==1 (cmp r1,#1 / cmpeq r0,#1 @0x1648bc); else mov r0,#0x4 errnum 4 via bl 0x1fffdc @0x1648d4-0x1648e0; layer eval+range bl 0x1e2504 @0x1648fc (errnum 10 @0x1e2560); angle mod 360 via smlal/asr magic const @0x164938-0x16495c with negative correction addmi r0,r0,#0x168 @0x164968; clear transform bit bic r1,r1,#4 @0x164988 then set-rotation bl 0x001163ac @0x164998; per-layer stride mov r1,#0xe3 @0x164970; state ptr 0x315d60." }
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer rotation (3.5.0 structural cross-check only)" }
-  - { type: community, ref: "sbsave corpus: ~46 calls — set 'BGROT 0,180', variable/expression angle 'BGROT 0,ANG', 'BGROT BGN,I MOD 360' (L1NV3344/TXT/EX8TECHDEMO), 'BGROT 0,DEG(BGR+MYA)' (4D2X3KQV/TXT/PP3_D_RACE), negated 'BGROT 0,-DEG(ANGLE)+90' (B2337N4E/TXT/COLOR_MAZE) — confirming any numeric expression and angles outside 0..360 (normalized). OUT form 'BGROT 0 OUT ANG' (1DVK34J/TXT/HNZHS). (oracle-pending: exact mod-360 result for negative/over-360 angles, queued)" }
+  - { type: community, ref: "sbsave corpus: ~46 calls — set 'BGROT 0,180', variable/expression angle 'BGROT 0,ANG', 'BGROT BGN,I MOD 360' (L1NV3344/TXT/EX8TECHDEMO), 'BGROT 0,DEG(BGR+MYA)' (4D2X3KQV/TXT/PP3_D_RACE), negated 'BGROT 0,-DEG(ANGLE)+90' (B2337N4E/TXT/COLOR_MAZE) — confirming any numeric expression and angles outside 0..360 (normalized). OUT form 'BGROT 0 OUT ANG' (1DVK34J/TXT/HNZHS). (mod-360 result for negative/over-360 angles RESOLVED hw_verified 2026-06-24 — see the hw_verified ref)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9c): BGROT 4,90 -> errnum 10; BGROT -1,90 -> errnum 10; BGROT 0 (1 arg) -> errnum 4; BGSCREEN 0,32,32:BGROT 0,180 raises nothing. All errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 16, harness/harvest/out/bgrot_rt.tsv): SET->OUT round-trip + mod-360 normalization. `BGROT 0,A:BGROT 0 OUT R` reads back: 45->45, 180->180, 359->359, 360->0, 361->1, 450->90, 720->0, -1->359, -90->270, -360->0, -450->270, 100000->280 (confirms the truncated-toward-zero remainder + addmi #0x168 negative fixup). Fractional input truncates toward zero THEN mods: 450.9->90, -90.9->270. A fresh layer's default angle is 0 (`BGROT 0 OUT R`->0). BGSCREEN is NOT required (`BGROT 2,90:BGROT 2 OUT R`->90 — BG layers exist always, consistent with BGOFS run 13). Per-layer independent (`BGROT 0,90:BGROT 1,180:BGROT 1 OUT R`->180). sb-core's `normalize_angle(to_int())` matched every value with NO code change." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Rotation side effects need the BG framebuffer oracle (O-T6, queued). The mod-360
-  # normalization is read from the disassembly (queued for oracle confirmation).
-  - { name: set_ok, code: "BGSCREEN 0,32,32\nBGROT 0,180", expect: { stdout: "" } }
-  - { name: set_ok_zero, code: "BGSCREEN 0,32,32\nBGROT 0,0", expect: { stdout: "" } }
+  # SET->OUT round-trip + mod-360 normalization, hw_verified (sb-oracle 2026-06-24, M7-T2
+  # run 16; harness/harvest/out/bgrot_rt.tsv). `stdout` is the console scrape (trailing
+  # newline trimmed). The on-screen rotation EFFECT still needs the BG framebuffer oracle
+  # (O-T6, queued); the stored/returned angle STATE is now fully value-deterministic.
+  - { name: rot_45, code: "BGSCREEN 0,32,32\nBGROT 0,45\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "45" } }
+  - { name: rot_180, code: "BGSCREEN 0,32,32\nBGROT 0,180\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "180" } }
+  - { name: rot_359, code: "BGSCREEN 0,32,32\nBGROT 0,359\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "359" } }
+  - { name: rot_360_wraps_zero, code: "BGSCREEN 0,32,32\nBGROT 0,360\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "0" } }
+  - { name: rot_361_wraps_one, code: "BGSCREEN 0,32,32\nBGROT 0,361\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "1" } }
+  - { name: rot_450_wraps_90, code: "BGSCREEN 0,32,32\nBGROT 0,450\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "90" } }
+  - { name: rot_720_wraps_zero, code: "BGSCREEN 0,32,32\nBGROT 0,720\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "0" } }
+  - { name: rot_neg1_wraps_359, code: "BGSCREEN 0,32,32\nBGROT 0,-1\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "359" } }
+  - { name: rot_neg90_wraps_270, code: "BGSCREEN 0,32,32\nBGROT 0,-90\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "270" } }
+  - { name: rot_neg360_wraps_zero, code: "BGSCREEN 0,32,32\nBGROT 0,-360\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "0" } }
+  - { name: rot_neg450_wraps_270, code: "BGSCREEN 0,32,32\nBGROT 0,-450\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "270" } }
+  - { name: rot_big_100000_mod_280, code: "BGSCREEN 0,32,32\nBGROT 0,100000\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "280" } }
+  - { name: rot_frac_truncates_then_mods, code: "BGSCREEN 0,32,32\nBGROT 0,450.9\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "90" } }
+  - { name: rot_negfrac_truncates_then_mods, code: "BGSCREEN 0,32,32\nBGROT 0,-90.9\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "270" } }
+  - { name: rot_default_zero, code: "BGSCREEN 0,32,32\nBGROT 0 OUT R\nPRINT R", expect: { stdout: "0" } }
+  - { name: rot_layer_independent, code: "BGSCREEN 0,32,32\nBGROT 0,90\nBGROT 1,180\nBGROT 1 OUT R\nPRINT R", expect: { stdout: "180" } }
+  - { name: rot_no_bgscreen, code: "BGROT 2,90\nBGROT 2 OUT R\nPRINT R", expect: { stdout: "90" } }
+  # Error guards (hw_verified sb-oracle 2026-06-22, s_t9c).
   - { name: layer_out_of_range, code: "BGROT 4,90", expect: { error: { errnum: 10 } } }
   - { name: layer_negative, code: "BGROT -1,90", expect: { error: { errnum: 10 } } }
   - { name: missing_angle, code: "BGROT 0", expect: { error: { errnum: 4 } } }

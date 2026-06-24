@@ -688,6 +688,34 @@ mod tests {
     }
 
     #[test]
+    fn set_rot_normalizes_mod_360() {
+        // hw_verified sb-oracle 2026-06-24 (M7-T2 run 16, harness/harvest/out/bgrot_rt.tsv):
+        // BGROT normalizes via a truncated-toward-zero remainder + a +360 fixup for a
+        // negative remainder, so the stored/returned angle is always in 0..359.
+        let mut st = BgState::new();
+        for (input, want) in [
+            (45, 45),
+            (180, 180),
+            (359, 359),
+            (360, 0),
+            (361, 1),
+            (450, 90),
+            (720, 0),
+            (-1, 359),
+            (-90, 270),
+            (-360, 0),
+            (-450, 270),
+            (100000, 280),
+        ] {
+            st.set_rot(0, input);
+            assert_eq!(
+                st.layers[0].rot, want,
+                "BGROT 0,{input} should read back {want}"
+            );
+        }
+    }
+
+    #[test]
     fn clip_normalizes_and_resets() {
         let mut st = BgState::new();
         st.set_clip(0, Some((379, 219, 20, 20)));
