@@ -132,6 +132,7 @@ mod web {
     use sb_core::host_input::HostInput;
     use std::cell::RefCell;
     use std::rc::Rc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use wasm_bindgen::prelude::*;
     use wasm_bindgen::{Clamped, JsCast};
     use web_sys::{
@@ -221,6 +222,16 @@ mod web {
         }
     }
 
+    /// Shared flag used to stop a running interactive loop from JavaScript.
+    static STOP: AtomicBool = AtomicBool::new(false);
+
+    /// Request that the running `run_interactive` loop stop after its current frame.
+    /// The next call to `run_interactive` resets this flag automatically.
+    #[wasm_bindgen]
+    pub fn stop_interactive() {
+        STOP.store(true, Ordering::Relaxed);
+    }
+
     /// Run a SmileBASIC program, then drive it with live host input in a
     /// `requestAnimationFrame` loop: each frame folds the accumulated keyboard / mouse input
     /// into the VM's `InputState` (so `BUTTON`/`STICK`/`STICKEX`/`TOUCH` read live input),
@@ -231,6 +242,8 @@ mod web {
         let document = web_sys::window()
             .and_then(|w| w.document())
             .ok_or_else(|| JsValue::from_str("no document"))?;
+
+        STOP.store(false, Ordering::Relaxed);
 
         let vm = build_vm(src);
         // Paint the initial scene (or a blank backdrop on a compile failure) once up front.
@@ -284,7 +297,9 @@ mod web {
                 vm.tick_frame();
                 let _ = paint(&canvas, &ctx, &compose(&vm));
             }
-            request_frame(f.borrow().as_ref().unwrap());
+            if !STOP.load(Ordering::Relaxed) {
+                request_frame(f.borrow().as_ref().unwrap());
+            }
         }));
         request_frame(g.borrow().as_ref().unwrap());
         Ok(())

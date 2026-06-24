@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>sb-player — SmileBASIC interpreter</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <h1>sb-player</h1>
+        <div class="actions">
+          <button id="btn-run" class="primary" title="Run program (Ctrl+Enter)">▶ run</button>
+          <button id="btn-stop" title="Stop running program">■ stop</button>
+          <button id="btn-load" title="Load a .sb3 or .txt file">📂 load</button>
+          <button id="btn-settings" title="Toggle settings panel">⚙ settings</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="editor-pane">
+          <textarea
+            id="editor"
+            spellcheck="false"
+            placeholder="Paste SmileBASIC code here, or load a file..."
+          ></textarea>
+        </section>
+
+        <section class="screen-pane">
+          <div id="screen-frame" class="screen-frame">
+            <canvas id="screen"></canvas>
+            <div id="touch-overlay" class="touch-overlay hidden"></div>
+          </div>
+          <p class="screen-hint">
+            top screen • touch = mouse on canvas • d-pad = arrows • face = U/I/J/K
+          </p>
+        </section>
+      </main>
+
+      <aside id="settings" class="settings hidden">
+        <div class="settings-header">
+          <h2>settings</h2>
+          <button id="btn-close-settings" aria-label="Close settings">×</button>
+        </div>
+
+        <div class="settings-body">
+          <details open>
+            <summary>display</summary>
+            <label>
+              scale
+              <select id="setting-scale">
+                <option value="fit">fit</option>
+                <option value="1">1×</option>
+                <option value="2" selected>2×</option>
+                <option value="3">3×</option>
+                <option value="4">4×</option>
+              </select>
+            </label>
+            <label>
+              <input type="checkbox" id="setting-pixelated" checked />
+              pixelated scaling
+            </label>
+            <label>
+              <input type="checkbox" id="setting-touch-overlay" />
+              show touch overlay
+            </label>
+          </details>
+
+          <details open>
+            <summary>input</summary>
+            <div class="keymap">
+              <div><kbd>↑↓←→</kbd> d-pad</div>
+              <div><kbd>U</kbd> <kbd>I</kbd> <kbd>J</kbd> <kbd>K</kbd> face (Y/X/B/A)</div>
+              <div><kbd>Q</kbd> <kbd>E</kbd> shoulders (L/R)</div>
+              <div><kbd>1</kbd> <kbd>2</kbd> triggers (ZL/ZR)</div>
+              <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> left stick</div>
+              <div><kbd>8</kbd><kbd>4</kbd><kbd>2</kbd><kbd>6</kbd> (numpad) right stick</div>
+              <div><kbd>mouse</kbd> touch screen</div>
+            </div>
+          </details>
+
+          <details open>
+            <summary>storage</summary>
+            <button id="btn-clear-storage">clear IndexedDB storage</button>
+            <p class="hint">This wipes any files saved by programs using the storage layer.</p>
+          </details>
+        </div>
+      </aside>
+    </div>
+
+    <input type="file" id="file-input" accept=".sb3,.txt,.bas" hidden />
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

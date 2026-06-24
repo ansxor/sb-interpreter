@@ -23,3 +23,10 @@ sb-audio = { path = "../sb-audio" }
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
+
+# M7-T5 — dedicated VM throughput / fps benchmark. Plain `main()` (no criterion,
+# stable Rust): `cargo bench -p sb-core`. Bench targets are native + dev-only, so
+# they never touch the wasm32 lib build.
+[[bench]]
+name = "vm_throughput"
+harness = false

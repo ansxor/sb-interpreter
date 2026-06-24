@@ -1,0 +1,17 @@
+{
+  "name": "sb-player",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Browser client for the SmileBASIC interpreter wasm build.",
+  "scripts": {
+    "build:wasm": "wasm-pack build ../crates/sb-platform-wasm --target web --out-dir ../../sb-player/pkg",
+    "dev": "npm run build:wasm && vite",
+    "build": "npm run build:wasm && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "wasm-pack": "^0.15.0"
+  }
+}
