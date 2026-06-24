@@ -813,6 +813,15 @@ impl Vm {
                 let new = operate(BinOp::Add, cur, delta).map_err(sb)?;
                 target.assign_through(new).map_err(sb)?;
             }
+            Op::IncRefPromote => {
+                // Real/Number-typed target (or Real delta): overflow promotes Int->Double
+                // instead of wrapping, exactly as `A=A+delta` does (hw_verified 2026-06-24).
+                let target = as_ref(self.pop()?)?;
+                let delta = self.pop()?;
+                let cur = target.deref();
+                let new = operate_promote(BinOp::Add, cur, delta).map_err(sb)?;
+                target.assign_through(new).map_err(sb)?;
+            }
             Op::Swap {
                 a: sa,
                 b: sb_suffix,
@@ -4050,6 +4059,37 @@ mod tests {
             panic!("A% not Int");
         };
         assert_eq!(v, -294967296);
+    }
+
+    #[test]
+    fn inc_dec_follow_scalar_overflow_rule() {
+        // hw_verified (sb-oracle 2026-06-24): `INC X`/`DEC X` are `X = X +/- delta`, so a
+        // suffix-less (Number) target PROMOTES Int→Double on i32 overflow while a `%`
+        // target WRAPS mod 2^32.
+        let vm = run("A=2147483647\nINC A");
+        assert_eq!(real(&vm, "A"), 2_147_483_648.0);
+        let vm = run("A=-2147483648\nDEC A");
+        assert_eq!(real(&vm, "A"), -2_147_483_649.0);
+        let vm = run("A=2147483640\nINC A,10");
+        assert_eq!(real(&vm, "A"), 2_147_483_650.0);
+        // `%` target wraps (and a result still in range stays Integer).
+        let vm = run("A%=2147483647\nINC A%");
+        assert_eq!(int_s(&vm, "A"), -2147483648);
+        let vm = run("A%=-2147483648\nDEC A%");
+        assert_eq!(int_s(&vm, "A"), 2147483647);
+    }
+
+    #[test]
+    fn for_counter_promotes_on_overflow_and_terminates() {
+        // A suffix-less FOR counter that overruns i32 PROMOTES Int→Double on the step add,
+        // so the loop terminates instead of wrapping into an endless loop. Derived from the
+        // hw_verified INC promotion; FOR-specific oracle confirm queued (HARVEST_QUEUE.md).
+        // STEP 2e9 from 2e9: body sees I=2e9, then I=4e9 (promoted), then I=6e9 > TO → stop.
+        let vm = run("N=0\nFOR I=2000000000 TO 4500000000 STEP 2000000000\nN=I\nNEXT");
+        assert_eq!(real(&vm, "N"), 4_000_000_000.0);
+        // A `%` counter keeps the wrapping add; a small in-range loop terminates normally.
+        let vm = run("FOR I%=1 TO 3\nNEXT");
+        assert_eq!(int_s(&vm, "I"), 4);
     }
 
     #[test]

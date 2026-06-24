@@ -1,0 +1,14 @@
+# M7-T5 follow-up: INC/DEC promotion, MIXED operand typing, builtin return-type promotion
+# prog mode: name|setup|result|prog  (setup runs, then STR$(result) captured)
+inc_sl_promote|A=2147483647:INC A|A|prog
+inc_pct_wrap|A%=2147483647:INC A%|A%|prog
+dec_sl_promote|A=-2147483648:DEC A|A|prog
+dec_pct_wrap|A%=-2147483648:DEC A%|A%|prog
+inc_sl_by_delta|A=2147483640:INC A,10|A|prog
+mix_pct_plus_sl|A%=2147483647:B=1|A%+B|prog
+mix_sl_plus_pct|A=2147483647:B%=1|A+B%|prog
+mix_pct_plus_real|A%=2147483647|A%+1.0|prog
+mix_pct_mul_sl|A%=2000000000:B=2|A%*B|prog
+builtin_abs_plus|ABS(-2147483647)+1
+builtin_floor_plus|FLOOR(2147483647.0)+1
+builtin_val_plus|VAL("2147483647")+1

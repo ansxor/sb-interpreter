@@ -255,8 +255,17 @@ pub enum Op {
     Linput { has_prompt: bool },
 
     // --- misc statements ------------------------------------------------------
-    /// `INC`/`DEC`: pop a reference then a delta, add the delta through the reference.
+    /// `INC`/`DEC`: pop a reference then a delta, add the delta through the reference
+    /// using the WRAPPING integer add (the `%`-typed / Integer-static-typed target —
+    /// `A%=2147483647:INC A% → -2147483648`, hw_verified 2026-06-24).
     IncRef,
+    /// `INC`/`DEC` on a Real/Number-typed target (suffix-less / `#`, or a Real-typed
+    /// delta): pop a reference then a delta and add the delta through the reference using
+    /// the PROMOTING add — Int+Int overflow promotes Int→Double instead of wrapping, so
+    /// `A=2147483647:INC A → 2147483648.0` (hw_verified 2026-06-24). The compiler picks
+    /// this vs [`Op::IncRef`] via `is_real_typed` on the target/delta, mirroring how
+    /// `A=A+1` already selects [`Op::OperatePromote`].
+    IncRefPromote,
     /// `SWAP`: pop two references and exchange the cells, re-coercing each
     /// incoming value to the *destination* variable's declared [`Suffix`] (a
     /// `%`/`#`/`$` target truncates/widens like an assignment; an untyped target

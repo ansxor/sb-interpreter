@@ -750,9 +750,18 @@ impl<'a> Compiler<'a> {
                 self.compile_pop_target(var)?;
             }
             StmtKind::Inc { target, delta } => {
+                // `INC X` is `X = X + delta`, so it follows the same overflow rule: a
+                // Real/Number-typed target (or Real delta) PROMOTES Int->Double on
+                // overflow; a `%`-typed target WRAPS (both hw_verified 2026-06-24,
+                // overflow.yaml). See [`is_real_typed`] / [`Op::OperatePromote`].
+                let promote = is_real_typed(target) || is_real_typed(delta);
                 self.compile_expr(delta)?;
                 self.compile_push_ref(target)?;
-                self.emit(Op::IncRef);
+                self.emit(if promote {
+                    Op::IncRefPromote
+                } else {
+                    Op::IncRef
+                });
             }
             StmtKind::Swap { a, b } => {
                 let a_suffix = self.lvalue_suffix(a);
@@ -949,11 +958,21 @@ impl<'a> Compiler<'a> {
         self.compile_block(body)?;
         let ctx = self.loops.pop().unwrap();
 
-        // CONTINUE lands here: counter = counter + step, then loop.
+        // CONTINUE lands here: counter = counter + step, then loop. The step add follows
+        // the same overflow rule as a scalar `counter = counter + step`: a Real/Number-typed
+        // counter (or Real step) PROMOTES Int->Double on overflow rather than wrapping (so a
+        // suffix-less counter that overruns i32 terminates instead of wrapping into an endless
+        // loop). Derived from the hw_verified INC promotion (overflow.yaml); FOR-specific
+        // confirmation queued in HARVEST_QUEUE.md.
+        let counter_promotes = name_is_real_typed(var) || step.is_some_and(is_real_typed);
         let cont_addr = self.here();
         self.emit(Op::PushVar(counter));
         self.compile_step(step)?;
-        self.emit(Op::Operate(BinOp::Add));
+        self.emit(if counter_promotes {
+            Op::OperatePromote(BinOp::Add)
+        } else {
+            Op::Operate(BinOp::Add)
+        });
         self.emit(Op::PopVar(counter));
         self.emit(Op::Jump(for_start));
 
@@ -1408,6 +1427,14 @@ impl<'a> Compiler<'a> {
 /// conservatively default to NOT real-typed (i32-wrapping, the pre-existing behavior) to
 /// avoid changing untested cases; the mixed-operand and builtin-return-type corners are
 /// queued in `HARVEST_QUEUE.md`.
+/// Static Real/Number-typing of a bare variable name (the FOR counter target). Mirrors the
+/// `Var` arm of [`is_real_typed`]: a suffix-less / `#` user variable is Number-typed, a `%`/`$`
+/// one is not (and a reserved system variable stays on the wrapping path).
+fn name_is_real_typed(name: &Name) -> bool {
+    Sysvar::from_name(&canonical(name)).is_none()
+        && matches!(name.suffix, Suffix::None | Suffix::Real)
+}
+
 fn is_real_typed(expr: &Expr) -> bool {
     match &expr.kind {
         ExprKind::Const(Lit::Real(_)) => true,
@@ -1500,6 +1527,33 @@ mod tests {
     }
 
     #[test]
+    fn inc_dec_select_promote_by_target_type() {
+        // INC on a suffix-less (Number) target promotes on overflow, like `A=A+1`.
+        let p = comp("A=1\nINC A");
+        assert!(p.code.contains(&Op::IncRefPromote));
+        assert!(!p.code.contains(&Op::IncRef));
+        // DEC lowers to a negated delta but keeps the target's typing.
+        let pd = comp("A=1\nDEC A");
+        assert!(pd.code.contains(&Op::IncRefPromote));
+        // A `%`-typed target keeps the wrapping IncRef.
+        let pi = comp("A%=1\nINC A%");
+        assert!(pi.code.contains(&Op::IncRef));
+        assert!(!pi.code.contains(&Op::IncRefPromote));
+    }
+
+    #[test]
+    fn for_counter_add_selects_promote_by_counter_type() {
+        // A suffix-less counter promotes on overflow (so it terminates instead of wrapping
+        // into an endless loop); the body still uses the regular dispatch otherwise.
+        let p = comp("FOR I=1 TO 3\nNEXT");
+        assert!(p.code.contains(&Op::OperatePromote(BinOp::Add)));
+        // A `%`-typed counter keeps the wrapping add.
+        let pi = comp("FOR I%=1 TO 3\nNEXT");
+        assert!(pi.code.contains(&Op::Operate(BinOp::Add)));
+        assert!(!pi.code.contains(&Op::OperatePromote(BinOp::Add)));
+    }
+
+    #[test]
     fn locs_parallel_code() {
         let p = comp("A=1\nB=2");
         assert_eq!(p.code.len(), p.locs.len());
@@ -1549,8 +1603,12 @@ mod tests {
         assert!(p.code.iter().any(|o| matches!(o, Op::Operate(BinOp::Ge))));
         assert!(p.code.iter().any(|o| matches!(o, Op::Operate(BinOp::Lt))));
         assert!(p.code.iter().any(|o| matches!(o, Op::Operate(BinOp::Gt))));
-        // counter add-back uses Add.
-        assert!(p.code.iter().any(|o| matches!(o, Op::Operate(BinOp::Add))));
+        // counter add-back uses Add; the suffix-less counter takes the PROMOTING add so an
+        // i32 overrun promotes Int→Double instead of wrapping endlessly (hw_verified rule).
+        assert!(p
+            .code
+            .iter()
+            .any(|o| matches!(o, Op::OperatePromote(BinOp::Add))));
     }
 
     #[test]

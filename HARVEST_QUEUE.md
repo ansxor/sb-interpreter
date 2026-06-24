@@ -10,23 +10,26 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
-- [ ] M7-T5 (overflow promotion — MIXED operand typing) · When ONE operand is `%`-typed
-  (statically Integer) and the OTHER is suffix-less/`#` (Number/Real), does `+`/`-`/`*`
-  wrap or promote on overflow? Verified pure cases (sb-oracle 2026-06-24): pure-`%` wraps
-  (`A%=2000000000:A%*2 → -294967296`), pure-suffix-less promotes (`A=2147483647:A+1 →
-  2.14748e+09`), `%`+integer-literal wraps (`A%+1 → -2147483648`), suffix-less+literal
-  promotes. sb-core rule = promote iff EITHER operand `is_real_typed` (compiler.rs), so a
-  `%`+suffix-less mix PROMOTES — UNVERIFIED. · assumption: any Number/Real operand makes
-  the op promote (mirrors how a single Real operand already forces real arithmetic).
-- [ ] M7-T5 (overflow promotion — builtin/sysvar return types) · Does the result of a
-  numeric builtin (e.g. `VAL()`, `LEN()`, `ABS()`) or a non-MAINCNT system variable carry
-  Integer (wrap) or Number (promote) type into `+`/`-`/`*`? sb-core conservatively treats
-  ALL call/ref/sysvar results as NOT real-typed (→ wrapping, the pre-existing behavior). ·
-  assumption: keep wrapping until each builtin's static return type is harvested.
-- [ ] M7-T5 (overflow promotion — INC/DEC and FOR counter) · `INC X` / `DEC X` and the FOR
-  loop counter step still use the WRAPPING integer add (vm.rs `Op::Operate(Add)` at the
-  INC/FOR sites), so a suffix-less counter overflowing i32 wraps instead of promoting. Edge
-  (counting past 2³¹). · assumption: wraps; promote-aware INC/DEC/FOR deferred.
+- [x] M7-T5 (overflow promotion — MIXED operand typing) · RESOLVED hw_verified (sb-oracle
+  2026-06-24, overflow.yaml): a `%`+suffix-less / `%`+Real mix PROMOTES (`A%=2147483647:B=1
+  :A%+B → 2.14748e+09`; `A%*B → 4e+09`; `A%+1.0 → 2.14748e+09`). Confirms sb-core's "promote
+  iff EITHER operand `is_real_typed`" rule was already correct; froze as conformance cases.
+- [ ] M7-T5 (overflow promotion — builtin/sysvar return types) · The static return type is
+  PER-BUILTIN. Harvested (sb-oracle 2026-06-24): `FLOOR()` is **Real**-typed →
+  `FLOOR(2147483647.0)+1 → 2.14748e+09` (promotes); `ABS()` and `VAL()` are **Integer**-typed
+  → `ABS(-2147483647)+1` / `VAL("2147483647")+1 → -2147483648` (wrap). sb-core conservatively
+  treats ALL call/ref/sysvar results as NOT real-typed (→ wrapping), so ABS/VAL are correct
+  but FLOOR (and the rest of the Real-returning math family — SIN/COS/SQR/RND/… untested) are
+  WRONG. ABS/VAL frozen in overflow.yaml. · assumption: keep wrapping until each builtin's
+  static return type is harvested into a real-return-type table, then teach `is_real_typed`'s
+  Call arm to consult it.
+- [ ] M7-T5 (overflow promotion — FOR counter, oracle-confirm) · `INC`/`DEC` promotion is now
+  hw_verified + implemented (overflow.yaml `inc_*`/`dec_*`; suffix-less promotes, `%` wraps).
+  The FOR counter step add now uses the SAME rule (compiler `name_is_real_typed(var) ||
+  is_real_typed(step)` → `Op::OperatePromote`), DERIVED from the INC result (not yet harvested
+  for FOR specifically — the wrap path risks an endless loop, so it wasn't batched). Confirm a
+  suffix-less FOR counter overrunning i32 promotes Int→Double (terminates) on real SB. ·
+  assumption: FOR counter promotes exactly like `counter = counter + step` / INC.
 - [ ] M7-T5 (unsuffixed-array element promotion) · `DIM A[1]:A[0]=2000000000:A[0]=A[0]*2`
   → `4e9` on real SB (sb-oracle arr_real_promote 2026-06-24): a suffix-less ARRAY element
   promotes like a suffix-less scalar. sb-core would Overflow (9) here because unsuffixed

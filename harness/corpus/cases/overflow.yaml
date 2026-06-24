@@ -61,6 +61,46 @@ cases:
   - name: array_store_huge_overflows
     code: 'DIM A%[1]:A%[0]=10000000000'
     expect: { error: { errnum: 9 } }    # hw_verified arr_store_ovf
+  # --- INC/DEC follow the scalar overflow rule (hw_verified 2026-06-24, prog batch) ---
+  #     `INC X` is `X = X + delta`: a Real/Number-typed target (suffix-less / `#`) PROMOTES
+  #     Int->Double on overflow, a `%`-typed target WRAPS mod 2^32.
+  - name: inc_suffixless_promotes
+    code: 'A=2147483647:INC A:PRINT STR$(A)'
+    expect: { stdout: "2.14748e+09" }   # hw_verified inc_sl_promote (Double 2147483648.0)
+  - name: inc_pct_wraps
+    code: 'A%=2147483647:INC A%:PRINT A%'
+    expect: { stdout: "-2147483648" }   # hw_verified inc_pct_wrap
+  - name: dec_suffixless_promotes
+    code: 'A=-2147483648:DEC A:PRINT STR$(A)'
+    expect: { stdout: "-2.14748e+09" }  # hw_verified dec_sl_promote (-2147483649.0)
+  - name: dec_pct_wraps
+    code: 'A%=-2147483648:DEC A%:PRINT A%'
+    expect: { stdout: "2147483647" }    # hw_verified dec_pct_wrap
+  - name: inc_suffixless_by_delta_promotes
+    code: 'A=2147483640:INC A,10:PRINT STR$(A)'
+    expect: { stdout: "2.14748e+09" }   # hw_verified inc_sl_by_delta (2147483650.0)
+  # --- MIXED operand typing: a `%` operand mixed with a suffix-less/Real one PROMOTES ---
+  #     (confirms sb-core's "promote iff EITHER operand is_real_typed" rule, hw_verified).
+  - name: mix_pct_plus_suffixless_promotes
+    code: 'A%=2147483647:B=1:PRINT STR$(A%+B)'
+    expect: { stdout: "2.14748e+09" }   # hw_verified mix_pct_plus_sl
+  - name: mix_suffixless_plus_pct_promotes
+    code: 'A=2147483647:B%=1:PRINT STR$(A+B%)'
+    expect: { stdout: "2.14748e+09" }   # hw_verified mix_sl_plus_pct
+  - name: mix_pct_plus_real_literal_promotes
+    code: 'A%=2147483647:PRINT STR$(A%+1.0)'
+    expect: { stdout: "2.14748e+09" }   # hw_verified mix_pct_plus_real
+  - name: mix_pct_mul_suffixless_promotes
+    code: 'A%=2000000000:B=2:PRINT STR$(A%*B)'
+    expect: { stdout: "4e+09" }         # hw_verified mix_pct_mul_sl (4000000000.0)
+  # --- builtin return type carries into +/-/*: ABS()/VAL() are Integer-typed -> WRAP ---
+  #     (FLOOR() is Real-typed -> promotes; the full per-builtin table is queued.)
+  - name: abs_result_is_integer_typed_wraps
+    code: 'PRINT ABS(-2147483647)+1'
+    expect: { stdout: "-2147483648" }   # hw_verified builtin_abs_plus (Integer-typed)
+  - name: val_result_is_integer_typed_wraps
+    code: 'PRINT VAL("2147483647")+1'
+    expect: { stdout: "-2147483648" }   # hw_verified builtin_val_plus (Integer-typed)
   # --- shift count is not masked; >> is arithmetic ---
   - name: shl_sign_bit
     code: 'PRINT 1<<31'
