@@ -716,6 +716,17 @@ oracle to confirm exact output and promote to `hw_verified`.
     GOSUB stack, matching osb; whether 3.6.0 preserves all of these or only the pc needs a
     ≥2-slot oracle to confirm), and whether a free variable inside the returned-to launcher sees
     any state the EXEC'd program mutated in a COMMON.)
+    (UPDATE 2026-06-23, M6-T6: the BARE-name (no `PRGn:`) default-slot file LOAD is now
+    IMPLEMENTED to the documented + osb-structural model: a bare name defaults to the RUNNING slot
+    (osb `Exec.execute`: `if (!file.hasResourceNumber) file.resourceNumber = currentSlotNumber`),
+    so `EXEC "FILE"` / `EXEC EXE$` loads + runs the file in the running slot from the top via
+    `Vm::load_into_running_slot` — same path as `EXEC "PRG0:file"` while slot 0 runs. 3 new vm.rs
+    e2e tests (bare-name load+run, fresh globals, bare-variable filename). STILL
+    VmError::Unsupported / oracle-pending: a `PRG0:` resource naming a NON-running slot 0 (the
+    slot-0 registry edge — `load_slot_program` ignores slot 0), and whether real SB's bare-name
+    default truly resolves to the running slot vs slot 0 (osb's local `slot` stays 0 in that branch
+    — likely an osb bug; needs a ≥2-slot oracle to confirm the running-slot default), plus per-slot
+    vs shared variable scoping.)
 
 - S-T12c Source read (PRGGET$/PRGNAME$/PRGSIZE): the error guards ARE hw_verified (batch
     2026-06-22, s_t12c): PRGGET$ with no active PRGEDIT -> errnum 38 (the no-PRGEDIT check

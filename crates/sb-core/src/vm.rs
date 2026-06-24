@@ -1198,13 +1198,15 @@ impl Vm {
     ///   *distinct* from the running one is read from storage, compiled in-VM, loaded into that
     ///   slot, and run ([`Vm::compile_slot_file`] + [`Vm::exec_transfer`], documented form 1);
     ///   a `PRGn:` slot naming the *running* slot loads the file into the running slot and runs
-    ///   it from the top ([`Vm::load_into_running_slot`], the corpus loader idiom).
+    ///   it from the top ([`Vm::load_into_running_slot`], the corpus loader idiom); a *bare name*
+    ///   (no `PRGn:` resource number) defaults to the running slot (osb `Exec.execute`) and is
+    ///   loaded + run the same way.
     ///
-    /// The numeric loaded-slot transfer, the numeric running-slot restart, and the string-form
-    /// `PRGn:` file LOAD (into a non-running OR the running slot) are the documented single-level
-    /// model. The remaining pieces — the bare-name (no `PRGn:`) default-slot file LOAD, the
-    /// `END`-returns-across-slots rule, and per-slot vs shared variable scoping — are not
-    /// body-readable in the disassembly and stay oracle-pending (queued, `HARVEST_QUEUE.md`).
+    /// The numeric loaded-slot transfer, the numeric running-slot restart, the string-form
+    /// `PRGn:` file LOAD (into a non-running OR the running slot), and the bare-name default-slot
+    /// LOAD are the documented single-level model. The remaining pieces — a `PRG0:` resource
+    /// naming a *non-running* slot 0 (the slot-0 registry edge), and per-slot vs shared variable
+    /// scoping — stay oracle-pending (queued, `HARVEST_QUEUE.md`).
     fn do_exec(&mut self, v: Value) -> Result<(), VmError> {
         if let Value::Str(s) = &v {
             let s = String::from_utf16_lossy(s);
@@ -1236,11 +1238,22 @@ impl Vm {
                     self.load_into_running_slot(prog);
                     Ok(())
                 }
-                // The bare-name (no `PRGn:`) default-slot load — its exact destination slot
-                // is part of the deferred loader (oracle-pending) — and a `PRG0:` resource
-                // when slot 0 is *not* the running slot remain the deferred multi-program model.
-                _ => Err(VmError::Unsupported(
-                    "EXEC \"file\" without a PRGn: slot (default-slot load) — M6 multi-program model",
+                // A bare filename (no `PRGn:` resource number) defaults to the RUNNING slot
+                // (osb `Exec.execute`: `if (!file.hasResourceNumber) file.resourceNumber =
+                // currentSlotNumber`) — the corpus loader idiom `EXEC EXE$` / `EXEC FAV$[...]`
+                // where a slot-0 loader EXECs the chosen program by bare name. It loads the
+                // file into the running slot and runs it from the top, exactly the
+                // `EXEC "PRG0:file"`-while-slot-0-runs case.
+                None => {
+                    let prog = self.compile_slot_file(name)?;
+                    self.load_into_running_slot(prog);
+                    Ok(())
+                }
+                // A `PRG0:` resource naming slot 0 when slot 0 is *not* the running slot is the
+                // post-EXEC slot-0 registry edge (`load_slot_program` ignores slot 0) — still
+                // part of the deferred multi-program model.
+                Some(_) => Err(VmError::Unsupported(
+                    "EXEC \"PRG0:file\" into a non-running slot 0 — M6 multi-program model",
                 )),
             }
         } else {
@@ -4510,6 +4523,39 @@ CALL "ADDOUT",2,3 OUT X"#);
             .err()
             .expect("missing file");
         assert_eq!(err.errnum(), Some(46));
+    }
+
+    #[test]
+    fn exec_string_bare_name_loads_into_running_slot() {
+        // documented + osb structural (exec.yaml): a bare filename (no `PRGn:` resource number)
+        // defaults to the running slot, so `EXEC "FILE"` while slot 0 runs loads + runs the file
+        // in the running slot from the top (the corpus loader idiom `EXEC EXE$`).
+        let vm = run_with_txt(
+            "PRINT \"A\";\nEXEC \"SUB\"\nPRINT \"NEVER\"",
+            &[("SUB", "PRINT \"B\"\nEND")],
+        )
+        .expect("run");
+        // The slot-0 statement after EXEC is abandoned (can't return to the previous program).
+        assert_eq!(vm.console_text(), "AB");
+    }
+
+    #[test]
+    fn exec_string_bare_name_runs_against_fresh_globals() {
+        // The bare-name load behaves like the running-slot `PRG0:` load: the loaded program
+        // replaces the running one with its own zeroed globals (slot 0's X is not visible).
+        let vm = run_with_txt("X=99\nEXEC \"SUB\"", &[("SUB", "PRINT X\nEND")]).expect("run");
+        assert_eq!(vm.console_text(), "0");
+    }
+
+    #[test]
+    fn exec_string_bare_name_from_variable() {
+        // The filename is any string expression — the corpus form `EXEC EXE$` (a bare variable).
+        let vm = run_with_txt(
+            "EXE$=\"SUB\"\nEXEC EXE$",
+            &[("SUB", "PRINT \"LOADED\"\nEND")],
+        )
+        .expect("run");
+        assert_eq!(vm.console_text(), "LOADED");
     }
 
     #[test]
