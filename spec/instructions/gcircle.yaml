@@ -20,15 +20,19 @@ signatures:
       - { name: color_code, type: integer, optional: true, range: "any 32-bit ARGB value", desc: "ARGB8888 color (defaults to current GCOLOR). See GCOLOR." }
     note: "GCIRCLE x,y,r,start,end [,flag [,color]] — draws an arc or sector (5, 6 or 7 args, no return value)."
 
-summary: "Draws a circle, or (with start/end angles) an open arc or filled sector, centered at a point on the current graphic page."
+summary: "Draws a circle outline, or (with start/end angles) an open arc or filled sector, centered at a point on the current graphic page."
 
 semantics:
   - "Valid argument counts are 3, 4, 5, 6 and 7; no value is returned. Any other argument count, or requesting a return value, raises errnum 4 (Illegal function call). The handler subtracts 3 from the argcount and switches on 0..4 (sub r0,r0,#3 / cmp r0,#5 / ldrcc pc,[pc,r0,lsl #2] @0x154700); the default (argcount < 3 or > 7, or return-count != 0) path is mov r0,#0x4 / bl 0x1fffdc (errnum 4) @0x154a80."
   - "3/4 args = full circle: 3-arg defaults the color from the current GCOLOR draw color (graphics-context field +0xc: ldreq r0,[r6,#0xc]/streq [sp,#0x18] @0x154780), 4-arg uses the explicit color. The circle is drawn by helper bl 0x18fa7c @0x154ab8."
   - "5/6/7 args = arc or sector: when flag is omitted (5 args) it defaults to 0 (open arc); when color is omitted (5 or 6 args) it defaults to the current GCOLOR draw color. flag 0 = open arc, flag 1 = filled sector (pie slice). The arc/sector is drawn by helper bl 0x191e98 @0x154af8."
-  - "Radius <= 0 draws nothing (the draw paths guard ldr r3,[sp,#0x28] / cmp r3,#0 / ble skip @0x154a9c and @0x154acc) — it is silently ignored, not an error."
+  - "Radius <= 0 draws nothing (the draw paths guard ldr r3,[sp,#0x28] / cmp r3,#0 / ble skip @0x154a9c and @0x154acc) — it is silently ignored, not an error (hw_verified: GCIRCLE 250,100,0 and GCIRCLE 250,120,-5 both leave the centre pixel = 0)."
   - "The color is NOT range-checked — a full 32-bit ARGB value (A=255 opaque, otherwise transparent); signed/&H/#CONSTANT operands are accepted (e.g. -1 = opaque white). Coordinates, radius and angles are integer-coerced from the popped args (real code passes float radius/angle expressions); center/radius outside the visible area are clipped by the draw helper, not rejected."
-  - "Angles are degrees; real programs pass negative angles and end<start / >360 values (e.g. start 215 end 325, or -90..90). The exact angle normalization (wrap, direction, where 0 deg points) is a draw-helper detail left to the framebuffer oracle (queued)."
+  - "The full circle is an OUTLINE (one pixel wide), not a disc — the centre and interior stay clear (hw_verified: GCIRCLE 100,100,30,white lights the four cardinals (130,100)/(70,100)/(100,130)/(100,70) but the centre (100,100), an interior point (110,110) and a point between centre and rim (115,100) all read 0). The outline is exactly one pixel wide at the cardinals: (129,100)/(131,100)/(100,129)/(100,131) = 0."
+  - "The circle is rasterized by the standard integer MIDPOINT (Bresenham) circle — initial decision d = 3 - 2r, one octant walked and 8-way mirrored. The plotted octant pixels match the midpoint set exactly (hw_verified: down the x=130 column it lights y=100..105 and leaves y=106 = 0; the 45-degree 3x3 cluster lights exactly (122,120)/(121,121)/(120,122) with the other six neighbours = 0)."
+  - "The color round-trips through the device RGBA5551 format EXACTLY like GPSET/GLINE/GBOX/GFILL (8->5 bit channel truncation; the circle helper @0x18fa7c builds the halfword with red=(c>>2)&0x3e, green=(c>>5)&0x7c0, blue=(c>>8)&0xf800, alpha bit set only when (c>>0x18)==0xff). hw_verified: white/-1 -> -460552, RGB(0,0,255) -> -16776968. The 3-arg form uses the current GCOLOR draw color (hw_verified: GCOLOR RGB(255,0,0):GCIRCLE 150,100,20 reads back -524288 == the explicit-red form)."
+  - "Arc/sector angle convention (hw_verified): 0 degrees points along +X and the sweep runs toward +Y (screen-down); the span is the inclusive degree range start..end. So GCIRCLE 100,100,30,0,90 lights only the lower-right quadrant ((130,100)=0deg, (100,130)=90deg, (121,121)=45deg lit; (70,100)=180deg, (100,70)=270deg, centre = 0). When end < start the span wraps by +360 (GCIRCLE 100,100,30,315,45 sweeps 315..405, lighting 315deg (121,79) + 0deg (130,100) + 45deg (121,121) while 90deg (100,130) = 0); negative angles sweep directly (GCIRCLE 100,100,30,-90,0 lights -90deg (100,70), -45deg (121,79), 0deg (130,100) and leaves 90deg (100,130) = 0)."
+  - "flag = 1 makes a filled SECTOR by adding the two bounding radii from the centre to the span endpoints (hw_verified: GCIRCLE 100,100,30,0,90,1 lights (115,100) and (100,115) on the radii and the centre (100,100) itself); flag = 0 (the default) is an OPEN arc that draws no radii (hw_verified: GCIRCLE 100,100,30,0,90,0 leaves (115,100)/(100,115)/(100,100) = 0)."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "argument count is not 3, 4, 5, 6 or 7, or a return value is requested (used as a function)" }
@@ -36,14 +40,18 @@ errors:
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/gcircle.md (form 1: GCIRCLE Center X,Center Y, Radius [,Color] draws a circle; form 2: GCIRCLE Center X, Center Y, Radius, Start angle, End angle [Flag [Color]] draws an arc; Radius 1-; angles 0-360; Flag 0=Arc 1=Sector; e.g. GCIRCLE 200,120,30 and GCIRCLE 200,120,30,0,45,1)" }
   - { type: disassembled, ref: "cia_3.6.0.lst GCIRCLE handler @0x1546d4: graphics state ptr 0x154b08->0x315d60, gfx-context = [[..]+0x20] (r6); return-count r0=[r4,#0xc] cmp #0 bne -> errnum 4 @0x1546f4; argcount-dispatch sub r0,[r4,#0x4],#3 / cmp #5 / ldrcc pc jumptable @0x154700-0x154720 (cases argcount 3,4,5,6,7), default mov r0,#0x4 bl 0x1fffdc (errnum 4) @0x154a80; 3-arg defaults color ldreq r0,[r6,#0xc]/streq [sp,#0x18] @0x154780; radius<=0 guard ldr r3,[sp,#0x28] cmp #0 ble @0x154a9c/@0x154acc; circle draw bl 0x18fa7c @0x154ab8, arc/sector draw bl 0x191e98 @0x154af8; no coordinate/color range guard in the handler." }
+  - { type: disassembled, ref: "cia_3.6.0.lst circle draw helper @0x18fa7c (called by the GCIRCLE handler @0x154ab8): ARGB8888->RGBA5551 build at entry, IDENTICAL channel layout to GPSET/GLINE/GBOX/GFILL — mov r12,#0x3e / mov r3,#0x7c0 / and r4,r12,r0,lsr #0x2 (red) / and r5,r3,r0,lsr #0x5 (green) / mov r12,#0xf800 / and r12,r12,r0,lsr #0x8 (blue) / cmp #0xff,r0,lsr #0x18 / orreq r0,r0,#0x1 (alpha bit only when A==255) @0x18fa84-0x18fab8. Integer MIDPOINT (Bresenham) circle: initial decision d = 3 - 2r — mov r6,#0x3 @0x18fb18 / rsb r12,r0,#0x0 (= -radius) / add r9,r6,r12,lsl #0x1 @0x18fb24-0x18fb2c; each octant point stored into the 8-pixel-tiled framebuffer (and r12,r1,#0x7 / and r3,r0,#0x7 / r0 asr #0x3 / strh r0,[r1] @0x18fb90-0x18fbc8). Produces the same octant pixel set as the standard midpoint circle (hw-confirmed below)." }
   - { type: community, ref: "osb/SMILEBASIC/graphic.d Graphic2 GCIRCLE: draws circles/arcs on the active graphic page (3.5.0 structural cross-check only)." }
   - { type: community, ref: "sbsave corpus: GCIRCLE appears ~1178x across 262 files. Arg-count distribution confirms 3 (~235), 4 (~698, dominant), 5 (~49), 6 (~33), 7 (~163) and NO genuine >7-arg form. Real forms include the 5-arg arc WITHOUT flag (ABK45ENE/TXT/121SPACE4 'GCIRCLE 112,160,100,215,325'), flag=1 sector (13D4DV3V/TXT/MAIN_PRG_V2), negative (-1) and &H ARGB colors, negative/>360 angles (NDQXKEA3/TXT/SETUP '-90,90,0'; '270,450,0'), and float radius. Only flag values 0 and 1 observed." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7b): GCIRCLE 100,100 (2 args) -> errnum 4, errline 1; GCIRCLE 1,1,1,0,45,1,2,3 (8 args) -> errnum 4; A=GCIRCLE(100,100,30) (used as a function) -> errnum 4." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 44, harness/harvest/out/gcircle*.tsv) — circle/arc side-effects via GSPOIT read-back (framebuffer-free; each case ACLS-clears the graphic page first, as progstr does not clear it and GRP state persists across programs). FULL CIRCLE GCIRCLE 100,100,30,white: cardinals (130,100)/(70,100)/(100,130)/(100,70)=-460552, centre (100,100)=0 (outline, not a disc); single-pixel outline (129,100)/(131,100)/(100,129)/(100,131)=0; octant down x=130 lights y=100..105=-460552, y=106=0; the 45-deg 3x3 cluster lights exactly (122,120)/(121,121)/(120,122)=-460552 (the six other neighbours=0) == the midpoint-circle octant set; interior/outside (110,110)/(115,100)/(140,100)=0. Color: RGB(0,0,255)->-16776968, -1->-460552, 3-arg default GCOLOR RGB(255,0,0):GCIRCLE 150,100,20 -> -524288. radius<=0 (0 and -5) draws nothing. Small r=5 @ (60,60): cardinals (65,60)/(55,60)/(60,65)/(60,55)=-460552, centre (60,60)=0. ARC/SECTOR convention: GCIRCLE 100,100,30,0,90 lights the lower-right quadrant ((130,100)=0deg,(100,130)=90deg,(121,121)=45deg=-460552; (70,100)/(100,70)/centre=0) -> 0deg at +X, sweep toward +Y; flag=1 sector adds the centre->endpoint radii ((115,100)/(100,115)/centre (100,100)=-460552), flag=0 open arc draws no radii ((115,100)/(100,115)/(100,100)=0); end<start wraps +360 (GCIRCLE 100,100,30,315,45 lights 315deg (121,79)+0deg (130,100)+45deg (121,121), (100,130)=0); negative angles sweep directly (GCIRCLE 100,100,30,-90,0 lights (100,70)/(121,79)/(130,100), (100,130)=0)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # error/arg-count expects are hw_verified (sb-oracle 2026-06-22 s_t7b); circle/arc side-effects need the framebuffer oracle (O-T6, queued).
+  # arg-count/return errors hw_verified (sb-oracle 2026-06-22 s_t7b); circle/arc pixel side-effects
+  # hw_verified via GSPOIT read-back (M7-T2 run 44, harness/harvest/out/gcircle*.tsv).
+  # white=-460552, red=-524288, blue=-16776968 (RGBA5551 8->5, identical to GPSET/GLINE/GBOX/GFILL/GSPOIT).
   - { name: circle_default_color_ok, code: "GCIRCLE 200,120,30", expect: { stdout: "" } }
   - { name: circle_explicit_color_ok, code: "GCIRCLE 200,120,30,RGB(255,0,0)", expect: { stdout: "" } }
   - { name: arc_no_flag_ok, code: "GCIRCLE 112,160,100,215,325", expect: { stdout: "" } }
@@ -53,3 +61,56 @@ tests:
   - { name: two_args_errors, code: "GCIRCLE 100,100", expect: { error: { errnum: 4 } } }
   - { name: eight_args_errors, code: "GCIRCLE 1,1,1,0,45,1,2,3", expect: { error: { errnum: 4 } } }
   - { name: as_function_errors, code: "A=GCIRCLE(100,100,30)", expect: { error: { errnum: 4 } } }
+  # --- full circle r=30 @ (100,100): cardinals lit, centre/interior clear (outline only) ---
+  - { name: cardinal_px, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(130,100)", expect: { stdout: "-460552" } }
+  - { name: cardinal_nx, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(70,100)", expect: { stdout: "-460552" } }
+  - { name: cardinal_py, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(100,130)", expect: { stdout: "-460552" } }
+  - { name: cardinal_ny, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(100,70)", expect: { stdout: "-460552" } }
+  - { name: centre_empty, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(100,100)", expect: { stdout: "0" } }
+  - { name: interior_empty, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(110,110)", expect: { stdout: "0" } }
+  - { name: between_centre_rim_empty, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(115,100)", expect: { stdout: "0" } }
+  - { name: outside_rim_empty, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(140,100)", expect: { stdout: "0" } }
+  # --- single-pixel outline width at the cardinals ---
+  - { name: just_inside_x_empty, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(129,100)", expect: { stdout: "0" } }
+  - { name: just_outside_x_empty, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(131,100)", expect: { stdout: "0" } }
+  - { name: just_inside_y_empty, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(100,129)", expect: { stdout: "0" } }
+  - { name: just_outside_y_empty, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(100,131)", expect: { stdout: "0" } }
+  # --- midpoint octant set: x=130 column lights y=100..105, y=106 dark ---
+  - { name: octant_col_y105, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(130,105)", expect: { stdout: "-460552" } }
+  - { name: octant_col_y106, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(130,106)", expect: { stdout: "0" } }
+  # --- 45-degree cluster: lights exactly (122,120)/(121,121)/(120,122) ---
+  - { name: octant_45_a, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(122,120)", expect: { stdout: "-460552" } }
+  - { name: octant_45_b, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(121,121)", expect: { stdout: "-460552" } }
+  - { name: octant_45_c, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(120,122)", expect: { stdout: "-460552" } }
+  - { name: octant_45_gap, code: "GCIRCLE 100,100,30,RGB(255,255,255):PRINT GSPOIT(121,120)", expect: { stdout: "0" } }
+  # --- color: explicit blue / 3-arg default GCOLOR / negative literal = white ---
+  - { name: explicit_blue, code: "GCIRCLE 50,50,20,RGB(0,0,255):PRINT GSPOIT(70,50)", expect: { stdout: "-16776968" } }
+  - { name: three_arg_uses_gcolor, code: "GCOLOR RGB(255,0,0):GCIRCLE 150,100,20:PRINT GSPOIT(170,100)", expect: { stdout: "-524288" } }
+  - { name: neg_color_is_white, code: "GCIRCLE 200,100,15,-1:PRINT GSPOIT(215,100)", expect: { stdout: "-460552" } }
+  # --- radius <= 0 draws nothing ---
+  - { name: radius_zero_clear, code: "GCIRCLE 250,100,0,RGB(255,255,255):PRINT GSPOIT(250,100)", expect: { stdout: "0" } }
+  - { name: radius_neg_clear, code: "GCIRCLE 250,120,-5,RGB(255,255,255):PRINT GSPOIT(250,120)", expect: { stdout: "0" } }
+  # --- small r=5 circle @ (60,60): cardinal lit, centre clear ---
+  - { name: small_cardinal, code: "GCIRCLE 60,60,5,RGB(255,255,255):PRINT GSPOIT(65,60)", expect: { stdout: "-460552" } }
+  - { name: small_centre_empty, code: "GCIRCLE 60,60,5,RGB(255,255,255):PRINT GSPOIT(60,60)", expect: { stdout: "0" } }
+  # --- arc/sector angle convention: 0deg at +X, sweep toward +Y ---
+  - { name: arc_start_0deg, code: "GCIRCLE 100,100,30,0,90:PRINT GSPOIT(130,100)", expect: { stdout: "-460552" } }
+  - { name: arc_end_90deg, code: "GCIRCLE 100,100,30,0,90:PRINT GSPOIT(100,130)", expect: { stdout: "-460552" } }
+  - { name: arc_45deg_inside, code: "GCIRCLE 100,100,30,0,90:PRINT GSPOIT(121,121)", expect: { stdout: "-460552" } }
+  - { name: arc_180deg_outside, code: "GCIRCLE 100,100,30,0,90:PRINT GSPOIT(70,100)", expect: { stdout: "0" } }
+  - { name: arc_270deg_outside, code: "GCIRCLE 100,100,30,0,90:PRINT GSPOIT(100,70)", expect: { stdout: "0" } }
+  - { name: arc_centre_empty, code: "GCIRCLE 100,100,30,0,90:PRINT GSPOIT(100,100)", expect: { stdout: "0" } }
+  # --- sector (flag 1) adds the two centre->endpoint radii + the centre ---
+  - { name: sector_radius_h, code: "GCIRCLE 100,100,30,0,90,1:PRINT GSPOIT(115,100)", expect: { stdout: "-460552" } }
+  - { name: sector_radius_v, code: "GCIRCLE 100,100,30,0,90,1:PRINT GSPOIT(100,115)", expect: { stdout: "-460552" } }
+  - { name: sector_centre_lit, code: "GCIRCLE 100,100,30,0,90,1:PRINT GSPOIT(100,100)", expect: { stdout: "-460552" } }
+  # --- open arc (flag 0) draws no radii ---
+  - { name: arc_no_radius_h, code: "GCIRCLE 100,100,30,0,90,0:PRINT GSPOIT(115,100)", expect: { stdout: "0" } }
+  - { name: arc_no_radius_centre, code: "GCIRCLE 100,100,30,0,90,0:PRINT GSPOIT(100,100)", expect: { stdout: "0" } }
+  # --- end<start wraps +360, negative angles sweep directly ---
+  - { name: arc_wrap_0deg, code: "GCIRCLE 100,100,30,315,45:PRINT GSPOIT(130,100)", expect: { stdout: "-460552" } }
+  - { name: arc_wrap_315deg, code: "GCIRCLE 100,100,30,315,45:PRINT GSPOIT(121,79)", expect: { stdout: "-460552" } }
+  - { name: arc_wrap_90deg_outside, code: "GCIRCLE 100,100,30,315,45:PRINT GSPOIT(100,130)", expect: { stdout: "0" } }
+  - { name: arc_negative_up, code: "GCIRCLE 100,100,30,-90,0:PRINT GSPOIT(100,70)", expect: { stdout: "-460552" } }
+  - { name: arc_negative_45, code: "GCIRCLE 100,100,30,-90,0:PRINT GSPOIT(121,79)", expect: { stdout: "-460552" } }
+  - { name: arc_negative_90deg_outside, code: "GCIRCLE 100,100,30,-90,0:PRINT GSPOIT(100,130)", expect: { stdout: "0" } }

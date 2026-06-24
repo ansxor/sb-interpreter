@@ -103,6 +103,14 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
     opaque replaces), and alpha-bit = (A==255) all confirmed → gpset.yaml hw_verified. The
     multi-pixel rasterizers (GLINE/GBOX/GFILL/GCIRCLE/GTRI/GPAINT) remain the open work — their
     coverage shape is checkable the same way (GSPOIT-sample known cells) without the PNG golden.
+  - **RESOLVED 2026-06-24 (M7-T2 runs 41-44): GLINE, GBOX, GFILL and GCIRCLE all hw_verified via
+    GSPOIT scalar read-back.** GCIRCLE (run 44) confirmed the full-circle outline = standard
+    midpoint (Bresenham) octant set (centre/interior clear, single-pixel outline, x=130 column
+    y=100..105, 45-deg cluster (122,120)/(121,121)/(120,122)) AND the arc/sector angle convention
+    (0deg at +X, sweep toward +Y, end<start wraps +360, negative angles sweep directly, flag=1
+    sector adds the two centre->endpoint radii, flag=0 open arc draws none) — sb-core matches with
+    ZERO code changes; gcircle.yaml → hw_verified. Still open: **GTRI** (diagonal-edge stepping,
+    diverges per M2-T5 below) and **GPAINT** (flood-fill boundary test).
 
 - [ ] M2-T5 / GLINE + GTRI diagonal rasterization DIVERGES from the device — RE the handler.
   The M2-T5 golden gate is live and the committed goldens are **hw_verified oracle GRP
