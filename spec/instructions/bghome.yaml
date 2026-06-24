@@ -24,6 +24,8 @@ semantics:
   - "X and Y are pixel coordinates evaluated as integers (integer getter method, blx [obj,#0x40] @0x1657e4/@0x165808) and converted to float internally (vcvt.f32.s32 @0x165838/@0x165840). The stored origin is offset by the layer's reference geometry before being applied via the set-origin helper (bl 0x00139cc4 @0x16585c)."
   - "The origin defines the pivot for rotation and scaling: BGROT rotates the layer about (HX,HY) and BGSCALE scales about it. Changing the origin moves that pivot without changing the scroll, rotation angle or scale themselves."
   - "The OUT form reads the stored origin back from the layer record ([r0,#0x28]/[r0,#0x24], widened vcvt.f64.f32 @0x1658b4) and returns HX,HY."
+  - "VALUE round-trip (hw_verified 2026-06-24): BGHOME() reads back the X,Y passed to the SET form VERBATIM as an integer — it is NOT offset by the layer's reference geometry (the 0x139cc4 offset applies to the internally-applied display origin, not the value the getter returns). BGHOME 0,200,120:BGHOME 0 OUT HX,HY -> 200,120 (not a shifted value); negatives kept (BGHOME 0,-30,-60 -> -30,-60); large values verbatim (1000,-1000)."
+  - "X,Y are truncated TOWARD ZERO before storage (the integer getter blx [obj,#0x40]): BGHOME 0,16.7,32.9 -> 16,32 and BGHOME 0,-16.7,-32.9 -> -16,-32 (not floor). The fresh per-layer default origin is 0,0, and NO BGSCREEN is required — BG layers 0..3 always exist (BGHOME 2,11,22 round-trips on a fresh state, same as BGOFS/BGROT). Layers are independent (setting layer 1 leaves layer 0's origin unchanged); a later SET overwrites the prior origin."
   - "BGHOME changes only the origin; it does not change scroll (BGOFS), rotation (BGROT), scale (BGSCALE) or visibility."
 
 errors:
@@ -34,15 +36,25 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/bghome.md (BGHOME Layer,X,Y — 'Sets the display origin of a layer'; 'Origin for rotation and scaling of the BG screen'; Layer 0-3; Position X,Y in pixel units; form 2 BGHOME Layer OUT HX,HY — 'Gets the display origin'; e.g. BGHOME 0,200,120 and BGHOME 0 OUT HX,HY)" }
   - { type: disassembled, ref: "cia_3.6.0.lst BGHOME handler @0x16575c: form select via return-count [r4,#0xc] — SET requires argcount==3 (cmp r0,#3 @0x165790), OUT requires retcount==2 && argcount==1 (cmp r1,#2 / cmpeq r0,#1 @0x165780); else mov r0,#0x4 errnum 4 via bl 0x1fffdc @0x165798-0x1657a4; layer eval+range bl 0x1e2504 @0x1657c0 (errnum 10 @0x1e2560); X,Y evaluated as integers via blx [r2,#0x40] @0x1657e4/@0x165808, converted vcvt.f32.s32 @0x165838 then set-origin bl 0x00139cc4 @0x16585c; OUT reads [r0,#0x28]/[r0,#0x24] vcvt.f64.f32 @0x1658b4; per-layer stride mov r1,#0xe3 @0x165844; state ptr 0x315d60." }
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer origin/home (3.5.0 structural cross-check only)" }
-  - { type: community, ref: "sbsave corpus: ~188 calls — set 'BGHOME 0,200,120' with literals (~177x, e.g. D3E8N4AF/TXT/LUNAR_SAVIORS), arithmetic/negative expressions 'BGHOME 0,GX+BX*BGSIZE,GY-(BGHH-1)-BY*BGSIZE' (KDNNS384/TXT/MNT_TOWERCLIMB), whole-number float 'BGHOME 0,-8*16,-2.5*16' (5DLXNN3V/TXT/BF5), variable layer 'BGHOME BGN,BGW*16/2,BGH*16/2' (L1NV3344/TXT/EX8TECHDEMO). OUT form 'BGHOME L OUT HX,HY' (EKA3X4H1/TXT/F). (oracle-pending: integer coercion of non-integral X/Y + exact stored origin, queued)" }
+  - { type: community, ref: "sbsave corpus: ~188 calls — set 'BGHOME 0,200,120' with literals (~177x, e.g. D3E8N4AF/TXT/LUNAR_SAVIORS), arithmetic/negative expressions 'BGHOME 0,GX+BX*BGSIZE,GY-(BGHH-1)-BY*BGSIZE' (KDNNS384/TXT/MNT_TOWERCLIMB), whole-number float 'BGHOME 0,-8*16,-2.5*16' (5DLXNN3V/TXT/BF5), variable layer 'BGHOME BGN,BGW*16/2,BGH*16/2' (L1NV3344/TXT/EX8TECHDEMO). OUT form 'BGHOME L OUT HX,HY' (EKA3X4H1/TXT/F). (RESOLVED 2026-06-24 M7-T2 run 30: non-integral X/Y truncate toward zero, stored origin verbatim — see hw_verified source below)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9c): BGHOME 4,0,0 -> errnum 10; BGHOME -1,0,0 -> errnum 10; BGHOME 0,5 (2 args) -> errnum 4; BGSCREEN 0,32,32:BGHOME 0,200,120 raises nothing. All errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 bghome_rt.tsv, prog OUT-readback): SET->OUT value round-trip is VERBATIM (not offset by reference geometry) — BGHOME 0,200,120 OUT->200,120; -30,-60 OUT->-30,-60; 1000,-1000 OUT->1000,-1000; X,Y truncate toward zero (16.7,32.9 OUT->16,32; -16.7,-32.9 OUT->-16,-32); fresh per-layer default 0,0 (ACLS:BGHOME 0 OUT->0,0); NO BGSCREEN required (BGHOME 2,11,22 OUT->11,22 on fresh state); per-layer independence (BGHOME 0,5,6:BGHOME 1,7,8 -> layer0 OUT 5,6, layer1 OUT 7,8); overwrite (BGHOME 0,50,60:BGHOME 0,7,8 OUT->7,8). sb-core matched every value with no code change (verified via sb-run)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Origin side effects need the BG framebuffer oracle (O-T6, queued); errors derive from
-  # the disassembly arg-count/layer guards.
+  # Value round-trip (set-then-OUT) is hw_verified (bghome_rt.tsv); the on-screen pivot EFFECT
+  # (origin for BGROT/BGSCALE) still needs the BG framebuffer oracle (O-T6, queued).
   - { name: set_ok, code: "BGSCREEN 0,32,32\nBGHOME 0,200,120", expect: { stdout: "" } }
+  - { name: roundtrip_basic, code: "BGHOME 0,200,120:BGHOME 0 OUT HX,HY:PRINT STR$(HX);\",\";STR$(HY)", expect: { stdout: "200,120" } }
+  - { name: roundtrip_negative, code: "BGHOME 0,-30,-60:BGHOME 0 OUT HX,HY:PRINT STR$(HX);\",\";STR$(HY)", expect: { stdout: "-30,-60" } }
+  - { name: roundtrip_large, code: "BGHOME 0,1000,-1000:BGHOME 0 OUT HX,HY:PRINT STR$(HX);\",\";STR$(HY)", expect: { stdout: "1000,-1000" } }
+  - { name: frac_trunc_toward_zero_pos, code: "BGHOME 0,16.7,32.9:BGHOME 0 OUT HX,HY:PRINT STR$(HX);\",\";STR$(HY)", expect: { stdout: "16,32" } }
+  - { name: frac_trunc_toward_zero_neg, code: "BGHOME 0,-16.7,-32.9:BGHOME 0 OUT HX,HY:PRINT STR$(HX);\",\";STR$(HY)", expect: { stdout: "-16,-32" } }
+  - { name: default_fresh_zero, code: "BGHOME 0 OUT HX,HY:PRINT STR$(HX);\",\";STR$(HY)", expect: { stdout: "0,0" } }
+  - { name: no_bgscreen_required, code: "BGHOME 2,11,22:BGHOME 2 OUT HX,HY:PRINT STR$(HX);\",\";STR$(HY)", expect: { stdout: "11,22" } }
+  - { name: per_layer_independence, code: "BGHOME 0,5,6:BGHOME 1,7,8:BGHOME 0 OUT HX,HY:PRINT STR$(HX);\",\";STR$(HY)", expect: { stdout: "5,6" } }
+  - { name: overwrite_origin, code: "BGHOME 0,50,60:BGHOME 0,7,8:BGHOME 0 OUT HX,HY:PRINT STR$(HX);\",\";STR$(HY)", expect: { stdout: "7,8" } }
   - { name: layer_out_of_range, code: "BGHOME 4,0,0", expect: { error: { errnum: 10 } } }
   - { name: layer_negative, code: "BGHOME -1,0,0", expect: { error: { errnum: 10 } } }
   - { name: too_few_args, code: "BGHOME 0,5", expect: { error: { errnum: 4 } } }

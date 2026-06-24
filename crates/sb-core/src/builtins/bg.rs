@@ -1033,6 +1033,37 @@ mod tests {
         assert_eq!(bghome(&mut bg, &[int(0), int(5)], 0).unwrap_err().errnum, 4);
     }
 
+    #[test]
+    fn bghome_value_contract() {
+        // hw_verified 2026-06-24 (M7-T2 bghome_rt.tsv): verbatim round-trip, truncate
+        // toward zero, fresh default 0,0, per-layer independence.
+        let mut bg = BgState::new();
+        // Fresh default is 0,0 (no BGSCREEN required — layers always exist).
+        assert_eq!(bghome(&mut bg, &[int(2)], 2).unwrap(), vec![int(0), int(0)]);
+        // Negatives kept verbatim.
+        bghome(&mut bg, &[int(0), int(-30), int(-60)], 0).unwrap();
+        assert_eq!(
+            bghome(&mut bg, &[int(0)], 2).unwrap(),
+            vec![int(-30), int(-60)]
+        );
+        // Fractional X,Y truncate toward zero (not floor).
+        bghome(&mut bg, &[int(0), real(16.7), real(32.9)], 0).unwrap();
+        assert_eq!(
+            bghome(&mut bg, &[int(0)], 2).unwrap(),
+            vec![int(16), int(32)]
+        );
+        bghome(&mut bg, &[int(0), real(-16.7), real(-32.9)], 0).unwrap();
+        assert_eq!(
+            bghome(&mut bg, &[int(0)], 2).unwrap(),
+            vec![int(-16), int(-32)]
+        );
+        // Per-layer independence: setting layer 1 leaves layer 0 unchanged.
+        bghome(&mut bg, &[int(0), int(5), int(6)], 0).unwrap();
+        bghome(&mut bg, &[int(1), int(7), int(8)], 0).unwrap();
+        assert_eq!(bghome(&mut bg, &[int(0)], 2).unwrap(), vec![int(5), int(6)]);
+        assert_eq!(bghome(&mut bg, &[int(1)], 2).unwrap(), vec![int(7), int(8)]);
+    }
+
     // -- M3-T5 BG extras -------------------------------------------------------
 
     fn real(v: f64) -> Value {
