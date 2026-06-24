@@ -378,6 +378,18 @@ impl Vm {
         if slot == 0 || slot as usize >= self.slot_programs.len() {
             return;
         }
+        self.stash_slot_program(slot, program);
+    }
+
+    /// Store a freshly-compiled program into a NON-RUNNING slot's registry entry (M6-T6),
+    /// initialising its globals to declared-type zeros. Unlike the host-seeding
+    /// [`Vm::load_slot_program`] (slots 1..3) this also accepts slot 0: when slot 0 is not
+    /// the running slot its parked program lives in `slot_programs[0]`, so an in-VM
+    /// `EXEC`/`USE "PRG0:file"` load into a non-running slot 0 is uniform with the other
+    /// slots (osb `VM.d` keeps all program SLOTs in one `slots[]` array — slot 0 is not
+    /// special). The caller MUST guarantee `slot != current_slot` (the running program lives
+    /// in [`Vm::program`], not the registry, so its entry is `None` while active).
+    fn stash_slot_program(&mut self, slot: u8, program: Program) {
         let globals = program
             .globals
             .iter()
@@ -1159,12 +1171,12 @@ impl Vm {
                 Some(slot) => {
                     // Load the slot's program from storage so its `COMMON DEF`s become
                     // resolvable cross-slot (the documented effect of marking a slot
-                    // executable). Slot 0 as a *non-running* target is the post-EXEC edge —
-                    // `load_slot_program` ignores it — so its program load stays queued.
-                    if slot != 0 {
-                        let prog = self.compile_slot_file(name)?;
-                        self.load_slot_program(slot, prog);
-                    }
+                    // executable). Uniform across slots 0..3: the running-slot guard above
+                    // (`slot == current_slot` → errnum 4) means slot 0 is reachable here only
+                    // when it is *non-running* (parked in `slot_programs[0]`), so it loads the
+                    // same way as any other slot (osb keeps all SLOTs in one `slots[]` array).
+                    let prog = self.compile_slot_file(name)?;
+                    self.stash_slot_program(slot, prog);
                     self.slot_used[slot as usize] = true;
                     Ok(())
                 }
@@ -1203,10 +1215,12 @@ impl Vm {
     ///   loaded + run the same way.
     ///
     /// The numeric loaded-slot transfer, the numeric running-slot restart, the string-form
-    /// `PRGn:` file LOAD (into a non-running OR the running slot), and the bare-name default-slot
-    /// LOAD are the documented single-level model. The remaining pieces — a `PRG0:` resource
-    /// naming a *non-running* slot 0 (the slot-0 registry edge), and per-slot vs shared variable
-    /// scoping — stay oracle-pending (queued, `HARVEST_QUEUE.md`).
+    /// `PRGn:` file LOAD (into a non-running OR the running slot — including a non-running
+    /// slot 0, uniform with the others), and the bare-name default-slot LOAD are the
+    /// documented single-level model. Per-slot vs shared variable scoping, and the exact
+    /// resume-state granularity preserved when a loaded slot's `END` returns to a launcher
+    /// whose own slot was overwritten by the load (the slot-0 clobber edge), stay
+    /// oracle-pending (queued, `HARVEST_QUEUE.md`).
     fn do_exec(&mut self, v: Value) -> Result<(), VmError> {
         if let Value::Str(s) = &v {
             let s = String::from_utf16_lossy(s);
@@ -1221,40 +1235,28 @@ impl Vm {
             match slot_opt {
                 // A `PRGn:` slot distinct from the running one: load the file's program into
                 // that slot and transfer control to it (documented form 1, "Loads and
-                // executes a program").
-                Some(slot) if slot != self.current_slot && slot != 0 => {
+                // executes a program"). Uniform across slots 0..3 — a `PRG0:` resource naming
+                // a *non-running* slot 0 loads into slot 0's parked registry entry the same
+                // way (osb keeps all SLOTs in one `slots[]` array — slot 0 is not special).
+                Some(slot) if slot != self.current_slot => {
                     let prog = self.compile_slot_file(name)?;
-                    self.load_slot_program(slot, prog);
+                    self.stash_slot_program(slot, prog);
                     self.exec_transfer(slot);
                     Ok(())
                 }
-                // A `PRGn:` slot naming the RUNNING slot (`EXEC "PRG0:file"` while slot 0
-                // runs): load the file's program INTO the running slot and execute it from
-                // the top — documented form 1 applied to the running slot (the corpus loader
-                // idiom). Like a restart, the previous program is abandoned (impossible to
+                // A `PRGn:` slot naming the RUNNING slot (`EXEC "PRG0:file"` while slot 0 runs)
+                // OR a bare filename with no `PRGn:` resource number (which defaults to the
+                // running slot — osb `Exec.execute`: `if (!file.hasResourceNumber)
+                // file.resourceNumber = currentSlotNumber`; the corpus loader idiom
+                // `EXEC EXE$` / `EXEC FAV$[...]`): load the file's program INTO the running
+                // slot and execute it from the top — documented form 1 applied to the running
+                // slot. Like a restart, the previous program is abandoned (impossible to
                 // return to it).
-                Some(slot) if slot == self.current_slot => {
+                Some(_) | None => {
                     let prog = self.compile_slot_file(name)?;
                     self.load_into_running_slot(prog);
                     Ok(())
                 }
-                // A bare filename (no `PRGn:` resource number) defaults to the RUNNING slot
-                // (osb `Exec.execute`: `if (!file.hasResourceNumber) file.resourceNumber =
-                // currentSlotNumber`) — the corpus loader idiom `EXEC EXE$` / `EXEC FAV$[...]`
-                // where a slot-0 loader EXECs the chosen program by bare name. It loads the
-                // file into the running slot and runs it from the top, exactly the
-                // `EXEC "PRG0:file"`-while-slot-0-runs case.
-                None => {
-                    let prog = self.compile_slot_file(name)?;
-                    self.load_into_running_slot(prog);
-                    Ok(())
-                }
-                // A `PRG0:` resource naming slot 0 when slot 0 is *not* the running slot is the
-                // post-EXEC slot-0 registry edge (`load_slot_program` ignores slot 0) — still
-                // part of the deferred multi-program model.
-                Some(_) => Err(VmError::Unsupported(
-                    "EXEC \"PRG0:file\" into a non-running slot 0 — M6 multi-program model",
-                )),
             }
         } else {
             let n = v.to_int().map_err(sb)?;
@@ -4556,6 +4558,85 @@ CALL "ADDOUT",2,3 OUT X"#);
         )
         .expect("run");
         assert_eq!(vm.console_text(), "LOADED");
+    }
+
+    /// Like [`run_with_txt`] but also seeds slot 1 with `slot1`'s program, so a test can make
+    /// slot 0 *non-running* (boot slot 0 `EXEC 1` transfers to slot 1) before exercising a
+    /// `PRG0:`-into-non-running-slot-0 load from slot 1.
+    fn run_slot1_with_txt(slot0: &str, slot1: &str, files: &[(&str, &str)]) -> Result<Vm, VmError> {
+        use crate::builtins::StdBuiltins;
+        use crate::compiler::compile_with;
+        use crate::storage::{MemStorage, Storage, DEFAULT_PROJECT};
+        let mut store = MemStorage::default();
+        for (name, body) in files {
+            store
+                .write(DEFAULT_PROJECT, Folder::Txt, name, body.as_bytes())
+                .expect("seed txt");
+        }
+        let ast = parse(slot0).expect("parse slot0");
+        let program = compile_with(&ast, &StdBuiltins).expect("compile slot0");
+        let mut vm = Vm::new(program);
+        vm.set_storage(Box::new(store));
+        vm.load_slot_program(1, slot_program(slot1));
+        vm.run()?;
+        Ok(vm)
+    }
+
+    #[test]
+    fn exec_string_into_non_running_slot_0() {
+        // The slot-0 registry edge (M6-T6): a `PRG0:` resource naming a *non-running* slot 0
+        // loads the file into slot 0 and transfers control to it, uniform with any other slot
+        // (osb keeps all program SLOTs in one `slots[]` array — slot 0 is not special). Boot
+        // slot 0 EXECs slot 1; from slot 1, `EXEC "PRG0:OTHER"` finds slot 0 non-running, loads
+        // OTHER into it, and runs it. Being a DIFFERENT slot from the running slot 1, OTHER's
+        // END returns to its slot-1 launcher (the documented cross-slot return) → "BACK1";
+        // slot 1 then STOPs (a genuine halt, no further return).
+        let vm = run_slot1_with_txt(
+            "EXEC 1",
+            "EXEC \"PRG0:OTHER\"\nPRINT \"BACK1\";\nSTOP",
+            &[("OTHER", "PRINT \"IN0\";\nEND")],
+        )
+        .expect("run");
+        assert_eq!(vm.console_text(), "IN0BACK1");
+    }
+
+    #[test]
+    fn exec_string_non_running_slot_0_runs_against_its_own_globals() {
+        // OTHER loaded into slot 0 runs against slot 0's own (freshly zeroed) globals — slot 1's
+        // X=11 is not visible (matches the other cross-slot transfers' scoping).
+        let vm = run_slot1_with_txt(
+            "EXEC 1",
+            "X=11\nEXEC \"PRG0:OTHER\"\nSTOP",
+            &[("OTHER", "PRINT X;\nEND")],
+        )
+        .expect("run");
+        assert_eq!(vm.console_text(), "0");
+    }
+
+    #[test]
+    fn exec_string_non_running_slot_0_missing_file_is_load_failed() {
+        // hw_verified error model unchanged: a `PRG0:` resource naming an absent file → Load
+        // failed (46), even when slot 0 is the (non-running) target.
+        let err = run_slot1_with_txt("EXEC 1", "EXEC \"PRG0:NOPE\"\nEND", &[])
+            .err()
+            .expect("missing file");
+        assert_eq!(err.errnum(), Some(46));
+    }
+
+    #[test]
+    fn use_string_into_non_running_slot_0_marks_common_def_callable() {
+        // The slot-0 USE edge (M6-T6): `USE "PRG0:file"` for a *non-running* slot 0 loads the
+        // program and marks slot 0 executable, uniform with the other slots — its COMMON DEF
+        // then resolves cross-slot via `CALL "name"`. Boot slot 0 EXECs slot 1; from slot 1
+        // (slot 0 now non-running) `USE "PRG0:LIB"` loads LIB into slot 0 and `CALL "SHOUT"`
+        // runs its COMMON DEF.
+        let vm = run_slot1_with_txt(
+            "EXEC 1",
+            "USE \"PRG0:LIB\"\nCALL \"SHOUT\"\nSTOP",
+            &[("LIB", "COMMON DEF SHOUT\nPRINT \"HEY\"\nEND")],
+        )
+        .expect("run");
+        assert_eq!(vm.console_text(), "HEY");
     }
 
     #[test]

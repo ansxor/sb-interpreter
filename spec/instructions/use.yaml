@@ -20,7 +20,7 @@ summary: "Makes a program in the specified program SLOT executable so it can be 
 semantics:
   - "USE is a special-form keyword (keyword id 0x14c=332 in the keyword table @0x306724; name string @0x2ed580), parsed/handled by the slot machinery rather than dispatched through the builtin handler table — so there is no standalone handler body to read; its exact validation is parser/VM-internal."
   - "Documented form: `USE Program-SLOT` marks the program in slot 0-3 as executable. The slot operand may be any integer expression (corpus: `USE 1`, `USE 3`, and a variable `USE C` / `USE I`)."
-  - "Undocumented string form (corpus-verified): `USE \"PRGn:Filename\"` (and concatenated forms like `USE \"PRG1:\"+NAME$`) selects a program slot via a resource string. Runtime effect oracle-pending."
+  - "Undocumented string form (corpus-verified): `USE \"PRGn:Filename\"` (and concatenated forms like `USE \"PRG1:\"+NAME$`) selects a program slot via a resource string. sb-core loads the named file's program into that slot and marks it executable, so a `COMMON DEF` in the file resolves cross-slot via `CALL \"name\"`. This is uniform across slots 0..3 — the running-slot guard (`USE \"PRG0:…\"` while slot 0 runs → errnum 4) means slot 0 reaches the load path only when it is *non-running* (osb keeps all program SLOTs in one `slots[]` array — slot 0 is not special). Runtime effect of the executable flag is the documented cross-slot `COMMON DEF` resolution; per-slot vs shared variable scoping is oracle-pending."
   - "An out-of-range slot is expected to raise errnum 4 (Illegal function call); a string with a non-PRG resource is expected to error similarly. Both error mappings are hypotheses (not body-pinned) and oracle-pending."
 
 errors:

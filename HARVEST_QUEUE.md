@@ -727,6 +727,22 @@ oracle to confirm exact output and promote to `hw_verified`.
     default truly resolves to the running slot vs slot 0 (osb's local `slot` stays 0 in that branch
     — likely an osb bug; needs a ≥2-slot oracle to confirm the running-slot default), plus per-slot
     vs shared variable scoping.)
+    (UPDATE 2026-06-23, M6-T6: the slot-0 REGISTRY EDGE is now IMPLEMENTED to the osb-structural
+    + documented model — `EXEC "PRG0:file"` / `USE "PRG0:file"` naming a *non-running* slot 0 now
+    loads into slot 0 uniformly with the other slots, no longer `VmError::Unsupported`. osb keeps
+    all program SLOTs in one `slots[]` array (`VMSlot[5] slots`; `Exec.execute` compiles into
+    `slots[slot]` for any slot with no slot-0 carve-out), so sb-core's slot-0 special-casing was
+    only an implementation artifact (the running program lives in the VM, parked slots in the
+    registry). New `Vm::stash_slot_program` writes a compiled program into ANY parked slot 0..3;
+    `do_exec`/`do_use` route a non-running slot 0 through it (the `slot == current_slot` guards
+    already keep it from hitting the running program). `EXEC` cross-slot transfers + END-returns to
+    its launcher; `USE` marks slot 0 executable so its COMMON DEF resolves via `CALL`. 4 new vm.rs
+    e2e tests (EXEC into non-running slot 0 + cross-slot return, own-globals scoping, missing-file
+    46, USE slot-0 COMMON DEF callable). STILL ORACLE-PENDING: the slot-0 CLOBBER edge — when an
+    EXEC/USE loads into a non-running slot that already holds a pending EXEC-return launcher, the
+    launcher's program is overwritten (osb has the same uniform-slot behavior, but the exact
+    resume-state real SB preserves across that return needs a ≥2-slot oracle); whether real SB's
+    bare-name default resolves to the running slot vs slot 0; per-slot vs shared variable scoping.)
 
 - S-T12c Source read (PRGGET$/PRGNAME$/PRGSIZE): the error guards ARE hw_verified (batch
     2026-06-22, s_t12c): PRGGET$ with no active PRGEDIT -> errnum 38 (the no-PRGEDIT check
