@@ -35,14 +35,25 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst BGMSTOP handler @0x1a357c: shape gate result [r0,#0xc] cmp r0,#0 bne @0x1a35a4, argcount [r4,#0x4] cmp r5,#0x2 ble @0x1a35c0 else errnum 4 errline -1 mov r2,#0x0 mvn r1,#0x0 mov r0,#0x4 b 0x1fffdc @0x1a35a8; 0-arg stop-all bl 0x1a4a98 @0x1a3628 (no error); arg==-1 force path cmn r0,#0x1 beq @0x1a363c bl 0x1a4a98 + bl 0x1d44d8 r3=#0x32; else track range cmp r0,#0x8 bcc @0x1a3668 else errnum 10 mov r0,#0xa @0x1a3614; 2-arg fade cmp r5,#0x2 @0x1a3668, default fade 0.0 vldr.32 s16,[pc,#0x118] vstr.32 s16,[sp] @0x1a35cc. Audio-state literal [0x1a36f4]" }
   - { type: community, ref: "osb/SMILEBASIC/sound.d BGM stop (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGMSTOP\\b'): all forms appear: bare all-stop `BGMSTOP` (GRAPE, AMOEBA), 1-arg `BGMSTOP 0` (BLOCKDUDE), 2-arg fade `BGMSTOP 0,0.5` (BATTLESHIP) / `BGMSTOP 1,.5` (QRNJE3KD/TXT/PICTOBLITZ) / `BGMSTOP 0,30` (43AE1XG3/TXT/AXE), and force `BGMSTOP -1` (4KX3PX7D/TXT/BLOCKDUDE, 53383XCF/TXT/EXECUTE) — proving every documented form is LEGAL syntax. Runtime/fade audio output unproven (no oracle, O-T7)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2; harness/harvest/out/bgmstop.tsv): the whole headless call-shape contract confirmed against real SB 3.6.0 (Azahar). 6 ACCEPTED forms NOERR — `BGMSTOP` (0-arg stop-all), `BGMSTOP 0`/`BGMSTOP 7` (track endpoints), `BGMSTOP 0,0.5`/`BGMSTOP 0,30` (2-arg fade, decimal + integer seconds), `BGMSTOP -1` (force-stop). 4 RANGE guards → errnum 10 errline 1 — `BGMSTOP 8` (track>7), `BGMSTOP -2` (negative != -1, huge unsigned >= 8), `BGMSTOP 100`, `BGMSTOP 8,0.5` (range check precedes the fade read). 2 SHAPE guards → errnum 4 errline 1 — `A=BGMSTOP(0)` (return context, result != 0), `BGMSTOP 0,0,0` (3 args > 2). Pins the FUN_001a357c shape gate (result==0 & argcount<=2) and the -1 force / track<8 split. Audio stop/fade EFFECT itself stays O-T7 (no deterministic emulator golden)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Call shape + error conditions from the disassembly; audio/fade output is oracle-pending (O-T7).
+  # Call shape + error conditions hw_verified (sb-oracle batch 2026-06-24,
+  # harness/harvest/out/bgmstop.tsv). The audio stop/fade EFFECT itself is oracle-pending (O-T7).
+  # 6 ACCEPTED forms — NOERR.
   - { name: stop_all_no_arg, code: "BGMSTOP", expect: { stdout: "" } }
   - { name: stop_one_track, code: "BGMSTOP 0", expect: { stdout: "" } }
+  - { name: stop_track_max, code: "BGMSTOP 7", expect: { stdout: "" } }
   - { name: stop_track_fade, code: "BGMSTOP 0,0.5", expect: { stdout: "" } }
+  - { name: stop_track_fade_int, code: "BGMSTOP 0,30", expect: { stdout: "" } }
   - { name: force_stop_all, code: "BGMSTOP -1", expect: { stdout: "" } }
+  # 4 RANGE guards — track not -1 and not in 0..7 → errnum 10.
   - { name: track_out_of_range, code: "BGMSTOP 8", expect: { error: { errnum: 10 } } }
+  - { name: track_negative, code: "BGMSTOP -2", expect: { error: { errnum: 10 } } }
+  - { name: track_large, code: "BGMSTOP 100", expect: { error: { errnum: 10 } } }
+  - { name: track_oor_with_fade, code: "BGMSTOP 8,0.5", expect: { error: { errnum: 10 } } }
+  # 2 SHAPE guards — return context / 3+ args → errnum 4.
   - { name: used_as_function, code: "A=BGMSTOP(0)", expect: { error: { errnum: 4 } } }
+  - { name: three_args, code: "BGMSTOP 0,0,0", expect: { error: { errnum: 4 } } }
