@@ -1,0 +1,7 @@
+bgmchk_track0|BGMCHK(0)
+bgmchk_omitted|BGMCHK()
+bgmchk_track7|BGMCHK(7)
+bgmchk_oor_8|A=BGMCHK(8)|err
+bgmchk_oor_neg|A=BGMCHK(-1)|err
+bgmchk_stmt|BGMCHK 0|err
+bgmchk_2args|A=BGMCHK(0,0)|err

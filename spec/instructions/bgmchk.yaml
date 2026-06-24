@@ -27,11 +27,17 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst BGMCHK handler @0x1a1db4: result-count [r0,#0xc] cmp r0,#0x1 bne @0x1a1de4 (function) else errnum 4 errline -1 mov r2,#0x0 mvn r1,#0x0 mov r0,#0x4 bl 0x1fffdc @0x1a1de4; argcount [r4,#0x4] 0->track=0 streq r0,[sp,#0x4] beq @0x1a1e24, 1->eval track cmp r0,#0x1 beq @0x1a1dfc; track via bl 0x1eec7c max sp[0]=#0x7 @0x1a1e14 (errnum 10 in helper); status query ldr r0,[0x1a1e4c]=0x01D08280 bl 0x1a4be8 @0x1a1e2c, result via [r4,#0x10]->[+0x14] blx @0x1a1e40" }
   - { type: community, ref: "osb/SMILEBASIC/sound.d BGM status (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bBGMCHK\\b'): 175 files — the function form read into conditions, including the no-argument `BGMCHK()` form: `IF !BGMCHK() THEN BGMPLAY RND(43)` (43AE1XG3/TXT/AXE) — confirming the omitted-track form (= track 0) is LEGAL. Boolean playing value unproven (no oracle, O-T7)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-24 (bgmchk): the STOPPED-state surface + call-shape/range guards are scalar-deterministic and confirmed against real SB. With no track playing, `BGMCHK(0)`, `BGMCHK()` (omitted = track 0) and `BGMCHK(7)` all return 0 (FALSE). Track range: `A=BGMCHK(8)` and `A=BGMCHK(-1)` both raise errnum 10 (Out of range), confirming the 0..7 bound. Call shape: the statement form `BGMCHK 0` (no result requested) and the 2-argument form `A=BGMCHK(0,0)` both raise errnum 4 (Illegal function call), confirming BGMCHK is a function taking 0 or 1 args. The TRUE/non-zero value WHILE a track plays stays oracle-pending (O-T7): a `BGMPLAY:WAIT:?BGMCHK` probe could not be captured headless (audio playback is real-time/timing-dependent), so the playing boolean is not frozen — sb-core returns 1 per the docs." }
 
 confidence: disassembled
 
 tests:
-  # Call shape + error conditions from the disassembly. Boolean playing value is oracle-pending (O-T7).
+  # Stopped-state + call-shape + range guards: hw_verified via sb-oracle batch (bgmchk, 2026-06-24).
+  # Boolean playing value is oracle-pending (O-T7) — not asserted here.
   - { name: check_track0, code: "PRINT BGMCHK(0)", expect: { stdout: "0" } }
   - { name: check_omitted_track, code: "PRINT BGMCHK()", expect: { stdout: "0" } }
+  - { name: check_track7, code: "PRINT BGMCHK(7)", expect: { stdout: "0" } }
   - { name: track_out_of_range, code: "A=BGMCHK(8)", expect: { error: { errnum: 10 } } }
+  - { name: track_out_of_range_neg, code: "A=BGMCHK(-1)", expect: { error: { errnum: 10 } } }
+  - { name: statement_form_err, code: "BGMCHK 0", expect: { error: { errnum: 4 } } }
+  - { name: two_args_err, code: "A=BGMCHK(0,0)", expect: { error: { errnum: 4 } } }

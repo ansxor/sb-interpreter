@@ -1467,7 +1467,10 @@ a live SB 3.6.0 read:
   from the conformance gate via `IN_SCOPE_PARTIAL` until harvested). Verify whether a missing label
   errors (14) or silently no-ops.
 - **BGMCHK playing value** — the exact non-zero value while a track plays (sb-core returns 1; docs
-  say TRUE — could be a richer flag). Stopped → 0 is confirmed-shape.
+  say TRUE — could be a richer flag). The STOPPED surface is now **hw_verified** (M7-T2 2026-06-24):
+  `BGMCHK(0)`/`BGMCHK()`/`BGMCHK(7)` all → 0, track 8/-1 → errnum 10, statement form + 2-arg →
+  errnum 4. The PLAYING boolean stays pending: a `BGMPLAY:WAIT:?BGMCHK` probe returns None headless
+  (audio is real-time), so it can't be frozen deterministically (O-T7).
 - **BGMVAR stored/read value while playing** — sb-core stores the written i32 and returns it during
   playback. The STOPPED read is now hw_verified = 0 (NOT the docs' -1; M7-T2 2026-06-24, disasm
   @0x1a4ea8 `cmp r3,#0x100 / movge r0,#0x0`) and a write is not observable while stopped (write-then-
