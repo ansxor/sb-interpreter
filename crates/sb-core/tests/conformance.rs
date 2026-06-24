@@ -8,7 +8,9 @@
 //!
 //! 1. **`harness/corpus/cases/*.yaml`** — cross-cutting curated cases.
 //! 2. **`spec/tests/*.yaml`** — per-instruction `hw_verified` overlays harvested by the
-//!    oracle (O-T8). None exist yet; the loader is ready for when they land.
+//!    oracle (O-T8). These use a `tests:` top-level key (matching `harvest.py` output); the
+//!    loader accepts both `cases:` and `tests:` (see [`CaseFile`]). Loaded unconditionally —
+//!    no `IN_SCOPE_*` gate — so every frozen overlay case is replayed here.
 //! 3. **Inline `tests:` from `spec/instructions/*.yaml`** — but only for the categories
 //!    `sb-core` actually implements as pure value→`PRINT` builtins/operators in M1:
 //!    **Mathematics** and **Strings** (M1-T7), the bit/logic operators `AND/OR/XOR/DIV/MOD`
@@ -313,7 +315,11 @@ const IN_SCOPE_PARTIAL: &[(&str, &[&str])] = &[
 
 #[derive(Debug, Deserialize)]
 struct CaseFile {
-    #[serde(default)]
+    // `harness/corpus/cases/*.yaml` use `cases:`; the oracle-harvested `spec/tests/*.yaml`
+    // overlays (and `harvest.py` output) use `tests:`. Accept both so the overlays are
+    // actually replayed by the gate (without the alias they parse to zero cases and silently
+    // skip — M7-T2 run 4).
+    #[serde(default, alias = "tests")]
     cases: Vec<Case>,
 }
 

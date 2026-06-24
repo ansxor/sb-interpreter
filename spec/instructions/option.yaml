@@ -12,13 +12,13 @@ summary: "Sets a compile-time language option (STRICT requires variables to be d
 
 semantics:
   - "OPTION is a COMPILER directive consumed while the program is being compiled; it does nothing at run time and emits no value."
-  - "OPTION STRICT: every variable must be declared with VAR or DIM before use; an undeclared reference becomes an Undefined-variable error (errnum 15) instead of being auto-declared. [errnum from the official error table + SB4 docs wording; SB3-specific errnum oracle-pending]"
-  - "OPTION DEFINT: unsuffixed variables and arrays default to Integer type instead of Double (Real)."
+  - "OPTION STRICT: every variable must be declared with VAR or DIM before use; an undeclared reference becomes an Undefined-variable error (errnum 15) instead of being auto-declared. [hw_verified 2026-06-24: OPTION STRICT then `B=2` raises errnum 15 on the referencing line.]"
+  - "OPTION DEFINT: unsuffixed variables and arrays default to Integer type instead of Double (Real). The suffix-less default WITHOUT any OPTION is Real (Double) — `A=3.7` keeps 3.7; under OPTION DEFINT `A=3.7` becomes the Integer 3. The implied real→Integer conversion TRUNCATES toward zero (3.7->3, 2.5->2, -3.7->-3, -2.5->-2 — NOT rounding), and a #-suffixed name (`A#`) stays Real even under DEFINT. [hw_verified 2026-06-24]"
   - "The feature name is a bare keyword (OPTION STRICT), not a string literal."
   - "Exactly one feature per OPTION statement; a program may contain multiple OPTION statements (the common pairing is OPTION STRICT then OPTION DEFINT)."
   - "Position-dependent: an OPTION takes effect for source AFTER its position, not retroactively — so OPTION statements are conventionally the first lines of a program."
   - "An unrecognized feature name raises errnum 3 (Syntax error) at compile time."
-  - "Corpus shows an additional undocumented feature OPTION TOOL (marks the program as a tool/utility); its precise compile effect is not pinned here. [community, oracle-pending]"
+  - "OPTION TOOL is a recognized (undocumented) feature that compiles cleanly with no error (hw_verified 2026-06-24); it marks the program as a tool/utility. Its precise compile effect beyond 'accepted' is not pinned here."
 
 errors:
   - { errnum: 3, name: "Syntax error", when: "the feature name is not a recognized compiler option" }
@@ -29,8 +29,9 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC compiler: OPTION sets compile flags STRICT/DEFINT before codegen (3.5.0 cross-check, structural only)" }
   - { type: community, ref: "sbsave corpus: OPTION STRICT (~712), OPTION DEFINT (~206), STRICT+DEFINT pair at program top (2BC4738V/TXT/MOH_JUHSY237D lines 30-31); undocumented OPTION TOOL in 12 programs (e.g. 2383C3HE/TXT/LPM, 7Z7NE3RJ/TXT/PTC_EDITOR) [oracle-pending]" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4f): OPTION NOPE (unrecognized feature) -> errnum 3, errline 1" }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-24 (M7-T2 run 4): STRICT undeclared -> `OPTION STRICT`\\n`B=2` raises errnum 15 errline 2 (Undefined variable). TOOL accepted -> `OPTION TOOL` compiles cleanly (no error). DEFINT default flip + truncation -> with DEFINT A=3.7->3, A=-3.7->-3, A=2.5->2, A=-2.5->-2, A=5->5, A#=3.7->3.7; WITHOUT OPTION A=3.7->3.7 and A=2.5->2.5 and `DIM A[3]:A[0]=3.7`->3.7 (suffix-less default is Real). Frozen in spec/tests/option.yaml (the 4 DEFINT real->int coercion cases pend the sb-core DEFINT implementation — see HARVEST_QUEUE)." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
   - { name: strict_declared_ok, code: "OPTION STRICT\nVAR A=1\nPRINT A", expect: { stdout: "1" } }

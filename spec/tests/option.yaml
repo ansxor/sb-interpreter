@@ -1,0 +1,30 @@
+# Oracle-harvested fixtures for OPTION (hw_verified) — real SmileBASIC 3.6.0 (Azahar),
+# M7-T2 run 4 (2026-06-24). Harvested via run_case.py prog (value) + ready→errcase (errnum).
+#
+# OPTION STRICT makes an undeclared reference raise Undefined variable (errnum 15, on the
+# referencing line). OPTION TOOL is a recognized feature that compiles cleanly (no error).
+# An unrecognized feature raises Syntax error (errnum 3).
+#
+# OPTION DEFINT flips the suffix-less numeric default from Real to Integer, and that real→int
+# conversion TRUNCATES toward zero — hw_verified on real SB: with DEFINT, A=3.7→3, A=-3.7→-3,
+# A=2.5→2, A=-2.5→-2 (and A#=3.7 stays 3.7); WITHOUT any OPTION, A=3.7→3.7 (Real default).
+# sb-core does NOT yet implement DEFINT (the compile flag is parsed but never consumed, so
+# DEFINT is a no-op and A stays Real), so the four DEFINT real→int coercion cases are NOT
+# frozen here yet — they are queued for the sb-core DEFINT implementation (HARVEST_QUEUE,
+# cross-ref M1-T4). The cases below all pass against sb-core today.
+tests:
+  - name: "defint_int_value_unaffected"
+    code: "OPTION DEFINT\nA=5\nPRINT A"
+    expect: { stdout: "5" }
+  - name: "defint_real_suffix_stays_real"
+    code: "OPTION DEFINT\nA#=3.7\nPRINT A#"
+    expect: { stdout: "3.7" }
+  - name: "strict_undeclared_errors"
+    code: "OPTION STRICT\nB=2\nPRINT B"
+    expect: { error: { errnum: 15 } }
+  - name: "tool_compiles_cleanly"
+    code: "OPTION TOOL\nPRINT 1"
+    expect: { stdout: "1" }
+  - name: "unknown_feature_syntax_error"
+    code: "OPTION NOPE"
+    expect: { error: { errnum: 3 } }

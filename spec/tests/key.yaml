@@ -1,0 +1,23 @@
+# Oracle-harvested fixtures for KEY (hw_verified) — real SmileBASIC 3.6.0 (Azahar),
+# M7-T2 run 4 (2026-06-24). The undocumented KEY(n) function form reads back the string
+# bound to function key n (1..5); the same 1..5 range guard + arg-count rules apply as the
+# statement form. Harvested via run_case.py progstr (readback) + ready→errcase (guards).
+tests:
+  - name: "fn_read_back_3"
+    code: "KEY 3,\"HI\"\nPRINT KEY(3)"
+    expect: { stdout: "HI" }
+  - name: "fn_read_back_1"
+    code: "KEY 1,\"CLS\"\nPRINT KEY(1)"
+    expect: { stdout: "CLS" }
+  - name: "fn_read_back_5"
+    code: "KEY 5,\"HELLO\"\nPRINT KEY(5)"
+    expect: { stdout: "HELLO" }
+  - name: "fn_number_too_high"
+    code: "A=KEY(6)"
+    expect: { error: { errnum: 10 } }
+  - name: "fn_number_zero"
+    code: "A=KEY(0)"
+    expect: { error: { errnum: 10 } }
+  - name: "fn_two_args"
+    code: "A=KEY(1,2)"
+    expect: { error: { errnum: 4 } }

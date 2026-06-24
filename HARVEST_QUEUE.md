@@ -287,15 +287,29 @@ oracle to confirm exact output and promote to `hw_verified`.
   no-op that resyncs lastVsync. · assumption (disasm @0x1455c8/@0x14afb0): VSYNC target =
   lastVsync+n, WAIT target = current+n, both set lastVsync=current on exit. Needs the M4 frame
   clock + a deterministic MAINCNT probe. errnum-4 (used as function) already hw_verified 2026-06-22.
-- [ ] S-T4f KEY() function form · Confirm `KEY 3,"HI":PRINT KEY(3)` returns the bound string
-  "HI", and that KEY(n) honors the 1..5 range (errnum 10 out of range). · assumption (disasm
-  @0x14c018 retcount==1 path + corpus VAL(KEY(5))): KEY(n) reads back the assigned function-key
-  string. Statement errnum 8/10 cases already hw_verified 2026-06-22.
-- [ ] S-T4f OPTION STRICT/DEFINT behavior + OPTION TOOL · Confirm OPTION STRICT makes an
-  undeclared reference raise (errnum 15 Undefined variable assumed) and is position-dependent;
-  OPTION DEFINT makes unsuffixed vars Integer; what OPTION TOOL (12 corpus programs) does at
-  compile time. · assumption: STRICT undeclared -> errnum 15; DEFINT default int. Unknown-feature
-  errnum 3 already hw_verified 2026-06-22.
+- [x] S-T4f KEY() function form · RESOLVED hw_verified 2026-06-24 (M7-T2 run 4): `KEY n,"S":
+  ?KEY(n)` reads back the bound string (KEY(3)="HI", KEY(1)="CLS", KEY(5)="HELLO"); function
+  form honors 1..5 (KEY(6)/KEY(0) -> errnum 10), two args -> errnum 4. Frozen in
+  spec/tests/key.yaml; key.yaml confidence -> hw_verified. sb-core already matches.
+- [x] S-T4f OPTION STRICT/DEFINT/TOOL behavior · RESOLVED hw_verified 2026-06-24 (M7-T2 run 4):
+  OPTION STRICT + undeclared `B=2` -> errnum 15 errline 2; OPTION TOOL compiles cleanly (no
+  error, recognized feature); unknown feature -> errnum 3. OPTION DEFINT flips the suffix-less
+  numeric default Real->Integer with truncation-toward-zero (A=3.7->3, A=-3.7->-3, A=2.5->2,
+  A=-2.5->-2, A=5->5, A#=3.7->3.7); WITHOUT any OPTION the suffix-less default is Real
+  (A=3.7->3.7, A=2.5->2.5, `DIM A[3]:A[0]=3.7`->3.7). Frozen in spec/tests/option.yaml;
+  option.yaml confidence -> hw_verified. (The 4 DEFINT real->int coercion cases are NOT frozen
+  yet — see the sb-core impl gap below.)
+- [ ] M1-T4 sb-core: suffix-less numeric default + OPTION DEFINT (hw_verified, fix needed) ·
+  Real SB 3.6.0 defaults a suffix-less numeric to **Real (Double)** and `OPTION DEFINT` flips
+  that default to **Integer** (truncating toward zero). sb-core: scalar auto-vars / `VAR A` are
+  correctly Real, BUT (a) an unsuffixed `DIM` array defaults to Int (`bytecode::VarType::
+  from_suffix(None)->Int`), so `DIM A[3]:A[0]=3.7` -> 3 here vs 3.7 on hardware; and (b)
+  `OPTION DEFINT` is parsed + recorded (`compiler.rs:273`) but never consumed -> no-op, so
+  `OPTION DEFINT:A=3.7` -> 3.7 here vs 3 on hardware. Fix: default unsuffixed numeric element/
+  scalar type to Real, and make DEFINT flip it to Int (then the 4 queued DEFINT coercion cases
+  in spec/tests/option.yaml can be frozen). hw_verified values are recorded in option.yaml's
+  sources. NOTE: this changes the default array element type for unsuffixed `DIM` arrays — sweep
+  existing array tests when implementing.
 - [ ] S-T4f DIALOG interactive forms + RESULT · Confirm R=DIALOG(text,seltype,...) returns
   -1/0/1, button-detect (negative mask) returns 128..140, the file-name form returns the entered
   string with RESULT=-1 on cancel, and the colon-prefixed menu string with seltype -1 behavior.

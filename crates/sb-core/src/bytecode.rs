@@ -47,9 +47,15 @@ impl Const {
 }
 
 /// The element type of an array, or the static type of a scalar — derived from a
-/// name's [`Suffix`]. `$`→String, `#`→Double, `%`/none→Integer (the suffix-less
-/// numeric default; `OPTION DEFINT` is a no-op against this default — see
-/// `HARVEST_QUEUE.md` for the suffix-less Real-vs-Int question, cross-ref M1-T4).
+/// name's [`Suffix`]. `$`→String, `#`→Double, `%`→Integer.
+///
+/// KNOWN GAP (hw_verified 2026-06-24, M7-T2 run 4 — fix is M1-T4): the suffix-LESS
+/// numeric default in real SB 3.6.0 is **Real (Double)**, not Integer, and `OPTION DEFINT`
+/// flips that default to Integer. This map returns Integer for `Suffix::None`, which is
+/// correct only for declared DIM/VAR-array element typing; it makes an unsuffixed `DIM`
+/// array default to Int where real SB uses Real (`DIM A[3]:A[0]=3.7` → 3.7 on hardware,
+/// 3 here), and it leaves `OPTION DEFINT` a no-op (the compile flag is parsed but never
+/// consumed). See `HARVEST_QUEUE.md` (suffix-less default Real + OPTION DEFINT).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VarType {
     Int,
@@ -79,7 +85,9 @@ pub enum VarRef {
 
 /// `OPTION` flags recorded by the compiler. They affect compilation rather than the
 /// run: `STRICT` requires every variable be declared before use (else `Undefined
-/// variable`, errnum 15); `DEFINT` makes the suffix-less numeric default Integer.
+/// variable`, errnum 15 — implemented). `DEFINT` should make the suffix-less numeric
+/// default Integer, but is NOT yet consumed (parsed + recorded only → currently a no-op;
+/// hw_verified target behavior in HARVEST_QUEUE, fix is M1-T4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct OptionFlags {
     pub strict: bool,
