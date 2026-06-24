@@ -438,10 +438,12 @@ oracle to confirm exact output and promote to `hw_verified`.
   RGB/GSPOIT arg-count errors -> errnum 4. RESOLVED 2026-06-23 (s_c2): (a) GSPOIT post-draw round-trip is
   HARVESTED via the multi-statement prog path (GPSET x,y,RGB(...):GSPOIT(x,y)) — RGB(255,0,0)->-524288,
   RGB(255,255,255)->-460552 (==#WHITE), RGB(0,100,0)->-16752640; folded into GSPOIT.yaml tests (hw_verified)
-  and spec/concepts/screen-and-color-model.md. STILL PENDING: (b) RGBREAD value round-trip
-  (RGBREAD &HFF804020 OUT R,G,B -> R,G,B) — RGBREAD is a statement writing OUT vars, so the expr/value batch
-  can't capture it (prog path returns None for stmt+expr); extraction is fully disassembled (shift+mask) but a
-  direct hw_verified anchor is queued. (c) GSPOIT errnum 49 (0x31) graphics-state guard @0x1543bc — undocumented
+  and spec/concepts/screen-and-color-model.md. RESOLVED 2026-06-24 (M7-T2 run 9): (b) RGBREAD value round-trip
+  HARVESTED hw_verified via the batch `prog`/`progstr` path (setup `RGBREAD ... OUT R,G,B`, capture STR$(R)+...):
+  &HFF804020->128,64,32; 4-OUT &H80FF8040->128,255,128,64; -1->255,255,255,255; 0->0,0,0,0; RGB(160,128,96)
+  round-trip->160,128,96; corpus alpha-only RGBREAD &H80FF8040 OUT A,,,->A=128; errnum 2-OUT/5-OUT->4, string
+  color->8. RGBREAD top-level flipped to hw_verified; harness/harvest/out/rgbread.tsv. STILL PENDING:
+  (c) GSPOIT errnum 49 (0x31) graphics-state guard @0x1543bc — undocumented
   (beyond the 3-47 table), not reachable from ordinary user code; confirm trigger if ever possible.
 - [x] S-T8a sprite lifecycle (SPSET · SPCLR · SPSHOW · SPHIDE · SPPAGE) · ERROR expects HARVESTED hw_verified
   (sb-oracle 2026-06-22 s_t8a): SPSET 512,0 / -1,0 -> errnum 10; SPSET 0,4096 -> errnum 10; SPSET 0,0,0,0,0,0,0

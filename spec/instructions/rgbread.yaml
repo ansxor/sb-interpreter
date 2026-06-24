@@ -39,8 +39,9 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst RGBREAD handler @0x154dc0: argcount [r4,#0x4] cmp #1 bne -> errnum 4 @0x154e2c; color fetched via arg-vtable [r2,#0x40] @0x154de4, string fetch fails -> deferred error str [0x305628] @0x154df0; channel extract and r7,color,#0xff (B) @0x154e04, color lsl#0x8 / lsl#0x10 then lsr#0x18 (R,G) @0x154e08..@0x154e1c, color lsr#0x18 (A) @0x154e14; return-count [r4,#0xc] cmp #3 beq @0x154e58 (R,G,B), cmp #4 beq @0x154e40 (A,R,G,B), else mov r0,#0x4 (errnum 4) @0x154e34; values stored to OUT receivers via store-vtable [r2,#0x14] @0x154e48..@0x154ea0 (receiver list indexed in reverse/stack order: A,R,G,B map to the correct source-order variables)." }
   - { type: community, ref: "osb/SMILEBASIC/graphic.d color unpack (3.5.0 structural cross-check only)." }
   - { type: community, ref: "sbsave corpus: RGBREAD appears ~1005x. Both forms are common: 3-OUT RGBREAD C OUT R,G,B (~592, e.g. 13D4DV3V/TXT/MAIN_PRG_V2) and 4-OUT RGBREAD C OUT A,R,G,B (~213, e.g. 1R8EDWHE/TXT/DEFY_180.LIB). Verified edge forms: tail-comma alpha-only RGBREAD C OUT P,,, (13D4DV3V/TXT/MAIN_PRG_V2), array-element receivers RGBREAD GSPOIT(x,y) OUT R[0],G[0],B[0] (43SXXEJ3/TXT/-ALPHA_OS-), and function-result input RGBREAD GSPOIT(IX%,IY%) OUT R,G,B (1DVENVAE/TXT/PICS_R1_1V)." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-24 (real SB 3.6.0, Azahar; harness/harvest/out/rgbread.tsv). Channel split confirmed exact inverse of RGB(): RGBREAD &HFF804020 OUT R,G,B -> 128,64,32; 4-OUT RGBREAD &H80FF8040 OUT A,R,G,B -> 128,255,128,64; RGBREAD -1 OUT A,R,G,B -> 255,255,255,255; RGBREAD 0 OUT A,R,G,B -> 0,0,0,0; round-trip RGBREAD RGB(160,128,96) OUT R,G,B -> 160,128,96. Corpus alpha-only tail-comma form RGBREAD &H80FF8040 OUT A,,, -> A=128 (R/G/B discarded). errnum: 2-OUT (RGBREAD 0 OUT R,G) -> 4, 5-OUT (RGBREAD 0 OUT A,R,G,B,X) -> 4, string color (RGBREAD \"X\" OUT R,G,B) -> 8 errline 1 (the deferred type-mismatch @0x154df0). Whole contract value/errnum-deterministic -> top-level hw_verified." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
   # channel extraction is pure shift+mask (disassembled, unambiguous); the inverse-of-RGB() round-trip is covered.
@@ -48,5 +49,9 @@ tests:
   - { name: split_argb_4out, code: "RGBREAD &H80FF8040 OUT A,R,G,B\nPRINT A;\",\";R;\",\";G;\",\";B", expect: { stdout: "128,255,128,64" } }
   - { name: split_negative_white, code: "RGBREAD -1 OUT A,R,G,B\nPRINT A;\",\";R;\",\";G;\",\";B", expect: { stdout: "255,255,255,255" } }
   - { name: roundtrip_rgb, code: "RGBREAD RGB(160,128,96) OUT R,G,B\nPRINT R;\",\";G;\",\";B", expect: { stdout: "160,128,96" } }
+  # hw_verified 2026-06-24 (sb-oracle, real SB 3.6.0): black, the corpus alpha-only tail-comma form, and the string type-mismatch.
+  - { name: split_black, code: "RGBREAD 0 OUT A,R,G,B\nPRINT A;\",\";R;\",\";G;\",\";B", expect: { stdout: "0,0,0,0" } }
+  - { name: alpha_only_tailcomma, code: "RGBREAD &H80FF8040 OUT A,,,\nPRINT A", expect: { stdout: "128" } }
   - { name: two_out_errors, code: "RGBREAD 0 OUT R,G", expect: { error: { errnum: 4 } } }
   - { name: five_out_errors, code: "RGBREAD 0 OUT A,R,G,B,X", expect: { error: { errnum: 4 } } }
+  - { name: string_color_errors, code: "RGBREAD \"X\" OUT R,G,B", expect: { error: { errnum: 8 } } }
