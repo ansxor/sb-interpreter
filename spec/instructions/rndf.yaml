@@ -32,10 +32,11 @@ sources:
 
 # After RANDOMIZE with a non-zero seed the [0,1) 53-bit value is deterministic and now frozen
 # as an hw_verified golden (sb-oracle 2026-06-23); the un-seeded value stays non-deterministic.
+  - { type: hw_verified, ref: "sb-oracle PRINT read-back 2026-06-23: PRINT renders doubles via %.8f (M7-T4) — PRINT RNDF(0) (seeded)=0.83609516; distinct from STR$ %g shown above" }
 confidence: hw_verified
 
 tests:
   - { name: seed_id_out_of_range, code: "A=RNDF(8)", expect: { error: { errnum: 10 } } }
   - { name: string_type_mismatch, code: 'A=RNDF("x")', expect: { error: { errnum: 8 } } }
   # Seeded value (hw_verified): the otya_test.sb3 golden (STR$ rounds to 6 significant figures).
-  - { name: seeded_rndf, code: "RANDOMIZE 0,1:R=RND(100):R=RND(100):R=RND(100):R=RND(100)\nPRINT RNDF(0)", expect: { stdout: "0.836095" } }
+  - { name: seeded_rndf, code: "RANDOMIZE 0,1:R=RND(100):R=RND(100):R=RND(100):R=RND(100)\nPRINT RNDF(0)", expect: { stdout: "0.83609516" } }

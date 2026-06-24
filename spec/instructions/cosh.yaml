@@ -23,11 +23,12 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/cosh.md" }
   - { type: disassembled, ref: "cia_3.6.0.lst COSH handler @0x1495dc; argcount!=1 -> errnum 4; arg coerced via to-double method (vtable +0x44, non-number -> errnum 8); libm cosh called @0x298fe0; result returned as Double; no range check" }
   - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: COSH(0)=1, COSH(1)=1.54308, COSH(-1)=1.54308 (even; doubles to 6 significant figures); COSH(\"x\") -> errnum 8" }
+  - { type: hw_verified, ref: "sb-oracle PRINT read-back 2026-06-23: PRINT renders doubles via %.8f (M7-T4) — PRINT COSH(1)=1.54308063, COSH(-1)=1.54308063; distinct from STR$ %g shown above" }
 
 confidence: hw_verified
 
 tests:
   - { name: zero,        code: "PRINT COSH(0)",   expect: { stdout: "1" } }
-  - { name: one,         code: "PRINT COSH(1)",   expect: { stdout: "1.54308" } }
-  - { name: negative_even, code: "PRINT COSH(-1)", expect: { stdout: "1.54308" } }
+  - { name: one,         code: "PRINT COSH(1)",   expect: { stdout: "1.54308063" } }
+  - { name: negative_even, code: "PRINT COSH(-1)", expect: { stdout: "1.54308063" } }
   - { name: string_type_mismatch, code: 'A=COSH("x")', expect: { error: { errnum: 8 } } }

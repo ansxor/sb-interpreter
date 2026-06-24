@@ -24,11 +24,12 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/rad.md" }
   - { type: disassembled, ref: "cia_3.6.0.lst RAD handler @0x148980; argcount!=1 -> errnum 4; arg coerced via to-double method (vtable +0x44, non-number -> errnum 8); two vmul.f64 by consts @0x148a08=PI and @0x148a10=1/180; result returned as Double" }
   - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: RAD(0)=0, RAD(45)=0.785398, RAD(180)=3.14159; RAD(\"x\") -> errnum 8" }
+  - { type: hw_verified, ref: "sb-oracle PRINT read-back 2026-06-23: PRINT renders doubles via %.8f (M7-T4) — PRINT RAD(45)=0.78539816, RAD(180)=3.14159265; distinct from STR$ %g shown above" }
 
 confidence: hw_verified
 
 tests:
   - { name: zero,          code: "PRINT RAD(0)",   expect: { stdout: "0" } }
-  - { name: forty_five,    code: "PRINT RAD(45)",  expect: { stdout: "0.785398" } }
-  - { name: one_eighty_pi, code: "PRINT RAD(180)", expect: { stdout: "3.14159" } }
+  - { name: forty_five,    code: "PRINT RAD(45)",  expect: { stdout: "0.78539816" } }
+  - { name: one_eighty_pi, code: "PRINT RAD(180)", expect: { stdout: "3.14159265" } }
   - { name: string_type_mismatch, code: 'A=RAD("x")', expect: { error: { errnum: 8 } } }

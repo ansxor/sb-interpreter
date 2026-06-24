@@ -23,11 +23,12 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/tanh.md" }
   - { type: disassembled, ref: "cia_3.6.0.lst TANH handler @0x149a08; argcount!=1 -> errnum 4; arg coerced via to-double method (vtable +0x44, non-number -> errnum 8); libm tanh called @0x299ee0; result returned as Double; no range check" }
   - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: TANH(0)=0, TANH(0.5)=0.462117, TANH(-0.5)=-0.462117 (odd; doubles to 6 significant figures); TANH(\"x\") -> errnum 8" }
+  - { type: hw_verified, ref: "sb-oracle PRINT read-back 2026-06-23: PRINT renders doubles via %.8f (M7-T4) — PRINT TANH(0.5)=0.46211716, TANH(-0.5)=-0.46211716; distinct from STR$ %g shown above" }
 
 confidence: hw_verified
 
 tests:
   - { name: zero,        code: "PRINT TANH(0)",   expect: { stdout: "0" } }
-  - { name: half,        code: "PRINT TANH(0.5)", expect: { stdout: "0.462117" } }
-  - { name: negative_odd, code: "PRINT TANH(-0.5)", expect: { stdout: "-0.462117" } }
+  - { name: half,        code: "PRINT TANH(0.5)", expect: { stdout: "0.46211716" } }
+  - { name: negative_odd, code: "PRINT TANH(-0.5)", expect: { stdout: "-0.46211716" } }
   - { name: string_type_mismatch, code: 'A=TANH("x")', expect: { error: { errnum: 8 } } }

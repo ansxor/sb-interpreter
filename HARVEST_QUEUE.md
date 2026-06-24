@@ -170,8 +170,12 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 - [ ] M1-T1 (lexer) · Does SmileBASIC 3.6.0 allow full-width / kana characters in
   identifiers and labels? · assumption: ASCII-only (inherited from osb — **likely wrong**,
   SB is a Japanese product; verify and fix the lexer's `is_alpha`/identifier scan).
-- [ ] M1 (general) · Exact `STR$`/PRINT double→string formatting (sig figs, exponent
-  threshold, trailing zeros) · assumption: best-effort Rust formatting (see M7-T4).
+- [x] M1 (general) · Exact `STR$`/PRINT double→string formatting (sig figs, exponent
+  threshold, trailing zeros) · RESOLVED by M7-T4 (2026-06-23): STR$=C `%g`/6-sig (handler
+  @0x1eb2a8, fmt "%g" @0x1eb4a8) — `format_g` verified against a 2000-case bit-exact sweep +
+  oracle; PRINT=C `%.8f`+trailing-zero/dot trim (handler @0x180a50, fmt "%.8f" @0x180b0c),
+  NOT %g — `format_print_number`/`format_fixed8`, hw_verified via console read-back. Both
+  keep signed zero (STR$(-0.0)/PRINT -0.0 → "-0"). See str.yaml/print.yaml.
 - [ ] M1-T1 (lexer) · Is `1E5` lexed as `1` + ident `E5` (no exponent literal)? · assumption:
   yes (osb behavior) — confirm against 3.6.0.
 - [ ] S-T1b (CLASSIFY) · Confirm CLASSIFY returns 1 for infinity and 2 for NaN, and find how
@@ -1011,12 +1015,14 @@ oracle to confirm exact output and promote to `hw_verified`.
   result value (cross-ref the M1-T5 `&&`/`||` queue entry).
 
 ## M1-T7 — Builtins (math/string edges to confirm)
-- **STR$/PRINT double formatting**: `builtins::format_g` formats doubles with C `%g` at 6
-  significant figures (matches the harvested SQR(2)=1.41421, PI()=3.14159, 1e-05,
-  1.23457e+07). The exact half-way rounding mode (round-half-to-even vs away-from-zero) and
-  very-large/huge-magnitude + subnormal edges are M7-T4; harvest a sweep (e.g. STR$(0.5),
-  STR$(2.5), STR$(1.5)→tie cases, STR$(1E308), STR$(1.5E-310)) to pin the mode. assumption:
-  Rust's round-half-to-even, matching C printf.
+- **STR$/PRINT double formatting** — RESOLVED by M7-T4 (2026-06-23). STR$=C `%g`/6-sig;
+  `format_g` reproduces it exactly (round-half-to-even confirmed; verified against a 2000-case
+  bit-exact `%.6g` sweep and oracle edges STR$(-0.0)="-0", STR$(0.123456785)="0.123457",
+  STR$(0.000000001)="1e-09"). PRINT is DIFFERENT: C `%.8f`+trailing-zero/dot trim
+  (`format_print_number`), hw_verified via console read-back (PRINT 12345678.0="12345678",
+  PRINT 0.00001="0.00001", PRINT 1.0/3.0="0.33333333", PRINT -0.0="-0"). Still oracle-pending:
+  STR$ of subnormals (1.5e-310) and very large magnitudes (1e308) — but the algorithm is the
+  C-library `%g`/`%.8f` so these follow deterministically.
 - **MIN/MAX of an empty array**: `min_max` returns Illegal function call (errnum 4) for an
   empty array (no element to return). Real SB result unconfirmed — harvest `DIM E[0]:A=MIN(E)`.
 - **MID$ negative start/length**: `mid` clamps negative `start`/`length` to 0 (docs only

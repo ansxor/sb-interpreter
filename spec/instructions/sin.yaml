@@ -23,11 +23,12 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/sin.md" }
   - { type: disassembled, ref: "cia_3.6.0.lst SIN handler @0x148c90; argcount!=1 -> errnum 4; arg coerced via to-double method (vtable +0x44, non-number -> errnum 8); libm sin called @0x1eb4b0; result returned as Double; no range check" }
   - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: SIN(0)=0, SIN(RAD(90))=1, SIN(RAD(45))=0.707107 (SB prints doubles to 6 significant figures)" }
+  - { type: hw_verified, ref: "sb-oracle PRINT read-back 2026-06-23: PRINT renders doubles via %.8f (M7-T4) — PRINT SIN(RAD(45))=0.70710678; distinct from STR$ %g shown above" }
 
 confidence: hw_verified
 
 tests:
   - { name: zero,            code: "PRINT SIN(0)",        expect: { stdout: "0" } }
   - { name: half_pi,         code: "PRINT SIN(RAD(90))",  expect: { stdout: "1" } }
-  - { name: forty_five_deg,  code: "PRINT SIN(RAD(45))",  expect: { stdout: "0.707107" } }
+  - { name: forty_five_deg,  code: "PRINT SIN(RAD(45))",  expect: { stdout: "0.70710678" } }
   - { name: string_type_mismatch, code: 'A=SIN("x")',     expect: { error: { errnum: 8 } } }

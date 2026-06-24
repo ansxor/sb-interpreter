@@ -29,13 +29,14 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/log.md" }
   - { type: disassembled, ref: "cia_3.6.0.lst LOG handler @0x148030; 1 arg: value<=0 -> errnum 10 else ln @0x1eb6c8; 2 args: value<=0 or base<=0 -> errnum 10, then ln(value)/ln(base), base==1 (ln=0) -> `mov r0,#0x4` errnum 4; non-number -> errnum 8" }
   - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: LOG(1)=0, LOG(2,2)=1, LOG(8,2)=3, LOG(100,10)=2, LOG(10)=2.30259, LOG(8,0.5)=-3 (base in (0,1) allowed)" }
+  - { type: hw_verified, ref: "sb-oracle PRINT read-back 2026-06-23: PRINT renders doubles via %.8f (M7-T4) — PRINT LOG(10)=2.30258509; distinct from STR$ %g shown above" }
 
 confidence: hw_verified
 
 tests:
   # numeric expects below are hw_verified (sb-oracle 2026-06-22); error cases are disassembled.
   - { name: natural_log_one,  code: "PRINT LOG(1)",     expect: { stdout: "0" } }
-  - { name: natural_log_ten,  code: "PRINT LOG(10)",    expect: { stdout: "2.30259" } }
+  - { name: natural_log_ten,  code: "PRINT LOG(10)",    expect: { stdout: "2.30258509" } }
   - { name: base2_doc,        code: "PRINT LOG(2,2)",   expect: { stdout: "1" } }
   - { name: base2_eight,      code: "PRINT LOG(8,2)",   expect: { stdout: "3" } }
   - { name: base10_hundred,   code: "PRINT LOG(100,10)", expect: { stdout: "2" } }

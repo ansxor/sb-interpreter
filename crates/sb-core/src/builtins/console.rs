@@ -293,12 +293,14 @@ where
 }
 
 /// Format one `PRINT` item to the UTF-16 code units it puts on the console: a number via
-/// the shared [`format_number`](super::format_number) (`%d`/`%g`) contract, a string
-/// verbatim. A non-printable type raises Type mismatch (errnum 8), matching the PRINT
-/// handler's `else mov r0,#0x8`.
+/// the PRINT-specific [`format_print_number`](super::format_print_number) (`%d`/`%.8f`)
+/// contract — NOT STR$'s `%g` — a string verbatim. A non-printable type raises Type
+/// mismatch (errnum 8), matching the PRINT handler's `else mov r0,#0x8`.
 pub fn format_print_item(v: &Value) -> Result<SbStr, RuntimeError> {
     match v {
-        Value::Int(_) | Value::Real(_) => Ok(super::format_number(v)?.encode_utf16().collect()),
+        Value::Int(_) | Value::Real(_) => {
+            Ok(super::format_print_number(v)?.encode_utf16().collect())
+        }
         Value::Str(s) => Ok(s.clone()),
         _ => Err(super::type_mismatch()),
     }
@@ -517,6 +519,12 @@ mod tests {
         assert_eq!(
             format_print_item(&Value::Real(3.0)).unwrap(),
             "3".encode_utf16().collect::<Vec<u16>>()
+        );
+        // PRINT uses %.8f (fixed), distinct from STR$'s %g: STR$(12345678.0)="1.23457e+07"
+        // but PRINT 12345678.0 shows "12345678" (hw_verified sb-oracle 2026-06-23).
+        assert_eq!(
+            format_print_item(&Value::Real(12345678.0)).unwrap(),
+            "12345678".encode_utf16().collect::<Vec<u16>>()
         );
         assert_eq!(
             format_print_item(&Value::str_from("HI")).unwrap(),

@@ -13,7 +13,8 @@ summary: "Displays the given expressions on the text console at the cursor, then
 semantics:
   - "`?` is an exact alias for PRINT."
   - "Items are evaluated and printed left to right at the current console cursor; the cursor advances past the printed characters (handler iterates the argument list @0x14b734, dispatching per value)."
-  - "A numeric item is formatted and printed (Double values go through the number formatter @0x180a50; the exact STR$-style float formatting is deferred to M7-T4)."
+  - "An Integer item is formatted with C printf %d."
+  - "A Double item is formatted by the PRINT number formatter @0x180a50 with C sprintf(\"%.8f\", x) — fixed notation, up to 8 fractional digits, NEVER exponential — then trailing zeros and a bare trailing '.' are stripped. This is DISTINCT from STR$ (which uses %g / 6 sig figs): PRINT 12345678.0 shows \"12345678\" (STR$ -> \"1.23457e+07\"), PRINT 0.00001 shows \"0.00001\" (STR$ -> \"1e-05\"), PRINT 3.14159265 shows \"3.14159265\". Values below ~5e-9 round to \"0\"; signed zero is kept (PRINT -0.0 -> \"-0\"). (M7-T4)"
   - "A string item is printed verbatim (string print path @0x1e996c)."
   - "Separator `;` concatenates the next item immediately, with NO space inserted (separator subtype 0: clears the trailing-newline flag, no cursor advance)."
   - "Separator `,` advances the cursor to the next tab stop before the next item — the stop width is the TABSTEP system variable (separator subtype 1: tab-advance helper @0x180dbc)."
@@ -29,6 +30,8 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/print.md (PRINT [Expression [; or , Expression ...]]; ? alias; omitting expressions causes only a line break; , places a set interval per TABSTEP)" }
   - { type: disassembled, ref: "cia_3.6.0.lst PRINT handler @0x14b70c (entry in the in-code keyword table: u\"PRINT\" @0x14be88 -> handler ptr 0x14b70c @0x14be98). Body: argcount r5=[r0+0x4], arg array r6; loop @0x14b734 reads type tag ldrb r2,[r1,#0x0]; tag 0 -> string print bl 0x1e996c; tag 1 -> Double print vldr.64 d0,[sp]/bl 0x180a50; tag 4|5 -> separator bl 0x2047e0; else mov r0,#0x8 (errnum 8 Type mismatch) @0x14b768. Separator subtype [r0+0x8]: 0 (`;`) moveq r7,#0 no advance; 1 (`,`) bl 0x180dbc tab-advance then r7=0 @0x14b830. Trailing newline: cmp r7,#0 @0x14b848 -> bl 0x1eedc4 (line break) only if set. Internal arg-consistency guard mov r0,#0x1 @0x14b808.", confidence: disassembled }
   - { type: community, ref: "osb/SMILEBASIC/console.d PRINT: prints items, `;` no-gap, `,` to next tab column, trailing separator suppresses newline (3.5.0 structural cross-check only)" }
+  - { type: disassembled, ref: "PRINT Double formatter @0x180a50: vmov r2,r3,d0; adr r1,0x180b0c (fmt string bytes 25 2e 38 66 = \"%.8f\"); sprintf @0x1e5784 into the console scratch buffer; then a back-scanning trim loop @0x180a8c walks from the end stripping '0' (0x30) and a single '.' (0x2e) before emitting. So the format is %.8f with trailing-zero/dot trim, never %g/exponential." }
+  - { type: hw_verified, ref: "sb-oracle console read-back 2026-06-23 (PRINT then CHKCHR scrape row 0): PRINT 12345678.0=\"12345678\", PRINT 3.14159265=\"3.14159265\", PRINT 0.00001=\"0.00001\", PRINT 1.0/3.0=\"0.33333333\", PRINT 0.5=\"0.5\", PRINT 180.0=\"180\", PRINT 0.000000001=\"0\", PRINT 0.00000001=\"0.00000001\", PRINT 100000000000.0=\"100000000000\", PRINT 0.123456785=\"0.12345678\", PRINT -0.0=\"-0\", PRINT SQR(2)=\"1.41421356\"" }
 
 confidence: disassembled
 
@@ -38,3 +41,11 @@ tests:
   - { name: semicolon_concat, code: 'PRINT "A";"B"', expect: { stdout: "AB" } }
   - { name: question_alias, code: '?"Q"', expect: { stdout: "Q" } }
   - { name: expression_result, code: "PRINT 2*3+1", expect: { stdout: "7" } }
+  - { name: double_fixed8, code: "PRINT 3.14159265", expect: { stdout: "3.14159265" } }
+  - { name: double_never_exp_big, code: "PRINT 12345678.0", expect: { stdout: "12345678" } }
+  - { name: double_never_exp_small, code: "PRINT 0.00001", expect: { stdout: "0.00001" } }
+  - { name: double_third, code: "PRINT 1.0/3.0", expect: { stdout: "0.33333333" } }
+  - { name: double_rounds_to_zero, code: "PRINT 0.000000001", expect: { stdout: "0" } }
+  - { name: double_eighth_decimal, code: "PRINT 0.00000001", expect: { stdout: "0.00000001" } }
+  - { name: double_signed_zero, code: "PRINT -0.0", expect: { stdout: "-0" } }
+  - { name: double_trims_zeros, code: "PRINT 180.0", expect: { stdout: "180" } }

@@ -23,9 +23,17 @@
 //! unregistered name raises **Undefined function** (16) (the registry below is the
 //! authority on what is a builtin in this slice).
 //!
-//! Number→string formatting ([`format_number`]) follows the disassembled STR$ contract:
-//! integers via C `%d`, doubles via C `%g` to 6 significant figures (the exact
-//! tie-breaking / very-large-magnitude edges are M7-T4; see `HARVEST_QUEUE.md`).
+//! Number→string formatting splits two ways, both reproduced from the disassembled
+//! C `sprintf` calls and confirmed against the oracle:
+//!   * [`format_number`] — the **STR$** contract (handler @0x1eb2a8): integers via
+//!     `%d`, doubles via `%g` to 6 significant figures (fixed unless the decimal
+//!     exponent is `< -4` or `>= 6`, else lowercase exponential with a signed ≥2-digit
+//!     exponent; trailing zeros stripped) — STR$(12345678.0)="1.23457e+07".
+//!   * [`format_print_number`] — the **PRINT** contract (handler @0x180a50): integers
+//!     via `%d`, doubles via `%.8f` (fixed, 8 fractional digits, NEVER exponential)
+//!     with trailing zeros and a bare trailing `.` stripped — PRINT 12345678.0 shows
+//!     "12345678", PRINT 0.00001 shows "0.00001". Signed zero is preserved by both
+//!     (STR$(-0.0)="-0", PRINT -0.0 shows "-0"; sb-oracle 2026-06-23).
 
 pub(crate) mod bg;
 pub(crate) mod console;
@@ -419,11 +427,12 @@ pub fn dispatch(name: &str, args: Vec<Value>) -> Result<Value, RuntimeError> {
     }
 }
 
-// -- number formatting (shared by STR$ / FORMAT$ / a future PRINT) -------------
+// -- number formatting (STR$ uses %g; PRINT uses %.8f; FORMAT$ has its own) -----
 
-/// Format a numeric [`Value`] to its SmileBASIC string form: an Integer via C `%d`,
-/// a Double via C `%g` at 6 significant figures (disassembled STR$ contract). A
-/// non-numeric value raises Type mismatch (errnum 8).
+/// Format a numeric [`Value`] the way **STR$** does: an Integer via C `%d`, a Double
+/// via C `%g` at 6 significant figures (disassembled STR$ contract — handler @0x1eb2a8,
+/// fmt "%g" @0x1eb4a8). A non-numeric value raises Type mismatch (errnum 8). PRINT uses
+/// a different formatter — see [`format_print_number`].
 pub fn format_number(v: &Value) -> Result<String, RuntimeError> {
     match v {
         Value::Int(i) => Ok(i.to_string()),
@@ -436,11 +445,13 @@ pub fn format_number(v: &Value) -> Result<String, RuntimeError> {
 /// unless the decimal exponent is `< -4` or `>= prec`, in which case lowercase
 /// exponential notation with a signed ≥2-digit exponent; trailing zeros (and a bare
 /// trailing `.`) are stripped. Mirrors the doubles SB prints (e.g. `1.23457e+07`,
-/// `1e-05`, `3.14159`). Exact half-way rounding / huge-magnitude edges are M7-T4.
+/// `1e-05`, `3.14159`). Round-half-to-even and the full magnitude range match C `%g`
+/// — verified against a 2000-case bit-exact sweep and the oracle (M7-T4).
 pub fn format_g(x: f64, prec: usize) -> String {
     let prec = prec.max(1);
     if x == 0.0 {
-        return "0".to_string();
+        // C `%g` keeps the sign of negative zero: STR$(-0.0)="-0" (sb-oracle 2026-06-23).
+        return if x.is_sign_negative() { "-0" } else { "0" }.to_string();
     }
     if x.is_nan() {
         return "nan".to_string();
@@ -461,6 +472,35 @@ pub fn format_g(x: f64, prec: usize) -> String {
         let frac_digits = (prec as i32 - 1 - exp).max(0) as usize;
         trim_fraction(&format!("{x:.frac_digits$}"))
     }
+}
+
+/// Format a numeric [`Value`] the way **PRINT** / console output does: an Integer via
+/// C `%d`, a Double via [`format_fixed8`]. Distinct from STR$'s `%g` ([`format_number`]).
+/// A non-numeric value raises Type mismatch (errnum 8).
+pub fn format_print_number(v: &Value) -> Result<String, RuntimeError> {
+    match v {
+        Value::Int(i) => Ok(i.to_string()),
+        Value::Real(d) => Ok(format_fixed8(*d)),
+        _ => Err(type_mismatch()),
+    }
+}
+
+/// SmileBASIC's PRINT double format: C `sprintf("%.8f", x)` then trailing zeros and a
+/// bare trailing `.` removed — fixed notation with up to 8 fractional digits, NEVER
+/// exponential (disassembled PRINT handler @0x180a50: fmt "%.8f" @0x180b0c via sprintf
+/// @0x1e5784, followed by the back-scanning trim loop @0x180a8c). So PRINT 12345678.0
+/// shows "12345678", PRINT 0.00001 shows "0.00001", PRINT 0.000000001 shows "0" (rounds
+/// below 1e-8), and signed zero is kept (PRINT -0.0 shows "-0"). hw_verified via the
+/// sb-oracle console read-back (2026-06-23).
+pub fn format_fixed8(x: f64) -> String {
+    if x.is_nan() {
+        return "nan".to_string();
+    }
+    if x.is_infinite() {
+        return if x < 0.0 { "-inf" } else { "inf" }.to_string();
+    }
+    // `{:.8}` rounds round-half-to-even, matching C `%.8f`; Rust keeps the sign of -0.0.
+    trim_fraction(&format!("{x:.8}"))
 }
 
 /// Strip trailing zeros after a decimal point, then a bare trailing `.`.
@@ -488,6 +528,9 @@ pub(crate) fn as_str(v: &Value) -> Result<&SbStr, RuntimeError> {
 
 #[cfg(test)]
 mod tests {
+    // The float-format tables use literals near π/e (e.g. 3.14159265, 2.718281828) as
+    // deliberate STR$/PRINT inputs, not as constants — silence the approx-constant lint.
+    #![allow(clippy::approx_constant)]
     use super::*;
 
     #[test]
@@ -501,8 +544,74 @@ mod tests {
         assert_eq!(format_g(0.00001, 6), "1e-05");
         assert_eq!(format_g(12345678.0, 6), "1.23457e+07");
         assert_eq!(format_g(0.0, 6), "0");
-        assert_eq!(format_g(-0.0, 6), "0");
+        assert_eq!(format_g(-0.0, 6), "-0"); // signed zero kept (hw_verified)
         assert_eq!(format_g(std::f64::consts::TAU, 6), "6.28319");
+    }
+
+    #[test]
+    fn format_g_str_dollar_table() {
+        // STR$ doubles = C `%g` at 6 sig figs (handler @0x1eb2a8). Values cross-checked
+        // against a 2000-case bit-exact Python `%.6g` sweep + the oracle (2026-06-23).
+        let cases: &[(f64, &str)] = &[
+            (100000.0, "100000"),
+            (1000000.0, "1e+06"), // exponent threshold exp>=6
+            (999999.0, "999999"),
+            (999999.5, "1e+06"), // round-up carries the exponent
+            (0.0001, "0.0001"),
+            (0.00001, "1e-05"), // exponent threshold exp<-4
+            (1234567.0, "1.23457e+06"),
+            (0.000123456, "0.000123456"),
+            (12345678.0, "1.23457e+07"),
+            (16777216.0, "1.67772e+07"),
+            (1e20, "1e+20"),
+            (1e-20, "1e-20"),
+            (1e100, "1e+100"), // 3-digit exponent
+            (1e-300, "1e-300"),
+            (-1e-300, "-1e-300"),
+            (9.999995, "10"), // round-half-to-even carry
+            (99.99996, "100"),
+            (1234.5678, "1234.57"),
+            (-0.0000012345, "-1.2345e-06"),
+            (0.9999999, "1"),
+            (2.718281828, "2.71828"),
+            (0.123456785, "0.123457"),
+            (0.000000001, "1e-09"),
+            (0.0, "0"),
+            (-0.0, "-0"),
+        ];
+        for (v, want) in cases {
+            assert_eq!(format_g(*v, 6), *want, "STR$ format of {v}");
+        }
+    }
+
+    #[test]
+    fn format_print_fixed8_table() {
+        // PRINT doubles = C `%.8f` + trailing-zero/dot trim (handler @0x180a50). All
+        // values hw_verified via the sb-oracle console read-back (2026-06-23).
+        let cases: &[(f64, &str)] = &[
+            (12345678.0, "12345678"),   // never exponential (STR$ -> "1.23457e+07")
+            (3.14159265, "3.14159265"), // 8 fractional digits
+            (0.00001, "0.00001"),       // never exponential (STR$ -> "1e-05")
+            (1.0 / 3.0, "0.33333333"),
+            (-3.14159265, "-3.14159265"),
+            (0.5, "0.5"),
+            (180.0, "180"),
+            (0.000000001, "0"),         // 1e-9 rounds below 1e-8 -> 0
+            (0.00000001, "0.00000001"), // 1e-8 = exactly the 8th decimal
+            (100000000000.0, "100000000000"),
+            (0.123456785, "0.12345678"), // round-half-to-even keeps the even 8
+            (2.718281828, "2.71828183"),
+            (-0.0, "-0"), // signed zero preserved
+            (2.0_f64.sqrt(), "1.41421356"),
+        ];
+        for (v, want) in cases {
+            assert_eq!(format_fixed8(*v), *want, "PRINT format of {v}");
+        }
+        assert_eq!(format_print_number(&Value::Int(-5)).unwrap(), "-5");
+        assert_eq!(
+            format_print_number(&sb_string("x")).unwrap_err().errnum,
+            ERR_TYPE_MISMATCH
+        );
     }
 
     #[test]

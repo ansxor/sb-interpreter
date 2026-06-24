@@ -17,6 +17,8 @@ summary: "Converts a number to its decimal string representation, optionally rig
 semantics:
   - "Integer values are formatted with C printf %d (e.g. STR$(123)=\"123\", STR$(-5)=\"-5\")."
   - "Double values are formatted with C printf %g: 6 significant figures, trailing zeros removed, switching to exponential notation (lowercase 'e', 2+ digit signed exponent) for very large or very small magnitudes — STR$(0.00001)=\"1e-05\", STR$(12345678.0)=\"1.23457e+07\"."
+  - "Exact %g rules (verified against a 2000-case bit-exact sweep + oracle): exponential notation is used iff the decimal exponent is < -4 or >= 6, else fixed; rounding is round-half-to-even (STR$(0.123456785)=\"0.123457\"); a round-up that carries bumps the exponent (STR$(999999.5)=\"1e+06\"); the exponent has a sign and >=2 digits (STR$(1e100)=\"1e+100\")."
+  - "Signed zero is preserved: STR$(-0.0)=\"-0\" while STR$(0.0)=\"0\"."
   - "The optional digits argument is a minimum field width (%*d / %*g) — the result is right-justified and space-padded if shorter; if the number is already wider, digits is ignored."
   - "digits must be in 1-63; outside that range raises Out of range."
 
@@ -29,6 +31,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/str.md (STR$(value [,digits]); digits right-justifies)" }
   - { type: disassembled, ref: "cia_3.6.0.lst STR$ handler @0x148d1c -> formatter @0x1eb2a8; argcount!=1,2 -> errnum 4; non-number -> errnum 8 (@0x1eb300); digit count-1 must be <=0x3e else errnum 10 (@0x1eb420); printf formats: int %d / %*d (@0x1eb49c/0x1eb4a0), double %g / %*g (@0x1eb4a4/0x1eb4a8) via @0x1ec1f0" }
   - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: STR$(123)=123, STR$(-5)=-5, STR$(123,6)=\"   123\" (width pad), STR$(3.14159265)=3.14159, STR$(0.5)=0.5, STR$(0.00001)=1e-05, STR$(12345678.0)=1.23457e+07 (%g); STR$(\"x\") -> errnum 8" }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-23 (%g edges): STR$(-0.0)=-0, STR$(2.718281828)=2.71828, STR$(0.123456785)=0.123457 (round-half-even), STR$(0.00000001)=1e-08, STR$(0.000000001)=1e-09" }
 
 confidence: hw_verified
 
@@ -40,4 +43,8 @@ tests:
   - { name: double_half,    code: "PRINT STR$(0.5)",      expect: { stdout: "0.5" } }
   - { name: double_tiny_exp, code: "PRINT STR$(0.00001)", expect: { stdout: "1e-05" } }
   - { name: double_big_exp,  code: "PRINT STR$(12345678.0)", expect: { stdout: "1.23457e+07" } }
+  - { name: signed_zero,     code: "PRINT STR$(-0.0)",    expect: { stdout: "-0" } }
+  - { name: tie_round_even,  code: "PRINT STR$(0.123456785)", expect: { stdout: "0.123457" } }
+  - { name: exp_carry,       code: "PRINT STR$(999999.5)", expect: { stdout: "1e+06" } }
+  - { name: tiny_exp9,       code: "PRINT STR$(0.000000001)", expect: { stdout: "1e-09" } }
   - { name: string_type_mismatch, code: 'A$=STR$("x")',   expect: { error: { errnum: 8 } } }

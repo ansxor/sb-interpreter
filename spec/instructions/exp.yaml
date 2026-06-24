@@ -25,13 +25,14 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/exp.md" }
   - { type: disassembled, ref: "cia_3.6.0.lst EXP handler @0x147e38; 0 args -> e const @0x147ee8 (0x4005BF0A8B145769); 1 arg -> to-double (+0x44) then exp @0x1ebc90; non-number -> errnum 8" }
   - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: EXP(0)=1, EXP()=2.71828, EXP(1)=2.71828, EXP(2)=7.38906 (SB prints doubles to 6 significant figures)" }
+  - { type: hw_verified, ref: "sb-oracle PRINT read-back 2026-06-23: PRINT renders doubles via %.8f (M7-T4) — PRINT EXP()=2.71828183, EXP(1)=2.71828183, EXP(2)=7.3890561; distinct from STR$ %g shown above" }
 
 confidence: hw_verified
 
 tests:
   # numeric expects below are hw_verified (sb-oracle 2026-06-22); error case is disassembled.
   - { name: zero,        code: "PRINT EXP(0)", expect: { stdout: "1" } }
-  - { name: no_arg_is_e, code: "PRINT EXP()",  expect: { stdout: "2.71828" } }
-  - { name: e_to_one,    code: "PRINT EXP(1)", expect: { stdout: "2.71828" } }
-  - { name: e_to_two,    code: "PRINT EXP(2)", expect: { stdout: "7.38906" } }
+  - { name: no_arg_is_e, code: "PRINT EXP()",  expect: { stdout: "2.71828183" } }
+  - { name: e_to_one,    code: "PRINT EXP(1)", expect: { stdout: "2.71828183" } }
+  - { name: e_to_two,    code: "PRINT EXP(2)", expect: { stdout: "7.3890561" } }
   - { name: string_type_mismatch, code: 'A=EXP("x")', expect: { error: { errnum: 8 } } }
