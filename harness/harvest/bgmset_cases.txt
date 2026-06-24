@@ -1,0 +1,13 @@
+basic|BGMSET 128,"CDEFG"|err
+tune_min|BGMSET 128,"C"|err
+tune_max|BGMSET 255,"C"|err
+var_mml|M$="CDE":BGMSET 200,M$|err
+tune_too_low|BGMSET 127,"C"|err
+tune_too_high|BGMSET 256,"C"|err
+tune_negative|BGMSET -1,"C"|err
+numeric_mml|BGMSET 128,5|err
+one_arg|BGMSET 128|err
+three_args|BGMSET 128,"C",1|err
+used_as_function|A=BGMSET(128,"C")|err
+bad_mml_x|BGMSET 128,"X"|err
+bad_mml_z|BGMSET 128,"Z9"|err

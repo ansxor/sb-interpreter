@@ -678,9 +678,12 @@ oracle to confirm exact output and promote to `hw_verified`.
   (confidence: disassembled); audio output has no deterministic golden (O-T7). The errnum
   cases below ARE deterministic and oracle-confirmable via `batch ... |err` (ERRNUM/ERRLINE)
   even though the audio is not — confirm and raise to hw_verified when the oracle is up:
-  - BGMSET/BGMSETD: tune number out of 128..255 -> errnum 10; non-string 2nd arg -> errnum 8;
+  - BGMSET: DONE (hw_verified M7-T2 run 63, harness/harvest/out/bgmset.tsv) — tune out of
+    128..255 -> 10; non-string 2nd arg -> 8; wrong argcount (1 or 3) + return-context -> 4;
+    malformed MML ("X"/"Z9") -> 47. Top-level confidence flipped (registration is fully headless).
+  - BGMSETD: tune number out of 128..255 -> errnum 10; non-string 2nd arg -> errnum 8;
     wrong arg count (1 or 3) -> errnum 4; malformed MML -> errnum 47 (Illegal MML).
-  - BGMCLEAR: tune out of 128..255 -> errnum 10; >=2 args -> errnum 4 (0-arg clears all, no error).
+  - BGMCLEAR: DONE (hw_verified M7-T2 run 62) — tune out of 128..255 -> 10; >=2 args -> 4 (0-arg clears all, no error).
   - BEEP: sound number in the 134..223 gap or >383 -> errnum 10; freq outside -32768..32767,
     volume outside 0..127, pan outside 0..127 -> errnum 10; >4 args -> errnum 4. ALSO verify the
     disasm+corpus extended sound banks 224..255 and 256..383 play (no error) on real SB — docs
