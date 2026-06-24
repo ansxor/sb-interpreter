@@ -13,7 +13,8 @@ semantics:
   - "Written as a prefix to DEF: COMMON DEF USER, COMMON DEF USER(X), or COMMON DEF USER(X) OUT A,B."
   - "Without COMMON a DEF is private to its own slot; with COMMON it can be invoked from another slot (USE of that slot is required first)."
   - "Only affects visibility/scope; the function body and call semantics are those of [[def]]."
-  - "Cross-slot invocation is by name via [[call]] (`CALL \"name\"`): the running slot must `USE` the target slot, which must hold a loaded program; an un-USE'd slot or a non-COMMON DEF does not resolve → Undefined function (16). The call binds value args / returns OUT results / returns a value exactly like a same-slot DEF (implemented M6-T6). Whether a free (non-param/local) variable inside a COMMON DEF binds to the defining slot's globals or the caller's is oracle-pending (HARVEST_QUEUE)."
+  - "Cross-slot invocation is by name via [[call]] (`CALL \"name\"`): the running slot must `USE` the target slot, which must hold a loaded program; an un-USE'd slot or a non-COMMON DEF does not resolve → Undefined function (16). The call binds value args / returns OUT results / returns a value exactly like a same-slot DEF (implemented M6-T6)."
+  - "Variable scope inside a COMMON DEF binds to the DEFINING slot (the slot that holds the COMMON DEF), not the caller's. Two rules compose: a bare name inside a DEF resolves to a GLOBAL only when that global already exists in the defining slot's table (otherwise it is a fresh DEF-local); and a COMMON-function call switches the current slot to the function's own slot, so a global read/write resolves against the defining slot's globals. A COMMON DEF therefore reads/writes its own slot's globals even when the caller has a same-named global, which is left untouched. (Structural — osb; the exact 3.6.0 behavior is oracle-pending on a ≥2-slot harness, HARVEST_QUEUE.)"
 
 errors: []
 
@@ -21,6 +22,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/common.md (COMMON DEF forms; allows a unique instruction to be used from a different SLOT; USE required)" }
   - { type: disassembled, ref: "cia_3.6.0.lst COMMON is a parser keyword (token @0x2ed6b0), not in the builtin dispatch table; a modifier on DEF that registers the definition in the cross-slot scope" }
   - { type: hw_verified, ref: "sb-oracle probe 2026-06-22: COMMON DEF F ... END defines a working instruction callable in the same slot (its body runs when invoked). Cross-slot visibility (the point of COMMON) needs a multi-slot harness -> queued." }
+  - { type: community, ref: "osb structural: compiler.d:318-345 genCodePushVar — inside a function a name resolves to a global only if hasGlobalVarIndex(name) (else a new local); VM.d:585-589 — a function call does `if (func.isCommon) vm.setCurrentSlot(func.slot.index)`, so a global inside a COMMON DEF resolves against the defining slot's `currentSlot.global[...]`. Locked by vm.rs tests cross_slot_common_def_global_binds_to_defining_slot / _global_write_isolated_from_caller. Structural only — exact 3.6.0 behavior oracle-pending." }
 
 confidence: hw_verified
 

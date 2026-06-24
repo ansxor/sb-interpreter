@@ -660,9 +660,26 @@ oracle to confirm exact output and promote to `hw_verified`.
     DEF; an un-USE'd slot or a non-COMMON DEF → Undefined function (16). The VM swaps the
     target slot's program/globals into the active context for the call and restores the
     caller's on return (`Vm::load_slot_program` seeds slots 1-3; 6 new vm.rs e2e tests).
-    STILL UNHARVESTED for COMMON specifically: whether a free (non-param/local) variable
-    referenced inside a COMMON DEF binds to the DEFINING slot's globals (what we implement)
-    or the CALLER's — needs a 2-slot oracle that shares a same-named global.)
+    STILL UNHARVESTED for COMMON specifically: whether a global referenced inside a COMMON DEF
+    binds to the DEFINING slot's globals (what we implement) or the CALLER's — needs a 2-slot
+    oracle that shares a same-named global.
+    (UPDATE 2026-06-23, M6-T6: the COMMON-DEF variable scoping is now GROUNDED IN osb STRUCTURE
+    and LOCKED BY TESTS, though still oracle-pending for hw_verified. osb compiler.d:318-345 — a
+    bare name inside a DEF resolves to a GLOBAL only when that global already exists in the slot's
+    table (else a fresh DEF-local); osb VM.d:585-589 — a COMMON-function call does
+    `if (func.isCommon) setCurrentSlot(func.slot.index)`, so a global read/write inside a COMMON
+    DEF resolves against the DEFINING slot's globals. sb-core matches (activate_slot swaps to the
+    defining slot's globals); two vm.rs e2e tests lock it: `cross_slot_common_def_global_binds_to_defining_slot`
+    (a COMMON DEF reads its own slot's zero-init global, not the caller's 7) and
+    `_global_write_isolated_from_caller` (a COMMON DEF's write to G hits its own slot's global,
+    caller's same-named G stays 7). Still needs a ≥2-slot oracle to confirm 3.6.0 actually does
+    defining-slot binding (community/structural confidence; common.yaml source added).
+    SEPARATE BUG FOUND (not M6-T6, orthogonal — likely M1-T6/DEF return path): `RETURN <bare
+    global>` from a DEF used as a value function (`V=GETG()` where `DEF GETG`/`RETURN G`) raises
+    Stack underflow (errnum 6) even SINGLE-slot, instead of returning the global's value. osb
+    zero-inits locals on entry (VM.d:578-584) and reads globals fine; sb-core's value-return of a
+    bare global underflows. Worth a follow-up: confirm SB returns the value (expect the global's
+    contents) and fix the RETURN-of-global compile/run path.)
     (UPDATE 2026-06-23, M6-T6: EXEC FORM 2 numeric loaded-slot CONTROL TRANSFER is now
     IMPLEMENTED to the documented model (`Vm::exec_transfer`) — `EXEC n` on a non-running slot
     holding a loaded program switches the active program/globals to that slot, runs it from the

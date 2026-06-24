@@ -4361,6 +4361,39 @@ CALL "ADDOUT",2,3 OUT X"#);
         assert_eq!(vm.console_text(), "42");
     }
 
+    #[test]
+    fn cross_slot_common_def_global_binds_to_defining_slot() {
+        // A global referenced inside a COMMON DEF binds to the DEFINING slot's globals, not
+        // the caller's — even when both slots declare a same-named global. Two osb rules
+        // compose: (1) compiler.d:318-345 — a name inside a DEF resolves to a GLOBAL only
+        // when that global already exists in the slot's table (here slot 1's top-level `G=0`
+        // registers G as a slot-1 global; without it G would be a fresh DEF-local), and
+        // (2) VM.d:585-589 — a COMMON-function call does `setCurrentSlot(func.slot.index)`,
+        // so that global read resolves against the defining slot (`currentSlot.global[...]`).
+        // Slot 0 sets G=7; slot 1's top-level `G=0` does NOT run on a CALL (USE only), so
+        // slot 1's G is the load-time zero-init 0. Defining-slot scoping → SHOWG prints slot
+        // 1's G (0), not the caller's 7.
+        let vm = run_with_slot1(
+            "G=7\nUSE 1\nCALL \"SHOWG\"",
+            "G=0\nCOMMON DEF SHOWG\nPRINT G\nEND",
+        );
+        assert_eq!(vm.console_text(), "0");
+    }
+
+    #[test]
+    fn cross_slot_common_def_global_write_isolated_from_caller() {
+        // The write direction of the same rule: a global assigned inside a COMMON DEF lands
+        // in the DEFINING slot's globals, leaving the caller's same-named global untouched.
+        // Slot 1 declares G as a global (top-level `G=0`); `SETG` writes G=99 into slot 1's
+        // globals, `SHOWG` reads it back (sees slot 1's G=99 → "99|"), then slot 0's
+        // `PRINT G` shows its own G still 7.
+        let vm = run_with_slot1(
+            "G=7\nUSE 1\nCALL \"SETG\"\nCALL \"SHOWG\"\nPRINT G",
+            "G=0\nCOMMON DEF SETG\nG=99\nEND\nCOMMON DEF SHOWG\nPRINT G;\"|\";\nEND",
+        );
+        assert_eq!(vm.console_text(), "99|7");
+    }
+
     // ---- EXEC numeric control transfer (M6-T6) ----
 
     #[test]
