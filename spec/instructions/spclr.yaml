@@ -26,15 +26,26 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/spclr.md (SPCLR Management number 0-511 — Stops using the specified sprite and releases the memory; 'If memory is not released after use with sprites, there will be no available memory for SPSET'; e.g. SPCLR 56)" }
   - { type: disassembled, ref: "cia_3.6.0.lst SPCLR handler @0x13f7a8: arg-count r1=[r0,#0x4] cmp #1 / ldrle return-count r2=[r0,#0xc] cmple #0 beq body @0x13f7dc else mov r2,#0/mvn r1/mov r0,#0x4 b 0x1fffdc (errnum 4) @0x13f7c4; cmp argcount==1 beq 1-arg path @0x13f874 (mgmt via bl 0x1eece0, out-of-range -> errnum 10 @0x1eed3c); 0-arg path loops r4 from [base+0x44] to +[base+0x48] @0x13f804-0x13f85c clearing used-bitmap bit (bic r1,r2,r10 lsr) and zeroing slot byte strb r7,[r8,r4]; sprite-base ptrs @0x13f900-0x13f910 (state ptr 0x315d60-derived)." }
   - { type: community, ref: "osb/SMILEBASIC/sprite.d SpriteData free/clear-all handling (3.5.0 structural cross-check only)" }
-  - { type: community, ref: "sbsave corpus: SPCLR appears thousands of times; the no-argument 'clear all sprites' form (a bare 'SPCLR' line) is widely used at program start/reset — confirmed ~1197x (e.g. a bare 'SPCLR' line in 1BWX7ENV/TXT/AND-OS), confirming the 0-arg form is legal. (oracle-pending: bulk-clear runtime effect, queued)" }
+  - { type: community, ref: "sbsave corpus: SPCLR appears thousands of times; the no-argument 'clear all sprites' form (a bare 'SPCLR' line) is widely used at program start/reset — confirmed ~1197x (e.g. a bare 'SPCLR' line in 1BWX7ENV/TXT/AND-OS), confirming the 0-arg form is legal. (bulk-clear runtime effect now hw_verified via SPUSED — see the 2026-06-24 source below.)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t8a): SPCLR 512 -> errnum 10, errline 1 (mgmt out of range, 1-arg form)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2): the clear EFFECT harvested indirectly via the routed in-use scalar SPUSED (s_t8e). `SPSET 0,0:?SPUSED(0)`->1 (baseline used); 1-ARG `SPSET 0,0:SPCLR 0:?SPUSED(0)`->0 (freed) while a co-existing `SPSET 1,0` stays `?SPUSED(1)`->1 (clears only the named slot); 0-ARG `SPSET 0,0:SPSET 1,0:SPCLR` frees BOTH (`?SPUSED(0)`->0 and `?SPUSED(1)`->0, confirming the bulk clear-all form); `SPCLR 5:?SPUSED(5)`->0 (releasing an unused slot is harmless); `SPSET 0,0:SPCLR 0:SPSET 0,0:?SPUSED(0)`->1 (a freed slot is reusable by SPSET). Arg-shape guards re-confirmed: `SPCLR 512`/`SPCLR -1`->errnum 10 errline 1; >1 arg `SPCLR 0,1`->errnum 4 errline 1; function form `X=SPCLR(0)`->errnum 4 errline 1 (the return-count!=0 reject reaches the handler, not a parse artifact). Harvest TSV harness/harvest/out/spclr_rt.tsv." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # clear side-effect needs the sprite-framebuffer oracle (O-T6, queued); error expects are hw_verified (sb-oracle 2026-06-22 s_t8a).
-  - { name: clear_one_ok, code: "SPSET 0,0\nSPCLR 0", expect: { stdout: "" } }
-  - { name: clear_all_ok, code: "SPSET 0,0\nSPSET 1,0\nSPCLR", expect: { stdout: "" } }
-  - { name: clear_unused_ok, code: "SPCLR 5", expect: { stdout: "" } }
+  # The clear EFFECT is proven via SPUSED read-back (a routed, hw_verified in-use scalar),
+  # so no sprite-framebuffer golden is needed. All values + error guards hw_verified
+  # (sb-oracle batch 2026-06-24, M7-T2). `stdout` is the console_text() scrape (a single
+  # PRINT reads back "1"/"0", trailing newline trimmed — the in-scope convention).
+  - { name: baseline_used, code: "SPSET 0,0\nPRINT SPUSED(0)", expect: { stdout: "1" } }
+  - { name: clear_one_frees, code: "SPSET 0,0\nSPCLR 0\nPRINT SPUSED(0)", expect: { stdout: "0" } }
+  - { name: clear_one_leaves_other, code: "SPSET 0,0\nSPSET 1,0\nSPCLR 0\nPRINT SPUSED(1)", expect: { stdout: "1" } }
+  - { name: clear_one_clears_self, code: "SPSET 0,0\nSPSET 1,0\nSPCLR 0\nPRINT SPUSED(0)", expect: { stdout: "0" } }
+  - { name: clear_all_frees0, code: "SPSET 0,0\nSPSET 1,0\nSPCLR\nPRINT SPUSED(0)", expect: { stdout: "0" } }
+  - { name: clear_all_frees1, code: "SPSET 0,0\nSPSET 1,0\nSPCLR\nPRINT SPUSED(1)", expect: { stdout: "0" } }
+  - { name: clear_unused_harmless, code: "SPCLR 5\nPRINT SPUSED(5)", expect: { stdout: "0" } }
+  - { name: reuse_after_clear, code: "SPSET 0,0\nSPCLR 0\nSPSET 0,0\nPRINT SPUSED(0)", expect: { stdout: "1" } }
   - { name: mgmt_out_of_range, code: "SPCLR 512", expect: { error: { errnum: 10 } } }
   - { name: mgmt_negative, code: "SPCLR -1", expect: { error: { errnum: 10 } } }
+  - { name: too_many_args, code: "SPCLR 0,1", expect: { error: { errnum: 4 } } }
+  - { name: function_form_rejected, code: "X=SPCLR(0)", expect: { error: { errnum: 4 } } }

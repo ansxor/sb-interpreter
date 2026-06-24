@@ -468,9 +468,11 @@ oracle to confirm exact output and promote to `hw_verified`.
   is oracle-confirmed to raise errnum 4 (2026-06-22 s_t8a) — dead/buggy code behind the rare MPCOUNT!=2 branch.
   The disassembly's argcount-2..6 guard is correct; spec kept at errnum 4.
 - [ ] S-T8a sprite VISUAL/state side-effects (need framebuffer oracle O-T6): SPSET creation (template vs direct
-  image, attribute bits applied), SPSHOW/SPHIDE display-flag toggle, SPCLR slot-free + bulk clear-all (0-arg),
+  image, attribute bits applied), SPSHOW/SPHIDE display-flag toggle,
   SPPAGE render-page redirect, SPSET OUT -1 pool-exhaustion result, SPSET reinit (SPVAR -> 0). All disassembled
   + documented; runtime visual confirmation queued.
+  (SPCLR slot-free + bulk clear-all (0-arg) RESOLVED 2026-06-24 M7-T2 — hw_verified via SPUSED read-back,
+  no framebuffer needed; SPCLR now confidence: hw_verified.)
 - [ ] M3-T1 SPSET direct-image source-rect overflow errnum · docs say `U+W` / `V+H` > 512 (rect runs off the
   512-px sheet) raises an error; the exact errnum is unconfirmed. sb-core currently raises errnum 10 (the spec's
   documented assumption). ORACLE: `SPSET 0,500,0,32,32,1|err` (U+W=532) and `SPSET 0,0,500,32,32,1|err` (V+H=532)
