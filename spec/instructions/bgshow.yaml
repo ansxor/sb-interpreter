@@ -26,13 +26,20 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG layer visibility flag (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus: always the documented 1-arg form — 'BGSHOW 0' (~200x), 'BGSHOW 1', and variable 'BGSHOW BGLAND%' (~42x, e.g. B3E4324E/TXT/FNEKO121.PRG); no bare/0-arg and no multi-arg form observed. (oracle-pending: visibility side effect, queued)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9a): BGSHOW 4 -> errnum 10 (out of range); BGSHOW -1 -> errnum 10; bare 'BGSHOW' (no arg) -> errnum 4. All errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2; harness/harvest/out/bgshow.tsv): BGSHOW's WHOLE headless-observable surface — call shape + layer range — confirmed against real SB 3.6.0 (7/7, 0 mismatch). ACCEPTED (NOERR): BGSHOW 0 and BGSHOW 3 (both layer endpoints of 0..3; no BGSCREEN/init required — a bare BGSHOW on a layer does not raise). REJECTED errnum 10 errline 1 (Out of range): BGSHOW 4 (layer > 3), BGSHOW -1 (layer < 0) — pins the FUN_001e2504 layer-count bound. REJECTED errnum 4 errline 1 (Illegal function call): BGSHOW (0 args), BGSHOW 0,1 (2 args), A=BGSHOW(0) (return-value context) — confirms the argcount==1 & return-count==0 shape gate. The visibility side effect itself stays O-T6 (no deterministic framebuffer golden), but — per the BGMSTOP/BGMVOL precedent for a pure state-setter with no readable value — the call-shape + layer-range contract IS the whole headless-observable surface, so it is hw_verified." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Visibility side effects need the BG framebuffer oracle (O-T6, queued); error expects are
-  # hw_verified (sb-oracle 2026-06-22 s_t9a).
+  # The visibility side effect needs the BG framebuffer oracle (O-T6, queued); the call-shape +
+  # layer-range contract below is hw_verified (sb-oracle 2026-06-22 s_t9a + 2026-06-24 batch,
+  # harness/harvest/out/bgshow.tsv) and IS the whole headless-observable surface of this setter.
   - { name: show_ok, code: "BGSCREEN 0,32,32\nBGSHOW 0", expect: { stdout: "" } }
+  # A bare BGSHOW (no BGSCREEN/init) on either layer endpoint is accepted (NOERR).
+  - { name: show_layer0_bare, code: "BGSHOW 0", expect: { stdout: "" } }
+  - { name: show_layer3, code: "BGSHOW 3", expect: { stdout: "" } }
   - { name: layer_out_of_range, code: "BGSHOW 4", expect: { error: { errnum: 10 } } }
   - { name: layer_negative, code: "BGSHOW -1", expect: { error: { errnum: 10 } } }
   - { name: missing_arg, code: "BGSHOW", expect: { error: { errnum: 4 } } }
+  - { name: two_args_error, code: "BGSHOW 0,1", expect: { error: { errnum: 4 } } }
+  - { name: return_context_error, code: "A=BGSHOW(0)", expect: { error: { errnum: 4 } } }
