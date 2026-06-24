@@ -38,3 +38,6 @@ RALPH_PROMPT.md
 
 # Ralph interactive-loop sentinels (DONE/STOP signals)
 .ralph/
+
+# Oracle harvest capture scratch (resumable OUTFILEs/casefiles; regenerable)
+harness/harvest/out/

@@ -178,11 +178,10 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   keep signed zero (STR$(-0.0)/PRINT -0.0 → "-0"). See str.yaml/print.yaml.
 - [ ] M1-T1 (lexer) · Is `1E5` lexed as `1` + ident `E5` (no exponent literal)? · assumption:
   yes (osb behavior) — confirm against 3.6.0.
-- [ ] S-T1b (CLASSIFY) · Confirm CLASSIFY returns 1 for infinity and 2 for NaN, and find how
-  to *produce* inf/NaN in SB 3.6.0 (no INF/NAN constant; exponent literals doubtful). Try
-  arithmetic overflow (e.g. repeated X#=X#*10 from a big value) for inf and SQR(-1)/0.0/0.0
-  for NaN — but those may raise errors first. · assumption: inf->1, NaN->2 (disasm: helper
-  @0x20c3e0 code 3->1, 7->2). Ordinary (0) + string-error already harvested.
+- [x] S-T1b (CLASSIFY) · RESOLVED 2026-06-23 (M7-T2): inf->1, NaN->2 hw_verified via overflow.
+  `EXP(1000)` overflows the double to +inf and `EXP(1000)-EXP(1000)` is NaN, so
+  CLASSIFY(EXP(1000))=1, CLASSIFY(-EXP(1000))=1, CLASSIFY(EXP(1000)-EXP(1000))=2 on real SB
+  3.6.0 — confirming the @0x20c3e0 helper mapping. classify.yaml now hw_verified.
 - [ ] S-T1a (FLOOR/ROUND/CEIL) · Do these return a Double for a Double argument (not an
   Integer)? Discriminate with a whole magnitude > i32 max, e.g. `PRINT FLOOR(3000000000.0)` —
   Double return prints the full number, Integer return would overflow (errnum 9) or wrap. ·

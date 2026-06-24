@@ -1,7 +1,7 @@
 id: CLASSIFY
 kind: function
 category: Mathematics
-version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+version: { introduced: "3.0.0", verified_on: "2026-06-23" }
 
 signatures:
   - args:
@@ -21,18 +21,21 @@ errors:
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/classify.md" }
   - { type: disassembled, ref: "cia_3.6.0.lst CLASSIFY handler @0x146680; Integer arg -> 0; Double arg -> helper @0x20c3e0 (returns 3=inf, 7=NaN); result pushed via Integer return path; non-number arg -> errnum 8" }
-  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: ordinary cases only — CLASSIFY(0.5)=0, CLASSIFY(5)=0, CLASSIFY(-2.5)=0, CLASSIFY(0)=0. The inf->1 / NaN->2 paths (the function's headline behavior) are NOT yet harvested — see HARVEST_QUEUE.md.", confidence: disassembled }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: ordinary cases — CLASSIFY(0.5)=0, CLASSIFY(5)=0, CLASSIFY(-2.5)=0, CLASSIFY(0)=0." }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-23 (M7-T2): the headline inf->1 / NaN->2 paths, produced via overflow — CLASSIFY(EXP(1000))=1, CLASSIFY(-EXP(1000))=1, CLASSIFY(EXP(1000)-EXP(1000))=2. Confirms the @0x20c3e0 helper mapping (code 3 -> 1 infinity, code 7 -> 2 NaN)." }
 
-# Stays `disassembled`: the inf->1 / NaN->2 classification is the point of the function and
-# is not yet oracle-confirmed (no way found to produce inf/NaN in SB this run). Only the
-# ordinary->0 path is hw_verified.
-confidence: disassembled
+# hw_verified: ordinary->0, the inf->1 / NaN->2 headline (via EXP overflow), and the
+# string->errnum-8 guard are all oracle-confirmed on real SB 3.6.0.
+confidence: hw_verified
 
 tests:
-  # ordinary + error cases below are harvestable; the inf->1 / NaN->2 paths are disassembled
-  # only (no INF/NAN literal exists, exponent literals are doubtful) and queued for harvest.
   - { name: doc_ordinary,        code: "PRINT CLASSIFY(0.5)", expect: { stdout: "0" } }
   - { name: integer_ordinary,    code: "PRINT CLASSIFY(5)",   expect: { stdout: "0" } }
   - { name: negative_ordinary,   code: "PRINT CLASSIFY(-2.5)", expect: { stdout: "0" } }
   - { name: zero_ordinary,       code: "PRINT CLASSIFY(0)",   expect: { stdout: "0" } }
+  # inf/NaN headline — hw_verified 2026-06-23 (EXP(1000) overflows the double to +inf;
+  # inf-inf is NaN). These are the point of the function.
+  - { name: infinity,            code: "PRINT CLASSIFY(EXP(1000))",  expect: { stdout: "1" } }
+  - { name: negative_infinity,   code: "PRINT CLASSIFY(-EXP(1000))", expect: { stdout: "1" } }
+  - { name: nan,                 code: "PRINT CLASSIFY(EXP(1000)-EXP(1000))", expect: { stdout: "2" } }
   - { name: string_type_mismatch, code: 'A=CLASSIFY("x")',    expect: { error: { errnum: 8 } } }
