@@ -549,7 +549,10 @@ oracle to confirm exact output and promote to `hw_verified`.
   errnum 10, BGSHOW/BGHIDE no-arg -> errnum 4). Need the BG framebuffer oracle (O-T6) for:
   - BGSCREEN 4th-arg tile-size effect (8/16/32 px tiles) on rendered output and on BGGET/coord math.
   - BGPAGE GET default value (expected 5/GRP5) and that SET changes which GRP layers fetch tiles from.
-  - BGCLR clear effect (map filled with empty tiles) — one layer vs all-layers form.
+  - ~~BGCLR clear effect (map filled with empty tiles) — one layer vs all-layers form.~~ RESOLVED
+    M7-T2 2026-06-24 (bgclr_rt.tsv): read back through BGGET (no framebuffer) — `BGCLR 0` zeros the
+    whole named-layer map, no-arg `BGCLR` zeros all layers, named-layer isolation confirmed
+    (clear L0 leaves L1's cells intact). bgclr.yaml now hw_verified.
   - BGSHOW/BGHIDE visibility toggle on rendered output (and idempotence).
 
 - [ ] S-T9b BG tiles — render/side-effect harvests (error cases already hw_verified, s_t9b batch

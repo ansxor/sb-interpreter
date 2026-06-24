@@ -27,13 +27,25 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/bg.d BG map clear handling (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus: both forms heavily used — the bare no-argument 'BGCLR' (clear all, ~859x, e.g. 'CLS:GCLS 0:BGCLR' in 1DVK34J/TXT/HNZMJG) and the 1-arg 'BGCLR 0'/'BGCLR I' (~274x literals + ~36x variable). No multi-arg form. (oracle-pending: clear side effect, queued)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9a): BGCLR 4 -> errnum 10 (out of range); BGCLR -1 -> errnum 10. Both errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2, bgclr_rt.tsv): clear side-effect + named-layer isolation read back through BGGET (no framebuffer). Baseline BGPUT 0,5,5,100:?BGGET(0,5,5)=100. One-arg `BGCLR 0` zeros the WHOLE map (two seeded cells 3,3 & 7,7 both -> 0). No-arg `BGCLR` clears layer 0 (->0). Named-layer isolation (layers 0+1 both seeded 100/200): `BGCLR 0` -> BGGET(0,5,5)=0 but BGGET(1,5,5)=200 (layer 1 untouched); no-arg `BGCLR` -> both 0. Idempotent `BGCLR 0:BGCLR 0` -> 0 (no error). Shape guards: `R=BGCLR(0)` and `BGCLR 1,2` -> errnum 4 errline 1. 12/12 confirmed, 0 mismatch." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # Tilemap clear side effects need the BG framebuffer oracle (O-T6, queued); error expects are
-  # hw_verified (sb-oracle 2026-06-22 s_t9a).
+  # Error expects hw_verified (sb-oracle 2026-06-22 s_t9a); clear side-effect + isolation
+  # hw_verified (sb-oracle 2026-06-24, bgclr_rt.tsv) read back through BGGET.
   - { name: clear_all_ok, code: "BGSCREEN 0,32,32\nBGCLR", expect: { stdout: "" } }
   - { name: clear_one_ok, code: "BGSCREEN 0,32,32\nBGCLR 0", expect: { stdout: "" } }
   - { name: layer_out_of_range, code: "BGCLR 4", expect: { error: { errnum: 10 } } }
   - { name: layer_negative, code: "BGCLR -1", expect: { error: { errnum: 10 } } }
+  # Value contract: clear side-effect read back via BGGET.
+  - { name: baseline_set, code: "BGSCREEN 0,32,32\nBGPUT 0,5,5,100\nPRINT BGGET(0,5,5)", expect: { stdout: "100" } }
+  - { name: clr_one_cell, code: "BGSCREEN 0,32,32\nBGPUT 0,5,5,100\nBGCLR 0\nPRINT BGGET(0,5,5)", expect: { stdout: "0" } }
+  - { name: clr_one_whole_map, code: "BGSCREEN 0,32,32\nBGPUT 0,3,3,50\nBGPUT 0,7,7,60\nBGCLR 0\nPRINT BGGET(0,7,7)", expect: { stdout: "0" } }
+  - { name: clr_all_layer0, code: "BGSCREEN 0,32,32\nBGPUT 0,5,5,100\nBGCLR\nPRINT BGGET(0,5,5)", expect: { stdout: "0" } }
+  - { name: iso_clr0_clears_named, code: "BGSCREEN 0,32,32\nBGSCREEN 1,32,32\nBGPUT 0,5,5,100\nBGPUT 1,5,5,200\nBGCLR 0\nPRINT BGGET(0,5,5)", expect: { stdout: "0" } }
+  - { name: iso_clr0_keeps_other, code: "BGSCREEN 0,32,32\nBGSCREEN 1,32,32\nBGPUT 0,5,5,100\nBGPUT 1,5,5,200\nBGCLR 0\nPRINT BGGET(1,5,5)", expect: { stdout: "200" } }
+  - { name: clr_all_both_layers, code: "BGSCREEN 0,32,32\nBGSCREEN 1,32,32\nBGPUT 0,5,5,100\nBGPUT 1,5,5,200\nBGCLR\nPRINT BGGET(1,5,5)", expect: { stdout: "0" } }
+  - { name: clr_idempotent, code: "BGSCREEN 0,32,32\nBGPUT 0,5,5,100\nBGCLR 0\nBGCLR 0\nPRINT BGGET(0,5,5)", expect: { stdout: "0" } }
+  - { name: as_function_errors, code: "R=BGCLR(0)", expect: { error: { errnum: 4 } } }
+  - { name: too_many_args, code: "BGCLR 1,2", expect: { error: { errnum: 4 } } }

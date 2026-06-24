@@ -1,0 +1,22 @@
+# BGCLR value contract (M7-T2), observed through BGGET (which reads a cell's packed value
+# back with NO framebuffer — hw_verified run 29). BGPUT seeds known cells; BGCLR clears one
+# layer (1-arg) or all layers (0-arg); BGGET reads the cell back. ACLS resets BG state.
+# Baseline: a seeded cell reads back its value (confirms the set path).
+baseline_set|ACLS:BGSCREEN 0,32,32:BGPUT 0,5,5,100|BGGET(0,5,5)|prog
+# One-arg form clears the named layer's whole map (every cell -> 0).
+clr_one|ACLS:BGSCREEN 0,32,32:BGPUT 0,5,5,100:BGCLR 0|BGGET(0,5,5)|prog
+clr_multi_a|ACLS:BGSCREEN 0,32,32:BGPUT 0,3,3,50:BGPUT 0,7,7,60:BGCLR 0|BGGET(0,3,3)|prog
+clr_multi_b|ACLS:BGSCREEN 0,32,32:BGPUT 0,3,3,50:BGPUT 0,7,7,60:BGCLR 0|BGGET(0,7,7)|prog
+# No-arg form clears every layer.
+clr_all_l0|ACLS:BGSCREEN 0,32,32:BGPUT 0,5,5,100:BGCLR|BGGET(0,5,5)|prog
+# Named-layer isolation: layers 0 and 1 both seeded; BGCLR 0 clears layer 0 only.
+iso_clr0_l0|ACLS:BGSCREEN 0,32,32:BGSCREEN 1,32,32:BGPUT 0,5,5,100:BGPUT 1,5,5,200:BGCLR 0|BGGET(0,5,5)|prog
+iso_clr0_l1|ACLS:BGSCREEN 0,32,32:BGSCREEN 1,32,32:BGPUT 0,5,5,100:BGPUT 1,5,5,200:BGCLR 0|BGGET(1,5,5)|prog
+# No-arg form clears BOTH layers.
+allboth_l0|ACLS:BGSCREEN 0,32,32:BGSCREEN 1,32,32:BGPUT 0,5,5,100:BGPUT 1,5,5,200:BGCLR|BGGET(0,5,5)|prog
+allboth_l1|ACLS:BGSCREEN 0,32,32:BGSCREEN 1,32,32:BGPUT 0,5,5,100:BGPUT 1,5,5,200:BGCLR|BGGET(1,5,5)|prog
+# Idempotent clear (no error, stays cleared).
+clr_twice|ACLS:BGSCREEN 0,32,32:BGPUT 0,5,5,100:BGCLR 0:BGCLR 0|BGGET(0,5,5)|prog
+# Shape guards (already hw_verified s_t9a for OOR; re-confirm errnum 4 return-ctx / 2-arg).
+bgclr_ret|R=BGCLR(0)|err
+bgclr_two_args|BGCLR 1,2|err

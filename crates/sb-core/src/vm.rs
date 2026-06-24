@@ -5425,10 +5425,14 @@ H$=HEX$(255)"#);
         let vm = run_b(&format!("{prog}\nBGSTOP 0\nPRINT BGCHK(0);BGCHK(1)"));
         assert_eq!(vm.console_text(), "01");
         // Stop all, resume layer 0 only.
-        let vm = run_b(&format!("{prog}\nBGSTOP\nBGSTART 0\nPRINT BGCHK(0);BGCHK(1)"));
+        let vm = run_b(&format!(
+            "{prog}\nBGSTOP\nBGSTART 0\nPRINT BGCHK(0);BGCHK(1)"
+        ));
         assert_eq!(vm.console_text(), "10");
         // Resume all; idempotent double BGSTART is a no-op (no error).
-        let vm = run_b(&format!("{prog}\nBGSTOP\nBGSTART\nBGSTART\nPRINT BGCHK(0);BGCHK(1)"));
+        let vm = run_b(&format!(
+            "{prog}\nBGSTOP\nBGSTART\nBGSTART\nPRINT BGCHK(0);BGCHK(1)"
+        ));
         assert_eq!(vm.console_text(), "11");
     }
 
