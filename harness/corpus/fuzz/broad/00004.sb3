@@ -1,0 +1,24 @@
+A = -363937
+B = 18
+C = 1
+D = -24
+E = 19
+A$ = "JBH6"
+B$ = "1IFD"
+C$ = "GA"
+D$ = " IIGFJ"
+C = EXP(CHKLABEL("IC7", -(14.4734)))
+E = (-((-360135 OR A)) >> 27)
+E = (-860669 MOD ((-12.8151 DIV E) / C))
+C$ = PRGNAME$()
+C$ = A$
+C = -(((B DIV E) + 23.5459))
+IF -(-23.6731) > (-91.0406 >> 56.7491) THEN PRINT ("G3G" + "")
+B$ = ("58H0" + "")
+FOR C = 1 TO 2
+  B = (D + ((B / 0) / -(619663)))
+  B$ = ""
+NEXT
+PRINT LEN(D$)
+D = BUTTON(-((E MOD -32.2939)))
+PRINT "I GB29"

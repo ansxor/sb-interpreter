@@ -1,0 +1,23 @@
+A = 22
+B = -2147483648
+C = -6
+D = 3.14159
+E = 3.14159
+A$ = " F"
+B$ = ""
+C$ = "50CH"
+D$ = "1B3E9"
+PRINT -(-((C * 3.14159)))
+D = -2
+C$ = ("H07435" + "806FH")
+PRINT -1
+BGMSET -2147483648 , "EDD4"
+D$ = D$
+C = CEIL(-((630559 DIV 3.14159)))
+PRINT A
+FOR A = 1 TO 3
+  D = BUTTON((CLASSIFY(A) / 0.5))
+NEXT
+IF ((FLOOR(B) << MICDATA(A)) * -2147483648) < -81.4513 THEN E = ((MICDATA() AND -(D)) * (BGMCHK(E) << 347630))
+USE "DJ3HJC"
+A$ = LEFT$(MPNAME$((B >> B)), -105048)

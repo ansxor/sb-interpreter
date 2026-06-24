@@ -1,0 +1,25 @@
+A = 2147483647
+B = -24
+C = 39.5726
+D = -91.2638
+E = 238599
+A$ = "0I"
+B$ = "09J58"
+C$ = "H9C"
+D$ = "5E36"
+A = SGN(0)
+D$ = ""
+PRINT -9.2934
+PRINT -(-1)
+C = SINH(-(794625))
+PRINT "1CA681"
+PRINT "E4C"
+E = LOG(1)
+FOR E = 2 TO 4
+  C = 27
+NEXT
+FOR B = 1 TO 3
+  PRINT DEG((24 + INSTR(-1, D$, C$)))
+NEXT
+B = 24.2347
+A = B

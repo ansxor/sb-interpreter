@@ -1,0 +1,27 @@
+A = 89.5731
+B = 0.5
+C = -23
+D = 14
+E = 32
+A$ = "B"
+B$ = ""
+C$ = "3CH"
+D$ = ""
+FOR D = 0 TO 0
+  E = A
+NEXT
+FOR B = 1 TO 4
+  D = -8
+NEXT
+PRINT -6
+IF LEN(D$) == -(B) THEN A = MAX((ASC(B$) DIV (D * 8)))
+PRINT (D$ + "CI5CBJ")
+PRINT SUBST$(STR$(-1, 31), 611101, -(-165549), D$)
+B = COSH((-(C) << (-10 / 381009)))
+A = CEIL(-(-121406))
+FOR C = 2 TO 4
+  D$ = D$
+NEXT
+PRINT (A + D)
+A = -32
+PRINT 22.7475

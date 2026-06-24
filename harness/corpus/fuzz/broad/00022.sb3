@@ -1,0 +1,24 @@
+A = -491196
+B = 25
+C = 472104
+D = 12
+E = -3
+A$ = "B0"
+B$ = "F73B"
+C$ = "A8IJ"
+D$ = "GFD"
+STEP ((-1 DIV 65.0452) >> 0)
+PRINT -1
+FOR C = 2 TO 5
+  D = (15.1065 >> PRGSIZE((A << -1), 3.14159))
+  PRINT E
+NEXT
+D = (16 / ((0 MOD 669138) * A))
+B = 0
+B$ = ("55C 1" + FORMAT$("", (A - 0.5)))
+B = C
+B = (3 - -2147483648)
+D = CEIL(D)
+BGCLR D
+PRINT (-(B) OR 84.4954)
+CONT

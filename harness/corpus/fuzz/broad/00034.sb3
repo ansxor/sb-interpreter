@@ -1,0 +1,27 @@
+A = 17.1494
+B = 884594
+C = 17
+D = 90.9145
+E = 22
+A$ = "0D"
+B$ = "6EDI"
+C$ = "9A"
+D$ = "E6CB1I"
+FOR A = 1 TO 2
+  PRINT B
+  PRINT BGGET(MAX(A), SINH((A DIV B)), 3.14159, (2147483647 OR (-1 MOD -671056)))
+NEXT
+C = -(ATAN((C / E), (11 - C)))
+C$ = C$
+C$ = ((CHR$(A) + (A$ + B$)) + "E4F 1")
+PRINT ""
+IF (-442159 >> (RGB(3.14159, E, D, -842420) << (B AND D))) > (-((-684030 DIV A)) >> -(25)) THEN PRINT COSH(POW(-31.7984, -(A)))
+PRINT -2147483648
+IF -24 >= 3.14159 THEN E = (600225 >> (0.5 AND -(-2)))
+FOR D = 1 TO 2
+  E = B
+  B = 88.9053
+NEXT
+C = (16.4411 OR -(SPHITSP(C, B)))
+A = -253375
+PRINT (E - (-(30) * 17.1941))

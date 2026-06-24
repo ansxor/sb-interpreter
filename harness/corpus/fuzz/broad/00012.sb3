@@ -1,0 +1,21 @@
+A = -1
+B = -71.4799
+C = 15
+D = -1
+E = 0.5
+A$ = "9H7A9E"
+B$ = "1F0"
+C$ = "B"
+D$ = "GC60"
+PRINT ""
+E = (1 OR DEG(63775))
+D = MPGET(INSTR(STR$(-28.7310), "2JDIH0"), (RGB(3.14159, A, 416949) MOD (B + -626604)))
+C = -((SGN(C) MOD C))
+D = (-2147483648 / (B * FADE()))
+PRINT -1
+BGSHOW PI()
+C$ = FORMAT$(PRGGET$(), ((C * -33.9998) DIV SGN(4.1961)))
+A = -15.9354
+B = 52.0869
+PRINT 3.14159
+E = (BUTTON() AND -28)

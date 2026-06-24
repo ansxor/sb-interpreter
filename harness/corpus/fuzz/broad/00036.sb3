@@ -1,0 +1,21 @@
+A = -88.3260
+B = 4
+C = -32
+D = -480656
+E = 46.0889
+A$ = "17I"
+B$ = "C835"
+C$ = "12H"
+D$ = "FD6"
+IF E == 0.5 THEN PRINT ("" + (D$ + "G31G5I"))
+BGCOLOR MIN((-59.3562 - -866433)) , C
+PRINT ("215F" + ((A$ + "4GH1E") + HEX$(3.14159)))
+C = COSH(-(0.5))
+D = -((-35.3340 AND B))
+D = -16
+IF -(-(MICDATA(0))) >= -51.1241 THEN C = ((-(-2147483648) MOD (D AND 71761)) * ROUND(-23))
+SPSTOP 422392
+D = POW(0, (SIN(A) AND MPSTAT(A)))
+B$ = D$
+PRINT 20
+PRINT CHR$(RNDF())

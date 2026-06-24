@@ -1,0 +1,25 @@
+A = 3.14159
+B = 92.0990
+C = -65.0623
+D = -77.9676
+E = -1
+A$ = "3I6"
+B$ = "0 2E7B"
+C$ = "G"
+D$ = "7"
+FOR B = 1 TO 1
+  PRINT VAL(HEX$(EXP(), (-89.9409 MOD C)))
+NEXT
+PRINT STR$(-478712)
+FOR C = 0 TO 2
+  PRINT TANH(-(-(C)))
+NEXT
+C = POW((-96.1570 + -(A)), C)
+D$ = "86E2"
+IF TANH(-472738) > -894665 THEN PRINT "0BF3CJ"
+D = ASC("I8FJ")
+D = (LEN("GH5") / ((0 >> E) / 285502))
+PRINT C
+PRINT ASC(("8" + HEX$(D, 2147483647)))
+C = -1
+PRINT -(-29)

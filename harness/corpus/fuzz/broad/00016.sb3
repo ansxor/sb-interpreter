@@ -1,0 +1,25 @@
+A = -6.1555
+B = -16.6095
+C = 0
+D = 3.14159
+E = -52.4283
+A$ = "A"
+B$ = "J0"
+C$ = "E9JAH"
+D$ = "IAE9"
+D = -(C)
+PRINT -1.1414
+FOR B = 2 TO 4
+  PRINT SUBST$(("5" + "J0"), (466507 OR (D + 0.5)), FORMAT$(PRGNAME$(), 482854))
+NEXT
+A$ = (" 2905" + (SUBST$("DC", -980835, A$) + FORMAT$(B$, B$)))
+E = CHKLABEL("EI23B", ((A OR -7) OR (A DIV 21)))
+C = ((837297 / (1 AND D)) * 1)
+PRINT C$
+GYROSYNC
+B$ = (MPNAME$(MICDATA(E)) + " D0B4C")
+IF 6.3269 < (-((-47648 - -32)) AND C) THEN PRINT ""
+A = 396971
+FOR B = 0 TO 2
+  E = ((-952894 * 46.0866) * -920164)
+NEXT

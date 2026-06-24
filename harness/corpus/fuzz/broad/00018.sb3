@@ -1,0 +1,26 @@
+A = -742438
+B = -1
+C = -584891
+D = 0.5
+E = 1
+A$ = "J4I"
+B$ = "I"
+C$ = "D06FH"
+D$ = "H"
+C = D
+C = (D AND FLOOR(-(E)))
+C = BGMCHK(-566230)
+PRINT MPGET(E, -(EXP(1)))
+IF 0 > -59.2268 THEN PRINT PRGGET$()
+A = ((41.4856 AND (C * B)) * (1 << 0))
+FOR E = 2 TO 5
+  C = (RAD((790889 * 46.0530)) OR -((51.7229 + 950560)))
+NEXT
+B$ = PRGNAME$()
+C = ((87.3678 MOD 0.5) - ((85.1052 << -19.5535) << -404271))
+C = (67.0302 - -(TAN(486850)))
+C$ = "CH17 5"
+FOR E = 1 TO 4
+  PRINT (INKEY$() + "")
+  PRINT "C8AIG"
+NEXT

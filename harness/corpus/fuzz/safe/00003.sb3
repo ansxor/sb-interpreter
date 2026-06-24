@@ -1,0 +1,21 @@
+A = 242858
+B = -224148
+C = 0.5
+D = -31
+E = -1
+A$ = "HG57"
+B$ = "752 EH"
+C$ = "E62AC"
+D$ = "8"
+C$ = D$
+PRINT LOG((37845 - C))
+PRINT MID$((STR$(E, 36.3964) + "I9F078"), ASIN(COSH(29)), ((B - -14.5716) - (16 - E)))
+E = -98.5535
+E = D
+E = -37.2339
+D = INSTR((MID$("3I", E, A) + STR$(-2147483648, 10)), C$)
+PRINT "5A8BA"
+PRINT (RAD(-62.9508) DIV (-(D) >> -16))
+E = -(C)
+D = 9
+PRINT "FC0"

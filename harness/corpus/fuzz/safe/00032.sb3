@@ -1,0 +1,21 @@
+A = -5
+B = -364294
+C = 40716
+D = -28
+E = 9
+A$ = "0B65"
+B$ = "9A"
+C$ = "E6A5"
+D$ = "GJG4C"
+PRINT ASIN(((-54.6427 + C) + (E * 5)))
+C = D
+D = (1 + -16)
+A = 0
+E = 90.3585
+IF (EXP() / D) != SINH(E) THEN E = (-997784 MOD (-11 + (2147483647 AND -13.1911)))
+PRINT SQR(-3.4709)
+PRINT 853375
+B$ = RIGHT$("", (B MOD E))
+IF 0.5 < 3.14159 THEN PRINT -270539
+A = (-(CEIL(-9)) - -1)
+PRINT FLOOR(ABS(-29))

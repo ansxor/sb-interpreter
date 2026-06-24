@@ -1,0 +1,26 @@
+A = 12
+B = -82.6536
+C = -21.4169
+D = -28
+E = 24
+A$ = "H1C50"
+B$ = "73G4"
+C$ = "H"
+D$ = "386"
+E = -(-(SQR(D)))
+FOR B = 1 TO 3
+  PRINT FORMAT$(HEX$(60.3907, INSTR(D$, C$)), HEX$(C, 19))
+  PRINT "EJA"
+NEXT
+C$ = ""
+FOR A = 0 TO 0
+  E = -8
+NEXT
+D = A
+A = (B / COS(A))
+PRINT COSH(D)
+C = CEIL(((D + A) - (-642722 AND E)))
+IF (-60.3202 << ((1 / B) + 26)) < SINH(-(6)) THEN C = E
+B = -((-224413 MOD B))
+PRINT -(-(EXP(D)))
+B = 0

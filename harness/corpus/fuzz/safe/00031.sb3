@@ -1,0 +1,21 @@
+A = 28
+B = 18
+C = 434167
+D = -15
+E = -3
+A$ = "EEBBE"
+B$ = "7"
+C$ = "463G8"
+D$ = ""
+D$ = "G"
+PRINT COS(D)
+PRINT ""
+C = 0
+B$ = "31G0 H"
+IF -32.7980 == INSTR((79.2860 / RAD(-595688)), "91D2JJ", LEFT$(B$, (A OR -80.2268))) THEN B = -2414
+D = COSH(MAX(1))
+PRINT CHR$(((16 / D) OR -16))
+A$ = ("GJF747" + STR$(CLASSIFY(D)))
+PRINT 48.9694
+D = -17
+PRINT D

@@ -1,0 +1,27 @@
+A = -21
+B = 14
+C = 543440
+D = -49.6833
+E = 272555
+A$ = ""
+B$ = "F3 2"
+C$ = "61746I"
+D$ = ""
+C = ((-504814 << A) AND -65.2822)
+FOR E = 1 TO 2
+  PRINT LOAD("4F24 6", D)
+  PRINT ((SUBST$(D$, E, D, "F9") + "5JJ676") + (PRGNAME$(B) + C$))
+NEXT
+BGMSETD 561922 , ""
+BGFILL CHKFILE(PRGGET$()) , -(B) , 0.5 , 14 , (A * -24) , -30
+PRINT 97002
+D = B
+A = SGN(-((-10.2693 OR 51.1324)))
+COMMON
+A = (3.14159 - 2147483647)
+FOR C = 0 TO 2
+  PRINT A$
+  A = -641994
+NEXT
+D = SPHITSP(B)
+IF -83.9142 > TANH(-((-925553 DIV D))) THEN A = -786277

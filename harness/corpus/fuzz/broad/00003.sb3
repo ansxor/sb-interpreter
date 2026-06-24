@@ -1,0 +1,24 @@
+A = 242858
+B = -224148
+C = 0.5
+D = -31
+E = -1
+A$ = "HG57"
+B$ = "752 EH"
+C$ = "E62AC"
+D$ = "8"
+C$ = D$
+PRINT MICDATA((37845 - C))
+PRINT LEFT$((MID$(B$, A, E) + STR$(E)), RGB(E, -(A), 3.14159))
+IF 60.1191 != 5 THEN PRINT FORMAT$((("807" + B$) + "AC"), ABS((B DIV -37.2339)))
+D = INSTR((PRGGET$() + B$), "I6J")
+FOR C = 0 TO 3
+  E = 10
+  PRINT (-((15 + D)) >> -(RNDF(-62.9508)))
+NEXT
+PRINT "2D"
+E = 0.0021
+B = (89.8298 - D)
+A = E
+IF -(A) < CHKCALL(PRGNAME$()) THEN PRINT 17.8962
+PRINT -(((E DIV A) MOD (29 * E)))

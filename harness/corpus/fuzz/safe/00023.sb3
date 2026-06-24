@@ -1,0 +1,24 @@
+A = 78.4867
+B = -30
+C = -15.2505
+D = -73.9394
+E = -439260
+A$ = "AH9"
+B$ = "ADC"
+C$ = "53A6 "
+D$ = "31BGB"
+PRINT 541848
+PRINT (-((1 >> E)) >> (119012 * (-22 << 0)))
+PRINT COSH(80.0250)
+FOR C = 1 TO 2
+  A = 1
+  PRINT ASIN(0)
+NEXT
+D = 441174
+A$ = (A$ + "")
+PRINT 1
+IF CLASSIFY(-(A)) < MIN(PI()) THEN PRINT 24
+PRINT B$
+PRINT A$
+E = (RAD(-(-15)) DIV ((11 / 860017) << MAX(A)))
+PRINT 1

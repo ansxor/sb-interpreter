@@ -1,0 +1,21 @@
+A = -1
+B = -71.4799
+C = 15
+D = -1
+E = 0.5
+A$ = "9H7A9E"
+B$ = "1F0"
+C$ = "B"
+D$ = "GC60"
+PRINT ""
+E = (1 OR EXP())
+E = -2147483648
+PRINT D$
+PRINT -8
+D$ = MID$("0", (POW(3.14159, A) MOD ABS(A)), (ASIN(3) / -1))
+IF (-1 >> C) == ((-2147483648 / (912690 * 83.0906)) OR (A * ACOS(99.6990))) THEN C$ = FORMAT$(SUBST$(RIGHT$(B$, C), VAL(C$), ROUND(4.1961), "AAE7I"), B)
+PRINT 52.0869
+PRINT 3.14159
+E = (CEIL(-28) AND -2147483648)
+C$ = "I7"
+IF RAD(E) <= (A >> ((B - -37.8809) MOD -1)) THEN A = LOG(11, ((14 - C) / D))

@@ -1,0 +1,30 @@
+A = 22.2007
+B = -460452
+C = 18
+D = 0.5
+E = -829465
+A$ = "A6H"
+B$ = ""
+C$ = ""
+D$ = "9"
+FOR D = 2 TO 4
+  PRINT SGN((27.7446 >> -1))
+NEXT
+C$ = ("H" + RIGHT$(CHR$(B), ROUND(C)))
+FOR D = 2 TO 4
+  A$ = D$
+  PRINT "IFFF"
+NEXT
+FOR C = 1 TO 2
+  PRINT (-(INSTR(D, C$, "FJ60A")) >> A)
+NEXT
+PRINT PI()
+PRINT CHR$(726361)
+PRINT ((819114 << (67.3460 << -2147483648)) DIV (0 + (C / -31.5651)))
+IF (((-1 >> D) OR (-490 - 18)) - -667171) >= FLOOR(CEIL(PI())) THEN E = COS(RAD(0))
+PRINT "6EGFJ"
+PRINT 0.5
+C$ = FORMAT$("", (0 << A))
+FOR D = 2 TO 3
+  A = -(12)
+NEXT

@@ -1,0 +1,28 @@
+A = 89.5731
+B = 0.5
+C = -23
+D = 14
+E = 32
+A$ = "B"
+B$ = ""
+C$ = "3CH"
+D$ = ""
+FOR D = 0 TO 0
+  E = A
+NEXT
+FOR B = 1 TO 4
+  D = -8
+NEXT
+PRINT -6
+IF MAX(((B MOD -828338) >> COSH(D))) == ASC((B$ + LOAD(D$, 8))) THEN PRINT (D$ + "CI5CBJ")
+SPCLIP (-1 MOD 31) , 611101 , -(-165549) , (-57986 OR (B << E))
+D$ = "C"
+B = A
+IF CEIL(-(-121406)) <= (DEG(ROUND(E)) >> ((0.5 AND A) AND A)) THEN D = (-32 >> BGMCHK((-6 >> B)))
+C = (2147483647 - (-(-785698) OR (B DIV 994361)))
+FOR C = 0 TO 0
+  D = 54.3876
+  PRINT (SUBST$(INKEY$(), B, (C$ + "")) + LEFT$("9", (C OR -785761)))
+NEXT
+D = D
+ACCEL

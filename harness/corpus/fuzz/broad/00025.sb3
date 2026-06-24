@@ -1,0 +1,23 @@
+A = 3.14159
+B = -5
+C = 27.2923
+D = 0
+E = 7
+A$ = "3D8D"
+B$ = "G690"
+C$ = "F71656"
+D$ = ""
+E = (B MOD MIN(-2147483648))
+E = -837865
+EXEC MICDATA()
+IF PI() != -1 THEN D$ = MPNAME$(((A >> -21) / B))
+C$ = " "
+STOP
+PRINT (((C OR -16.5476) OR 199995) OR 565619)
+GFILL -(TANH(496021)) , 80.4624 , -84.3337 , (-74.6118 >> -5)
+FOR B = 0 TO 0
+  PRINT (INKEY$() + "CDJA4")
+NEXT
+GYROA
+C = 71.8511
+E = -(-283239)

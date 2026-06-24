@@ -1,0 +1,27 @@
+A = 17.1494
+B = 884594
+C = 17
+D = 90.9145
+E = 22
+A$ = "0D"
+B$ = "6EDI"
+C$ = "9A"
+D$ = "E6CB1I"
+FOR A = 1 TO 2
+  PRINT B
+  PRINT ATAN(LEN("D8C4I"), (DEG(3.14159) - (2147483647 OR C)))
+NEXT
+D = B
+C = -(ASIN((C / E)))
+IF -26 == (555549 MOD ((A MOD E) MOD TAN(-76.3870))) THEN PRINT SUBST$("E4F 1", (-1 * CEIL(D)), SUBST$(D$, MAX(-842420), D$))
+FOR C = 0 TO 3
+  C$ = C$
+  B = ROUND(-98.9847)
+NEXT
+D = DEG(MIN(-31.7984))
+C = -38.9523
+D = -24
+D$ = FORMAT$(STR$(2147483647), (-2 DIV VAL(B$)))
+PRINT SUBST$("G", -890029, 88.9053, "6J")
+PRINT SUBST$((MID$(C$, D, -25) + HEX$(C)), (177131 AND (B * 1)), MID$(("2D" + D$), (19 DIV -10), TANH(E)))
+A = -44.8043

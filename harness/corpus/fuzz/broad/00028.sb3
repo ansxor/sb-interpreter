@@ -1,0 +1,26 @@
+A = -16
+B = -525191
+C = 337845
+D = 3.14159
+E = 1
+A$ = "E"
+B$ = "FE9"
+C$ = "G"
+D$ = ""
+PRINT -1
+C$ = ("4EGAJ" + RIGHT$("7ID8", (-86.1557 * D)))
+PRINT -((-638526 << -(0)))
+B = (((E * -2147483648) - (B * C)) MOD (A / 2147483647))
+FOR C = 1 TO 2
+  PRINT (D - E)
+NEXT
+E = -(RNDF(593861))
+A$ = C$
+FOR D = 2 TO 5
+  PRINT "H6"
+  PRINT GSPOIT(((D DIV 19) - A), -3.6757)
+NEXT
+A = 0
+IF -850831 < (-3.2889 + ((12 MOD 10) MOD BGCHK(A))) THEN E = 36.5093
+PRINT B$
+C = -(D)

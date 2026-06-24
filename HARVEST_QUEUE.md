@@ -1452,3 +1452,12 @@ The *live device* outputs have no headless golden — sb-core returns faithful n
 - **XON confirmation dialog + EXPAD RESULT** — XON shows a one-time confirmation on real SB;
   sb-core flips the feature flag silently and (for EXPAD) sets RESULT TRUE. Confirm the
   already-on no-dialog case and whether XOFF EXPAD clears RESULT.
+- **M7-T1 fuzzing — oracle differential + headless VSYNC** — the in-loop campaign is the
+  deterministic sb-core robustness sweep (it found + fixed three host panics: GTRI/GCOPY i32
+  overflow, VAL char-boundary slice). Still oracle-pending: (a) the 3-way differential
+  (sb-core vs osb vs SmileBASIC 3.6.0) over generated seeds to catch *value* divergences, not
+  just crashes — wire `harness/diff/run.py --oracle` offline. (b) Confirm the exact SB result
+  for the now-clamped extreme-coordinate GTRI/GCOPY (we kept the visible-pixel result identical
+  by clamping to the page; verify SB doesn't instead raise an Out-of-range errnum). (c) `VSYNC
+  <huge>` blocks headless `sb-run` (broad seeds 403/850) — decide whether headless VSYNC should
+  advance instantly; currently it waits, so such programs are parse/compile-only in CI.

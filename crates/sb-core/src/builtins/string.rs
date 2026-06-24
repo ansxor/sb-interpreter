@@ -389,7 +389,11 @@ fn push_numeric(out: &mut String, sign: &str, digits: &str, width: usize, left: 
 
 /// Strip a case-insensitive ASCII prefix, returning the remainder if it matched.
 fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
-    if s.len() >= prefix.len() && s[..prefix.len()].eq_ignore_ascii_case(prefix) {
+    // `get(..n)` is `None` when `n` is past the end OR lands inside a multi-byte char, so a
+    // SmileBASIC string whose first character is a full-width/kana glyph (e.g. `VAL("\u{ffde}")`)
+    // can never byte-slice mid-codepoint here — a fuzzer-found panic (M7-T1).
+    let head = s.get(..prefix.len())?;
+    if head.eq_ignore_ascii_case(prefix) {
         Some(&s[prefix.len()..])
     } else {
         None

@@ -1,0 +1,23 @@
+A = -975559
+B = -12
+C = -964599
+D = -14
+E = -52.0570
+A$ = "41"
+B$ = "2I"
+C$ = "HG"
+D$ = "10HJ63"
+E = (-2147483648 OR (DEG(A) OR (119748 + 4)))
+FOR D = 0 TO 0
+  PRINT (-((140206 << A)) << C)
+NEXT
+C$ = D$
+PRINT FORMAT$(B$, ((A + A) AND 0))
+D$ = MPNAME$(ACOS(1))
+SPCLIP -25 , ((19.0909 MOD E) AND 3.14159) , ((E >> -473611) + D) , EXP(E)
+PRINT 40.4159
+PRINT HEX$(LEN(HEX$(-31.2790, E)))
+A$ = "E 4F G"
+SWAP E , FORMAT$(("04983A" + C$), -(B))
+B$ = ""
+A$ = STR$(BUTTON(), (ACOS(B) * (E * 4148)))

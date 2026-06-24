@@ -1,0 +1,21 @@
+A = 50.1082
+B = 73.0090
+C = -13.6549
+D = 13.3480
+E = 30.5795
+A$ = "8D1A6A"
+B$ = ""
+C$ = "51A05"
+D$ = ""
+A$ = "F8"
+A$ = "8"
+B = ((INSTR(D$, "D075DC") AND (2147483647 AND 82.0346)) OR B)
+DELETE FORMAT$("FAE59", MPNAME$(E))
+IF ((CLASSIFY(E) << (A DIV E)) + 46.2980) >= (((34.5298 - 0) >> C) + -111057) THEN D = SPHITRC(31, (639305 << MICDATA(-162667)), C, E, LEN(INKEY$()), ((13 >> E) - -(-224177)), (BUTTON() + (A MOD -2147483648)))
+IF ACOS((-47.5757 AND 465191)) != (-((A OR -13)) - (-(793908) << (D OR A))) THEN A = GSPOIT(945877, (-1 / 14.0356))
+C$ = "4"
+IF (((D * 1) * -492229) - -(CHKFILE(""))) == (-(DEG(0.5)) * -((E DIV C))) THEN B$ = B$
+A$ = "F"
+B = ((FADE() / (E DIV 2147483647)) * 0.5)
+PRINT 29248
+GBOX SGN(51342) , 42.9030 , FADECHK() , 702759 , B

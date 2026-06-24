@@ -1,0 +1,23 @@
+A = -6.1555
+B = -16.6095
+C = 0
+D = 3.14159
+E = -52.4283
+A$ = "A"
+B$ = "J0"
+C$ = "E9JAH"
+D$ = "IAE9"
+D = -(C)
+PRINT -1.1414
+FOR B = 2 TO 4
+  PRINT CHR$(D)
+NEXT
+C = (466507 OR ((0.5 OR 3.14159) + ASC("H")))
+PRINT "B 29"
+PRINT -328959
+A = A
+PRINT FORMAT$(STR$(-(220776)), COS(-438804))
+PRINT ((-(-29) OR D) OR -(INSTR("", A$)))
+A = 1
+D$ = ("F15" + HEX$(D, -1))
+PRINT 7

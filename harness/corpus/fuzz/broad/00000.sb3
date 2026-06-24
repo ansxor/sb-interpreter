@@ -1,0 +1,26 @@
+A = 3.14159
+B = 0
+C = 93.0930
+D = 2147483647
+E = 93.5600
+A$ = "8G"
+B$ = "EJED"
+C$ = "I79E"
+D$ = "DC"
+PRINT -13.1656
+ELSE
+IF CHKVAR(PRGGET$()) < (MPSTAT() + C) THEN B$ = "E74CC0"
+FOR D = 0 TO 2
+  B$ = PRGNAME$((VAL(B$) - -(722741)))
+  A = -((838720 - -22))
+NEXT
+FOR D = 2 TO 4
+  E = (((-2147483648 >> B) - A) OR -(-219734))
+NEXT
+C = -14
+A$ = ""
+A$ = A$
+PRINT ""
+BEEP 29 , A , -2147483648 , -85.9991
+C = 32
+IF 18 > -((BUTTON(-12, 5.8948) OR 0.5)) THEN A = (COSH((26 DIV 47.8032)) >> CLASSIFY(D))

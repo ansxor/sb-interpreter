@@ -42,20 +42,25 @@ impl GrpState {
     /// halfwords. `page == -1` (GRPF) or any pixel outside the 512×512 page reads as 0
     /// (transparent black).
     pub fn read_region(&self, page: i32, x: i32, y: i32, w: i32, h: i32) -> Vec<u16> {
-        let mut out = Vec::with_capacity((w.max(0) * h.max(0)) as usize);
+        // Capacity is only a hint; clamp it so a pathological `w*h` (a fuzzer-found case,
+        // M7-T1) can't overflow the i32 multiply. Pixel addressing below is done in i64 so
+        // `x + i` can't overflow either (callers that produce huge spans, e.g. GCOPY, clamp
+        // to the page first, but read_region stays panic-proof on its own).
+        let cap = (w.max(0) as i64)
+            .saturating_mul(h.max(0) as i64)
+            .min((GRP_DIM * GRP_DIM) as i64) as usize;
+        let mut out = Vec::with_capacity(cap);
         let src = if (0..self.pages.len() as i32).contains(&page) {
             Some(&self.pages[page as usize].pixels)
         } else {
             None // GRPF / out-of-set page: read as transparent
         };
-        for j in 0..h {
-            for i in 0..w {
-                let (px, py) = (x + i, y + j);
+        let dim = GRP_DIM as i64;
+        for j in 0..h as i64 {
+            for i in 0..w as i64 {
+                let (px, py) = (x as i64 + i, y as i64 + j);
                 let h = match src {
-                    Some(pix)
-                        if (0..GRP_DIM as i32).contains(&px)
-                            && (0..GRP_DIM as i32).contains(&py) =>
-                    {
+                    Some(pix) if (0..dim).contains(&px) && (0..dim).contains(&py) => {
                         pix[py as usize * GRP_DIM + px as usize]
                     }
                     _ => 0,
@@ -108,11 +113,38 @@ impl GrpState {
         dy: i32,
         copy_transparent: bool,
     ) {
-        let (sx, sy) = (x1.min(x2), y1.min(y2));
-        let w = (x1 - x2).abs() + 1;
-        let h = (y1 - y2).abs() + 1;
-        let region = self.read_region(src_page, sx, sy, w, h);
-        self.write_region(dx, dy, w, h, &region, copy_transparent);
+        // Span the corners in i64 so `x1 - x2` (and `i32::MIN.abs()`) can't overflow for
+        // far-apart fuzzer coordinates (M7-T1). A pixel is only visible when BOTH its source
+        // and destination land on the 512×512 page, so clamp the copy to that intersection
+        // (offset-preserving). Both clamped origins then land in [0, dim) so every cast back
+        // to i32 is exact, the span is bounded by the page, and the visible result is
+        // unchanged for any in-range copy (off-page reads are 0 and writes are no-ops). The
+        // only thing this drops is writing transparent-black for pixels copied from OFF the
+        // source page when copy_transparent is set — an unverified extreme-coordinate edge
+        // (queued for the oracle), never reached by a normal on-page copy.
+        let (sx, sy) = (x1.min(x2) as i64, y1.min(y2) as i64);
+        let (dx, dy) = (dx as i64, dy as i64);
+        let w = (x1 as i64 - x2 as i64).abs() + 1;
+        let h = (y1 as i64 - y2 as i64).abs() + 1;
+        let dim = GRP_DIM as i64;
+        // i in [i0, i1]: sx+i in [0,dim) AND dx+i in [0,dim) AND i in [0, w-1].
+        let i0 = 0.max(-sx).max(-dx);
+        let i1 = (w - 1).min(dim - 1 - sx).min(dim - 1 - dx);
+        let j0 = 0.max(-sy).max(-dy);
+        let j1 = (h - 1).min(dim - 1 - sy).min(dim - 1 - dy);
+        if i1 < i0 || j1 < j0 {
+            return; // nothing visible
+        }
+        let (cw, ch) = ((i1 - i0 + 1) as i32, (j1 - j0 + 1) as i32);
+        let region = self.read_region(src_page, (sx + i0) as i32, (sy + j0) as i32, cw, ch);
+        self.write_region(
+            (dx + i0) as i32,
+            (dy + j0) as i32,
+            cw,
+            ch,
+            &region,
+            copy_transparent,
+        );
     }
 
     /// Convert a read-back RGBA5551 halfword to the GSAVE element word for `convert_flag`:
@@ -172,6 +204,20 @@ mod tests {
         g.gfill(100, 100, 131, 131, BLUE);
         g.gcopy(0, 0, 0, 31, 31, 100, 100, true);
         assert_eq!(g.gspoit(110, 110), 0);
+    }
+
+    #[test]
+    fn gcopy_extreme_span_does_not_overflow() {
+        // Far-apart corners overflowed `(x1-x2).abs()` / the `w*h` capacity (M7-T1 fuzz find).
+        // i64 span + page-intersection clamp: must not panic, and an in-range pixel inside the
+        // huge span still copies (offset preserved).
+        let mut g = GrpState::new();
+        g.gpset(10, 10, RED);
+        // Source (0,0)..(i32::MAX,i32::MAX): w*h overflows i32; dest offset 0 keeps (10,10).
+        g.gcopy(0, 0, 0, i32::MAX, i32::MAX, 0, 0, true);
+        assert_eq!(g.gspoit(10, 10), 0xFFF8_0000); // red preserved, no panic
+                                                   // The `i32::MIN.abs()` corner spanning the full negative range must also not panic.
+        g.gcopy(0, i32::MIN, i32::MIN, i32::MAX, i32::MAX, -500, -500, true);
     }
 
     #[test]

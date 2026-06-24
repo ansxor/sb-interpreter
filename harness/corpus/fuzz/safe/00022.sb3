@@ -1,0 +1,23 @@
+A = -491196
+B = 25
+C = 472104
+D = 12
+E = -3
+A$ = "B0"
+B$ = "F73B"
+C$ = "A8IJ"
+D$ = "GFD"
+PRINT ACOS(EXP(-1))
+FOR B = 1 TO 3
+  PRINT ACOS(-(DEG(B)))
+NEXT
+E = ABS(RAD(LEN("1D3")))
+PRINT E
+D = (16 / ((0 MOD 669138) * A))
+B = 0
+B$ = ("55C 1" + FORMAT$("", (A - 0.5)))
+B = C
+B = (3 - -2147483648)
+D = TANH(-207792)
+PRINT D
+PRINT (-(B) OR 84.4954)

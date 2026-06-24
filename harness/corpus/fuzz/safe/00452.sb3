@@ -1,0 +1,24 @@
+A = -25.7355
+B = -34.1354
+C = -82.4859
+D = 149445
+E = 0
+A$ = "5EI9"
+B$ = "2E"
+C$ = "31E"
+D$ = "07"
+C$ = MID$(FORMAT$(CHR$(B), -16.4478), LEN(LEFT$(D$, 0.5)), 8.6017)
+PRINT 0
+PRINT HEX$(80.8164)
+E = (-(95.9025) / ((E AND B) OR -(9880)))
+C = -(VAL("I8"))
+D$ = RIGHT$(C$, -(-125646))
+C = -(C)
+PRINT ""
+FOR B = 0 TO 1
+  PRINT C$
+  C = 1
+NEXT
+IF -2147483648 > CEIL((MAX(-58.4670) MOD 914363)) THEN PRINT 24
+D = ((TANH(A) - (A - E)) MOD (ABS(D) >> POW(B, -679733)))
+C = MIN(VAL(C$))

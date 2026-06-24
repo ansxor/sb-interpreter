@@ -1,0 +1,26 @@
+A = 3.14159
+B = 2147483647
+C = -612740
+D = 0.5
+E = -802609
+A$ = "JEC"
+B$ = " B92"
+C$ = " 9 "
+D$ = "9"
+E = 844581
+E = ((E >> C) MOD (0.5 + -(E)))
+C = E
+A = 0
+D = -5
+A = (632655 AND -((C - 3.14159)))
+B = -25
+IF (CHKCALL(("E3 2D" + D$)) * A) == COSH(B) THEN PRINT (PRGNAME$() + "G")
+IF -(66.0579) != -21 THEN E = -25.6592
+IF 3.14159 <= 1 THEN B$ = INKEY$()
+FOR B = 2 TO 5
+  E = 0
+  E = MPSTAT()
+NEXT
+FOR B = 2 TO 2
+  E = ROUND(-(B))
+NEXT

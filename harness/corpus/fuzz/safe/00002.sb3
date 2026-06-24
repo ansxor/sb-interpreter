@@ -1,0 +1,27 @@
+A = -21
+B = 14
+C = 543440
+D = -49.6833
+E = 272555
+A$ = ""
+B$ = "F3 2"
+C$ = "61746I"
+D$ = ""
+C = ((-504814 << A) AND -65.2822)
+FOR E = 1 TO 2
+  PRINT RIGHT$("4F24 6", D)
+  PRINT ((RIGHT$(C$, D) + LEFT$("I5JJ", C)) + LEFT$((A$ + A$), A))
+NEXT
+E = -(COS(ATAN(978832, 0.5)))
+A = 410891
+A = -27
+C = 97002
+D = B
+A = ROUND(-((-10.2693 OR 51.1324)))
+PRINT B$
+A$ = B$
+FOR E = 1 TO 4
+  C = LEN(HEX$(-(-662013)))
+  A = E
+NEXT
+B = (-(308966) - SIN(-(C)))

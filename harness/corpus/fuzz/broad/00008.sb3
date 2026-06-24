@@ -1,0 +1,27 @@
+A = -223191
+B = 1
+C = 478108
+D = -22
+E = -481079
+A$ = "6G2 A4"
+B$ = "425"
+C$ = "G2C5"
+D$ = "A"
+E = (-(17) - INSTR(CHR$(31), PRGGET$()))
+CLEAR
+FOR A = 1 TO 2
+  PRINT C$
+NEXT
+FOR C = 1 TO 2
+  D$ = (("E1" + (A$ + "HA")) + "HI")
+NEXT
+D = -(((-7 - -76.7034) * (1 MOD -2147483648)))
+IF (4 AND -22) >= -69.2687 THEN PRINT ("A" + "28")
+C = ((-10 / 93.9738) + (269619 - D))
+IF 0 < SPUSED(-2147483648) THEN D = (A OR A)
+IF -5 >= 14 THEN PRINT PI()
+FOR B = 1 TO 4
+  D = 85.5160
+NEXT
+PRINT -(0.5)
+PRINT LOAD(LOAD(FORMAT$(C$, B), -(E)), ((D >> 3.14159) << PI()))

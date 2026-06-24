@@ -1,0 +1,21 @@
+A = 12
+B = -82.6536
+C = -21.4169
+D = -28
+E = 24
+A$ = "H1C50"
+B$ = "73G4"
+C$ = "H"
+D$ = "386"
+E = -(-(TALKCHK()))
+PRINT B$
+C = (TAN((B * A)) AND LEN(D$))
+IF -(SINH((A / 2147483647))) <= 1 THEN PRINT CHR$(-(-25))
+B$ = "41HCA"
+C = -763521
+A = (B / CHKLABEL("A9D8I0", D))
+C = BUTTON(((D + A) - (-642722 AND E)))
+IF (-60.3202 << ((1 / B) + 26)) < SPUSED(-(6)) THEN C = E
+B = -((-224413 MOD B))
+PRINT -(-(EXP(D)))
+B = 0

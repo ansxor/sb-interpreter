@@ -1,0 +1,23 @@
+A = 0.5
+B = 91.4094
+C = -844918
+D = 0
+E = -49.4175
+A$ = "2FHH5C"
+B$ = " 8 C9"
+C$ = "33B41A"
+D$ = " 5IE90"
+PRINT HEX$((-11 DIV (E * 363800)))
+C$ = ((A$ + "41A") + "I")
+D = ACOS(603126)
+IF ASC("B20 DJ") == SIN(-((E OR 4))) THEN D = -25
+PRINT "9DB73"
+PRINT CHR$((CLASSIFY(B) + (97.0256 AND -868821)))
+C = ((E - (1 DIV E)) >> ((507197 DIV E) / -737864))
+IF RAD(D) == -(-783001) THEN PRINT "F"
+FOR A = 0 TO 3
+  PRINT "7G"
+NEXT
+E = ((D << B) MOD -51.8684)
+D$ = C$
+B = SQR(30)

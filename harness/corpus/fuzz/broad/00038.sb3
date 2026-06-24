@@ -1,0 +1,21 @@
+A = 2147483647
+B = -24
+C = 39.5726
+D = -91.2638
+E = 238599
+A$ = "0I"
+B$ = "09J58"
+C$ = "H9C"
+D$ = "5E36"
+A = SPCHK(0)
+D$ = ""
+PRINT -9.2934
+PRINT -(-1)
+C = SPUSED(-(794625))
+PRINT "1CA681"
+BGCOLOR ((24 - -212179) * -60.7513) , (27 DIV SINH(C))
+D = COSH((24 + INSTR(-1, D$, C$)))
+B = 24.2347
+A = B
+INPUT "D1B3" , LEN(INKEY$())
+E = 816459

@@ -1,0 +1,29 @@
+A = -17
+B = -174698
+C = 99.3634
+D = 16.9412
+E = -78.4664
+A$ = "0ID"
+B$ = "0JA89G"
+C$ = ""
+D$ = "D"
+FOR D = 1 TO 1
+  PRINT SPUSED((-(1) OR RGB(1, 313482, A)))
+NEXT
+FOR D = 0 TO 3
+  D$ = "7FA"
+  A = (87.0812 OR ((B AND D) DIV -(A)))
+NEXT
+B = (((A << 0.5) - -(-16)) - -1)
+IF 300954 != 0.5 THEN C$ = CHR$(-(C))
+FOR C = 0 TO 0
+  A = MIN((-(E) << -(D)))
+  B = (RND(-(D)) - ((C * 2147483647) MOD ABS(-12.6204)))
+NEXT
+IF SPUSED(-47.5979) < D THEN B = ATAN(0)
+E = SPUSED(-(B))
+C = (-1 * LEN("DHIE1"))
+IF CHKFILE("") <= (E - 1) THEN PRINT ((MAX(11.3526) + 2147483647) MOD -672483)
+IF 0 == (ASC(INKEY$()) OR -(D)) THEN E = (-800563 AND 3.14159)
+C = ((-(6) / -23) >> 26)
+A = (-((B MOD -27)) OR (-2.2393 * -(A)))

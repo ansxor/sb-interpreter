@@ -1,0 +1,23 @@
+A = -123404
+B = 0.5
+C = -4.1799
+D = 662272
+E = 3.14159
+A$ = "F66H"
+B$ = "AA183C"
+C$ = "H"
+D$ = "B"
+PRINT SUBST$((A$ + "5D 1"), 554035, -30, B$)
+FOR C = 1 TO 4
+  A = A
+NEXT
+B = SPUSED(-2147483648)
+PRINT -1
+PRINT (C$ + D$)
+B$ = STR$(0, RNDF())
+XSCREEN ROUND(313859) , ((B >> -862335) MOD -1) , -2
+PRINT "8A156"
+PRINT "7"
+D$ = "JBIJB3"
+B = (0 * -(0))
+C$ = (MID$((C$ + "8IEA"), (18.7373 * -1), (-801108 * A)) + "")

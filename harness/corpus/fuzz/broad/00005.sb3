@@ -1,0 +1,21 @@
+A = 48.3574
+B = 27
+C = 360998
+D = -12
+E = 15
+A$ = "H27"
+B$ = ""
+C$ = "HAG3"
+D$ = "F2"
+A = MICDATA(-32)
+B$ = HEX$((SPCHK(874312) / (-17.0187 DIV -86.9721)), -(RND(A)))
+D$ = LOAD(D$, 0)
+A$ = (MID$(A$, (-750396 + -1), FLOOR(A)) + (SUBST$(A$, A, 2.5760, B$) + "7C"))
+C = 512329
+D = 19
+C$ = LEFT$(MID$("B50GE", BGGET(-88672, B, -1, -2147483648), 2147483647), (-(D) OR (3.14159 * 3.14159)))
+PRINT (TANH(38.9193) DIV -27.3136)
+D = -((FADE() * TAN(C)))
+IF -(SIN((D DIV B))) >= ((-583395 << (A OR B)) MOD TAN(-(A))) THEN B = SIN(B)
+B$ = "D"
+PRINT B$

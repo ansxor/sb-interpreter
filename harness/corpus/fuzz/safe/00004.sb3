@@ -1,0 +1,24 @@
+A = -363937
+B = 18
+C = 1
+D = -24
+E = 19
+A$ = "JBH6"
+B$ = "1IFD"
+C$ = "GA"
+D$ = " IIGFJ"
+C = EXP(COS(D))
+C$ = "8J"
+FOR B = 1 TO 4
+  PRINT C
+  PRINT ""
+NEXT
+D = -(PI())
+PRINT A
+PRINT SUBST$("38", (C << -3), -(RAD(86.9162)), "AB1")
+C$ = "J0"
+A$ = "G4JE"
+D = 14.6180
+PRINT 56.7491
+PRINT ("G3G" + "")
+B$ = ("58H0" + "")

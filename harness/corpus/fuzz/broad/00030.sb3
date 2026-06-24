@@ -1,0 +1,30 @@
+A = 22.2007
+B = -460452
+C = 18
+D = 0.5
+E = -829465
+A$ = "A6H"
+B$ = ""
+C$ = ""
+D$ = "9"
+FOR D = 2 TO 4
+  PRINT SPCHK((27.7446 >> -1))
+NEXT
+C$ = ("H" + LOAD(CHR$(B), SIN(C)))
+FOR D = 2 TO 4
+  A$ = D$
+  PRINT "IFFF"
+NEXT
+FOR C = 1 TO 2
+  PRINT (-(INSTR(D, C$, "FJ60A")) >> A)
+NEXT
+PRINT RAD((0.5 << 726361))
+SPROT ((819114 << E) DIV 67.3460)
+D = (0 + (-(E) / -31.5651))
+IF (((-1 >> D) OR (-490 - 18)) - -667171) >= FLOOR(BUTTON((B << B), CHKFILE("4"))) THEN C$ = PRGGET$()
+B = C
+A$ = MID$(STR$((0.5 DIV E)), 0, A)
+FOR D = 2 TO 3
+  A = -(12)
+NEXT
+E = ((A - -32) OR 8)

@@ -1,0 +1,25 @@
+A = -1
+B = 47.0264
+C = 46.8119
+D = -1
+E = 0.5
+A$ = "22DIH0"
+B$ = "I1"
+C$ = "  6EF7"
+D$ = "IFA C"
+E = -59.1157
+PRINT (14 >> 30)
+FOR B = 1 TO 4
+  PRINT ("" + "CIIDAF")
+NEXT
+PRINT RND((2147483647 OR -(D)))
+PRINT -5.0964
+D$ = "E5I8"
+IF 2147483647 < ((-(C) OR CHKCALL(C$)) >> 0) THEN B = 4.3145
+PRINT ""
+B = -(CHKVAR("9"))
+PRINT (RNDF() + SIN((B OR E)))
+FOR C = 1 TO 1
+  PRINT (-(-579222) - -556327)
+NEXT
+D = INSTR(FORMAT$(LOAD(B$, B), -963990), INKEY$())

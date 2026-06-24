@@ -1,0 +1,24 @@
+A = -41.8485
+B = 367363
+C = 397092
+D = 822909
+E = 344184
+A$ = "FEC7G"
+B$ = "JA3E9"
+C$ = ""
+D$ = "EC"
+B$ = MID$(LEFT$(STR$(C, 63.9287), -(E)), SINH((-59.4747 OR C)), (-(D) OR -2147483648))
+E = C
+A = (3.14159 AND -702739)
+IF (0.5 DIV -((E / 515641))) != E THEN A$ = "80FJ"
+A$ = "C"
+PRINT (CHR$((-348653 - -1)) + "9C56")
+PRINT ""
+PRINT (MIN(B) << -(-2147483648))
+B = C
+PRINT (DEG(C) / ((A AND -32) + -(2147483647)))
+FOR D = 1 TO 1
+  PRINT "BD1FGJ"
+  PRINT ""
+NEXT
+PRINT ((LEN(C$) >> 9) OR 892338)

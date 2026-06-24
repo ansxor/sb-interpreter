@@ -207,6 +207,13 @@ impl GrpState {
     #[allow(clippy::too_many_arguments)]
     pub fn gtri(&mut self, x1: i32, y1: i32, x2: i32, y2: i32, x3: i32, y3: i32, color: u32) {
         let h = argb8888_to_rgba5551(color);
+        // Edge functions are products of coordinate differences. With i32 vertices at the far
+        // extremes (a fuzzer-found case, M7-T1) a difference reaches ~2^32 and its product
+        // ~2^64 — past i64 — so the geometry is computed in i128. Only the sign/zero matters,
+        // and i128 holds it exactly for every i32 input; results are identical in range.
+        let (x1, y1, x2, y2, x3, y3) = (
+            x1 as i128, y1 as i128, x2 as i128, y2 as i128, x3 as i128, y3 as i128,
+        );
         // Signed area * 2; zero => degenerate (collinear) => nothing to fill.
         let area = (x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1);
         if area == 0 {
@@ -218,9 +225,9 @@ impl GrpState {
         let Some((bx0, by0, bx1, by1)) = draw_bounds(&self.write_clip) else {
             return;
         };
-        let (minx, maxx) = (minx.max(bx0), maxx.min(bx1));
-        let (miny, maxy) = (miny.max(by0), maxy.min(by1));
-        let edge = |ax: i32, ay: i32, bx: i32, by: i32, px: i32, py: i32| {
+        let (minx, maxx) = (minx.max(bx0 as i128), maxx.min(bx1 as i128));
+        let (miny, maxy) = (miny.max(by0 as i128), maxy.min(by1 as i128));
+        let edge = |ax: i128, ay: i128, bx: i128, by: i128, px: i128, py: i128| {
             (bx - ax) * (py - ay) - (by - ay) * (px - ax)
         };
         for py in miny..=maxy {
@@ -230,7 +237,8 @@ impl GrpState {
                 let w2 = edge(x1, y1, x2, y2, px, py);
                 let inside = (w0 >= 0 && w1 >= 0 && w2 >= 0) || (w0 <= 0 && w1 <= 0 && w2 <= 0);
                 if inside {
-                    self.plot_dev(px, py, h);
+                    // px/py are clamped to the (small) draw bounds, so they fit i32.
+                    self.plot_dev(px as i32, py as i32, h);
                 }
             }
         }
@@ -403,6 +411,17 @@ mod tests {
         let mut d = GrpState::new();
         d.gtri(0, 0, 5, 5, 10, 10, WHITE);
         assert_eq!(d.pages[0].pixels.iter().filter(|&&p| p != 0).count(), 0);
+    }
+
+    #[test]
+    fn gtri_extreme_coords_do_not_overflow() {
+        // Far-apart i32 vertices overflowed the i32 edge-function products (M7-T1 fuzz find).
+        // The geometry is now i64; this must just not panic (and still fills the on-page part).
+        let mut g = GrpState::new();
+        g.gtri(0, 0, 2_000_000_000, 0, 0, 2_000_000_000, WHITE);
+        assert_ne!(read(&g, 1, 1), 0); // the on-screen corner is covered by the huge triangle
+        let mut e = GrpState::new();
+        e.gtri(i32::MIN, i32::MIN, i32::MAX, 0, 0, i32::MAX, WHITE); // no panic
     }
 
     #[test]

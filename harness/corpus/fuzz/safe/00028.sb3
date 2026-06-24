@@ -1,0 +1,23 @@
+A = -16
+B = -525191
+C = 337845
+D = 3.14159
+E = 1
+A$ = "E"
+B$ = "FE9"
+C$ = "G"
+D$ = ""
+PRINT -1
+C$ = ("4EGAJ" + MID$((A$ + B$), C, 22))
+IF (((-638526 << E) DIV E) * (B + -28.2370)) >= (((-2147483648 << B) * (C / B)) - A) THEN D = COSH(26)
+PRINT "2"
+E = 5
+FOR E = 2 TO 5
+  B = ASC(("5222" + FORMAT$("608861", A$)))
+NEXT
+PRINT (1 * -362051)
+IF A >= 0 THEN PRINT 20
+C$ = C$
+PRINT A
+PRINT LEFT$("DD1C", 192700)
+E = ((719722 << (B AND A)) AND -((-36.9443 << C)))

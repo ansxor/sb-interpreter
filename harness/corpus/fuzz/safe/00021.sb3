@@ -1,0 +1,23 @@
+A = -123404
+B = 0.5
+C = -4.1799
+D = 662272
+E = 3.14159
+A$ = "F66H"
+B$ = "AA183C"
+C$ = "H"
+D$ = "B"
+PRINT STR$(8.0299, -95.3552)
+A$ = B$
+FOR C = 1 TO 4
+  A = A
+NEXT
+B = SINH(-2147483648)
+PRINT -1
+PRINT (C$ + D$)
+B$ = SUBST$(A$, RAD(RAD(404412)), "1019J")
+A = -1
+A = D
+E = (INSTR("7", "35B") OR -(31.6852))
+D = ((0 * -(0)) - C)
+C = (VAL("7") OR COSH(0.5))

@@ -1,0 +1,27 @@
+A = 193707
+B = 0
+C = 31
+D = 2147483647
+E = 3.14159
+A$ = "D"
+B$ = "A23"
+C$ = "A4IH"
+D$ = "D0AA"
+E = ((COS(E) + C) / B)
+IF -(3.14159) <= 319848 THEN PRINT ((C << -(E)) << (1 >> (9.7598 AND A)))
+IF ASIN(TANH((0 OR E))) <= INSTR("HAG7", LEFT$((C$ + C$), RAD(E))) THEN B$ = A$
+IF (CLASSIFY((C MOD -8.3706)) >> 332469) > POW(-93.5082, -30) THEN PRINT -(C)
+E = -(-665242)
+C$ = MID$(RIGHT$(A$, -22.6886), (-(79.9637) / CLASSIFY(-962536)), (-65366 * SGN(1)))
+FOR A = 1 TO 3
+  D = A
+  PRINT 83.4353
+NEXT
+B = -(-28)
+PRINT (B$ + CHR$(C))
+B = (D >> -1)
+FOR D = 0 TO 2
+  PRINT C
+  C = -(-2147483648)
+NEXT
+PRINT SUBST$("BCEFF", CLASSIFY((C >> C)), "H9")

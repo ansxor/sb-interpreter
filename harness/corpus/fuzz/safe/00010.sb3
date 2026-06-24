@@ -1,0 +1,21 @@
+A = 22
+B = -2147483648
+C = -6
+D = 3.14159
+E = 3.14159
+A$ = " F"
+B$ = ""
+C$ = "50CH"
+D$ = "1B3E9"
+PRINT -(-((C * 3.14159)))
+D = -2
+C$ = ("H07435" + "806FH")
+PRINT -1
+PRINT (FORMAT$(C$, "") + FORMAT$("G1334H", "6FDI"))
+IF -(630559) > ((A AND SIN(C)) MOD A) THEN PRINT CEIL((COSH(A) / 0.5))
+IF ((FLOOR(B) << LOG(A)) * -2147483648) < -81.4513 THEN E = ((LOG(D, C) AND MIN(23.8224)) * E)
+PRINT A$
+C = C
+A = SQR(-(1))
+PRINT C
+A = (77.5068 / ((19.5061 OR -6) << (D >> 22)))

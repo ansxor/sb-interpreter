@@ -1,0 +1,26 @@
+A = -975559
+B = -12
+C = -964599
+D = -14
+E = -52.0570
+A$ = "41"
+B$ = "2I"
+C$ = "HG"
+D$ = "10HJ63"
+E = (-2147483648 OR (EXP(A) OR (119748 + 4)))
+FOR D = 0 TO 0
+  PRINT (-((140206 << A)) << C)
+NEXT
+C$ = D$
+PRINT FORMAT$(B$, ((A + A) AND 0))
+D$ = SUBST$(("C84" + "84IC9A"), 50.7415, STR$((E + C), TANH(D)))
+C = ABS(-(D))
+FOR C = 1 TO 2
+  PRINT FLOOR((19 + (A * C)))
+  PRINT ((A$ + A$) + "E 4F G")
+NEXT
+PRINT SQR((E AND ROUND(E)))
+C = POW(-32.5933, -((0.5 * -24)))
+A$ = SUBST$("F9", -16.4012, B$)
+PRINT "F554"
+IF CEIL(-1) != A THEN PRINT -32

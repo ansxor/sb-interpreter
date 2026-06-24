@@ -1,0 +1,29 @@
+A = -17
+B = -174698
+C = 99.3634
+D = 16.9412
+E = -78.4664
+A$ = "0ID"
+B$ = "0JA89G"
+C$ = ""
+D$ = "D"
+FOR D = 1 TO 1
+  PRINT SINH((-(1) OR POW(1, 313482)))
+NEXT
+IF 0 != (3.14159 >> MAX((-1 << 27))) THEN PRINT -(-1)
+IF (2147483647 DIV -(-(-6))) == (((A << 0.5) - -(-16)) - -1) THEN PRINT "5C3 "
+C$ = CHR$(-(C))
+FOR C = 0 TO 0
+  A = LOG((-(E) << -(D)))
+  B = (POW(-(D), (B MOD C)) - 2147483647)
+NEXT
+PRINT (((A OR C) AND -(-178224)) - -652676)
+IF ASIN(0) >= -50.9391 THEN C = C
+B$ = "4J728"
+A$ = LEFT$("47", E)
+IF -(0) > ASC("6I5") THEN PRINT A$
+FOR D = 0 TO 1
+  D$ = HEX$(1)
+  PRINT (ASC(LEFT$(B$, B)) OR INSTR((-800563 AND 3.14159), "95", (B$ + B$)))
+NEXT
+A$ = ""
