@@ -33,13 +33,16 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d GraphicPage / GRP0-GRP5 per-DISPLAY mapping (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus: expression/array/BGPAGE() operands (e.g. GPAGE PAGE+2,(!PAGE)+2; GPAGE VP_,BGPAGE()) are common and legal; a 3-argument GPAGE 0,0,0 appears in 8ANQV384/TXT/3DED but oracle-confirmed to raise errnum 4 (dead code)." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7a): GPAGE 6,0 -> errnum 10, errline 1; GPAGE 0,-1 -> errnum 10; GPAGE 0 (1 arg) -> errnum 4; GPAGE 0,0,0 (3 args) -> errnum 4 (resolves the corpus question — strict 2-arg form)." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (gpage_rt, prog OUT-readback path): SET/GET round-trip exact — GPAGE 1,2 -> V,W=1,2; GPAGE 0,0 -> 0,0; GPAGE 5,5 -> 5,5; GPAGE 3,4 -> 3,4; GPAGE 2,5 -> 2,5. The display≠manip case (2,5) proves the field ordering V=display (+0x30), W=manipulation (+0x34). Pure draw-state value round-trip, no framebuffer — whole contract now oracle-confirmed." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests:
-  # error expects are hw_verified (sb-oracle 2026-06-22 s_t7a); set/get round-trip is disassembled (no framebuffer harvest yet).
+  # round-trip + error expects all hw_verified (sb-oracle: errors 2026-06-22 s_t7a, round-trip 2026-06-24 gpage_rt).
   - { name: roundtrip_pages, code: "GPAGE 1,2\nGPAGE OUT V,W\nPRINT V;W", expect: { stdout: "12" } }
   - { name: roundtrip_zero, code: "GPAGE 0,0\nGPAGE OUT V,W\nPRINT V;W", expect: { stdout: "00" } }
+  - { name: roundtrip_max, code: "GPAGE 5,5\nGPAGE OUT V,W\nPRINT V;W", expect: { stdout: "55" } }
+  - { name: roundtrip_order, code: "GPAGE 2,5\nGPAGE OUT V,W\nPRINT V*10+W", expect: { stdout: "25" } }
   - { name: display_out_of_range, code: "GPAGE 6,0", expect: { error: { errnum: 10 } } }
   - { name: manip_out_of_range, code: "GPAGE 0,-1", expect: { error: { errnum: 10 } } }
   - { name: three_args_errors, code: "GPAGE 0,0,0", expect: { error: { errnum: 4 } } }
