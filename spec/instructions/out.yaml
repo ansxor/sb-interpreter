@@ -1,25 +1,37 @@
 id: OUT
 kind: statement
 category: Control
-version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
 
 signatures:
-  - args: []
-    note: "OUT var[,var...] — receives multiple return values from a DEF or a built-in that returns several values."
+  - args:
+      - { name: var, type: any, desc: "Receiver variable (numeric or string). One or more, comma-separated; on the DEF side these are the declared output variables, on the call side the variables that receive them." }
+    note: "DEF header: `DEF name [arg[,arg…]] OUT v1[,v2…]` declares the output variables. Call site: `name [arg[,arg…]] OUT v1[,v2…]` receives them. OUT is part of the DEF/CALL multiple-return-value protocol; it has no standalone form."
 
-summary: "Receives the additional (multiple) return values of a DEF function or a multi-output built-in."
+summary: "Receives the additional (multiple) return values of a DEF user-instruction (or a multi-output built-in). On the DEF side it names the output variables; on the call side it names the variables that capture them."
 
 semantics:
-  - "Used on the calling side to capture the extra outputs of an instruction/function that returns more than one value."
-  - "Also used in a DEF header to declare the multiple values a user function returns."
-  - "Belongs to the multiple-return-value mechanism (see DEF / CALL); it has no standalone effect."
+  - "Used on the DEF side to declare the variables a user instruction returns, and on the calling side to capture those outputs."
+  - "The multi-output DEF form takes its input arguments WITHOUT parentheses: `DEF NAME a,b OUT c,d` (see def.md DEF(4): `DEF CALCPM A,B OUT OP,OM`). The parenthesised `(args)` header is the single-return *function* form (`A=NAME(x)`) and CANNOT be combined with OUT."
+  - "A DEF header that parenthesises its input args while also declaring OUT params — `DEF NAME(args) OUT v` — is a Syntax error (errnum 3) raised at the DEF line."
+  - "At the call site the receiver variables are overwritten with the DEF's OUT-param values at END (their prior values are discarded), in declared order."
+  - "OUT params may be numeric or string variables (a `$` suffix selects a string output)."
+  - "A multi-output DEF returns no value via an expression (it is called as a statement); it is the OUT receivers that carry every result."
+  - "Belongs to the multiple-return-value mechanism (see DEF / CALL); OUT has no standalone effect."
 
-errors: []
+errors:
+  - { errnum: 3, name: "Syntax error", when: "a DEF header combines parenthesised input args with OUT params, e.g. `DEF F(N) OUT D` (raised at the DEF line)" }
 
 sources:
-  - { type: documented, ref: "sb-docs/smilebasic-3/out.md (used when multiple outputs are required; DEF multi-return)" }
+  - { type: documented, ref: "sb-docs/smilebasic-3/out.md (used when multiple outputs are required; DEF multi-return) + def.md DEF(4) (`DEF CALCPM A,B OUT OP,OM` / `CALCPM 5,10 OUT P,M` — paren-free arg list)" }
   - { type: disassembled, ref: "cia_3.6.0.lst OUT is a parser keyword (token @0x2ed528), not in the builtin dispatch table; part of the DEF/CALL multiple-return-value protocol" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 6, harness/harvest/out/out_out.tsv): canonical `DEF CALCPM A,B OUT OP,OM`/`CALCPM 5,10 OUT P,M` -> OP=15,OM=50 (PRINT OP*100+OM=1550); `DEF MULTI OUT A,B`(A=7,B=9) -> X=7,Y=9 (=79); 3-param TRI -> 123; string `DEF GS OUT S$` -> \"HI\"; OUT overwrites seeded receivers (9,9->1,2=12); and `DEF H(N) OUT D` (parens+OUT in header) -> errnum 3, errline 1 (def_paren_out via errcase)" }
+  - { type: community, ref: "osb/SMILEBASIC/parser.d DEF: function form `NAME(args)` vs command form `NAME args OUT outs` (3.5.0 structural cross-check)" }
 
-confidence: disassembled
+confidence: hw_verified
 
-tests: []
+tests:
+  - { name: doc_calcpm, code: "DEF CALCPM A,B OUT OP,OM\nOP=A+B\nOM=A*B\nEND\nCALCPM 5,10 OUT P,M\nPRINT P*100+M", expect: { stdout: "1550" } }
+  - { name: two_out_no_args, code: "DEF MULTI OUT A,B\nA=7:B=9\nEND\nMULTI OUT X,Y\nPRINT X*10+Y", expect: { stdout: "79" } }
+  - { name: string_out, code: "DEF GS OUT S$\nS$=\"HI\"\nEND\nGS OUT R$\nPRINT R$", expect: { stdout: "HI" } }
+  - { name: paren_args_with_out_errors, code: "DEF H(N) OUT D\nD=N\nEND\nH 1 OUT W\nPRINT W", expect: { error: { errnum: 3 } } }

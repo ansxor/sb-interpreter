@@ -65,7 +65,7 @@ const IN_SCOPE_OPERATORS: &[&str] = &["AND", "OR", "XOR", "DIV", "MOD"];
 const IN_SCOPE_CONTROL: &[&str] = &[
     "IF", "THEN", "ELSE", "ELSEIF", "ENDIF", "FOR", "NEXT", "TO", "STEP", "WHILE", "WEND",
     "REPEAT", "UNTIL", "BREAK", "CONTINUE", "GOTO", "GOSUB", "RETURN", "ON", "END", "STOP", "DEF",
-    "CALL", "COMMON",
+    "CALL", "COMMON", "OUT",
 ];
 /// Array / variable **mutation** instructions (`Variables and Arrays` category) that
 /// `sb-core` fully implements — including the array-element reference forms (`SWAP A[i],A[j]`,

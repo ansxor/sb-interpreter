@@ -985,6 +985,14 @@ impl Parser {
                 break;
             }
             self.expect_kind(&TokenKind::RParen)?;
+            // The parenthesised `(args)` form is the single-return *function* syntax and
+            // cannot be combined with OUT params: real SB 3.6.0 rejects
+            // `DEF F(N) OUT D` with a Syntax error (errnum 3) at the DEF line. The
+            // multi-output form omits the parentheses (`DEF F N OUT D`). hw_verified via
+            // the sb-oracle skill (M7-T2 run 6): def_paren_out -> errnum=3, errline=1.
+            if self.at_kw("OUT") {
+                return Err(self.syntax_error("OUT params cannot follow parenthesised DEF args"));
+            }
         } else {
             // Command form: `DEF C a, b [OUT x, y]` — no return value.
             returns_value = false;

@@ -1,0 +1,36 @@
+# Oracle-harvested fixtures for OUT (hw_verified) — real SmileBASIC 3.6.0 (Azahar),
+# M7-T2 run 6 (2026-06-24). OUT is the DEF/CALL multiple-return-value receiver. The
+# canonical multi-output DEF takes its input args WITHOUT parentheses
+# (`DEF NAME a,b OUT c,d` — see def.md DEF(4)) and is called as a statement with a
+# matching `... OUT v1,v2` tail; the receiver variables take the values of the DEF's
+# OUT params at END. Harvested via run_case.py progcase (value readback through PRINT)
+# + ready->errcase (the paren+OUT header guard). TSV: harness/harvest/out/out_out.tsv.
+tests:
+  # Canonical documented form: DEF CALCPM A,B OUT OP,OM (def.md DEF(4) example).
+  # CALCPM 5,10 -> OP=15, OM=50 ; PRINT OP*100+OM = 1550.
+  - name: "calcpm_doc_example"
+    code: "DEF CALCPM A,B OUT OP,OM\nOP=A+B\nOM=A*B\nEND\nCALCPM 5,10 OUT P,M\nPRINT P*100+M"
+    expect: { stdout: "1550" }
+  # Two OUT params, no input args: A=7,B=9 -> X=7,Y=9 ; PRINT X*10+Y = 79.
+  - name: "two_out_no_args"
+    code: "DEF MULTI OUT A,B\nA=7:B=9\nEND\nMULTI OUT X,Y\nPRINT X*10+Y"
+    expect: { stdout: "79" }
+  # Three OUT params: 1,2,3 -> P,Q,R ; PRINT P*100+Q*10+R = 123.
+  - name: "three_out_params"
+    code: "DEF TRI OUT A,B,C\nA=1:B=2:C=3\nEND\nTRI OUT P,Q,R\nPRINT P*100+Q*10+R"
+    expect: { stdout: "123" }
+  # String OUT param round-trips the string value.
+  - name: "string_out_param"
+    code: "DEF GS OUT S$\nS$=\"HI\"\nEND\nGS OUT R$\nPRINT R$"
+    expect: { stdout: "HI" }
+  # The OUT receivers are overwritten (not merged) with the DEF OUT values: X,Y seeded 9,9
+  # become 1,2 -> PRINT X*10+Y = 12.
+  - name: "out_overwrites_receivers"
+    code: "DEF SW OUT A,B\nA=1:B=2\nEND\nX=9:Y=9\nSW OUT X,Y\nPRINT X*10+Y"
+    expect: { stdout: "12" }
+  # A DEF header that PARENTHESIZES its input args while also declaring OUT params is a
+  # Syntax error (errnum 3) at the DEF line — the paren `(args)` form is the single-return
+  # function syntax and cannot be combined with OUT. (def_paren_out: errnum=3, errline=1.)
+  - name: "paren_args_with_out_is_syntax_error"
+    code: "DEF H(N) OUT D\nD=N\nEND\nH 1 OUT W\nPRINT W"
+    expect: { error: { errnum: 3 } }
