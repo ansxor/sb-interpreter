@@ -10,22 +10,6 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 
 ## Open
 
-- [x] M7-T5 (overflow promotion — MIXED operand typing) · RESOLVED hw_verified (sb-oracle
-  2026-06-24, overflow.yaml): a `%`+suffix-less / `%`+Real mix PROMOTES (`A%=2147483647:B=1
-  :A%+B → 2.14748e+09`; `A%*B → 4e+09`; `A%+1.0 → 2.14748e+09`). Confirms sb-core's "promote
-  iff EITHER operand `is_real_typed`" rule was already correct; froze as conformance cases.
-- [x] M7-T5 (overflow promotion — builtin/sysvar return types) · RESOLVED hw_verified
-  (sb-oracle 2026-06-24, `harness/harvest/m7t5_builtin_rettype.txt` → out tsv): there is **NO**
-  static "Real-return" override — the earlier "FLOOR() is Real-typed" reading was a
-  misinterpretation of the Double-arg case. A builtin's promote/wrap is decided by the RUNTIME
-  type of its result, like any other operand. The disambiguating integer-arg cases:
-  `FLOOR(2147483647)+1 → -2147483648` (WRAPS — Int in→Int out), `FLOOR(2147483647.0)+1 →
-  2.14748e+09` (PROMOTES — Double in→Double out); `ABS`/`VAL`/`SGN`/`CEIL`/`ROUND` int-arg all
-  WRAP (type-preserving Integer); `SIN(0)+2147483647+1` / `SQR(2147483647)*0+2147483647+1 →
-  2.14748e+09` (PROMOTE — genuinely Double-returning). sb-core's conservative "calls are NOT
-  real-typed, rely on the runtime Double" rule already matches the oracle on every case — so no
-  per-builtin return-type table is needed. Froze all 9 cases in overflow.yaml; sysvars are
-  integer-valued and never reach 2³¹ so their wrap path stands (no observable promotion case).
 - [ ] M7-T5 (overflow promotion — FOR counter, oracle-confirm) · `INC`/`DEC` promotion is now
   hw_verified + implemented (overflow.yaml `inc_*`/`dec_*`; suffix-less promotes, `%` wraps).
   The FOR counter step add now uses the SAME rule (compiler `name_is_real_typed(var) ||
@@ -73,24 +57,6 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   (which sb-core already supports). This is a cross-instruction parser refinement, not a single
   slice — a value-only family (GCOLOR's own value contract is hw_verified + frozen).
 
-- [x] M3-T4 (BGGET pixel-coord read) · RESOLVED 2026-06-24 (M7-T2, sb-oracle). Pixel mode
-  (flag=1) = floor(pixel / tileSize) per axis (`div_euclid`), NO wrap, NOT range-checked: an
-  off-map char coordinate reads the empty cell 0 (never wraps, never raises). Drove a fix —
-  sb-render `cell_pixel` had wrapped via `rem_euclid` (wrong); now floors + returns 0 off-map.
-  Also confirmed BGGET returns the FULL 16-bit packed screen-data (char + #BGROT*/#BGREV* attr
-  bits) verbatim, no mod-1024 displayed-value collapse. Frozen in spec/tests via bgget.yaml.
-- [x] M3-T4 (BGFILL out-of-bounds rectangle) · RESOLVED 2026-06-24 (M7-T2 run 32, hw_verified
-  via BGGET read-back). Corners ARE normalized (min/max — reversed start/end fill the same rect)
-  and CLAMPED to [0, size-1]; an OOB rectangle fills only its in-bounds intersection and a
-  fully-off-map rect writes nothing — NEVER errors on coords (no errnum-10, no wrap). NEW
-  finding: a NUMERIC screen-data value is range-checked to 0..65535 → errnum 10 (65536/-1
-  raise; differs from BGPUT which masks). Fixed sb-core (`screen_data_fill`) + froze 12 cases
-  in bgfill.yaml. TSV bgfill_rt.tsv.
-- [x] M3-T4 (BGOFS Z clamp) · RESOLVED 2026-06-24 (M7-T2 run 13, hw_verified). Z is NOT
-  clamped — it is RANGE-CHECKED to -256..1024 inclusive and a value outside raises errnum 10
-  (1025/-257/2000/-1000 -> errnum 10 errline 1; 1024/-256 stored verbatim). X,Y ARE stored
-  verbatim with no wrap/clamp (1000/5000/-1000 round-trip). Fixed sb-core (added the Z guard)
-  + froze the round-trip + range cases in bgofs.yaml.
 - [ ] M3-T4 (BGPUT/BGFILL malformed hex string) · screenData strings parse as ≤4-digit hex.
   assumption: an unparseable string parses leniently to 0 (no error); over-long (> 0x2000
   chars) → errnum 41; wrong type → errnum 8. Confirm the malformed-hex result + the exact
@@ -259,18 +225,8 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
 - [ ] M1-T1 (lexer) · Does SmileBASIC 3.6.0 allow full-width / kana characters in
   identifiers and labels? · assumption: ASCII-only (inherited from osb — **likely wrong**,
   SB is a Japanese product; verify and fix the lexer's `is_alpha`/identifier scan).
-- [x] M1 (general) · Exact `STR$`/PRINT double→string formatting (sig figs, exponent
-  threshold, trailing zeros) · RESOLVED by M7-T4 (2026-06-23): STR$=C `%g`/6-sig (handler
-  @0x1eb2a8, fmt "%g" @0x1eb4a8) — `format_g` verified against a 2000-case bit-exact sweep +
-  oracle; PRINT=C `%.8f`+trailing-zero/dot trim (handler @0x180a50, fmt "%.8f" @0x180b0c),
-  NOT %g — `format_print_number`/`format_fixed8`, hw_verified via console read-back. Both
-  keep signed zero (STR$(-0.0)/PRINT -0.0 → "-0"). See str.yaml/print.yaml.
 - [ ] M1-T1 (lexer) · Is `1E5` lexed as `1` + ident `E5` (no exponent literal)? · assumption:
   yes (osb behavior) — confirm against 3.6.0.
-- [x] S-T1b (CLASSIFY) · RESOLVED 2026-06-23 (M7-T2): inf->1, NaN->2 hw_verified via overflow.
-  `EXP(1000)` overflows the double to +inf and `EXP(1000)-EXP(1000)` is NaN, so
-  CLASSIFY(EXP(1000))=1, CLASSIFY(-EXP(1000))=1, CLASSIFY(EXP(1000)-EXP(1000))=2 on real SB
-  3.6.0 — confirming the @0x20c3e0 helper mapping. classify.yaml now hw_verified.
 - [ ] S-T1a (FLOOR/ROUND/CEIL) · Do these return a Double for a Double argument (not an
   Integer)? Discriminate with a whole magnitude > i32 max, e.g. `PRINT FLOOR(3000000000.0)` —
   Double return prints the full number, Integer return would overflow (errnum 9) or wrap. ·
@@ -281,12 +237,6 @@ Format: `- [ ] <task/id> · <question> · assumption: <what the code currently d
   (Illegal function call)? PI is niladic; the parser may reject `PI(1)` as a syntax error
   instead. · assumption: errnum 4 (consistent with other math builtins' argcount!=1 check).
   Value cases PI()=3.14159, PI()*2=6.28319 already harvested (hw_verified 2026-06-22).
-- [x] S-T1f (RND/RNDF/RANDOMIZE) · DONE 2026-06-23 (M1-T9). Harvested the seeded sequence via
-  sb-oracle prog-cases: `RANDOMIZE 0,1` then RND(100) = 89,33,33,52,...66 and RNDF(0) = 0.836095
-  (matches otya_test.sb3 exactly); `RANDOMIZE 5,1`->RND(5,100) = 89. Folded into
-  rnd/rndf/randomize.yaml as hw_verified tests + the rng.rs TinyMT32 impl is bit-exact. RND
-  reduction is plain `raw % max` (reduce helper @0x1fd4e8); RNDF is two-draw 53-bit
-  (a>>5)*2^26+(b>>6))*2^-53 (core @0x1eac60); RANDOMIZE = tinymt32_init, no extra draw (@0x26f580).
 - [ ] S-T1f (MIN/MAX) · Harvest the array form `DIM TMP[2]:TMP[0]=50:TMP[1]=3:MIN(TMP)` /
   `MAX(TMP)` and re-capture `MAX(1,"x")` (errnum 8 — capture flaked twice on 2026-06-22). ·
   assumption: array form returns smallest/largest element (disasm @0x148558/0x148230);
@@ -372,18 +322,6 @@ oracle to confirm exact output and promote to `hw_verified`.
   no-op that resyncs lastVsync. · assumption (disasm @0x1455c8/@0x14afb0): VSYNC target =
   lastVsync+n, WAIT target = current+n, both set lastVsync=current on exit. Needs the M4 frame
   clock + a deterministic MAINCNT probe. errnum-4 (used as function) already hw_verified 2026-06-22.
-- [x] S-T4f KEY() function form · RESOLVED hw_verified 2026-06-24 (M7-T2 run 4): `KEY n,"S":
-  ?KEY(n)` reads back the bound string (KEY(3)="HI", KEY(1)="CLS", KEY(5)="HELLO"); function
-  form honors 1..5 (KEY(6)/KEY(0) -> errnum 10), two args -> errnum 4. Frozen in
-  spec/tests/key.yaml; key.yaml confidence -> hw_verified. sb-core already matches.
-- [x] S-T4f OPTION STRICT/DEFINT/TOOL behavior · RESOLVED hw_verified 2026-06-24 (M7-T2 run 4):
-  OPTION STRICT + undeclared `B=2` -> errnum 15 errline 2; OPTION TOOL compiles cleanly (no
-  error, recognized feature); unknown feature -> errnum 3. OPTION DEFINT flips the suffix-less
-  numeric default Real->Integer with truncation-toward-zero (A=3.7->3, A=-3.7->-3, A=2.5->2,
-  A=-2.5->-2, A=5->5, A#=3.7->3.7); WITHOUT any OPTION the suffix-less default is Real
-  (A=3.7->3.7, A=2.5->2.5, `DIM A[3]:A[0]=3.7`->3.7). Frozen in spec/tests/option.yaml;
-  option.yaml confidence -> hw_verified. (The 4 DEFINT real->int coercion cases are NOT frozen
-  yet — see the sb-core impl gap below.)
 - [ ] M1-T4 sb-core: suffix-less numeric default + OPTION DEFINT (hw_verified, fix needed) ·
   Real SB 3.6.0 defaults a suffix-less numeric to **Real (Double)** and `OPTION DEFINT` flips
   that default to **Integer** (truncating toward zero). sb-core: scalar auto-vars / `VAR A` are
@@ -429,20 +367,10 @@ oracle to confirm exact output and promote to `hw_verified`.
 - [ ] S-T5b INKEY$ live keypress · INKEY$() returning an actual queued char is unharvested
   (real-time keyboard); only the empty-buffer "" is hw_verified. · assumption (disasm @0x14b234
   strh of one UTF-16 unit): returns a 1-char string of the popped key.
-- [x] S-T5c value/errnum cases · HARVESTED 2026-06-22 (sb-oracle batch s_t5c → spec hw_verified):
-  ATTR 16/-1 → errnum 10, A=ATTR(3) → errnum 4; CHKCHR(0,0)=65 after PRINT "A", CHKCHR(-1,0)=0,
-  CHKCHR(0,100)=0, A=CHKCHR(0)/CHKCHR 0,0 → errnum 4; FONTDEF 70000/-1 → errnum 10, bad-hex
-  → errnum 4, short array → errnum 31, A=FONTDEF(...) → errnum 4; WIDTH()=8 default / 16 after
-  WIDTH 16, WIDTH 12/0 → errnum 4 (NOT 10); SCROLL 5 / A=SCROLL(5,7) → errnum 4.
 - [ ] S-T5c visual side-effects (screenshot path) · ATTR rotation/inversion render, FONTDEF glyph
   pixels, SCROLL pixel movement, WIDTH 8↔16 reflow are not VALUE-harvestable — they need the
   framebuffer/screenshot oracle (not yet in the skill). Behavior is from docs + disassembly.
 
-- [x] S-T7a errnum cases · HARVESTED 2026-06-22 (sb-oracle batch s_t7a → specs hw_verified):
-  GPAGE 6,0 / 0,-1 → errnum 10, GPAGE 0 (1 arg) → errnum 4, **GPAGE 0,0,0 (3-arg corpus form)
-  → errnum 4** (disasm confirmed — strict 2-arg). GCLS() → errnum 4, GCLS 0,0 → errnum 4.
-  GPRIO 1025 / -257 → errnum 10 (confirms -256..1024 range), GPRIO(0) → errnum 4. GCLIP 0,1,2
-  → errnum 4, GCLIP(0) → errnum 4. GCOLOR (no arg) → errnum 4, GCOLOR 1,2 → errnum 4.
 - [ ] S-T7a remaining round-trip values (not value-batchable — need setup-then-PRINT program):
   GPAGE 1,2 → OUT V,W = 1,2; GCOLOR 100 → OUT C / C=GCOLOR() = 100; GCLIP write-mode bad
   rectangle → errnum 10 (which region triggers it?). These are disassembled-solid (store/load)
@@ -452,12 +380,6 @@ oracle to confirm exact output and promote to `hw_verified`.
   pixel effects — need the framebuffer oracle (O-T6, not yet in the skill). Behavior is from
   docs + disassembly.
 
-- [x] S-T7b errnum cases · HARVESTED 2026-06-22 (sb-oracle batch s_t7b → specs hw_verified):
-  all 15 arg-count guards confirmed errnum 4 / errline 1 — GPSET 100 / 1,2,3,4 / A=GPSET(1,1);
-  GLINE 0,0,1 / 0,0,1,1,2,3 / A=GLINE(...); GBOX 0,0,1 / 0,0,1,1,2,3 / A=GBOX(...);
-  GTRI 0,0,1,1,2 / 0,0,1,1,2,2,3,4 / A=GTRI(...); GCIRCLE 100,100 / 1,1,1,0,45,1,2,3 /
-  A=GCIRCLE(100,100,30). Matches the disasm guards (errnum 4 sites @0x153dd0/@0x153318/
-  @0x15514c/@0x1554e0/@0x154a80).
 - [ ] S-T7b visual side-effects (framebuffer path) · the actual pixels GLINE/GBOX/GTRI/
   GCIRCLE draw, GCIRCLE arc vs sector geometry + angle normalization (negative / >360 wrap,
   where 0deg points), and radius<=0 no-op are pixel effects — checkable via GSPOIT scalar
@@ -466,10 +388,6 @@ oracle to confirm exact output and promote to `hw_verified`.
   write + RGBA5551 round-trip, the GCOLOR default-color path, and FLOOR float-coordinate
   rounding all confirmed → gpset.yaml hw_verified.
 
-- [x] S-T7c arg-count guards · HARVESTED 2026-06-22 (sb-oracle batch s_t7c → specs hw_verified):
-  all 9 confirmed errnum 4 / errline 1 — GFILL 0,0,1 / 0,0,1,1,2,3 / A=GFILL(0,0,1,1);
-  GPAINT 200 / 0,0,1,2,3 / A=GPAINT(0,0); GPUTCHR 10,10 / 10,10,"A",2,2,0,0 / A=GPUTCHR(10,10,"A").
-  Matches the disasm guards (GFILL @0x153154, GPAINT @0x154544, GPUTCHR @0x154b40 / @0x154c18).
 - [ ] S-T7c GPUTCHR float-scale coercion · does a float scale (1.5,1.5) truncate to 1 (no
   scaling) or round? corpus shows ~41 real uses (e.g. 43Y5P31D/TXT/CAR '...,1.5,1.5,...').
   Assumption: integer-truncated by the int arg-fetch (disasm fetches scale via int vtable
@@ -481,39 +399,9 @@ oracle to confirm exact output and promote to `hw_verified`.
   path, GPAINT flood-fill region (border-omitted = start-point color region vs explicit
   border), GPUTCHR glyph rendering/positioning/scale/font — all pixel effects needing the
   framebuffer oracle (O-T6, not yet in the skill). Behavior is from docs + disassembly + corpus.
-- [x] S-T7d arg-count + page-range guards · HARVESTED 2026-06-22 (sb-oracle batch s_t7d → specs hw_verified):
-  all 10 confirmed — GCOPY 6args/9args/A=GCOPY(...) → errnum 4, GCOPY 6,... (src page>5) → errnum 10;
-  GLOAD W,1 (2 args)/0,0,8,8,W (5 args)/A=GLOAD(W,1,0) → errnum 4; GSAVE 0,0,W,1 (4 args)/A=GSAVE(W,1)
-  → errnum 4, GSAVE 6,W,1 (src page>5) → errnum 10. Matches the disasm guards (GCOPY @0x152f00/@0x152f78,
-  GLOAD @0x153580, GSAVE @0x153f14/@0x153f78).
 - [ ] S-T7d errnum 49 page-availability guard · GCOPY (mov r0,#0x31 @0x1530f0) and GSAVE (@0x154294)
   raise errnum 49 when the resolved source plane is unusable (guard byte [page+0x60] set) — confirm the
   exact error NAME and the precise triggering state. Not in errors.yaml (stops at 47); oracle-pending.
-- [x] S-T7d GLOAD/GSAVE error edges · HARVESTED 2026-06-23 (sb-oracle batch s_t7d_bitmap, M2-T3):
-  GLOAD too-small image_array → errnum 31 (3-arg whole DIM W[8] and 7-arg DIM W[3], both 31);
-  GLOAD/GSAVE string array → errnum 8 (Type mismatch). Folded into gload.yaml/gsave.yaml (hw_verified).
-  Still oracle-pending: negative Width/Height → errnum 10 (disasm-only; implemented but not yet harvested).
-- [x] S-T7d visual/array side-effects · HARVESTED 2026-06-23 (sb-oracle batch s_t7d_bitmap, M2-T3) WITHOUT
-  the framebuffer oracle — the GSPOIT scalar-read path makes blits/transfers deterministically checkable:
-  GCOPY moves pixels (red GPSET 10,10 → GCOPY 0,0,32,32,100,100,1 → GSPOIT 110,110 = red); copy_mode 0
-  SKIPS the transparent source (destination kept), mode 1 OVERWRITES with transparent (→ 0). GSAVE element
-  word format: flag 1 = raw RGBA5551 (red 0xF801=63489), flag 0 = 32-bit logical ARGB (red 0xFFF80000 =
-  -524288 signed / 4294443008 in a Double array); 1-D dest auto-expands (whole-area 262144, 8×8 = 64).
-  GSAVE/GLOAD round-trip a pixel exactly for both flags. Folded into graphics_bitmap.yaml + the specs
-  (hw_verified). The pixel-EXACT PNG golden of a blit is still M2-T5 (compositor + O-T6).
-- [x] S-T7d GSAVE fill order + color table + cross-page · HARVESTED 2026-06-24 (M7-T2 run 51,
-  harness/harvest/out/gsave.tsv) WITHOUT a framebuffer — the saved array contents ARE the read-back.
-  FILL ORDER is ROW-MAJOR (W[j*w+i]=pixel(x+i,y+j); a 4-color 2x2 sub-rect → [red,green,blue,white]).
-  RGBA5551 raw codes (flag 1): green=1985, blue=63, white=65535 (red 63489 was already verified).
-  32-bit logical (flag 0, Int array, signed): green=-16713728 (0xFF00F800), blue=-16776968, white=-460552.
-  Transparent pixel → 0 under both flags. The explicit src_page arg selects that page (not the manip page);
-  no-page-arg reads the current manip page. Folded into gsave.yaml; gsave bumped disassembled→hw_verified.
-  Resolves the GSAVE half of the deferred "array side-effects" beyond the single red pixel. (GPUTCHR stays
-  disassembled: sb-core does not implement glyph rendering / the system-font ROM, so its pixel side-effects
-  are not yet replayable in the gate — a font-ROM impl task, not an in-loop harvest.)
-- [ ] M2-T3 GRPF (source page -1) content · GCOPY/GSAVE with src_page -1 (GRPF, the captured-screen plane)
-  is accepted (no error, hw_verified) but GRPF is not backed in the GRP model — reads yield transparent
-  pixels. The real GRPF content needs the framebuffer/screen-capture model (O-T6). Implemented as blank; queued.
 - [ ] M2-T3 GLOAD form-2 (palette array) semantics · implemented as the documented index→palette recolor
   (image word = palette index; palette entry read as a 32-bit logical color → device). The corpus confirms the
   syntax is real (`...,CHIP8_PAL,TRUE`); the EXACT palette interpretation (entry format, OOB-index behavior,
@@ -542,13 +430,6 @@ oracle to confirm exact output and promote to `hw_verified`.
   color->8. RGBREAD top-level flipped to hw_verified; harness/harvest/out/rgbread.tsv. STILL PENDING:
   (c) GSPOIT errnum 49 (0x31) graphics-state guard @0x1543bc — undocumented
   (beyond the 3-47 table), not reachable from ordinary user code; confirm trigger if ever possible.
-- [x] S-T8a sprite lifecycle (SPSET · SPCLR · SPSHOW · SPHIDE · SPPAGE) · ERROR expects HARVESTED hw_verified
-  (sb-oracle 2026-06-22 s_t8a): SPSET 512,0 / -1,0 -> errnum 10; SPSET 0,4096 -> errnum 10; SPSET 0,0,0,0,0,0,0
-  -> errnum 4; SPSHOW 0 / SPHIDE 0 before SPSET -> errnum 4; SPSHOW 512 / SPHIDE 512 / SPCLR 512 -> errnum 10;
-  SPPAGE 6 / SPPAGE -1 -> errnum 10. All matched the disassembled predictions; folded into the 5 specs.
-- [x] S-T8a CONTRADICTION RESOLVED · the corpus 1-argument no-OUT form `SPSET 510` (534NX3L6/TXT/DANMAKU3 line 380)
-  is oracle-confirmed to raise errnum 4 (2026-06-22 s_t8a) — dead/buggy code behind the rare MPCOUNT!=2 branch.
-  The disassembly's argcount-2..6 guard is correct; spec kept at errnum 4.
 - [ ] S-T8a sprite VISUAL side-effects (need framebuffer oracle O-T6): the ATTRIBUTE bits actually applied
   to the rendered sprite (rotation/flip/additive), and SPSET reinit clearing SPVAR -> 0 (the SPVAR reset is
   separately checkable via the SPVAR scalar — queue). All disassembled + documented; runtime visual
@@ -556,28 +437,6 @@ oracle to confirm exact output and promote to `hw_verified`.
   (SPSET creation [template + direct + auto-allocate + range + OUT -1 pool-exhaustion] RESOLVED 2026-06-24
   M7-T2 — hw_verified via SPUSED read-back + the auto-allocate return value, no framebuffer; SPSET now
   confidence: hw_verified. SPCLR slot-free + bulk clear-all (0-arg) RESOLVED earlier the same day, same way.)
-- [x] M3-T1 SPSET direct-image source-rect overflow errnum RESOLVED (2026-06-24 M7-T2): `U+W`/`V+H` > 512 is
-  errnum 10 (matches sb-core's `rect()` assumption). hw_verified: SPSET 0,500,0,20,16 (U+W=520) and
-  SPSET 0,0,500,16,20 (V+H=520) -> errnum 10; the U+W==512 edge (SPSET 0,496,0,16,16) is accepted. Disasm:
-  cmp #0x44000000 (512.0) / bgt errnum-10 @0x141b44 (U+W) + @0x141b5c (V+H).
-- [x] M3-T1 SPSET auto-allocate scan tie-break RESOLVED (2026-06-24 M7-T2): the OUT/function forms pick the
-  LOWEST free slot (hw_verified IX=SPSET(0)->0, with 0,1 taken ->2; range IX=SPSET(100,105,0)->100, with 100
-  taken ->101, IX=SPSET(5,5,0)->5, full single-slot range ->-1). DISCOVERY: forms 5/6 require upper <= lower —
-  a reversed range IX=SPSET(105,100,0) raises errnum 4 (NOT a downward scan; cmp/ble @0x141a30). Fixed
-  `SpriteState::alloc` (forward-only) + added `alloc_range` errnum-4 guard in builtins/sprite.rs; SPSET now
-  confidence: hw_verified.
-- [x] S-T8b error + round-trip values HARVESTED (2026-06-22 s_t8b): mgmt out-of-range (512) -> errnum 10 for
-  SPOFS/SPROT/SPSCALE/SPHOME/SPCHR; used-before-SPSET -> errnum 4 (all five); bad argcount -> errnum 4
-  (SPOFS 0,0 / SPROT 0); SPCHR defn 4096 -> errnum 10. Round-trips: SPOFS 0,50,80 OUT->50,80; SPROT 0,45->45;
-  SPSCALE 0,2,0.5 OUT->2,0.5; SPHOME 0,16,16 OUT->16,16; SPCHR 0,64,64,16,16,1 OUT U,V->64,64 and full->64,64,32,32,1.
-  KEY FINDING: SPROT does NOT wrap/normalize — SPROT 0,-25->-25, SPROT 0,450->450, SPROT 0,11.2->11 (truncated, verbatim).
-  Spec semantics corrected; raised those sources to hw_verified.
-- [x] SPCHR full VALUE contract HARVESTED + IMPLEMENTED (2026-06-24, M7-T2 run 27): U+W/V+H>512 -> errnum 10
-  (was assumed); form-1 template round-trip (copies source rect + origin->home + attr bits1-5 + defno, preserves
-  position); GET DEFNO (template#/SPSET defn/0-after-direct); 3-return form = U,V,ATTRIBUTE not width; attr SET
-  preserves display bit b00; W,H round-trip verbatim through rotation; skip-empty keeps current / absent defaults.
-  SPCHR was UNimplemented in sb-core — now implemented (builtins/sprite.rs::spchr + sb-render chr_template/
-  set_attr_keep_display/get_attr), in IN_SCOPE_SPRITES, spchr.yaml -> hw_verified. TSVs spchr_rt*.tsv.
 - [ ] S-T8b remaining oracle-pending (need framebuffer oracle O-T6): SPOFS Z-depth round-trip
   (3-var OUT X,Y,Z value) and the actual on-screen transform (visible render).
 - [ ] S-T8c remaining oracle-pending (needs framebuffer/composite oracle O-T6, not a VALUE harvest): the actual
@@ -610,8 +469,12 @@ oracle to confirm exact output and promote to `hw_verified`.
     (c) the scale-adjust flag — we multiply detection W,H by |SPSCALE|, the
     exact "only affects later SPSCALE" timing is unverified; (d) SPDEF non-default field read-back +
     whether form-2-vs-form-6 (define vs copy) is really disambiguated by a skipped/`,,` arg or argcount
-    (we treat argc==2 OR any Void override as the copy form); (e) the real spdef.csv default-template
-    rectangles (we seed every template to 16×16 at origin 0,0 attr 1).
+    (we treat argc==2 OR any Void override as the copy form); (e) [DONE 2026-06-24] the real spdef.csv
+    default-template rectangles — the firmware default SPDEF table (4096 templates) is now baked in
+    (`sb_render::assets::default_spdef` ← `osb/SMILEBASIC/spdef.csv`, committed as `spdef.bin`) and
+    seeds `SpriteState` at boot + on `SPDEF`(no-arg)/`ACLS` reset. Corroborated by the existing
+    hw_verified `spdef_reset_restores_defaults` (template 0 = 0,0,16,16). The osb csv is the 3.5.0
+    reference; a full per-template `SPDEF…OUT` oracle re-harvest could still confirm 3.6.0 identity.
 
 - [ ] S-T8e vars/funcs/state — remaining VALUE/render harvests (core forms + error cases already
   hw_verified s_t8e batch 2026-06-22: SPVAR read/write round-trip, SPCHK stopped=0, SPUSED TRUE/FALSE,
@@ -1151,18 +1014,6 @@ oracle to confirm exact output and promote to `hw_verified`.
     accepts comma-separated call args; confirm whether `;` is legal there or DIALOG-specific.
   - `^` (power) operator: lexer has no caret token and the AST omits it; precedence rank +
     associativity still queued (S-C1/execution-model open item).
-
-## M1-T4 — Value / Array (runtime types) edge cases
-- [x] Array **rank mismatch** errnum — RESOLVED hw_verified 2026-06-23 (sb-oracle): a wrong
-  subscript COUNT is errnum 3 (Syntax error), genuine out-of-range is errnum 31. `DIM Z[3,2]:
-  A=Z[1]`→3, `DIM Z[3]:A=Z[1,1]`→3, `DIM Z[3]:A=Z[3]`→31. Folded into dim.yaml + array.rs.
-- **POP/SHIFT on an empty 1D array** errnum: assumed Illegal function call (errnum 4). Confirm
-  vs oracle (`DIM A[0]:X=POP(A)` style — note POP/SHIFT are statements/funcs, S-T4b).
-- **PUSH/POP/SHIFT/UNSHIFT on a multi-dimensional array** errnum: assumed errnum 4. Confirm
-  vs oracle.
-- **Double→Integer coercion overflow**: `A%=1E20` / values outside i32 range. value.rs uses
-  Rust `f64 as i32` (saturating; ARM VCVT-style). Confirm SB's wrap/saturate behavior vs
-  oracle (large + NaN/Inf inputs).
 
 ## M1-T5 — Bytecode / Compiler (lowering decisions to confirm)
 - **FOR re-evaluation**: the compiler re-evaluates the `TO` and `STEP` expressions every

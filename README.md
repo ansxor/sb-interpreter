@@ -7,8 +7,8 @@ community is web-based). "Faithful" means matching not just the language but the
 numbers, MML audio, sprite/BG hardware behavior. Where real SB3 and this differ, that's
 a bug here.
 
-Full plan: `~/.claude/plans/i-want-to-make-bright-plum.md`. Task breakdown: [`PRD.md`](PRD.md)
-(canonical task list) with per-milestone design docs in [`prd/`](prd/README.md).
+Open behaviors still awaiting emulator-oracle verification are tracked in
+[`HARVEST_QUEUE.md`](HARVEST_QUEUE.md).
 
 ## How fidelity is enforced
 
@@ -59,18 +59,10 @@ python3 tools/gen_specs.py                           # regenerate spec/ from sb-
 python3 harness/diff/replay.py                       # deterministic replay inventory
 ```
 
-## Autonomous development (Ralph loop)
-
-`./ralph.sh` runs a [Ralph](https://ghuntley.com/ralph/) loop: each iteration spawns a
-fresh `claude -p` agent that picks the next doable task from `PRD.md`, implements only
-that, runs the verification gate, checks it off, and commits. `./ralph.sh 5` caps
-iterations; `touch ralph.stop` stops cleanly; logs land in `ralph-logs/`. It runs
-unattended with `--dangerously-skip-permissions` and commits every productive iteration.
-
 ## Status
 
-Milestone **M0 complete**: workspace + spec pipeline (248 instructions, reference
-tables) + two-phase harness skeleton + CI. Next: **M1** — the language core (lexer →
-parser → compiler → VM, TinyMT RNG, console) running in a window, validated against the
-oracle. See the plan for M2–M7 (graphics, sprites/BG, input/timing, audio, files,
-hardening).
+Milestones **M0–M7 complete**: spec pipeline, the language core (lexer → parser →
+compiler → bytecode VM, TinyMT RNG, console) running native + wasm, graphics (RGBA5551
+compositor), sprites/BG, input/timing, MML audio, files/projects/system, and hardening
+(fuzzing, exact error strings, float formatting, overflow/precision). Remaining work is
+oracle-pending fidelity refinements tracked in `HARVEST_QUEUE.md`.
