@@ -84,21 +84,20 @@ pub mod keymap {
     }
 }
 
-/// Parse → compile → run `src` to completion, returning the live VM (or `None` if it failed
-/// to parse/compile). The halt result is ignored — a halted program's partial scene is still
-/// worth showing / animating.
-fn build_vm(src: &str) -> Option<Vm> {
+/// Parse → compile → run `src` to completion, returning the live VM. The halt result is
+/// ignored — a halted program's partial scene is still worth showing / animating.
+fn build_vm(src: &str) -> Result<Vm, String> {
     let mut vm = prepare_vm(src)?;
     let _ = vm.run();
-    Some(vm)
+    Ok(vm)
 }
 
 /// Parse → compile → create a fresh VM without running it. Used by the interactive wasm host
 /// so the platform's `requestAnimationFrame` loop can drive execution with live input.
-fn prepare_vm(src: &str) -> Option<Vm> {
-    let ast = parse(src).ok()?;
-    let program = compile_with(&ast, &StdBuiltins).ok()?;
-    Some(Vm::new(program))
+fn prepare_vm(src: &str) -> Result<Vm, String> {
+    let ast = parse(src).map_err(|e| e.to_string())?;
+    let program = compile_with(&ast, &StdBuiltins).map_err(|e| e.to_string())?;
+    Ok(Vm::new(program))
 }
 
 /// Composite one named screen (`screen_id`: 0 = Upper, 1 = Touch) from ITS OWN per-screen
@@ -156,8 +155,8 @@ pub fn compose_both(vm: &Vm) -> (Framebuffer, Option<Framebuffer>) {
 /// (transparent-by-default) GRP/console pixels blit to a visible surface.
 pub fn render_program(src: &str) -> Framebuffer {
     match build_vm(src) {
-        Some(vm) => compose(&vm),
-        None => blank(),
+        Ok(vm) => compose(&vm),
+        Err(_) => blank(),
     }
 }
 
@@ -171,7 +170,9 @@ fn blank() -> Framebuffer {
 #[cfg(target_arch = "wasm32")]
 mod web {
     use super::{blank, build_vm, compose_both, keymap, prepare_vm, Vm};
+    use js_sys::Function;
     use sb_core::host_input::HostInput;
+    use sb_core::VmError;
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -261,8 +262,8 @@ mod web {
         let top = canvas_and_ctx(top_id)?;
         let bottom = canvas_and_ctx(bottom_id)?;
         match build_vm(src) {
-            Some(vm) => paint_both(&top, &bottom, &vm),
-            None => {
+            Ok(vm) => paint_both(&top, &bottom, &vm),
+            Err(_) => {
                 paint(&top.0, &top.1, &blank())?;
                 set_visible(&bottom.0, false);
                 Ok(())
@@ -310,6 +311,30 @@ mod web {
         STOP.store(true, Ordering::Relaxed);
     }
 
+    /// Format a VM failure for the browser error banner.
+    fn format_vm_error(e: &VmError) -> String {
+        match e {
+            VmError::Sb { errnum, line } => {
+                let msg = sb_core::error::error_message(*errnum);
+                format!("Runtime error (errnum {}) at line {}: {}", errnum, line, msg)
+            }
+            VmError::Unsupported(what) => format!("Unsupported operation: {}", what),
+            VmError::Assert { message, line } => {
+                format!("ASSERT failed at line {}: {}", line, message)
+            }
+        }
+    }
+
+    /// Call a JS error callback with `message`. The callback is a JS function value so the
+    /// rAF loop can keep invoking it after `run_interactive` has returned.
+    fn report_error(callback: &JsValue, message: &str) -> Result<(), JsValue> {
+        let f: &Function = callback.unchecked_ref();
+        let args = js_sys::Array::new();
+        args.push(&JsValue::from_str(message));
+        f.apply(&JsValue::NULL, &args)?;
+        Ok(())
+    }
+
     /// Maximum number of bytecode instructions the VM may execute inside one
     /// `requestAnimationFrame` callback before returning to the host. Large enough that
     /// simple programs finish in a single frame, small enough that a runaway loop cannot
@@ -319,9 +344,15 @@ mod web {
     /// Run a SmileBASIC program under live host input in a `requestAnimationFrame` loop.
     /// Unlike the one-shot `run_program`, this uses `Vm::run_frame` so the VM yields at
     /// `VSYNC`/`WAIT` and the host can refresh `BUTTON`/`STICK`/`STICKEX`/`TOUCH` each frame.
-    /// This keeps the UI responsive for programs that poll input in a `VSYNC` loop.
+    /// `on_error` is called with a human-readable message whenever parse/compile fails up front
+    /// or a runtime error halts the program, so the player UI can make failures visible.
     #[wasm_bindgen]
-    pub fn run_interactive(top_id: &str, bottom_id: &str, src: &str) -> Result<(), JsValue> {
+    pub fn run_interactive(
+        top_id: &str,
+        bottom_id: &str,
+        src: &str,
+        on_error: Function,
+    ) -> Result<(), JsValue> {
         let top = canvas_and_ctx(top_id)?;
         let bottom = canvas_and_ctx(bottom_id)?;
         let document = web_sys::window()
@@ -330,19 +361,23 @@ mod web {
 
         STOP.store(false, Ordering::Relaxed);
 
+        // Keep the JS callback as a generic value so the rAF closure can invoke it after this
+        // function returns.
+        let on_error = JsValue::from(on_error);
+
         let vm = prepare_vm(src);
-        // Paint the initial scene once up front. On a compile failure show a blank Upper screen
-        // and hide the Touch canvas; otherwise paint both screens for the program's mode.
-        match vm.as_ref() {
-            Some(vm) => paint_both(&top, &bottom, vm)?,
-            None => {
+        // Paint the initial scene once up front. On a compile failure show a blank Upper screen,
+        // hide the Touch canvas, and report the error to JS.
+        match &vm {
+            Ok(vm) => paint_both(&top, &bottom, vm)?,
+            Err(msg) => {
                 paint(&top.0, &top.1, &blank())?;
                 set_visible(&bottom.0, false);
+                report_error(&on_error, msg)?;
+                return Ok(());
             }
         }
-        let Some(vm) = vm else {
-            return Ok(()); // nothing to animate / drive
-        };
+        let vm = vm.unwrap();
 
         let input = Rc::new(RefCell::new(HostInput::new()));
         let touch = Rc::new(RefCell::new(Touch::default()));
@@ -382,6 +417,7 @@ mod web {
         let halted: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
         let f: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
         let g = f.clone();
+        let on_error_for_frame = on_error.clone();
         *g.borrow_mut() = Some(Closure::<dyn FnMut()>::new(move || {
             {
                 let inp = input.borrow();
@@ -393,8 +429,13 @@ mod web {
 
                 if !*halted.borrow() {
                     match vm.run_frame(FRAME_BUDGET) {
-                        Ok(Some(_)) | Err(_) => *halted.borrow_mut() = true,
+                        Ok(Some(_)) => *halted.borrow_mut() = true,
                         Ok(None) => {}
+                        Err(e) => {
+                            *halted.borrow_mut() = true;
+                            let _ = report_error(&on_error_for_frame,
+                                &format_vm_error(&e));
+                        }
                     }
                 } else {
                     // Program has ended; keep the 60 fps heartbeat alive for any post-halt

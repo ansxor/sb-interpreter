@@ -18,6 +18,9 @@ const els = {
   touchOverlay: document.getElementById("touch-overlay"),
   settingsPanel: document.getElementById("settings"),
   fileInput: document.getElementById("file-input"),
+  errorBanner: document.getElementById("error-banner"),
+  errorMessage: document.getElementById("error-message"),
+  errorClose: document.getElementById("btn-error-close"),
   scale: document.getElementById("setting-scale"),
   pixelated: document.getElementById("setting-pixelated"),
   touchOverlayToggle: document.getElementById("setting-touch-overlay"),
@@ -95,6 +98,17 @@ function setRunning(value) {
   els.stop.disabled = !running;
 }
 
+function showError(message) {
+  els.errorMessage.textContent = String(message);
+  els.errorBanner.classList.remove("hidden");
+  setRunning(false);
+  console.error(message);
+}
+
+function hideError() {
+  els.errorBanner.classList.add("hidden");
+}
+
 async function boot() {
   await init();
   wasmReady = true;
@@ -105,16 +119,16 @@ async function boot() {
 
 function doRun() {
   if (!wasmReady || running) return;
+  hideError();
   const src = els.editor.value;
   localStorage.setItem("sb-player:draft", src);
 
   try {
     setRunning(true);
-    run_interactive("screen", "screen-bottom", src);
+    run_interactive("screen", "screen-bottom", src, showError);
   } catch (e) {
     console.error(e);
-    alert("Failed to run program: " + e);
-    setRunning(false);
+    showError("Failed to run program: " + e);
   }
 }
 
@@ -131,6 +145,7 @@ function doLoad() {
 function onFileSelected(event) {
   const file = event.target.files[0];
   if (!file) return;
+  hideError();
   const reader = new FileReader();
   reader.onload = () => {
     els.editor.value = String(reader.result);
@@ -167,6 +182,7 @@ els.load.addEventListener("click", doLoad);
 els.settings.addEventListener("click", toggleSettings);
 els.closeSettings.addEventListener("click", toggleSettings);
 els.fileInput.addEventListener("change", onFileSelected);
+els.errorClose.addEventListener("click", hideError);
 els.clearStorage.addEventListener("click", clearIndexedDB);
 
 els.editor.addEventListener("keydown", (e) => {

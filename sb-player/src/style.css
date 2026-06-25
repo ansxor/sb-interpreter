@@ -301,6 +301,49 @@ kbd {
   border-color: var(--danger);
 }
 
+.error-banner {
+  position: fixed;
+  top: var(--topbar-h);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: 10px var(--gap);
+  background: #2a1a1a;
+  color: #ffadad;
+  border-bottom: 2px solid var(--danger);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.error-banner.hidden {
+  display: none;
+}
+
+#error-message {
+  flex: 1;
+  font-family: "SF Mono", Monaco, "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#btn-error-close {
+  flex: 0 0 auto;
+  background: transparent;
+  border-color: transparent;
+  color: #ffadad;
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 2px 8px;
+}
+
+#btn-error-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .hint {
   margin: 8px 0 0;
   font-size: 0.8rem;
