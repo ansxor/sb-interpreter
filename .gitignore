@@ -39,3 +39,5 @@ harness/harvest/out/
 /sb-player/dist/
 /sb-player/*.log
 /sb-player/*.png
+
+.chainlink/.cache/
