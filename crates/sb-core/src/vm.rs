@@ -344,6 +344,10 @@ pub struct Vm {
     /// canvas host (and future native frame-yielding host) to avoid blocking the UI thread
     /// inside `BUTTON`-polling loops. Cleared by `run_frame` when it yields.
     yielded: bool,
+    /// True once `run_frame` has been called; switches `call_timing` into the host-driven
+    /// VBlank model (begin_wait/begin_vsync instead of instant-jump wait/vsync). Never set
+    /// by `run()`, so the headless runner and all existing tests keep the instant model.
+    interactive: bool,
 }
 
 impl Vm {
@@ -396,6 +400,7 @@ impl Vm {
             prg_edit: None,
             device: Default::default(),
             yielded: false,
+            interactive: false,
         }
     }
 
@@ -542,6 +547,8 @@ impl Vm {
     /// keep advancing in the window; it does not touch the VSYNC anchor (only VSYNC/WAIT do).
     pub fn tick_frame(&mut self) {
         self.clock.tick(1);
+        // In the interactive model, a pending VSYNC/WAIT target may now be reached.
+        self.clock.resolve_wait();
         // Both screens' sprite animations advance every frame (animation runs regardless of
         // which DISPLAY is selected).
         for sp in &mut self.sprites {
@@ -726,6 +733,12 @@ impl Vm {
     /// on `STOP`/`ASSERT`. This is the execution primitive for interactive hosts that need to
     /// keep the UI responsive while a program polls `BUTTON()` in a `VSYNC` loop.
     pub fn run_frame(&mut self, budget: usize) -> Result<Option<Halt>, VmError> {
+        self.interactive = true;
+        // While a VSYNC/WAIT target is pending the host drives frames via tick_frame;
+        // the program must not resume until the target is reached.
+        if self.clock.wait_pending() {
+            return Ok(None);
+        }
         for _ in 0..budget {
             if self.pc >= self.program.code.len() {
                 if self.try_exec_return() {
@@ -2350,24 +2363,39 @@ impl Vm {
             }
             _ => return Ok(None),
         };
-        let elapsed = match name {
-            "WAIT" => self.clock.wait(count),
-            "VSYNC" => self.clock.vsync(count),
-            _ => 0,
-        };
-        // Sprite (M3-T2) and BG (M3-T5) animations advance one step per displayed frame, on
-        // both screens' tables.
-        for sp in &mut self.sprites {
-            sp.tick(elapsed);
-        }
-        for bg in &mut self.bg {
-            bg.tick(elapsed);
-        }
-        // Frame-timing builtins are natural yield points: ask the host to return to the
-        // platform loop so live input (BUTTON polls) and the wall-clock frame pacer can run.
-        // WAIT/VSYNC count <= 0 is documented as "Ignore" and should not yield.
-        if count > 0 {
-            self.yielded = true;
+        if self.interactive {
+            // Host-driven VBlank model: arm a pending target; the host's tick_frame calls
+            // advance the counter one frame at a time and resolve_wait clears it when reached.
+            // Animations advance per-frame through tick_frame during the wait, not in a burst.
+            match name {
+                "WAIT" => self.clock.begin_wait(count),
+                "VSYNC" => self.clock.begin_vsync(count),
+                _ => {}
+            }
+            // count == 0 ("0: Ignore") does not yield (begin_* handled it inline).
+            if count > 0 {
+                self.yielded = true;
+            }
+        } else {
+            // Headless instant-jump model (used by run() and all deterministic tests).
+            let elapsed = match name {
+                "WAIT" => self.clock.wait(count),
+                "VSYNC" => self.clock.vsync(count),
+                _ => 0,
+            };
+            // Sprite (M3-T2) and BG (M3-T5) animations advance one step per displayed frame.
+            for sp in &mut self.sprites {
+                sp.tick(elapsed);
+            }
+            for bg in &mut self.bg {
+                bg.tick(elapsed);
+            }
+            // Frame-timing builtins are natural yield points: ask the host to return to the
+            // platform loop so live input (BUTTON polls) and the wall-clock frame pacer can run.
+            // WAIT/VSYNC count <= 0 is documented as "Ignore" and should not yield.
+            if count > 0 {
+                self.yielded = true;
+            }
         }
         Ok(Some(Value::Void))
     }
@@ -6438,6 +6466,86 @@ H$=HEX$(255)"#);
         let ast = parse("MAINCNT=5").expect("parse");
         let err = compile_with(&ast, &StdBuiltins).expect_err("MAINCNT is read-only");
         assert_eq!(err.errnum, 3);
+    }
+
+    // -- interactive (run_frame + tick_frame) timing tests (#94) -------------------
+    //
+    // These exercise the host-driven VBlank model: run_frame arms a pending wait via
+    // begin_wait/begin_vsync, then tick_frame drives the counter one frame at a time.
+    // The program only resumes once tick_frame has advanced the clock to the target.
+
+    /// Run a program to completion under the interactive model, driving it with run_frame
+    /// + tick_frame up to `max_frames` host ticks. Returns the VM once it halts (or panics
+    /// if it hasn't halted within `max_frames`).
+    fn run_interactive(src: &str, max_frames: usize) -> Vm {
+        let prog = compile(&parse(src).expect("parse")).expect("compile");
+        let mut vm = Vm::new(prog);
+        let budget = 100_000;
+        for _ in 0..max_frames {
+            vm.tick_frame();
+            match vm.run_frame(budget) {
+                Ok(Some(_)) => return vm,
+                Ok(None) => {}
+                Err(e) => panic!("runtime error: {:?}", e),
+            }
+        }
+        panic!("program did not halt within {} frames", max_frames);
+    }
+
+    #[test]
+    fn run_frame_wait_blocks_one_frame_at_a_time() {
+        // WAIT 3 must block for exactly 3 host ticks, not jump in one shot.
+        // The first tick_frame fires before execution, so frame=1 when WAIT runs and
+        // arms target=4; three more ticks drive it to 4. MAINCNT == 4.
+        let vm = run_interactive("WAIT 3\n?MAINCNT", 10);
+        assert_eq!(vm.console_text(), "4");
+    }
+
+    #[test]
+    fn run_frame_vsync_1_loop_advances_maincnt_one_per_tick() {
+        // Five VSYNC 1 iterations (I=0..4): the initial tick puts frame=1 before the
+        // first run_frame, so each VSYNC 1 sees frame already at last_vsync+1 (immediate
+        // resync) and still yields, adding one tick each. MAINCNT == 5+1 == 6.
+        let vm = run_interactive("FOR I=0 TO 4\nVSYNC 1\nNEXT\n?MAINCNT", 20);
+        assert_eq!(vm.console_text(), "6");
+    }
+
+    #[test]
+    fn run_frame_maincnt_advances_without_vsync() {
+        // A program that does no VSYNC/WAIT still sees MAINCNT advance because tick_frame
+        // drives the counter before every run_frame call.  After 5 ticks a program that
+        // loops printing MAINCNT once per iteration (using a counter) sees values 1..=5.
+        // We verify this by checking MAINCNT > 0 at halt after the host drives 3 ticks
+        // before the program even starts executing.
+        let prog = compile(&parse("?MAINCNT").expect("parse")).expect("compile");
+        let mut vm = Vm::new(prog);
+        // Drive 3 ticks *before* any run_frame so MAINCNT starts at 3.
+        vm.tick_frame();
+        vm.tick_frame();
+        vm.tick_frame();
+        match vm.run_frame(100_000) {
+            Ok(Some(_)) => {}
+            _ => panic!("should halt immediately"),
+        }
+        assert_eq!(vm.console_text(), "3");
+    }
+
+    #[test]
+    fn run_frame_wait_zero_does_not_yield() {
+        // WAIT 0 ("0: Ignore") must not block — the program advances past it immediately
+        // in the same run_frame call.
+        let vm = run_interactive("WAIT 0\n?MAINCNT", 5);
+        // MAINCNT == 1 because tick_frame fires once before run_frame.
+        assert_eq!(vm.console_text(), "1");
+    }
+
+    #[test]
+    fn run_frame_vsync_loop_holds_steady_rate() {
+        // Ten VSYNC 1 iterations: each blocks for exactly one host tick, so MAINCNT
+        // advances by 10 over 10 ticks (plus the initial tick before execution).
+        let vm = run_interactive("FOR I=1 TO 10\nVSYNC 1\nNEXT\n?MAINCNT", 25);
+        // MAINCNT == 10+1=11 because tick_frame fires once before the first run_frame.
+        assert_eq!(vm.console_text(), "11");
     }
 
     // ---- System variables (M6-T3) ----

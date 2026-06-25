@@ -167,9 +167,44 @@ fn blank() -> Framebuffer {
     fb
 }
 
+/// Wall-clock duration of one displayed frame in milliseconds (1/60 s). The browser rAF
+/// loop paces VM frames to this interval so a high-refresh display (120/144 Hz) doesn't
+/// run the program too fast — the web counterpart of the native host's
+/// [`FRAME_DURATION`](sb_core::clock::FRAME_DURATION) pacer. Compiled on `wasm32` (where the
+/// rAF loop uses it) and under `test` (so the pacing math is unit-testable on the desktop).
+#[cfg(any(target_arch = "wasm32", test))]
+const FRAME_MS: f64 = 1000.0 / sb_core::clock::FPS as f64;
+
+/// Maximum VM frames to run in one rAF tick when catching up after a stall (e.g. the tab
+/// was backgrounded and rAF paused). Beyond this the pacer resyncs to "now" and drops the
+/// backlog rather than firing a burst that would freeze the tab — the web analog of the
+/// native host's "if we fell far behind, resync to now" rule.
+#[cfg(any(target_arch = "wasm32", test))]
+const MAX_CATCHUP: u32 = 3;
+
+/// Accumulate whole 1/60 s frames elapsed since `*next_frame` and advance the deadline,
+/// returning how many VM frames the rAF loop should run this tick. Catches up at most
+/// [`MAX_CATCHUP`] frames; if more than that is due (a long stall), resyncs the deadline to
+/// `now + FRAME_MS` and drops the backlog. Pure arithmetic over wall-clock milliseconds —
+/// no DOM dependency — so the pacing logic is unit-testable independent of the browser.
+#[cfg(any(target_arch = "wasm32", test))]
+fn frames_due(now: f64, next_frame: &mut f64) -> u32 {
+    let mut due = 0u32;
+    while *next_frame <= now && due < MAX_CATCHUP {
+        due += 1;
+        *next_frame += FRAME_MS;
+    }
+    // Fell further behind than the cap absorbs: resync to now + one frame instead of
+    // leaving the deadline in the past (which would force a burst on every later tick).
+    if *next_frame <= now {
+        *next_frame = now + FRAME_MS;
+    }
+    due
+}
+
 #[cfg(target_arch = "wasm32")]
 mod web {
-    use super::{blank, build_vm, compose_both, keymap, prepare_vm, Vm};
+    use super::{blank, build_vm, compose_both, frames_due, keymap, prepare_vm, Vm};
     use js_sys::Function;
     use sb_core::host_input::HostInput;
     use sb_core::VmError;
@@ -180,6 +215,7 @@ mod web {
     use wasm_bindgen::{Clamped, JsCast};
     use web_sys::{
         CanvasRenderingContext2d, HtmlCanvasElement, ImageData, KeyboardEvent, MouseEvent,
+        Performance,
     };
 
     /// A canvas together with its 2D context — the unit `paint` blits a framebuffer onto.
@@ -301,6 +337,13 @@ mod web {
         }
     }
 
+    /// The high-resolution monotonic clock (`performance.now()`) the rAF pacer measures
+    /// deadlines against, in milliseconds. Returns `0.0` if the clock is unavailable (the
+    /// pacer then runs one VM frame per tick — the pre-fix behavior — rather than stalling).
+    fn now_ms(perf: &Performance) -> f64 {
+        perf.now()
+    }
+
     /// Shared flag used to stop a running interactive loop from JavaScript.
     static STOP: AtomicBool = AtomicBool::new(false);
 
@@ -412,35 +455,69 @@ mod web {
         }
 
         // The rAF loop: owns the VM + both surfaces, reads the shared input/touch each frame,
-        // runs one VM frame, then paints both screens.
+        // runs VM frames paced to wall-clock 60 fps, then paints both screens. `rAF` fires at
+        // the *display* refresh rate (60/120/144 Hz), not 60 Hz fixed, so a naive one-frame-per-
+        // tick loop runs the program too fast on high-refresh displays. The pacer accumulates
+        // whole 1/60 s frames since the last deadline and runs that many VM frames per tick,
+        // mirroring the native host's `WaitUntil(deadline)` loop (#92).
         let vm = Rc::new(RefCell::new(vm));
         let halted: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
         let f: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
         let g = f.clone();
         let on_error_for_frame = on_error.clone();
+        // The monotonic clock the pacer measures against. `performance.now()` is the
+        // high-resolution counterpart of the native `Instant`. `window.performance()` is
+        // effectively always present in browsers; if it's missing we fall back to running one
+        // VM frame per rAF tick (the pre-fix behavior) rather than stalling.
+        let perf = web_sys::window().and_then(|w| w.performance());
+        // Wall-clock deadline (ms) of the next VM frame. Seeded to "now" so the first tick
+        // runs exactly one frame (the deadline is at `now`, so `frames_due` counts it due
+        // immediately and advances it by `FRAME_MS`), matching the native host's
+        // `next_frame = Some(Instant::now() + FRAME_DURATION)` start.
+        let next_frame: Rc<RefCell<f64>> =
+            Rc::new(RefCell::new(perf.as_ref().map_or(0.0, now_ms)));
         *g.borrow_mut() = Some(Closure::<dyn FnMut()>::new(move || {
             {
                 let inp = input.borrow();
                 let t = touch.borrow();
                 let mut vm = vm.borrow_mut();
-                let device = vm.input_mut();
-                device.advance_frame(inp.held(), inp.stick(), inp.stickex());
-                device.advance_touch(t.down, t.x, t.y);
 
-                if !*halted.borrow() {
-                    match vm.run_frame(FRAME_BUDGET) {
-                        Ok(Some(_)) => *halted.borrow_mut() = true,
-                        Ok(None) => {}
-                        Err(e) => {
-                            *halted.borrow_mut() = true;
-                            let _ = report_error(&on_error_for_frame,
-                                &format_vm_error(&e));
+                // Pace VM frames to wall-clock 60 fps: run however many 1/60 s frames have
+                // elapsed since the last deadline (capped, so a backgrounded tab doesn't fire
+                // a catch-up burst). Input/touch advance once per VM frame so BUTTON/STICK/TOUCH
+                // sample at 60 Hz regardless of the display rate. Without a clock, run one
+                // frame per tick (degenerate, but never freezes).
+                let frames = match &perf {
+                    Some(p) => frames_due(now_ms(p), &mut next_frame.borrow_mut()),
+                    None => 1,
+                };
+                for _ in 0..frames {
+                    // VBlank heartbeat first: MAINCNT advances, animations step, and any
+                    // pending VSYNC/WAIT target is resolved.  This mirrors the hardware model
+                    // where `swi 0xa` fires before the program resumes — and ensures MAINCNT
+                    // advances even in programs that never call VSYNC/WAIT (#94).
+                    vm.tick_frame();
+
+                    // `input_mut` borrows `vm` mutably; take it per-iteration so the borrow
+                    // ends before `run_frame` borrows `vm` again below.
+                    let device = vm.input_mut();
+                    device.advance_frame(inp.held(), inp.stick(), inp.stickex());
+                    device.advance_touch(t.down, t.x, t.y);
+
+                    if !*halted.borrow() {
+                        match vm.run_frame(FRAME_BUDGET) {
+                            Ok(Some(_)) => *halted.borrow_mut() = true,
+                            Ok(None) => {}
+                            Err(e) => {
+                                *halted.borrow_mut() = true;
+                                let _ = report_error(&on_error_for_frame,
+                                    &format_vm_error(&e));
+                                break;
+                            }
                         }
                     }
-                } else {
-                    // Program has ended; keep the 60 fps heartbeat alive for any post-halt
-                    // sprite/BG animations and MAINCNT advancement.
-                    vm.tick_frame();
+                    // (post-halt: tick_frame already fired above, keeping the heartbeat alive
+                    // for sprite/BG animations and MAINCNT advancement even after END.)
                 }
 
                 let _ = paint_both(&top, &bottom, &vm);
@@ -527,7 +604,10 @@ mod web {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_vm, compose_both, compose_for_screen, keymap, render_program};
+    use super::{
+        build_vm, compose_both, compose_for_screen, frames_due, keymap, render_program,
+        FRAME_MS, MAX_CATCHUP,
+    };
     use sb_core::host_input::{Bind, Stick};
     use sb_core::input::{BTN_A, BTN_RIGHT, BTN_ZR};
 
@@ -552,6 +632,62 @@ mod tests {
             .chunks_exact(4)
             .any(|p| p[0] != 0 || p[1] != 0 || p[2] != 0);
         assert!(lit, "expected some lit text pixels on the black backdrop");
+    }
+
+    // ---- rAF frame pacing (#92) -------------------------------------------------------
+    //
+    // The pacer must turn display-refresh ticks (60/120/144 Hz) into a steady 60 VM-fps.
+    // These cover the pure arithmetic in `frames_due` — the part of the fix that's testable
+    // on the desktop without a browser — mirroring the native host's WaitUntil pacer.
+
+    #[test]
+    fn frames_due_runs_one_frame_when_less_than_a_frame_elapsed() {
+        // Deadline at 0; 5 ms later (< 16.67 ms) → exactly one frame due (the deadline is
+        // reached), and the deadline advances one frame. This is the steady-state 60 Hz case
+        // and the first-tick case (deadline seeded to "now").
+        let mut next = 0.0;
+        assert_eq!(frames_due(5.0, &mut next), 1);
+        assert_eq!(next, FRAME_MS);
+    }
+
+    #[test]
+    fn frames_due_runs_multiple_frames_when_a_high_refresh_tick_overruns() {
+        // On a 120 Hz display each rAF tick is ~8.33 ms, but the VM frame is 16.67 ms, so most
+        // ticks owe zero frames and every other tick owes one. On a 144 Hz display (~6.94 ms
+        // ticks) the same pattern holds. Model steady state (deadline one frame out, as it is
+        // after the first frame fires) and land two 120 Hz ticks at 8 and 17 ms: the first
+        // owes 0, the second owes 1 — the program never runs faster than 60 fps.
+        let mut next = FRAME_MS; // deadline one frame in the future (steady state)
+        assert_eq!(frames_due(8.0, &mut next), 0, "first 120 Hz tick: no frame due yet");
+        assert_eq!(frames_due(17.0, &mut next), 1, "second tick: one frame due");
+        assert_eq!(next, FRAME_MS * 2.0);
+    }
+
+    #[test]
+    fn frames_due_catches_up_a_short_stall_within_the_cap() {
+        // A 2-frame stall (deadline 0, now at ~2 frames): catch up both, capped at
+        // MAX_CATCHUP. The deadline advances past `now` so the next tick owes nothing.
+        let mut next = 0.0;
+        let now = FRAME_MS * 2.0 - 1.0; // just under 2 frames
+        let due = frames_due(now, &mut next);
+        assert_eq!(due, 2);
+        assert!(next > now, "deadline should advance past now");
+    }
+
+    #[test]
+    fn frames_due_resyncs_after_a_long_stall_instead_of_bursting() {
+        // A long stall (tab backgrounded) leaves the deadline far in the past. The pacer must
+        // cap the catch-up at MAX_CATCHUP and resync the deadline to now + one frame, so it
+        // doesn't fire a frame burst every tick afterwards. This is the web analog of the
+        // native host's "if we fell far behind, resync to now" rule.
+        let mut next = 0.0;
+        let now = FRAME_MS * 100.0; // ~1.67 s stall
+        let due = frames_due(now, &mut next);
+        assert_eq!(due, MAX_CATCHUP, "long stall is capped, not burst");
+        assert!(
+            next > now && next <= now + FRAME_MS,
+            "deadline resyncs to now + one frame, was {next}"
+        );
     }
 
     #[test]
@@ -681,5 +817,29 @@ mod tests {
         assert_eq!(fb.height, sb_render::TOP_HEIGHT + sb_render::BOTTOM_HEIGHT);
         // (0, 240) is the top-left pixel of the bottom half and should be red.
         assert_eq!(fb.get_argb(0, 240), 0xFFF8_0000);
+    }
+
+    #[test]
+    fn bg_renders_across_full_combined_area_in_xscreen4() {
+        // XSCREEN 4 is a single 320×480 surface. BG layers must tile across both the top
+        // half (y=0..239) and the bottom half (y=240..479). The default 25×15 map with 16×16
+        // tiles covers 400×240 px and wraps/tiles — so a tile at cell (0,0) should appear at
+        // y=0..15 AND at y=240..255 (the second tiling cycle).
+        //
+        // Regression for #93: the compositor was routing BG to screen 1 (Touch) in mode 4
+        // while compose_for_screen used screen 0, leaving the combined surface with no BG.
+        let vm = build_vm(
+            "XSCREEN 4\n\
+             GPAGE 5,5\nGFILL 16,0,31,15,RGB(0,0,255)\n\
+             BGPUT 0,0,0,1",
+        )
+        .expect("program builds");
+        let fb = compose_for_screen(&vm, 0);
+        assert_eq!(fb.width, 320);
+        assert_eq!(fb.height, 480);
+        // Top half: cell (0,0) covers screen y=0..15 (16-px tile, no scroll).
+        assert_ne!(blue(&fb, 0, 0), 0, "BG tile must appear in top half");
+        // Bottom half: map height=240px → y=240 tiles back to map-y=0 → same cell (0,0).
+        assert_ne!(blue(&fb, 0, 240), 0, "BG tile must tile into bottom half");
     }
 }

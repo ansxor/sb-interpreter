@@ -39,6 +39,8 @@ features = [
     "ImageData",
     "KeyboardEvent",
     "MouseEvent",
+    # High-resolution monotonic clock for the rAF frame pacer (#92).
+    "Performance",
     # WebAudio output (M5-T5 audio backend).
     "AudioContext",
     "BaseAudioContext",

@@ -15,6 +15,20 @@
 //! [`FrameClock::tick`] (the platform's per-frame heartbeat) or [`FrameClock::wait`] /
 //! [`FrameClock::vsync`] (a program blocking on frames). The real-time pacing that turns
 //! [`FRAME_DURATION`] into wall-clock 60 fps lives in the native platform crate.
+//!
+//! ## Interactive (host-driven VBlank) model
+//!
+//! The headless `wait`/`vsync` methods jump the counter instantly — correct for the
+//! deterministic runner and all tests. Interactive hosts (the wasm `requestAnimationFrame`
+//! loop) need the hardware model instead: VSYNC/WAIT *arm* a target via [`begin_wait`] /
+//! [`begin_vsync`], then [`tick`] drives the counter one frame at a time and
+//! [`resolve_wait`] clears the pending target once it is reached. The program is blocked
+//! (the VM yields at each [`tick`]) until the host's VBlanks accumulate enough frames.
+//!
+//! [`begin_wait`]: FrameClock::begin_wait
+//! [`begin_vsync`]: FrameClock::begin_vsync
+//! [`resolve_wait`]: FrameClock::resolve_wait
+//! [`tick`]: FrameClock::tick
 
 use core::time::Duration;
 
@@ -33,10 +47,17 @@ pub const FRAME_DURATION: Duration = Duration::from_nanos(1_000_000_000 / FPS as
 /// stamp (`[0x315ee8]`) updated by both VSYNC and WAIT on exit — the *only* state that
 /// distinguishes the two instructions. Kept as `u64` so the wait arithmetic never overflows;
 /// [`maincnt`](Self::maincnt) truncates to `i32`, modelling the hardware's 32-bit wrap.
+///
+/// `wait_target` is non-`None` only in the interactive host-driven VBlank model: it holds the
+/// frame number the pending VSYNC/WAIT must reach before the program may resume. The headless
+/// `wait`/`vsync` methods never set it; only [`begin_wait`](Self::begin_wait) /
+/// [`begin_vsync`](Self::begin_vsync) do.
 #[derive(Debug, Clone)]
 pub struct FrameClock {
     frame: u64,
     last_vsync: u64,
+    /// Pending host-driven wait target (`None` = no active wait / headless mode).
+    wait_target: Option<u64>,
 }
 
 impl FrameClock {
@@ -47,6 +68,7 @@ impl FrameClock {
         FrameClock {
             frame: 0,
             last_vsync: 0,
+            wait_target: None,
         }
     }
 
@@ -90,6 +112,54 @@ impl FrameClock {
         self.frame = self.frame.max(target);
         self.last_vsync = self.frame;
         self.frame - before
+    }
+
+    // -- interactive (host-driven VBlank) API -----------------------------------------
+
+    /// Arm a `WAIT count` in the host-driven VBlank model. Target = **current frame +
+    /// count**; the counter is NOT advanced — the host's [`tick`](Self::tick) calls drive
+    /// it one frame at a time and [`resolve_wait`](Self::resolve_wait) clears the pending
+    /// target once reached. `count == 0` ("0: Ignore") resyncs `last_vsync` immediately
+    /// without arming any target, mirroring the headless [`wait`](Self::wait) behaviour.
+    pub fn begin_wait(&mut self, count: u64) {
+        if count == 0 {
+            self.last_vsync = self.frame;
+        } else {
+            self.wait_target = Some(self.frame.saturating_add(count));
+        }
+    }
+
+    /// Arm a `VSYNC count` in the host-driven VBlank model. Target = **last_vsync +
+    /// count**; the counter is NOT advanced yet. If the current frame already meets or
+    /// exceeds the target (body overran its budget), `last_vsync` is resynced immediately
+    /// and no target is armed — VSYNC returns at once with 0 frames elapsed, exactly as
+    /// the headless [`vsync`](Self::vsync) does.
+    pub fn begin_vsync(&mut self, count: u64) {
+        let target = self.last_vsync.saturating_add(count);
+        if self.frame >= target {
+            // Already past the target: resync and don't block.
+            self.last_vsync = self.frame;
+        } else {
+            self.wait_target = Some(target);
+        }
+    }
+
+    /// Whether a host-driven wait is pending (the program is blocked on VSYNC/WAIT).
+    pub fn wait_pending(&self) -> bool {
+        self.wait_target.is_some()
+    }
+
+    /// Called by [`Vm::tick_frame`](crate::vm::Vm::tick_frame) after each VBlank tick.
+    /// If a pending wait target exists and the counter has reached it, the target is
+    /// cleared and `last_vsync` is resynced to the current frame (both WAIT and VSYNC
+    /// resync on exit). A no-op when no wait is pending.
+    pub fn resolve_wait(&mut self) {
+        if let Some(target) = self.wait_target {
+            if self.frame >= target {
+                self.last_vsync = self.frame;
+                self.wait_target = None;
+            }
+        }
     }
 }
 
@@ -214,5 +284,77 @@ mod tests {
         assert_eq!(clk.maincnt(), 10);
         assert_eq!(clk.vsync(1), 1);
         assert_eq!(clk.maincnt(), 11);
+    }
+
+    // -- interactive (host-driven VBlank) API -----------------------------------------
+
+    #[test]
+    fn begin_wait_arms_target_and_tick_drives_it() {
+        let mut clk = FrameClock::new();
+        clk.begin_wait(3);
+        assert!(clk.wait_pending());
+        assert_eq!(clk.maincnt(), 0, "counter not advanced yet");
+        for expected in 1..=3u32 {
+            clk.tick(1);
+            clk.resolve_wait();
+            assert_eq!(clk.maincnt(), expected as i32);
+        }
+        assert!(!clk.wait_pending(), "target reached, wait cleared");
+    }
+
+    #[test]
+    fn begin_vsync_arms_target_relative_to_last_vsync() {
+        let mut clk = FrameClock::new();
+        // First VSYNC 2: target = 0 + 2 = 2.
+        clk.begin_vsync(2);
+        assert!(clk.wait_pending());
+        clk.tick(1); clk.resolve_wait();
+        assert!(clk.wait_pending(), "not there yet after 1 tick");
+        clk.tick(1); clk.resolve_wait();
+        assert!(!clk.wait_pending(), "reached target at frame 2");
+        assert_eq!(clk.maincnt(), 2);
+        // Second VSYNC 2: target = last_vsync(2) + 2 = 4.
+        clk.begin_vsync(2);
+        clk.tick(2); clk.resolve_wait();
+        assert!(!clk.wait_pending());
+        assert_eq!(clk.maincnt(), 4);
+    }
+
+    #[test]
+    fn begin_vsync_immediate_when_already_past_target() {
+        // Body overran: frame already past last_vsync + count — no blocking.
+        let mut clk = FrameClock::new();
+        clk.tick(5); // frame = 5, last_vsync = 0
+        clk.begin_vsync(1); // target = 0+1 = 1, already at 5 → immediate
+        assert!(!clk.wait_pending(), "already past target, no wait armed");
+        assert_eq!(clk.maincnt(), 5);
+        // last_vsync resynced to 5, so next VSYNC 1 targets 6.
+        clk.begin_vsync(1);
+        assert!(clk.wait_pending());
+        clk.tick(1); clk.resolve_wait();
+        assert!(!clk.wait_pending());
+        assert_eq!(clk.maincnt(), 6);
+    }
+
+    #[test]
+    fn begin_wait_zero_resyncs_last_vsync_immediately() {
+        let mut clk = FrameClock::new();
+        clk.tick(10);
+        clk.begin_wait(0); // "0: Ignore" — no target, but resync
+        assert!(!clk.wait_pending());
+        assert_eq!(clk.maincnt(), 10);
+        // last_vsync is now 10, so VSYNC 1 targets 11.
+        clk.begin_vsync(1);
+        clk.tick(1); clk.resolve_wait();
+        assert_eq!(clk.maincnt(), 11);
+    }
+
+    #[test]
+    fn resolve_wait_is_noop_with_no_pending_wait() {
+        let mut clk = FrameClock::new();
+        clk.tick(5);
+        clk.resolve_wait(); // should not panic or mutate
+        assert_eq!(clk.maincnt(), 5);
+        assert!(!clk.wait_pending());
     }
 }
