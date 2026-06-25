@@ -5848,6 +5848,64 @@ H$=HEX$(255)"#);
         assert!(v.console && v.graphic && v.bg && v.sprite);
     }
 
+    // Regression repro for chainlink #87: the RPG GAME textbox drawn at the bottom of the
+    // Upper screen must keep its bottom border; a trailing PRINT newline on the last row
+    // must not scroll the freshly-printed border off the screen.
+    #[test]
+    fn rpg_textbox_bottom_border_not_scrolled() {
+        use sb_render::bg::BgState;
+        use sb_render::compositor::{compose_top_screen, LayerVisibility, DEFAULT_BACKDROP};
+        use sb_render::sprite::SpriteState;
+        let src = "XSCREEN 2\n\
+            GPRIO 1024\n\
+            VISIBLE 1,1,1,1\n\
+            TX=20:TY=23:TW=30:TH=7\n\
+            COLOR 3\n\
+            X=TX:Y=TY:Z=-100:W=TW:H=TH\n\
+            GOSUB @TEXTBOX\n\
+            GLINE 0,232,399,232,RGB(255,255,255)\n\
+            END\n\
+            @TEXTBOX\n\
+            LOCATE X,Y,Z\n\
+            PRINT \"\";\n\
+            PRINT \"\"*(W-2);\n\
+            PRINT \"\"\n\
+            FOR I=1 TO H-2\n\
+             LOCATE X,Y+I,Z:PRINT \"\";\n\
+             PRINT \" \"*(W-2);\n\
+             PRINT \"\"\n\
+            NEXT\n\
+            LOCATE X,Y+H-1,Z:PRINT \"\";\n\
+            PRINT \"\"*(W-2);\n\
+            PRINT \"\"\n\
+            RETURN";
+        let vm = run_b(src);
+        let fb = compose_top_screen(
+            vm.grp(),
+            &BgState::new(),
+            &SpriteState::new(),
+            vm.console_for(0),
+            DEFAULT_BACKDROP,
+            LayerVisibility::default(),
+        );
+        // If the trailing newline scrolled the bottom row away, the cells would be empty.
+        let console = vm.console_for(0);
+        let bottom_left_ch = console.cell(20, 29).ch;
+        let bottom_right_ch = console.cell(20 + 29, 29).ch;
+        let inside_bottom_ch = console.cell(20 + 15, 29).ch;
+        assert_ne!(bottom_left_ch, 0, "bottom-left cell should contain a border char");
+        assert_ne!(bottom_right_ch, 0, "bottom-right cell should contain a border char");
+        assert_ne!(inside_bottom_ch, 0, "bottom border cell should contain a border char");
+        // Sample pixels on the actual glyph strokes (the box glyphs are 2px-thick lines).
+        let bottom_left = fb.get_argb(20 * 8 + 4, 29 * 8 + 4);
+        let bottom_right = fb.get_argb((20 + 29) * 8 + 3, 29 * 8 + 3);
+        let inside_bottom = fb.get_argb((20 + 15) * 8 + 4, 29 * 8 + 4);
+        // The corners/border are red; the GRP line behind is white.
+        assert_eq!(bottom_left, 0xFFF8_0000, "bottom-left corner should be red");
+        assert_eq!(bottom_right, 0xFFF8_0000, "bottom-right corner should be red");
+        assert_eq!(inside_bottom, 0xFFF8_0000, "bottom border should be red");
+    }
+
     #[test]
     fn hardware_reports_the_model() {
         // HARDWARE reads as a bare-name sysvar (1 = new3DS, the Azahar/oracle value).

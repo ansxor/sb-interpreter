@@ -273,14 +273,22 @@ impl Console {
     }
 
     /// Write one character at the cursor using the current color/attribute, then advance.
-    /// Wraps at the right edge; scrolls the grid up when advancing past the bottom row.
+    /// Wraps at the right edge; a wrap that moves past the bottom row leaves the cursor on
+    /// a virtual off-screen row until the next character is written, at which point the grid
+    /// scrolls up. This matches real SB behavior where a trailing PRINT newline on the last
+    /// row does not scroll the just-printed line off the screen.
     pub fn put_char(&mut self, ch: u16) {
-        // The cursor may sit on the off-screen right edge (`LOCATE 50` is a legal column
-        // per locate.yaml: 0..49 displayable, 50 = off-screen edge). Wrap to the next row
-        // before writing so the write stays in bounds.
-        if self.cur_x >= self.cols {
-            self.cur_x = 0;
-            self.line_feed();
+        // Normalize a cursor that has moved onto the virtual off-screen row or past the
+        // right edge before writing.
+        while self.cur_y >= self.rows || self.cur_x >= self.cols {
+            if self.cur_x >= self.cols {
+                self.cur_x = 0;
+                self.line_feed();
+            } else {
+                self.scroll_up();
+                self.cur_y = self.rows - 1;
+                self.cur_x = 0;
+            }
         }
         let i = self.idx(self.cur_x, self.cur_y);
         self.cells[i] = Cell {
@@ -292,7 +300,9 @@ impl Console {
         self.advance();
     }
 
-    /// Advance the cursor one cell, wrapping and scrolling as needed.
+    /// Advance the cursor one cell, wrapping at the right edge. The wrap moves the cursor
+    /// to the next row (which may become the virtual off-screen row); actual scrolling is
+    /// deferred until a character is written while past the bottom.
     fn advance(&mut self) {
         self.cur_x += 1;
         if self.cur_x >= self.cols {
@@ -315,18 +325,15 @@ impl Console {
         }
     }
 
-    /// Move to column 0 of the next row, scrolling the grid up if already on the last row.
+    /// Move to column 0 of the next row. The cursor may move onto the virtual off-screen
+    /// row; the grid only scrolls when a subsequent character is written past the bottom.
     pub fn newline(&mut self) {
         self.cur_x = 0;
         self.line_feed();
     }
 
     fn line_feed(&mut self) {
-        if self.cur_y + 1 >= self.rows {
-            self.scroll_up();
-        } else {
-            self.cur_y += 1;
-        }
+        self.cur_y = (self.cur_y + 1).min(self.rows);
     }
 
     /// Scroll the whole grid up by one row; the new bottom row is cleared.
@@ -507,12 +514,18 @@ mod tests {
         c.newline(); // -> row 1
         c.print_str("CD"); // C,D ; D wraps but grid only 3 wide -> stays row1 until full
         assert_eq!(c.cell(0, 1).ch, u16::from(b'C'));
-        // Force a scroll: newline from the last row shifts everything up.
+        // A newline from the last row moves the cursor to the virtual off-screen row;
+        // the grid does not scroll until a subsequent character is written past the bottom.
         c.newline();
-        // Row 0 now holds what was row 1 ("CD"), row 1 cleared.
+        assert_eq!(c.cur_y, 2);
+        assert_eq!(c.cell(0, 0).ch, u16::from(b'A')); // still intact
+        assert_eq!(c.cell(0, 1).ch, u16::from(b'C'));
+        // Printing one more character scrolls the grid up first.
+        c.put_char(u16::from(b'E'));
+        assert_eq!(c.cur_y, 1);
         assert_eq!(c.cell(0, 0).ch, u16::from(b'C'));
         assert_eq!(c.cell(1, 0).ch, u16::from(b'D'));
-        assert_eq!(c.cell(0, 1).ch, 0);
+        assert_eq!(c.cell(0, 1).ch, u16::from(b'E'));
     }
 
     #[test]

@@ -16,5 +16,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - GRP per-screen draw context + DISPLAY routing (showPage default [0,1]) (#82)
 
 ### Changed
+- RPG GAME console textbox render bug: red box unclosed, game overlaps textbox (#87)
 - Per-screen CONSOLE data (top/bottom share console state, should be independent) (#86)
 - Compositor/runner/player render correct per-screen content for both screens (#85)
