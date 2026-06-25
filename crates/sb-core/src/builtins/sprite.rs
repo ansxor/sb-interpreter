@@ -25,8 +25,8 @@
 //!   or a source rectangle that runs off the 512-pixel sheet (`U+W` / `V+H` > 512).
 
 use sb_render::sprite::{
-    AnimError, SpdefEntry, SpriteState, ANIM_ITEMS, SPDEF_MAX, SPRITE_COUNT, SPRITE_DEFAULT_ATTR,
-    SPRITE_DEFAULT_WH,
+    AnimError, SpdefEntry, SpdefTable, SpriteState, ANIM_ITEMS, SPDEF_MAX, SPRITE_COUNT,
+    SPRITE_DEFAULT_ATTR, SPRITE_DEFAULT_WH,
 };
 
 use super::{illegal, out_of_range, type_mismatch};
@@ -85,16 +85,17 @@ fn rect(u: i32, v: i32, w: i32, h: i32) -> Result<(), RuntimeError> {
 /// Any other (`ret_count`, argc) combination raises errnum 4.
 pub fn spset(
     sp: &mut SpriteState,
+    spdef: &SpdefTable,
     args: &[Value],
     ret_count: usize,
 ) -> Result<Vec<Value>, RuntimeError> {
     match ret_count {
         0 => {
-            spset_explicit(sp, args)?;
+            spset_explicit(sp, spdef, args)?;
             Ok(vec![])
         }
         1 => {
-            let slot = spset_alloc(sp, args)?;
+            let slot = spset_alloc(sp, spdef, args)?;
             Ok(vec![Value::Int(slot)])
         }
         _ => Err(illegal()),
@@ -105,13 +106,17 @@ pub fn spset(
 /// first (2..6 args, matching the disassembled `sub argcount,#2 / cmp #5` guard — an
 /// argc outside that range is errnum 4 *before* the management number is range-checked),
 /// then the management number, then the form-specific params.
-fn spset_explicit(sp: &mut SpriteState, args: &[Value]) -> Result<(), RuntimeError> {
+fn spset_explicit(
+    sp: &mut SpriteState,
+    spdef: &SpdefTable,
+    args: &[Value],
+) -> Result<(), RuntimeError> {
     match args {
         // Form 1 — from an SPDEF template.
         [m, d] => {
             let slot = mgmt(m)?;
             let d = defn(d)?;
-            sp.set_template(slot, d);
+            sp.set_template(spdef, slot, d);
         }
         // Form 2 — direct image, W,H default 16, attr default &H01.
         [m, u, v] => {
@@ -161,7 +166,11 @@ fn spset_explicit(sp: &mut SpriteState, args: &[Value]) -> Result<(), RuntimeErr
 
 /// The auto-allocate `OUT`/function forms (3-6). Returns the chosen management number, or
 /// -1 if no slot in the search range is free.
-fn spset_alloc(sp: &mut SpriteState, args: &[Value]) -> Result<i32, RuntimeError> {
+fn spset_alloc(
+    sp: &mut SpriteState,
+    spdef: &SpdefTable,
+    args: &[Value],
+) -> Result<i32, RuntimeError> {
     // (search range, image spec). The range is the whole table for forms 3/4 and the
     // inclusive [upper,lower] for forms 5/6.
     let (start, end, image) = match args {
@@ -189,7 +198,7 @@ fn spset_alloc(sp: &mut SpriteState, args: &[Value]) -> Result<i32, RuntimeError
     match sp.alloc(start, end) {
         Some(slot) => {
             match image {
-                Image::Template(d) => sp.set_template(slot, d),
+                Image::Template(d) => sp.set_template(spdef, slot, d),
                 Image::Direct { u, v, w, h, a } => sp.set_direct(slot, u, v, w, h, a),
             }
             Ok(slot as i32)
@@ -772,6 +781,7 @@ pub fn sphome(
 /// hw_verified (sb-oracle 2026-06-24, harness/harvest/out/spchr_rt*.tsv).
 pub fn spchr(
     sp: &mut SpriteState,
+    spdef: &SpdefTable,
     args: &[Value],
     ret_count: usize,
 ) -> Result<Vec<Value>, RuntimeError> {
@@ -794,7 +804,7 @@ pub fn spchr(
             // Form 1 — re-image from an SPDEF template.
             1 => {
                 let d = defn(&rest[0])?;
-                sp.chr_template(slot, d);
+                sp.chr_template(spdef, slot, d);
             }
             // Form 2 — direct image (2..5 params: U,[V],[W],[H],[attr]).
             2..=5 => {
@@ -1263,13 +1273,13 @@ fn override_field(field: &mut i32, v: Option<&Value>) -> Result<(), RuntimeError
 /// (`SPDEF dst,src`) or when any override field is skipped (a `,,` Void) — otherwise it is a
 /// define. The defined template is range-validated (errnum 10); `defnum`/`srcnum` ∉ 0..4095
 /// is errnum 10.
-pub(crate) fn spdef_scalar(sp: &mut SpriteState, args: &[Value]) -> Result<(), RuntimeError> {
+pub(crate) fn spdef_scalar(spdef: &mut SpdefTable, args: &[Value]) -> Result<(), RuntimeError> {
     let defnum = defn(&args[0])? as usize;
     let rest = &args[1..];
     let is_copy = rest.len() == 1 || rest.iter().any(|v| matches!(v, Value::Void));
     let entry = if is_copy {
         let src = defn(&rest[0])? as usize;
-        let mut e = sp.spdef_get(src);
+        let mut e = spdef.get(src);
         let ov = &rest[1..];
         override_field(&mut e.u, ov.first())?;
         override_field(&mut e.v, ov.get(1))?;
@@ -1283,7 +1293,7 @@ pub(crate) fn spdef_scalar(sp: &mut SpriteState, args: &[Value]) -> Result<(), R
         parse_define(rest)?
     };
     validate_spdef(&entry)?;
-    sp.spdef_set(defnum, entry);
+    spdef.set(defnum, entry);
     Ok(())
 }
 
@@ -1311,7 +1321,8 @@ mod tests {
 
     /// Create sprite `slot` (SPSET slot,0) so SPOFS can operate on it.
     fn spset0(sp: &mut SpriteState, slot: i32) {
-        spset(sp, &[Value::Int(slot), Value::Int(0)], 0).unwrap();
+        let spdef = SpdefTable::new();
+        spset(sp, &spdef, &[Value::Int(slot), Value::Int(0)], 0).unwrap();
     }
 
     #[test]
@@ -1320,29 +1331,31 @@ mod tests {
         // errnum 4 (NOT a downward scan). hw_verified sb-oracle batch 2026-06-24 (M7-T2):
         // IX=SPSET(0)->0, with 0,1 taken ->2; IX=SPSET(5,5,0)->5; IX=SPSET(105,100,0)->errnum 4.
         let mut sp = SpriteState::new();
+        let spdef = SpdefTable::new();
         // Whole-range form picks slot 0 first, then skips used slots.
         assert_eq!(
-            spset(&mut sp, &[Value::Int(0)], 1).unwrap()[0],
+            spset(&mut sp, &spdef, &[Value::Int(0)], 1).unwrap()[0],
             Value::Int(0)
         );
         spset0(&mut sp, 1);
         assert_eq!(
-            spset(&mut sp, &[Value::Int(0)], 1).unwrap()[0],
+            spset(&mut sp, &spdef, &[Value::Int(0)], 1).unwrap()[0],
             Value::Int(2)
         );
         // Single-slot range yields that slot; once full, -1.
         assert_eq!(
-            spset(&mut sp, &[Value::Int(5), Value::Int(5), Value::Int(0)], 1).unwrap()[0],
+            spset(&mut sp, &spdef, &[Value::Int(5), Value::Int(5), Value::Int(0)], 1).unwrap()[0],
             Value::Int(5)
         );
         assert_eq!(
-            spset(&mut sp, &[Value::Int(5), Value::Int(5), Value::Int(0)], 1).unwrap()[0],
+            spset(&mut sp, &spdef, &[Value::Int(5), Value::Int(5), Value::Int(0)], 1).unwrap()[0],
             Value::Int(-1)
         );
         // Reversed range (upper > lower) → errnum 4.
         assert_eq!(
             spset(
                 &mut sp,
+                &spdef,
                 &[Value::Int(105), Value::Int(100), Value::Int(0)],
                 1
             )
@@ -1386,24 +1399,26 @@ mod tests {
         // (harness/harvest/out/spchr_rt*.tsv).
         let i = Value::Int;
         let mut sp = SpriteState::new();
+        let spdef = SpdefTable::new();
         spset0(&mut sp, 0);
         // Direct set + GET U,V,W,H,A round-trip.
-        spchr(&mut sp, &[i(0), i(64), i(64), i(32), i(32), i(1)], 0).unwrap();
-        let g5 = spchr(&mut sp, &[i(0)], 5).unwrap();
+        spchr(&mut sp, &spdef, &[i(0), i(64), i(64), i(32), i(32), i(1)], 0).unwrap();
+        let g5 = spchr(&mut sp, &spdef, &[i(0)], 5).unwrap();
         assert_eq!(g5, vec![i(64), i(64), i(32), i(32), i(1)]);
         // The 3-return form's THIRD value is the ATTRIBUTE, not the width.
         assert_eq!(
-            spchr(&mut sp, &[i(0)], 3).unwrap(),
+            spchr(&mut sp, &spdef, &[i(0)], 3).unwrap(),
             vec![i(64), i(64), i(1)]
         );
         // A direct-image SPCHR clears DEFNO to 0; a template SPCHR sets it to the template #.
-        assert_eq!(spchr(&mut sp, &[i(0)], 1).unwrap(), vec![i(0)]);
-        spchr(&mut sp, &[i(0), i(42)], 0).unwrap();
-        assert_eq!(spchr(&mut sp, &[i(0)], 1).unwrap(), vec![i(42)]);
+        assert_eq!(spchr(&mut sp, &spdef, &[i(0)], 1).unwrap(), vec![i(0)]);
+        spchr(&mut sp, &spdef, &[i(0), i(42)], 0).unwrap();
+        assert_eq!(spchr(&mut sp, &spdef, &[i(0)], 1).unwrap(), vec![i(42)]);
         // Attribute SET applies bits 1-5 only; display bit b00 is preserved (stays shown).
-        spchr(&mut sp, &[i(0), i(64), i(64), i(16), i(16), i(0x20)], 0).unwrap();
+        spchr(&mut sp, &spdef, &[i(0), i(64), i(64), i(16), i(16), i(0x20)], 0).unwrap();
         spchr(
             &mut sp,
+            &spdef,
             &[
                 i(0),
                 Value::Void,
@@ -1415,23 +1430,23 @@ mod tests {
             0,
         )
         .unwrap();
-        assert_eq!(spchr(&mut sp, &[i(0)], 5).unwrap()[4], i(9)); // 8 | preserved display 1
+        assert_eq!(spchr(&mut sp, &spdef, &[i(0)], 5).unwrap()[4], i(9)); // 8 | preserved display 1
                                                                   // Skip-empty keeps current U,V; absent W,H default to 16.
-        spchr(&mut sp, &[i(0), i(64), i(64), i(32), i(32), i(1)], 0).unwrap();
-        spchr(&mut sp, &[i(0), Value::Void, Value::Void, i(8), i(8)], 0).unwrap();
+        spchr(&mut sp, &spdef, &[i(0), i(64), i(64), i(32), i(32), i(1)], 0).unwrap();
+        spchr(&mut sp, &spdef, &[i(0), Value::Void, Value::Void, i(8), i(8)], 0).unwrap();
         assert_eq!(
-            spchr(&mut sp, &[i(0)], 4).unwrap(),
+            spchr(&mut sp, &spdef, &[i(0)], 4).unwrap(),
             vec![i(64), i(64), i(8), i(8)]
         );
         // Errors: U+W over 512 → errnum 10; a 6-OUT GET → errnum 4; used-before-SPSET → 4.
         assert_eq!(
-            spchr(&mut sp, &[i(0), i(500), i(0), i(20), i(16), i(1)], 0)
+            spchr(&mut sp, &spdef, &[i(0), i(500), i(0), i(20), i(16), i(1)], 0)
                 .unwrap_err()
                 .errnum,
             10
         );
-        assert_eq!(spchr(&mut sp, &[i(0)], 6).unwrap_err().errnum, 4);
-        assert_eq!(spchr(&mut sp, &[i(5)], 1).unwrap_err().errnum, 4);
+        assert_eq!(spchr(&mut sp, &spdef, &[i(0)], 6).unwrap_err().errnum, 4);
+        assert_eq!(spchr(&mut sp, &spdef, &[i(5)], 1).unwrap_err().errnum, 4);
     }
 
     #[test]

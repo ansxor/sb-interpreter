@@ -105,7 +105,7 @@ fn run_grp(path: &str, out: &str) -> ExitCode {
         Ok(program) => {
             let mut vm = Vm::new(program);
             let err = vm.run().err().and_then(sb_error_of);
-            let page = &vm.grp().pages[vm.grp().display_page as usize];
+            let page = &vm.grp().pages[vm.grp().cur().display_page as usize];
             let fb = grp_page_to_framebuffer(
                 page,
                 GRP_VISIBLE_WIDTH as usize,

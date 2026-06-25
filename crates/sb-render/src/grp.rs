@@ -94,26 +94,30 @@ pub struct ClipRect {
     pub y1: i32,
 }
 
-/// The full GRP graphics state: the page buffers plus the command state (selected pages,
-/// draw color, Z priority, clip rectangles).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GrpState {
-    /// The 6 graphic pages, GRP0..GRP5.
-    pub pages: Vec<GrpPage>,
-    /// The hidden **GRPF** font page (GSAVE/GLOAD page index −1). Not on any `GPAGE`; it backs
-    /// the console glyph source and the `"GRPF"` bitmap ops. Blank in [`GrpState::new`], seeded
-    /// with the firmware font in [`GrpState::with_defaults`].
-    pub grpf: GrpPage,
-    /// Page shown on screen (`GPAGE` display page), 0..=5.
+/// The default Touch-screen display area (width, height). The lower screen is 320×240 in
+/// every `XSCREEN` mode (the Upper screen is 400×240 in the 3D modes, 320×240 otherwise).
+pub const TOUCH_DISPLAY_WIDTH_DEFAULT: i32 = 320;
+/// The default Touch-screen display area height.
+pub const TOUCH_DISPLAY_HEIGHT_DEFAULT: i32 = GRP_DISPLAY_HEIGHT_DEFAULT;
+
+/// The number of physical DISPLAY screens: 0 = Upper, 1 = Touch.
+pub const GRP_SCREEN_COUNT: usize = 2;
+
+/// The per-screen GRP **draw context**: which page each screen shows + draws, its Z priority,
+/// and its display/write clip rectangles. The 6 pixel pages and `GCOLOR` are *not* here — they
+/// are a shared pool / single global on [`GrpState`] (matching the osb structural model:
+/// `GraphicPage[6]` shared, `showPage[2]`/`usePage[2]`/`gprios[2]`/`writeArea[2]`/
+/// `displayArea[2]` per-display, one global `uint gcolor`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GrpScreen {
+    /// Page shown on this screen (`GPAGE` display page), 0..=5.
     pub display_page: u8,
-    /// Page targeted by drawing instructions (`GPAGE` manipulation page), 0..=5.
+    /// Page targeted by this screen's drawing instructions (`GPAGE` manipulation page), 0..=5.
     pub manip_page: u8,
-    /// Current draw color (`GCOLOR`), ARGB8888. Default opaque white.
-    pub color: u32,
-    /// Screen Z priority (`GPRIO`), -256..=1024 (lower = nearer the viewer).
+    /// This screen's Z priority (`GPRIO`), -256..=1024 (lower = nearer the viewer).
     pub prio: i32,
-    /// Default display area (width, height) used by `GCLIP 0` reset. The VM updates this when
-    /// `XSCREEN` / `DISPLAY` change the active screen size.
+    /// Default display area (width, height) used by this screen's `GCLIP 0` reset. The VM
+    /// updates this when `XSCREEN` / `DISPLAY` change the screen size.
     pub display_area: (i32, i32),
     /// Display clip rectangle (whole screen by default).
     pub display_clip: ClipRect,
@@ -121,23 +125,20 @@ pub struct GrpState {
     pub write_clip: ClipRect,
 }
 
-impl GrpState {
-    /// A fresh GRP state: 6 blank pages, GRP0 displayed + manipulated, opaque-white draw
-    /// color, screen-surface Z, and full-area clip rectangles.
-    pub fn new() -> Self {
+impl GrpScreen {
+    /// A fresh draw context displaying + manipulating `display_page`, screen-surface Z, a
+    /// display clip covering `display_area`, and a full-page write clip.
+    fn new(display_page: u8, display_area: (i32, i32)) -> Self {
         Self {
-            pages: (0..GRP_PAGE_COUNT).map(|_| GrpPage::new()).collect(),
-            grpf: GrpPage::new(),
-            display_page: 0,
+            display_page,
             manip_page: 0,
-            color: 0xFFFF_FFFF, // opaque white
             prio: 0,
-            display_area: (GRP_DISPLAY_WIDTH_DEFAULT, GRP_DISPLAY_HEIGHT_DEFAULT),
+            display_area,
             display_clip: ClipRect {
                 x0: 0,
                 y0: 0,
-                x1: GRP_DISPLAY_WIDTH_DEFAULT - 1,
-                y1: GRP_DISPLAY_HEIGHT_DEFAULT - 1,
+                x1: display_area.0 - 1,
+                y1: display_area.1 - 1,
             },
             write_clip: ClipRect {
                 x0: 0,
@@ -146,6 +147,59 @@ impl GrpState {
                 y1: GRP_DIM as i32 - 1,
             },
         }
+    }
+}
+
+/// The full GRP graphics state: the **shared** page buffers + global draw color, plus the
+/// **per-screen** draw context (selected pages, Z priority, clip rectangles) for each of the
+/// two DISPLAY screens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrpState {
+    /// The 6 graphic pages, GRP0..GRP5. A single shared pool — both screens draw into / display
+    /// from the same pages.
+    pub pages: Vec<GrpPage>,
+    /// The hidden **GRPF** font page (GSAVE/GLOAD page index −1). Not on any `GPAGE`; it backs
+    /// the console glyph source and the `"GRPF"` bitmap ops. Blank in [`GrpState::new`], seeded
+    /// with the firmware font in [`GrpState::with_defaults`].
+    pub grpf: GrpPage,
+    /// Current draw color (`GCOLOR`), ARGB8888. A single global, shared by both screens.
+    /// Default opaque white.
+    pub color: u32,
+    /// The per-screen draw context: index 0 = Upper, 1 = Touch.
+    pub screens: [GrpScreen; GRP_SCREEN_COUNT],
+    /// The DISPLAY screen subsequent GRP commands target (0 = Upper, 1 = Touch). Set by the
+    /// `DISPLAY n` statement; defaults to the Upper screen.
+    pub active: usize,
+}
+
+impl GrpState {
+    /// A fresh GRP state: 6 blank shared pages, opaque-white draw color, and the two screens'
+    /// default draw contexts — the Upper screen shows GRP0 (400×240), the Touch screen shows
+    /// GRP1 (320×240) (osb `showPage = [0, 1]`), both drawing into GRP0 with full clips.
+    pub fn new() -> Self {
+        Self {
+            pages: (0..GRP_PAGE_COUNT).map(|_| GrpPage::new()).collect(),
+            grpf: GrpPage::new(),
+            color: 0xFFFF_FFFF, // opaque white
+            screens: [
+                GrpScreen::new(0, (GRP_DISPLAY_WIDTH_DEFAULT, GRP_DISPLAY_HEIGHT_DEFAULT)),
+                GrpScreen::new(
+                    1,
+                    (TOUCH_DISPLAY_WIDTH_DEFAULT, TOUCH_DISPLAY_HEIGHT_DEFAULT),
+                ),
+            ],
+            active: 0,
+        }
+    }
+
+    /// The active screen's draw context (the screen subsequent GRP commands target).
+    pub fn cur(&self) -> &GrpScreen {
+        &self.screens[self.active]
+    }
+
+    /// The active screen's draw context, mutably.
+    pub fn cur_mut(&mut self) -> &mut GrpScreen {
+        &mut self.screens[self.active]
     }
 
     /// A GRP state with the **firmware default pages** loaded, as SmileBASIC boots: GRP4 holds
@@ -169,38 +223,40 @@ impl GrpState {
         self.grpf = crate::assets::default_font_page();
     }
 
-    /// Clear the manipulation page to `color` (`GCLS`).
+    /// Clear the active screen's manipulation page to `color` (`GCLS`).
     pub fn gcls(&mut self, color: u32) {
         let h = argb8888_to_rgba5551(color);
-        for px in &mut self.pages[self.manip_page as usize].pixels {
+        let page = self.cur().manip_page as usize;
+        for px in &mut self.pages[page].pixels {
             *px = h;
         }
     }
 
-    /// Read one pixel's color from the manipulation page as ARGB8888 (`GSPOIT`).
-    /// Coordinates outside the 512×512 page return 0 (transparent black) — matching real
-    /// SB 3.6.0 (the PTC/DSi `-1` does *not* apply, hw_verified).
+    /// Read one pixel's color from the active screen's manipulation page as ARGB8888
+    /// (`GSPOIT`). Coordinates outside the 512×512 page return 0 (transparent black) — matching
+    /// real SB 3.6.0 (the PTC/DSi `-1` does *not* apply, hw_verified).
     pub fn gspoit(&self, x: i32, y: i32) -> u32 {
         if x < 0 || y < 0 || x >= GRP_DIM as i32 || y >= GRP_DIM as i32 {
             return 0;
         }
-        let h = self.pages[self.manip_page as usize].pixels[y as usize * GRP_DIM + x as usize];
+        let h = self.pages[self.cur().manip_page as usize].pixels[y as usize * GRP_DIM + x as usize];
         rgba5551_to_argb8888(h)
     }
 
-    /// Reset a clip rectangle to its whole area (`GCLIP mode` with no rectangle): the current
-    /// screen size for display mode, the whole page for write mode.
+    /// Reset a clip rectangle to its whole area (`GCLIP mode` with no rectangle) on the active
+    /// screen: the screen's display size for display mode, the whole page for write mode.
     pub fn gclip_reset(&mut self, write: bool) {
+        let screen = self.cur_mut();
         if write {
-            self.write_clip = ClipRect {
+            screen.write_clip = ClipRect {
                 x0: 0,
                 y0: 0,
                 x1: GRP_DIM as i32 - 1,
                 y1: GRP_DIM as i32 - 1,
             };
         } else {
-            let (w, h) = self.display_area;
-            self.display_clip = ClipRect {
+            let (w, h) = screen.display_area;
+            screen.display_clip = ClipRect {
                 x0: 0,
                 y0: 0,
                 x1: w - 1,
@@ -209,11 +265,12 @@ impl GrpState {
         }
     }
 
-    /// Set the default display area and reset the display clip to match. Called by the VM when
-    /// `XSCREEN` or `DISPLAY` changes the active screen size.
+    /// Set the active screen's display area and reset its display clip to match. Called by the
+    /// VM when `XSCREEN` or `DISPLAY` changes the active screen size.
     pub fn set_display_area(&mut self, width: i32, height: i32) {
-        self.display_area = (width, height);
-        self.display_clip = ClipRect {
+        let screen = self.cur_mut();
+        screen.display_area = (width, height);
+        screen.display_clip = ClipRect {
             x0: 0,
             y0: 0,
             x1: width - 1,
@@ -221,8 +278,9 @@ impl GrpState {
         };
     }
 
-    /// Set a clip rectangle (`GCLIP mode, x0, y0, x1, y1`). The corners are normalized so
-    /// the smaller coordinate is the start, so they may be given in any order.
+    /// Set a clip rectangle on the active screen (`GCLIP mode, x0, y0, x1, y1`). The corners
+    /// are normalized so the smaller coordinate is the start, so they may be given in any
+    /// order.
     pub fn gclip_rect(&mut self, write: bool, x0: i32, y0: i32, x1: i32, y1: i32) {
         let rect = ClipRect {
             x0: x0.min(x1),
@@ -230,10 +288,11 @@ impl GrpState {
             x1: x0.max(x1),
             y1: y0.max(y1),
         };
+        let screen = self.cur_mut();
         if write {
-            self.write_clip = rect;
+            screen.write_clip = rect;
         } else {
-            self.display_clip = rect;
+            screen.display_clip = rect;
         }
     }
 }
@@ -279,7 +338,12 @@ mod tests {
         let g = GrpState::new();
         assert_eq!(g.pages.len(), GRP_PAGE_COUNT);
         assert_eq!(g.pages[0].pixels.len(), GRP_DIM * GRP_DIM);
-        assert_eq!((g.display_page, g.manip_page), (0, 0));
+        // osb showPage = [0, 1]: the Upper screen shows GRP0, the Touch screen GRP1; both
+        // manipulate GRP0. The active (command-target) screen defaults to the Upper screen.
+        assert_eq!((g.screens[0].display_page, g.screens[0].manip_page), (0, 0));
+        assert_eq!((g.screens[1].display_page, g.screens[1].manip_page), (1, 0));
+        assert_eq!(g.active, 0);
+        assert_eq!((g.cur().display_page, g.cur().manip_page), (0, 0));
         assert_eq!(g.color, 0xFFFF_FFFF);
     }
 
@@ -306,7 +370,7 @@ mod tests {
     #[test]
     fn gcls_targets_only_the_manip_page() {
         let mut g = GrpState::new();
-        g.manip_page = 2;
+        g.cur_mut().manip_page = 2;
         g.gcls(0xFFFF_FFFF);
         assert_eq!(g.pages[2].pixels[0], argb8888_to_rgba5551(0xFFFF_FFFF));
         assert_eq!(g.pages[0].pixels[0], 0); // GRP0 untouched
@@ -317,12 +381,42 @@ mod tests {
         let mut g = GrpState::new();
         g.gclip_rect(true, 200, 200, 100, 100);
         assert_eq!(
-            g.write_clip,
+            g.cur().write_clip,
             ClipRect {
                 x0: 100,
                 y0: 100,
                 x1: 200,
                 y1: 200
+            }
+        );
+    }
+
+    #[test]
+    fn per_screen_draw_context_is_isolated() {
+        let mut g = GrpState::new();
+        // Touch screen defaults to displaying GRP1 (osb showPage = [0, 1]).
+        assert_eq!(g.screens[1].display_page, 1);
+        // The Touch screen's default display area is 320×240, not the Upper screen's 400×240.
+        assert_eq!(g.screens[0].display_area, (400, 240));
+        assert_eq!(g.screens[1].display_area, (320, 240));
+
+        // Selecting the Touch screen routes draw-state mutations to screen 1 only.
+        g.active = 1;
+        g.cur_mut().manip_page = 4;
+        g.cur_mut().display_page = 3;
+        g.gclip_rect(false, 10, 10, 50, 50);
+        assert_eq!(g.screens[1].manip_page, 4);
+        assert_eq!(g.screens[1].display_page, 3);
+        // Screen 0 (Upper) is untouched.
+        assert_eq!(g.screens[0].manip_page, 0);
+        assert_eq!(g.screens[0].display_page, 0);
+        assert_eq!(
+            g.screens[0].display_clip,
+            ClipRect {
+                x0: 0,
+                y0: 0,
+                x1: 399,
+                y1: 239
             }
         );
     }

@@ -101,13 +101,14 @@ pub fn gpage(
         (0, 2) => {
             let d = page(&args[0])?;
             let m = page(&args[1])?;
-            grp.display_page = d;
-            grp.manip_page = m;
+            let screen = grp.cur_mut();
+            screen.display_page = d;
+            screen.manip_page = m;
             Ok(vec![])
         }
         (2, 0) => Ok(vec![
-            Value::Int(grp.display_page as i32),
-            Value::Int(grp.manip_page as i32),
+            Value::Int(grp.cur().display_page as i32),
+            Value::Int(grp.cur().manip_page as i32),
         ]),
         _ => Err(illegal()),
     }
@@ -166,7 +167,7 @@ pub fn gprio(
     if !(-256..=1024).contains(&z) {
         return Err(out_of_range());
     }
-    grp.prio = z;
+    grp.cur_mut().prio = z;
     Ok(vec![])
 }
 
@@ -404,7 +405,7 @@ pub fn gcopy(
         return Err(illegal());
     }
     let (src_page, rect) = match args.len() {
-        7 => (grp.manip_page as i32, args),
+        7 => (grp.cur().manip_page as i32, args),
         8 => (src_page(&args[0])?, &args[1..]),
         _ => return Err(illegal()),
     };
@@ -446,7 +447,7 @@ pub fn gsave(
         i += 1;
         src_page(&args[0])?
     } else {
-        grp.manip_page as i32
+        grp.cur().manip_page as i32
     };
     let (x, y, w, h) = if has_rect {
         let r = region(&args[i..i + 4])?;
@@ -788,7 +789,7 @@ mod tests {
         assert!(gpage(&mut g, &[Value::Int(1), Value::Int(2)], 0)
             .unwrap()
             .is_empty());
-        assert_eq!((g.display_page, g.manip_page), (1, 2));
+        assert_eq!((g.cur().display_page, g.cur().manip_page), (1, 2));
         assert_eq!(
             gpage(&mut g, &[], 2).unwrap(),
             vec![Value::Int(1), Value::Int(2)]
@@ -836,7 +837,7 @@ mod tests {
         let mut g = GrpState::new();
         gprio(&mut g, &[Value::Int(-256)], 0).unwrap();
         gprio(&mut g, &[Value::Int(1024)], 0).unwrap();
-        assert_eq!(g.prio, 1024);
+        assert_eq!(g.cur().prio, 1024);
         assert_eq!(
             gprio(&mut g, &[Value::Int(1025)], 0).unwrap_err().errnum,
             10

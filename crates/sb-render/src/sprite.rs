@@ -312,14 +312,60 @@ impl Sprite {
     }
 }
 
-/// The sprite system state: the 512-slot table the VM mutates for the lifecycle
-/// commands. Rendering reads it (M3-T6); the transform setters extend it (M3-T2/T3).
+/// The **shared** `SPDEF` definition-template table — the 4096 templates `SPSET`/`SPCHR`
+/// (form 1) copy from. This is a single GLOBAL table, NOT per-DISPLAY-screen: `SPDEF` edits
+/// made under any `DISPLAY` are visible from every screen (the definition table is not part
+/// of a screen's per-screen sprite state). The VM owns one of these and threads it into the
+/// per-screen [`SpriteState`] operations that read a template.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpdefTable {
+    /// The 4096 `SPDEF` definition templates, indexed by definition number.
+    pub entries: Vec<SpdefEntry>,
+}
+
+impl Default for SpdefTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SpdefTable {
+    /// A fresh table loaded with the firmware default templates (the built-in definitions
+    /// `SPSET <id>` copies from — see [`crate::assets::default_spdef`]; SmileBASIC's power-on
+    /// state).
+    pub fn new() -> Self {
+        Self {
+            entries: crate::assets::default_spdef(),
+        }
+    }
+
+    /// `SPDEF` (no args) — reset the definition-template table to its firmware default (the
+    /// built-in `spdef.csv`, [`crate::assets::default_spdef`]); also the SPDEF half of `ACLS`.
+    pub fn reset(&mut self) {
+        self.entries = crate::assets::default_spdef();
+    }
+
+    /// Read a definition template (the caller has range-checked `defnum` 0..4095).
+    pub fn get(&self, defnum: usize) -> SpdefEntry {
+        self.entries[defnum]
+    }
+
+    /// Write a definition template (the caller has range-checked `defnum` and the fields).
+    pub fn set(&mut self, defnum: usize, entry: SpdefEntry) {
+        self.entries[defnum] = entry;
+    }
+}
+
+/// The per-DISPLAY-screen sprite system state: the 512-slot table the VM mutates for the
+/// lifecycle commands. Rendering reads it (M3-T6); the transform setters extend it (M3-T2/T3).
+/// Each physical screen (Upper / Touch) owns its own [`SpriteState`], so a sprite created
+/// under `DISPLAY 1` is independent of one created under `DISPLAY 0`. The `SPDEF` definition
+/// templates are **not** here — they live in the shared [`SpdefTable`] the VM threads into the
+/// template-reading operations.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpriteState {
     /// The 512 sprite slots, indexed by management number.
     pub sprites: Vec<Sprite>,
-    /// The 4096 `SPDEF` definition templates `SPSET` (form 1) copies from.
-    pub spdef: Vec<SpdefEntry>,
     /// The shared `SPHIT*` collision-result record `SPHITINFO` reads back.
     pub hit: HitInfo,
     /// The global graphic page the sprite system renders onto (`SPPAGE`, 0..=5; default
@@ -336,13 +382,11 @@ impl Default for SpriteState {
 }
 
 impl SpriteState {
-    /// A fresh sprite system: every slot free (no sprite created yet), the SPDEF table loaded
-    /// with the firmware default templates (the built-in definitions `SPSET <id>` copies from —
-    /// see [`crate::assets::default_spdef`]; this is SmileBASIC's power-on state).
+    /// A fresh sprite system: every slot free (no sprite created yet). The SPDEF templates
+    /// live in the shared [`SpdefTable`], not here.
     pub fn new() -> Self {
         Self {
             sprites: vec![Sprite::default(); SPRITE_COUNT],
-            spdef: crate::assets::default_spdef(),
             hit: HitInfo::default(),
             page: SPRITE_PAGE_DEFAULT,
         }
@@ -398,9 +442,10 @@ impl SpriteState {
     /// `SPSET mgmt, defn` — create a sprite at an explicit slot from an `SPDEF` template:
     /// the slot copies the template's source rectangle, home/origin, and attribute (so a
     /// later `SPDEF` does not retroactively change a created sprite). The caller has already
-    /// range-checked `defno` (0..4095).
-    pub fn set_template(&mut self, mgmt: usize, defno: i32) {
-        let t = self.spdef[defno as usize];
+    /// range-checked `defno` (0..4095). The shared [`SpdefTable`] is passed in — the templates
+    /// are global, not per-screen.
+    pub fn set_template(&mut self, spdef: &SpdefTable, mgmt: usize, defno: i32) {
+        let t = spdef.get(defno as usize);
         self.create(
             mgmt,
             (t.u, t.v, t.w, t.h),
@@ -421,8 +466,8 @@ impl SpriteState {
     /// guarantees the slot is active and `defno` is in 0..4095. hw_verified (sb-oracle
     /// 2026-06-24): template `SPDEF 100,40,48,24,32,7,9,&H21` → after `SPCHR 0,100` reads back
     /// U,V,W,H=40,48,24,32, DEFNO=100, home 7,9, A=33; a prior `SPOFS 0,50,60` survives (50,60).
-    pub fn chr_template(&mut self, mgmt: usize, defno: i32) {
-        let t = self.spdef[defno as usize];
+    pub fn chr_template(&mut self, spdef: &SpdefTable, mgmt: usize, defno: i32) {
+        let t = spdef.get(defno as usize);
         let s = &mut self.sprites[mgmt];
         s.u = t.u;
         s.v = t.v;
@@ -800,23 +845,6 @@ impl SpriteState {
         bits
     }
 
-    // -- SPDEF definition templates (M3-T3) ------------------------------------
-
-    /// `SPDEF` (no args) — reset the definition-template table to its firmware default (the
-    /// built-in `spdef.csv`, [`crate::assets::default_spdef`]); also the SPDEF half of `ACLS`.
-    pub fn spdef_reset(&mut self) {
-        self.spdef = crate::assets::default_spdef();
-    }
-
-    /// Read a definition template (the caller has range-checked `defnum` 0..4095).
-    pub fn spdef_get(&self, defnum: usize) -> SpdefEntry {
-        self.spdef[defnum]
-    }
-
-    /// Write a definition template (the caller has range-checked `defnum` and the fields).
-    pub fn spdef_set(&mut self, defnum: usize, entry: SpdefEntry) {
-        self.spdef[defnum] = entry;
-    }
 }
 
 /// Standard AABB overlap test for two `(x,y,w,h)` rectangles (touching edges do not
@@ -878,7 +906,8 @@ mod tests {
     #[test]
     fn create_then_clear_round_trips_used() {
         let mut st = SpriteState::new();
-        st.set_template(0, 0);
+        let spdef = SpdefTable::new();
+        st.set_template(&spdef, 0, 0);
         assert!(st.is_used(0));
         // Default attr = display ON only.
         assert!(st.sprites[0].display);
@@ -936,8 +965,9 @@ mod tests {
     #[test]
     fn clear_all_frees_every_slot() {
         let mut st = SpriteState::new();
-        st.set_template(0, 0);
-        st.set_template(5, 0);
+        let spdef = SpdefTable::new();
+        st.set_template(&spdef, 0, 0);
+        st.set_template(&spdef, 5, 0);
         st.clear_all();
         assert!(st.sprites.iter().all(|s| !s.active));
     }
@@ -1225,11 +1255,12 @@ mod tests {
     #[test]
     fn spdef_define_read_reset_copy() {
         let mut st = SpriteState::new();
+        let mut spdef = SpdefTable::new();
         // Default template is 16×16, attr display-ON.
-        let d = st.spdef_get(0);
+        let d = spdef.get(0);
         assert_eq!((d.w, d.h, d.attr), (16, 16, 1));
-        // Define template 1, then SPSET copies its rect/home/attr.
-        st.spdef_set(
+        // Define template 1 in the shared table, then SPSET copies its rect/home/attr.
+        spdef.set(
             1,
             SpdefEntry {
                 u: 32,
@@ -1241,16 +1272,16 @@ mod tests {
                 attr: 1,
             },
         );
-        st.set_template(0, 1);
+        st.set_template(&spdef, 0, 1);
         let sp = &st.sprites[0];
         assert_eq!((sp.u, sp.v, sp.w, sp.h), (32, 48, 24, 24));
         assert_eq!((sp.home_x, sp.home_y), (12.0, 12.0));
         // Reset restores the firmware default table (template 1 = 16,0,16,16 — not the bare
         // SpdefEntry::default placeholder, which is only the no-resource fallback).
-        st.spdef_reset();
-        assert_eq!(st.spdef_get(1), crate::assets::default_spdef()[1]);
+        spdef.reset();
+        assert_eq!(spdef.get(1), crate::assets::default_spdef()[1]);
         assert_eq!(
-            (st.spdef_get(1).u, st.spdef_get(1).v, st.spdef_get(1).w),
+            (spdef.get(1).u, spdef.get(1).v, spdef.get(1).w),
             (16, 0, 16)
         );
     }

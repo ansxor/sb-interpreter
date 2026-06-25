@@ -31,10 +31,11 @@ impl GrpState {
     /// elements, hw_verified sb-oracle s_t7d `LEN` of a whole-area `GSAVE`).
     pub fn whole_draw_area(&self) -> (i32, i32, i32, i32) {
         let max = GRP_DIM as i32 - 1;
-        let x0 = self.write_clip.x0.clamp(0, max);
-        let y0 = self.write_clip.y0.clamp(0, max);
-        let x1 = self.write_clip.x1.clamp(0, max);
-        let y1 = self.write_clip.y1.clamp(0, max);
+        let wc = self.cur().write_clip;
+        let x0 = wc.x0.clamp(0, max);
+        let y0 = wc.y0.clamp(0, max);
+        let x1 = wc.x1.clamp(0, max);
+        let y1 = wc.y1.clamp(0, max);
         (x0, y0, (x1 - x0 + 1).max(0), (y1 - y0 + 1).max(0))
     }
 

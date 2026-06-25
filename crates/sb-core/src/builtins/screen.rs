@@ -43,16 +43,45 @@ pub struct ScreenConfig {
     /// Per-screen layer visibility, `[screen][Console, Graphic, BG, Sprite]`. Every layer is
     /// shown by default. `VISIBLE` writes the row of whichever screen `DISPLAY` selects.
     pub visible: [[bool; 4]; 2],
+    /// Per-screen sprite-slot allocation `[Upper, Touch]` (`XSCREEN`'s `sprites` split): how
+    /// many of the 512 management numbers are assigned to each physical screen. TRACKED for the
+    /// dual-screen model (#83) but NOT yet enforced as a per-screen capacity cap — see the
+    /// oracle-pending note in [`ScreenConfig::xscreen`].
+    pub sprite_alloc: [i32; 2],
+    /// Per-screen BG-layer allocation `[Upper, Touch]` (`XSCREEN`'s `bg` split): how many of
+    /// the 4 BG layers are assigned to each physical screen. TRACKED but not yet enforced (#84).
+    pub bg_alloc: [i32; 2],
     /// The `HARDWARE` model (1 = new3DS).
     pub hardware: i32,
 }
 
+/// Total sprite management slots split between the two screens (512).
+const TOTAL_SPRITES: i32 = 512;
+/// Total BG layers split between the two screens (4).
+const TOTAL_BG: i32 = 4;
+
+/// The per-mode UPPER-screen allocation defaults `(sprites, bg)` when `XSCREEN` is given only
+/// a mode. Modes 0/1/4 give the Upper screen everything (Touch unused); modes 2/3 (the Touch
+/// Screen modes) split evenly — Upper 256 sprites / 2 BG, Touch the remainder. The Touch
+/// allocation is always `total - upper`.
+fn mode_upper_alloc(mode: i32) -> (i32, i32) {
+    match mode {
+        2 | 3 => (256, 2),
+        _ => (TOTAL_SPRITES, TOTAL_BG),
+    }
+}
+
 impl Default for ScreenConfig {
     fn default() -> Self {
+        // Boot mode 0: the Upper screen owns all 512 sprites / 4 BG layers, the Touch screen
+        // none.
+        let (us, ub) = mode_upper_alloc(0);
         ScreenConfig {
             mode: 0,
             display: 0,
             visible: [[true; 4]; 2],
+            sprite_alloc: [us, TOTAL_SPRITES - us],
+            bg_alloc: [ub, TOTAL_BG - ub],
             hardware: DEFAULT_HARDWARE,
         }
     }
@@ -65,14 +94,21 @@ impl ScreenConfig {
     }
 
     /// The visible pixel dimensions of the active screen (`DISPLAY`), taking the current
-    /// `XSCREEN` mode into account. Mode 4 is 320×480; modes 0/2 upper screen is 400×240;
-    /// modes 1/3 upper and the touch screen are 320×240.
+    /// `XSCREEN` mode into account. Delegates to [`display_size_for`](Self::display_size_for)
+    /// with the active output screen.
     pub fn display_size(&self) -> (i32, i32) {
+        self.display_size_for(self.display)
+    }
+
+    /// The visible pixel dimensions of a specific screen id (0 = Upper, 1 = Touch) under the
+    /// current `XSCREEN` mode. Mode 4 is one combined 320×480 surface; the Upper screen is
+    /// 400×240 in the 3D modes (0/2) and 320×240 otherwise; the Touch screen is always 320×240.
+    pub fn display_size_for(&self, screen_id: i32) -> (i32, i32) {
         if self.mode == 4 {
             return (320, 480);
         }
-        let upper_3d = self.mode == 0 || self.mode == 2;
-        if self.display == 0 {
+        if screen_id == 0 {
+            let upper_3d = self.mode == 0 || self.mode == 2;
             if upper_3d {
                 (400, 240)
             } else {
@@ -120,18 +156,47 @@ impl ScreenConfig {
         if !(0..=4).contains(&mode) {
             return Err(out_of_range());
         }
-        if args.len() == 3 {
+        // The allocation split: an explicit `sprites,bg` assigns that many to the UPPER screen
+        // (Touch gets the remainder); a bare `XSCREEN mode` uses the per-mode defaults.
+        let (upper_sprites, upper_bg) = if args.len() == 3 {
             let sprites = args[1].to_int()?;
-            if !(0..=512).contains(&sprites) {
+            if !(0..=TOTAL_SPRITES).contains(&sprites) {
                 return Err(out_of_range());
             }
             let bg = args[2].to_int()?;
-            if !(0..=4).contains(&bg) {
+            if !(0..=TOTAL_BG).contains(&bg) {
                 return Err(out_of_range());
             }
-        }
+            (sprites, bg)
+        } else {
+            mode_upper_alloc(mode)
+        };
         self.mode = mode;
+        // TRACK the per-screen sprite/BG allocations (#83/#84). The Touch screen gets whatever
+        // the Upper screen did not. We deliberately do NOT enforce these as per-screen capacity
+        // caps yet:
+        //
+        // oracle-pending: per-screen sprite/BG capacity ENFORCEMENT (e.g. SPSET with a
+        // management number >= the active screen's `sprite_alloc`, or a BG layer >= `bg_alloc`,
+        // raising an error) needs real-hardware confirmation of the errnum + exact boundary
+        // before we gate on it — enforcing it now would risk regressing the conformance corpus.
+        // Tracked in chainlink #83 (sprites) / #84 (BG). SPSET keeps its existing global
+        // 0..512 range check unchanged.
+        self.sprite_alloc = [upper_sprites, TOTAL_SPRITES - upper_sprites];
+        self.bg_alloc = [upper_bg, TOTAL_BG - upper_bg];
         Ok(())
+    }
+
+    /// The per-screen sprite-slot allocation `[Upper, Touch]` set by `XSCREEN` (tracked, not
+    /// enforced — see [`ScreenConfig::xscreen`]).
+    pub fn sprite_alloc(&self) -> [i32; 2] {
+        self.sprite_alloc
+    }
+
+    /// The per-screen BG-layer allocation `[Upper, Touch]` set by `XSCREEN` (tracked, not
+    /// enforced).
+    pub fn bg_alloc(&self) -> [i32; 2] {
+        self.bg_alloc
     }
 
     /// `DISPLAY screen_id` (SET, statement) / `DISPLAY()` (GET, function). The GET form

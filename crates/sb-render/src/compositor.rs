@@ -414,6 +414,7 @@ pub fn compose_screen(
     width: usize,
     height: usize,
     grp: &GrpState,
+    screen_id: usize,
     bg: &BgState,
     sprites: &SpriteState,
     console: &Console,
@@ -425,10 +426,14 @@ pub fn compose_screen(
     // A `VISIBLE`-hidden layer group (M4-T4) is dropped from the list entirely.
     let mut layers: Vec<Box<dyn Layer + '_>> = Vec::new();
     if vis.graphic {
+        // The GRP layer is per-screen: each physical screen shows its own display page, clip
+        // and Z (osb showPage/displayArea/gprios are [2]). Sprites/BG stay global for now
+        // (their per-screen split is subtasks #83/#84).
+        let scr = &grp.screens[screen_id];
         layers.push(Box::new(GrpLayer {
-            page: &grp.pages[grp.display_page as usize],
-            clip: grp.display_clip,
-            z: grp.prio,
+            page: &grp.pages[scr.display_page as usize],
+            clip: scr.display_clip,
+            z: scr.prio,
         }));
     }
     // BG layers: push high→low layer number so layer 0 ends up frontmost among ties.
@@ -472,7 +477,7 @@ pub fn compose_top_screen(
     backdrop: u32,
     vis: LayerVisibility,
 ) -> Framebuffer {
-    compose_screen(TOP_WIDTH, TOP_HEIGHT, grp, bg, sprites, console, backdrop, vis)
+    compose_screen(TOP_WIDTH, TOP_HEIGHT, grp, 0, bg, sprites, console, backdrop, vis)
 }
 
 /// Render the top-left `width`×`height` crop of a GRP page to an RGBA8888 framebuffer — the
@@ -607,7 +612,7 @@ mod tests {
     fn display_clip_crops_the_grp_layer() {
         let mut grp = GrpState::new();
         grp.gcls(0xFFFF_FFFF); // opaque white everywhere
-        grp.display_clip = ClipRect {
+        grp.cur_mut().display_clip = ClipRect {
             x0: 5,
             y0: 5,
             x1: 9,
@@ -623,11 +628,50 @@ mod tests {
     #[test]
     fn compose_top_screen_honors_display_page() {
         let mut grp = GrpState::new();
-        grp.manip_page = 3;
+        grp.cur_mut().manip_page = 3;
         grp.gcls(0xFF00_00FF); // draw blue on page 3
-        grp.display_page = 3; // and show page 3
+        grp.cur_mut().display_page = 3; // and show page 3
         let fb = top(&grp, &Console::top());
         assert_eq!(fb.get_argb(0, 0), 0xFF00_00F8); // blue (5-bit truncated)
+    }
+
+    #[test]
+    fn compose_screen_renders_per_screen_display_page() {
+        // Each physical screen shows its own GRP display page. Draw distinct colors on two
+        // pages, point screen 0 at one and screen 1 at the other, and confirm compose_screen
+        // renders the page belonging to the screen_id it is asked for.
+        let mut grp = GrpState::new();
+        grp.cur_mut().manip_page = 0;
+        grp.gcls(0xFFFF_0000); // page 0 = red
+        grp.cur_mut().manip_page = 2;
+        grp.gcls(0xFF00_00FF); // page 2 = blue
+        grp.screens[0].display_page = 0; // Upper shows red
+        grp.screens[1].display_page = 2; // Touch shows blue
+        let console = Console::top();
+        let fb0 = compose_screen(
+            TOP_WIDTH,
+            TOP_HEIGHT,
+            &grp,
+            0,
+            &BgState::new(),
+            &SpriteState::new(),
+            &console,
+            DEFAULT_BACKDROP,
+            LayerVisibility::default(),
+        );
+        let fb1 = compose_screen(
+            TOP_WIDTH,
+            TOP_HEIGHT,
+            &grp,
+            1,
+            &BgState::new(),
+            &SpriteState::new(),
+            &console,
+            DEFAULT_BACKDROP,
+            LayerVisibility::default(),
+        );
+        assert_eq!(fb0.get_argb(0, 0), 0xFFF8_0000); // screen 0 → page 0 red
+        assert_eq!(fb1.get_argb(0, 0), 0xFF00_00F8); // screen 1 → page 2 blue
     }
 
     // ---- sprite rasterization (M3-T6) -------------------------------------------------
@@ -663,7 +707,7 @@ mod tests {
     #[test]
     fn sprite_blits_its_source_rect_at_the_home_position() {
         let mut grp = GrpState::new();
-        grp.manip_page = SPRITE_PAGE_DEFAULT; // sprites default to sampling GRP4
+        grp.cur_mut().manip_page = SPRITE_PAGE_DEFAULT; // sprites default to sampling GRP4
         grp.gfill(10, 10, 13, 13, 0xFFFF_0000); // a 4×4 opaque-red block on the sheet
         let mut sprites = SpriteState::new();
         sprites.set_direct(0, 10, 10, 4, 4, 0x01); // U,V=10,10 W,H=4, display ON
@@ -680,7 +724,7 @@ mod tests {
     #[test]
     fn hidden_sprite_is_not_drawn() {
         let mut grp = GrpState::new();
-        grp.manip_page = SPRITE_PAGE_DEFAULT;
+        grp.cur_mut().manip_page = SPRITE_PAGE_DEFAULT;
         grp.gfill(0, 0, 3, 3, 0xFFFF_0000);
         let mut sprites = SpriteState::new();
         sprites.set_direct(0, 0, 0, 4, 4, 0x00); // attr 0 = display OFF
@@ -691,7 +735,7 @@ mod tests {
     #[test]
     fn sprite_transparent_texel_lets_layers_behind_through() {
         let mut grp = GrpState::new();
-        grp.manip_page = SPRITE_PAGE_DEFAULT; // sheet (page 4) left blank → alpha-clear
+        grp.cur_mut().manip_page = SPRITE_PAGE_DEFAULT; // sheet (page 4) left blank → alpha-clear
         let mut sprites = SpriteState::new();
         sprites.set_direct(0, 0, 0, 8, 8, 0x01);
         let fb = scene(&grp, &BgState::new(), &sprites, &Console::top());
@@ -702,7 +746,7 @@ mod tests {
     #[test]
     fn sprite_flip_h_mirrors_the_source_horizontally() {
         let mut grp = GrpState::new();
-        grp.manip_page = SPRITE_PAGE_DEFAULT;
+        grp.cur_mut().manip_page = SPRITE_PAGE_DEFAULT;
         grp.gpset(10, 10, 0xFFFF_0000); // left texel red
         grp.gpset(11, 10, 0xFF00_FF00); // right texel green
         let mut sprites = SpriteState::new();
@@ -721,7 +765,7 @@ mod tests {
     #[test]
     fn sprite_flip_v_mirrors_the_source_vertically() {
         let mut grp = GrpState::new();
-        grp.manip_page = SPRITE_PAGE_DEFAULT;
+        grp.cur_mut().manip_page = SPRITE_PAGE_DEFAULT;
         grp.gpset(10, 10, 0xFFFF_0000); // top texel red
         grp.gpset(10, 11, 0xFF00_FF00); // bottom texel green
         let mut sprites = SpriteState::new();
@@ -738,7 +782,7 @@ mod tests {
 
     /// Paint sheet pixels for the default 16×16 BG tile `chr` (tiles_per_row = 512/16 = 32).
     fn paint_bg_tile(grp: &mut GrpState, chr: i32, color: u32) {
-        grp.manip_page = BG_PAGE_DEFAULT; // BG samples GRP5 by default
+        grp.cur_mut().manip_page = BG_PAGE_DEFAULT; // BG samples GRP5 by default
         let (col, row) = (chr % 32, chr / 32);
         grp.gfill(col * 16, row * 16, col * 16 + 15, row * 16 + 15, color);
     }
@@ -774,7 +818,7 @@ mod tests {
     #[test]
     fn bg_cell_hflip_mirrors_the_tile() {
         let mut grp = GrpState::new();
-        grp.manip_page = BG_PAGE_DEFAULT;
+        grp.cur_mut().manip_page = BG_PAGE_DEFAULT;
         grp.gfill(16, 0, 23, 15, 0xFFFF_0000); // char 1 left half red
         grp.gfill(24, 0, 31, 15, 0xFF00_FF00); // char 1 right half green
         let mut bg = BgState::new();
@@ -797,7 +841,7 @@ mod tests {
         grp.grpf = crate::assets::default_font_page(); // real font glyphs for console text
         grp.gcls(0xFFFF_0000); // GRP display page 0 = opaque red
         paint_bg_tile(&mut grp, 1, 0xFF00_00FF); // BG sheet (GRP5): char 1 = blue
-        grp.manip_page = SPRITE_PAGE_DEFAULT; // sprite sheet (GRP4)
+        grp.cur_mut().manip_page = SPRITE_PAGE_DEFAULT; // sprite sheet (GRP4)
         grp.gfill(0, 0, 7, 7, 0xFF00_FF00); // 8×8 green sprite image
         let mut bg = BgState::new();
         bg.layers[0].set_cell(0, 0, 1); // blue over screen (0..15, 0..15)

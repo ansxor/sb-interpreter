@@ -44,13 +44,14 @@ impl GrpState {
     /// within the write clip ∩ page. Out-of-bounds plots are silently dropped (the device
     /// clips rather than erroring).
     pub(crate) fn plot_dev(&mut self, x: i32, y: i32, h: u16) {
-        let Some((x0, y0, x1, y1)) = draw_bounds(&self.write_clip) else {
+        let Some((x0, y0, x1, y1)) = draw_bounds(&self.cur().write_clip) else {
             return;
         };
         if x < x0 || x > x1 || y < y0 || y > y1 {
             return;
         }
-        self.pages[self.manip_page as usize].pixels[y as usize * GRP_DIM + x as usize] = h;
+        let page = self.cur().manip_page as usize;
+        self.pages[page].pixels[y as usize * GRP_DIM + x as usize] = h;
     }
 
     /// `GPSET x,y[,color]` — plot a single pixel in the (truncated) `color`.
@@ -240,7 +241,7 @@ impl GrpState {
         let (minx, maxx) = (x1.min(x2).min(x3), x1.max(x2).max(x3));
         let (miny, maxy) = (y1.min(y2).min(y3), y1.max(y2).max(y3));
         // Clamp the scan box to the drawable region so a huge off-screen triangle is cheap.
-        let Some((bx0, by0, bx1, by1)) = draw_bounds(&self.write_clip) else {
+        let Some((bx0, by0, bx1, by1)) = draw_bounds(&self.cur().write_clip) else {
             return;
         };
         let (minx, maxx) = (minx.max(bx0 as i128), maxx.min(bx1 as i128));
@@ -268,14 +269,14 @@ impl GrpState {
     /// the border color. With `border` omitted, the boundary is implicit: the contiguous run
     /// of the color sampled at the start point is replaced. Bounded to the write clip ∩ page.
     pub fn gpaint(&mut self, x: i32, y: i32, fill: u32, border: Option<u32>) {
-        let Some((x0, y0, x1, y1)) = draw_bounds(&self.write_clip) else {
+        let Some((x0, y0, x1, y1)) = draw_bounds(&self.cur().write_clip) else {
             return;
         };
         if x < x0 || x > x1 || y < y0 || y > y1 {
             return;
         }
         let fill_h = argb8888_to_rgba5551(fill);
-        let page = self.manip_page as usize;
+        let page = self.cur().manip_page as usize;
         let idx = |px: i32, py: i32| py as usize * GRP_DIM + px as usize;
         let seed = self.pages[page].pixels[idx(x, y)];
 

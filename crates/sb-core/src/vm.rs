@@ -64,8 +64,8 @@ use crate::token::Suffix;
 use crate::value::{Cell, ElemRef, RuntimeError, SbStr, Value};
 use sb_render::bg::BgState;
 use sb_render::console::Console;
-use sb_render::grp::GrpState;
-use sb_render::sprite::SpriteState;
+use sb_render::grp::{GrpState, GRP_SCREEN_COUNT};
+use sb_render::sprite::{SpdefTable, SpriteState};
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 
@@ -221,16 +221,28 @@ pub struct Vm {
     /// / clip rectangles, driven by `GPAGE`/`GCLS`/`GCOLOR`/`GPRIO`/`GCLIP`/`GSPOIT`. The
     /// compositor (M2-T4) turns the display page into the framebuffer.
     grp: GrpState,
-    /// The sprite system state (M3-T1): the 512-slot sprite table, driven by the lifecycle
-    /// commands `SPSET`/`SPCLR`/`SPSHOW`/`SPHIDE`/`SPUSED`. The compositor (M3-T6) draws the
-    /// live sprites into the framebuffer; the transform/animation setters extend it (M3-T2+).
-    sprites: SpriteState,
-    /// The BG (background tilemap) system state (M3-T4): the 4-layer tilemap table + the
-    /// shared graphic page, driven by `BGSCREEN`/`BGPUT`/`BGGET`/`BGFILL`/`BGCLR` and the
-    /// per-layer transforms `BGOFS`/`BGROT`/`BGSCALE`/`BGHOME`/`BGCOLOR`/`BGSHOW`/`BGHIDE`/
-    /// `BGCLIP`/`BGPAGE`. The compositor (M3-T6) draws the visible layers into the
-    /// framebuffer; animation/coord/load-save (M3-T5) extends it.
-    bg: BgState,
+    /// The per-DISPLAY-screen sprite system state (M3-T1): two independent 512-slot sprite
+    /// tables (index 0 = Upper, 1 = Touch), driven by the lifecycle commands
+    /// `SPSET`/`SPCLR`/`SPSHOW`/`SPHIDE`/`SPUSED`. Every sprite builtin routes to the ACTIVE
+    /// screen ([`Vm::active_screen`] = `self.screen.display`), so `DISPLAY 1` sprites are
+    /// independent of `DISPLAY 0` sprites (#83). The compositor (M3-T6) draws the live sprites
+    /// of a given screen into its framebuffer; the transform/animation setters extend it
+    /// (M3-T2+).
+    sprites: [SpriteState; GRP_SCREEN_COUNT],
+    /// The shared `SPDEF` definition-template table (M3-T3). A single GLOBAL table — `SPDEF`
+    /// edits are visible from every DISPLAY screen, so it is owned at VM level (not duplicated
+    /// per screen) and threaded into the per-screen [`SpriteState`] template-reading operations.
+    spdef: SpdefTable,
+    /// The per-DISPLAY-screen BG (background tilemap) system state (M3-T4): two independent
+    /// 4-layer tilemap tables (index 0 = Upper, 1 = Touch), each with its own graphic page,
+    /// driven by `BGSCREEN`/`BGPUT`/`BGGET`/`BGFILL`/`BGCLR` and the per-layer transforms
+    /// `BGOFS`/`BGROT`/`BGSCALE`/`BGHOME`/`BGCOLOR`/`BGSHOW`/`BGHIDE`/`BGCLIP`/`BGPAGE`. Every
+    /// BG builtin routes to the ACTIVE screen ([`Vm::active_screen`] = `self.screen.display`),
+    /// so `DISPLAY 1` BG layers are independent of `DISPLAY 0` (#84). Unlike sprites there is no
+    /// shared/global sub-table — `BGPAGE` is per-screen (like `SPPAGE`). The compositor (M3-T6)
+    /// draws a given screen's visible layers into its framebuffer; animation/coord/load-save
+    /// (M3-T5) extends it.
+    bg: [BgState; GRP_SCREEN_COUNT],
     /// The hardware-input snapshot (M4-T1): the per-frame button masks + analog stick axes
     /// read by `BUTTON`/`STICK`/`STICKEX`, plus the `BREPEAT` key-repeat config. Headless it
     /// is centred/released; the platform layer (M4-T5) fills it each frame and tests drive a
@@ -353,8 +365,9 @@ impl Vm {
             rng: crate::rng::Rng::new(),
             console: Console::top(),
             grp: GrpState::with_defaults(),
-            sprites: SpriteState::new(),
-            bg: BgState::new(),
+            sprites: std::array::from_fn(|_| SpriteState::new()),
+            spdef: SpdefTable::new(),
+            bg: std::array::from_fn(|_| BgState::new()),
             input: InputState::new(),
             back_color: 0,
             tabstep: 4,
@@ -528,8 +541,15 @@ impl Vm {
     /// keep advancing in the window; it does not touch the VSYNC anchor (only VSYNC/WAIT do).
     pub fn tick_frame(&mut self) {
         self.clock.tick(1);
-        self.sprites.tick(1);
-        self.bg.tick(1);
+        // Both screens' sprite animations advance every frame (animation runs regardless of
+        // which DISPLAY is selected).
+        for sp in &mut self.sprites {
+            sp.tick(1);
+        }
+        // Both screens' BG animations advance every frame, too (same as sprites — #84).
+        for bg in &mut self.bg {
+            bg.tick(1);
+        }
     }
 
     /// Borrow the text console (grid + cursor + colors) for rendering / inspection.
@@ -542,14 +562,40 @@ impl Vm {
         &self.grp
     }
 
-    /// Borrow the sprite system state (the 512-slot table) for rendering / inspection.
-    pub fn sprites(&self) -> &SpriteState {
-        &self.sprites
+    /// The active DISPLAY screen index (0 = Upper, 1 = Touch) that sprite (and per-screen)
+    /// builtins target. Read live from the screen config so it never desyncs from `DISPLAY`.
+    fn active_screen(&self) -> usize {
+        self.screen.display as usize
     }
 
-    /// Borrow the BG system state (the 4-layer tilemap table) for rendering / inspection.
+    /// Borrow the ACTIVE screen's sprite table (the 512-slot table) for rendering / inspection.
+    /// Sprite builtins and SPDEF GET inspect whichever screen `DISPLAY` selects.
+    pub fn sprites(&self) -> &SpriteState {
+        &self.sprites[self.active_screen()]
+    }
+
+    /// Borrow a specific DISPLAY screen's sprite table (0 = Upper, 1 = Touch) — what the
+    /// compositor draws for `compose_screen(screen_id, …)`.
+    pub fn sprites_for(&self, screen_id: usize) -> &SpriteState {
+        &self.sprites[screen_id]
+    }
+
+    /// Borrow the shared (global, not per-screen) `SPDEF` definition-template table — for
+    /// inspection.
+    pub fn spdef(&self) -> &SpdefTable {
+        &self.spdef
+    }
+
+    /// Borrow the ACTIVE screen's BG system state (the 4-layer tilemap table) for rendering /
+    /// inspection. BG builtins inspect whichever screen `DISPLAY` selects.
     pub fn bg(&self) -> &BgState {
-        &self.bg
+        &self.bg[self.active_screen()]
+    }
+
+    /// Borrow a specific DISPLAY screen's BG table (0 = Upper, 1 = Touch) — what the compositor
+    /// draws for `compose_screen(screen_id, …)`.
+    pub fn bg_for(&self, screen_id: usize) -> &BgState {
+        &self.bg[screen_id]
     }
 
     /// Borrow the hardware-input snapshot (button masks + stick axes) — for inspection.
@@ -2282,9 +2328,14 @@ impl Vm {
             "VSYNC" => self.clock.vsync(count),
             _ => 0,
         };
-        // Sprite (M3-T2) and BG (M3-T5) animations advance one step per displayed frame.
-        self.sprites.tick(elapsed);
-        self.bg.tick(elapsed);
+        // Sprite (M3-T2) and BG (M3-T5) animations advance one step per displayed frame, on
+        // both screens' tables.
+        for sp in &mut self.sprites {
+            sp.tick(elapsed);
+        }
+        for bg in &mut self.bg {
+            bg.tick(elapsed);
+        }
         // Frame-timing builtins are natural yield points: ask the host to return to the
         // platform loop so live input (BUTTON polls) and the wall-clock frame pacer can run.
         // WAIT/VSYNC count <= 0 is documented as "Ignore" and should not yield.
@@ -2335,8 +2386,15 @@ impl Vm {
                 // SPDEF reset, acls.yaml): GRP4 ← sprite sheet, GRP5 ← BG sheet, GRPF ← font, and
                 // the SPDEF definition-template table back to its built-in state.
                 self.grp.reload_defaults();
-                self.sprites.spdef_reset();
+                // The SPDEF definition table is shared (global) across both screens — reset it
+                // once. (ACLS reloads default sheets but does NOT clear live sprite slots, so the
+                // per-screen sprite tables are left as-is, preserving the prior behavior.)
+                self.spdef.reset();
                 self.screen = ScreenConfig::new();
+                // DISPLAY resets to 0 (Upper), so the GRP command-target screen must follow —
+                // otherwise `DISPLAY 1:ACLS` would leave subsequent draws routed to the Touch
+                // screen while DISPLAY() reads back 0.
+                self.grp.active = 0;
                 Ok(Some(Value::Void))
             }
             "INKEY$" => Ok(Some(cons::inkey(&mut self.input, &args)?)),
@@ -2380,8 +2438,10 @@ impl Vm {
             }
             "DISPLAY" => {
                 let result = self.screen.display(&args, wants_value)?;
-                // Only reset the display clip when the target actually changes (SET form).
+                // The SET form (no return value) selects the target screen: route subsequent
+                // GRP commands there, then refresh that screen's display area/clip.
                 if result.is_none() {
+                    self.grp.active = self.screen.display as usize;
                     let (w, h) = self.screen.display_size();
                     self.grp.set_display_area(w, h);
                 }
@@ -2572,29 +2632,33 @@ impl Vm {
             self.do_spdef(&args, ret_count)?;
             return Ok(true);
         }
+        // Every sprite builtin operates on the ACTIVE DISPLAY screen's table (#83). Compute the
+        // index into a local so the per-call `&mut self.sprites[scr]` borrow stays disjoint from
+        // the shared `&self.spdef` borrow SPSET/SPCHR also need.
+        let scr = self.active_screen();
         let results = match name {
-            "SPSET" => spr::spset(&mut self.sprites, &args, ret_count),
-            "SPCLR" => spr::spclr(&mut self.sprites, &args, ret_count),
-            "SPSHOW" => spr::spshow(&mut self.sprites, &args, ret_count),
-            "SPHIDE" => spr::sphide(&mut self.sprites, &args, ret_count),
-            "SPUSED" => spr::spused(&self.sprites, &args, ret_count),
-            "SPVAR" => spr::spvar(&mut self.sprites, &args, ret_count),
-            "SPSTART" => spr::spstart(&mut self.sprites, &args, ret_count),
-            "SPSTOP" => spr::spstop(&mut self.sprites, &args, ret_count),
-            "SPLINK" => spr::splink(&mut self.sprites, &args, ret_count),
-            "SPUNLINK" => spr::spunlink(&mut self.sprites, &args, ret_count),
-            "SPOFS" => spr::spofs(&mut self.sprites, &args, ret_count),
-            "SPSCALE" => spr::spscale(&mut self.sprites, &args, ret_count),
-            "SPROT" => spr::sprot(&mut self.sprites, &args, ret_count),
-            "SPHOME" => spr::sphome(&mut self.sprites, &args, ret_count),
-            "SPCHR" => spr::spchr(&mut self.sprites, &args, ret_count),
-            "SPPAGE" => spr::sppage(&mut self.sprites, &args, ret_count),
-            "SPCOL" => spr::spcol(&mut self.sprites, &args, ret_count),
-            "SPCOLVEC" => spr::spcolvec(&mut self.sprites, &args, ret_count),
-            "SPCHK" => spr::spchk(&self.sprites, &args, ret_count),
-            "SPHITSP" => spr::sphitsp(&mut self.sprites, &args, ret_count),
-            "SPHITRC" => spr::sphitrc(&mut self.sprites, &args, ret_count),
-            "SPHITINFO" => spr::sphitinfo(&self.sprites, &args, ret_count),
+            "SPSET" => spr::spset(&mut self.sprites[scr], &self.spdef, &args, ret_count),
+            "SPCLR" => spr::spclr(&mut self.sprites[scr], &args, ret_count),
+            "SPSHOW" => spr::spshow(&mut self.sprites[scr], &args, ret_count),
+            "SPHIDE" => spr::sphide(&mut self.sprites[scr], &args, ret_count),
+            "SPUSED" => spr::spused(&self.sprites[scr], &args, ret_count),
+            "SPVAR" => spr::spvar(&mut self.sprites[scr], &args, ret_count),
+            "SPSTART" => spr::spstart(&mut self.sprites[scr], &args, ret_count),
+            "SPSTOP" => spr::spstop(&mut self.sprites[scr], &args, ret_count),
+            "SPLINK" => spr::splink(&mut self.sprites[scr], &args, ret_count),
+            "SPUNLINK" => spr::spunlink(&mut self.sprites[scr], &args, ret_count),
+            "SPOFS" => spr::spofs(&mut self.sprites[scr], &args, ret_count),
+            "SPSCALE" => spr::spscale(&mut self.sprites[scr], &args, ret_count),
+            "SPROT" => spr::sprot(&mut self.sprites[scr], &args, ret_count),
+            "SPHOME" => spr::sphome(&mut self.sprites[scr], &args, ret_count),
+            "SPCHR" => spr::spchr(&mut self.sprites[scr], &self.spdef, &args, ret_count),
+            "SPPAGE" => spr::sppage(&mut self.sprites[scr], &args, ret_count),
+            "SPCOL" => spr::spcol(&mut self.sprites[scr], &args, ret_count),
+            "SPCOLVEC" => spr::spcolvec(&mut self.sprites[scr], &args, ret_count),
+            "SPCHK" => spr::spchk(&self.sprites[scr], &args, ret_count),
+            "SPHITSP" => spr::sphitsp(&mut self.sprites[scr], &args, ret_count),
+            "SPHITRC" => spr::sphitrc(&mut self.sprites[scr], &args, ret_count),
+            "SPHITINFO" => spr::sphitinfo(&self.sprites[scr], &args, ret_count),
             _ => return Ok(false),
         };
         for v in results.map_err(sb)? {
@@ -2629,29 +2693,31 @@ impl Vm {
             self.do_bgfunc(&args, ret_count)?;
             return Ok(true);
         }
+        // Every BG builtin operates on the ACTIVE DISPLAY screen's table (#84).
+        let scr = self.active_screen();
         let results = match name {
-            "BGSCREEN" => b::bgscreen(&mut self.bg, &args, ret_count),
-            "BGPAGE" => b::bgpage(&mut self.bg, &args, ret_count),
-            "BGPUT" => b::bgput(&mut self.bg, &args, ret_count),
-            "BGGET" => b::bgget(&self.bg, &args, ret_count),
-            "BGFILL" => b::bgfill(&mut self.bg, &args, ret_count),
-            "BGCLR" => b::bgclr(&mut self.bg, &args, ret_count),
-            "BGOFS" => b::bgofs(&mut self.bg, &args, ret_count),
-            "BGROT" => b::bgrot(&mut self.bg, &args, ret_count),
-            "BGSCALE" => b::bgscale(&mut self.bg, &args, ret_count),
-            "BGCOLOR" => b::bgcolor(&mut self.bg, &args, ret_count),
-            "BGSHOW" => b::bgshow(&mut self.bg, &args, ret_count),
-            "BGHIDE" => b::bghide(&mut self.bg, &args, ret_count),
-            "BGHOME" => b::bghome(&mut self.bg, &args, ret_count),
-            "BGCLIP" => b::bgclip(&mut self.bg, &args, ret_count),
-            "BGVAR" => b::bgvar(&mut self.bg, &args, ret_count),
-            "BGCHK" => b::bgchk(&self.bg, &args, ret_count),
-            "BGSTART" => b::bgstart(&mut self.bg, &args, ret_count),
-            "BGSTOP" => b::bgstop(&mut self.bg, &args, ret_count),
-            "BGCOPY" => b::bgcopy(&mut self.bg, &args, ret_count),
-            "BGCOORD" => b::bgcoord(&self.bg, &args, ret_count),
-            "BGSAVE" => b::bgsave(&self.bg, &args, ret_count),
-            "BGLOAD" => b::bgload(&mut self.bg, &args, ret_count),
+            "BGSCREEN" => b::bgscreen(&mut self.bg[scr], &args, ret_count),
+            "BGPAGE" => b::bgpage(&mut self.bg[scr], &args, ret_count),
+            "BGPUT" => b::bgput(&mut self.bg[scr], &args, ret_count),
+            "BGGET" => b::bgget(&self.bg[scr], &args, ret_count),
+            "BGFILL" => b::bgfill(&mut self.bg[scr], &args, ret_count),
+            "BGCLR" => b::bgclr(&mut self.bg[scr], &args, ret_count),
+            "BGOFS" => b::bgofs(&mut self.bg[scr], &args, ret_count),
+            "BGROT" => b::bgrot(&mut self.bg[scr], &args, ret_count),
+            "BGSCALE" => b::bgscale(&mut self.bg[scr], &args, ret_count),
+            "BGCOLOR" => b::bgcolor(&mut self.bg[scr], &args, ret_count),
+            "BGSHOW" => b::bgshow(&mut self.bg[scr], &args, ret_count),
+            "BGHIDE" => b::bghide(&mut self.bg[scr], &args, ret_count),
+            "BGHOME" => b::bghome(&mut self.bg[scr], &args, ret_count),
+            "BGCLIP" => b::bgclip(&mut self.bg[scr], &args, ret_count),
+            "BGVAR" => b::bgvar(&mut self.bg[scr], &args, ret_count),
+            "BGCHK" => b::bgchk(&self.bg[scr], &args, ret_count),
+            "BGSTART" => b::bgstart(&mut self.bg[scr], &args, ret_count),
+            "BGSTOP" => b::bgstop(&mut self.bg[scr], &args, ret_count),
+            "BGCOPY" => b::bgcopy(&mut self.bg[scr], &args, ret_count),
+            "BGCOORD" => b::bgcoord(&self.bg[scr], &args, ret_count),
+            "BGSAVE" => b::bgsave(&self.bg[scr], &args, ret_count),
+            "BGLOAD" => b::bgload(&mut self.bg[scr], &args, ret_count),
             _ => return Ok(false),
         };
         for v in results.map_err(sb)? {
@@ -2846,7 +2912,8 @@ impl Vm {
                 }
             }
         };
-        self.bg
+        let scr = self.active_screen();
+        self.bg[scr]
             .set_anim(layer, channel, relative, &data, loop_count)
             .map_err(|e| sb(spr::anim_err(e)))
     }
@@ -2879,7 +2946,8 @@ impl Vm {
         if !resolves {
             return Err(sb(crate::builtins::illegal()));
         }
-        self.bg.set_func(layer, Some(name));
+        let scr = self.active_screen();
+        self.bg[scr].set_func(layer, Some(name));
         Ok(())
     }
 
@@ -2954,7 +3022,8 @@ impl Vm {
                 }
             }
         };
-        spr::spanim(&mut self.sprites, mgmt_v, target_v, &data, loop_count).map_err(sb)
+        let scr = self.active_screen();
+        spr::spanim(&mut self.sprites[scr], mgmt_v, target_v, &data, loop_count).map_err(sb)
     }
 
     /// Read `SPANIM` form-2 keyframe data from the DATA sequence named by `@label`: the
@@ -3019,7 +3088,8 @@ impl Vm {
         if !resolves {
             return Err(sb(crate::builtins::illegal()));
         }
-        self.sprites.set_func(slot, Some(name));
+        let scr = self.active_screen();
+        self.sprites[scr].set_func(slot, Some(name));
         Ok(())
     }
 
@@ -3052,8 +3122,8 @@ impl Vm {
         }
         let idx = self.callidx as usize;
         let bound = match kind {
-            CallbackKind::Sprite => self.sprites.func(idx),
-            CallbackKind::Bg => self.bg.func(idx),
+            CallbackKind::Sprite => self.sprites[self.active_screen()].func(idx),
+            CallbackKind::Bg => self.bg[self.active_screen()].func(idx),
         };
         // Re-run this op after the dispatch (or after skipping an unbound index) so the sweep
         // keeps advancing — the osb `pc--` self-loop.
@@ -3119,7 +3189,7 @@ impl Vm {
                 }
                 i as usize
             };
-            let e = self.sprites.spdef_get(defnum);
+            let e = self.spdef.get(defnum);
             let fields = [e.u, e.v, e.w, e.h, e.origin_x, e.origin_y, e.attr];
             for &f in &fields[..ret_count] {
                 self.stack.push(Value::Int(f));
@@ -3128,8 +3198,8 @@ impl Vm {
         }
 
         match args {
-            // Form 1 — reset the whole table.
-            [] => self.sprites.spdef_reset(),
+            // Form 1 — reset the whole (shared) table.
+            [] => self.spdef.reset(),
             // Forms 3/4/2/6, dispatched on the first argument's type.
             [first, ..] => match first {
                 // Form 3 — bulk define from a numeric array (7 elements per template).
@@ -3157,7 +3227,7 @@ impl Vm {
                     self.spdef_bulk(&data)?;
                 }
                 // Forms 2/6 — single-template define or copy-with-adjust.
-                _ => spr::spdef_scalar(&mut self.sprites, args).map_err(sb)?,
+                _ => spr::spdef_scalar(&mut self.spdef, args).map_err(sb)?,
             },
         }
         Ok(())
@@ -3172,7 +3242,7 @@ impl Vm {
         for i in 0..count {
             let entry = spr::spdef_entry_from_slice(&data[i * 7..i * 7 + 7]);
             spr::validate_spdef(&entry).map_err(sb)?;
-            self.sprites.spdef_set(i, entry);
+            self.spdef.set(i, entry);
         }
         Ok(())
     }
@@ -5540,6 +5610,25 @@ H$=HEX$(255)"#);
     }
 
     #[test]
+    fn xscreen_tracks_per_screen_allocations() {
+        // XSCREEN records the per-screen sprite/BG split in ScreenConfig (#83/#84 — tracked,
+        // not enforced). Mode-only forms use the per-mode defaults; the 3-arg form assigns the
+        // `sprites`/`bg` counts to the UPPER screen and the remainder to the Touch screen.
+        // Modes 2/3 (Touch Screen) default to a 256/256 sprite + 2/2 BG split.
+        let vm = run("XSCREEN 2");
+        assert_eq!(vm.screen_config().sprite_alloc(), [256, 256]);
+        assert_eq!(vm.screen_config().bg_alloc(), [2, 2]);
+        // Mode 0 (Upper only): all 512 sprites / 4 BG to the Upper screen, none to the Touch.
+        let vm = run("XSCREEN 0");
+        assert_eq!(vm.screen_config().sprite_alloc(), [512, 0]);
+        assert_eq!(vm.screen_config().bg_alloc(), [4, 0]);
+        // Explicit split: the doc example assigns 128 sprites / 4 BG to the Upper screen.
+        let vm = run("XSCREEN 2,128,4");
+        assert_eq!(vm.screen_config().sprite_alloc(), [128, 384]);
+        assert_eq!(vm.screen_config().bg_alloc(), [4, 0]);
+    }
+
+    #[test]
     fn xscreen_error_conditions() {
         // hw_verified (sb-oracle batch s_t11d, xscreen.yaml).
         assert_eq!(run_err("XSCREEN 2,128").errnum(), Some(4)); // 2 args illegal
@@ -5565,6 +5654,78 @@ H$=HEX$(255)"#);
         assert_eq!(run_err("DISPLAY 0,1").errnum(), Some(4)); // SET needs exactly 1 arg
         assert_eq!(run_err("XSCREEN 0:DISPLAY 1").errnum(), Some(10)); // Touch unavailable
         assert_eq!(run_b_err("A=DISPLAY(0)").errnum(), Some(4)); // GET takes no args
+    }
+
+    #[test]
+    fn display_routes_grp_commands_to_the_selected_screen() {
+        // The Touch screen defaults to displaying GRP1 (osb showPage = [0, 1]); the active
+        // (command-target) screen starts as the Upper screen.
+        let vm = run("XSCREEN 2");
+        assert_eq!(vm.grp().screens[1].display_page, 1);
+        assert_eq!(vm.grp().active, 0);
+
+        // DISPLAY 1 (under XSCREEN 2) selects the Touch screen, so the following GPAGE/GPRIO
+        // mutate screen 1's draw context, leaving screen 0 (Upper) untouched.
+        let vm = run("XSCREEN 2:DISPLAY 1:GPAGE 4,5:GPRIO 100");
+        assert_eq!(vm.grp().active, 1);
+        assert_eq!(vm.grp().screens[1].display_page, 4);
+        assert_eq!(vm.grp().screens[1].manip_page, 5);
+        assert_eq!(vm.grp().screens[1].prio, 100);
+        // Screen 0 keeps its defaults — the per-screen split isolates the contexts.
+        assert_eq!(vm.grp().screens[0].display_page, 0);
+        assert_eq!(vm.grp().screens[0].manip_page, 0);
+        assert_eq!(vm.grp().screens[0].prio, 0);
+
+        // Returning to DISPLAY 0 re-targets the Upper screen for subsequent commands.
+        let vm = run("XSCREEN 2:DISPLAY 1:GPAGE 4,5:DISPLAY 0:GPAGE 3,2");
+        assert_eq!(vm.grp().active, 0);
+        assert_eq!(vm.grp().screens[0].display_page, 3);
+        assert_eq!(vm.grp().screens[0].manip_page, 2);
+        assert_eq!(vm.grp().screens[1].display_page, 4); // screen 1 unchanged
+        assert_eq!(vm.grp().screens[1].manip_page, 5);
+    }
+
+    #[test]
+    fn acls_resets_grp_command_target_to_upper() {
+        // ACLS resets DISPLAY -> 0 (hw_verified, acls.yaml). The GRP command-target screen
+        // must follow, or subsequent draws would route to the Touch screen while DISPLAY()
+        // reads back 0.
+        let vm = run("XSCREEN 2:DISPLAY 1:ACLS");
+        assert_eq!(vm.grp().active, 0);
+        assert_eq!(vm.screen_config().display, 0);
+    }
+
+    #[test]
+    fn sprites_are_per_display_screen() {
+        // A sprite created under DISPLAY 1 lives in screen 1's table and is absent from
+        // screen 0's, and vice-versa (#83). XSCREEN 2 exposes the Touch screen.
+        let vm = run("XSCREEN 2:DISPLAY 1:SPSET 0,0:DISPLAY 0:SPSET 5,0");
+        // Screen 1 (Touch) has sprite 0 but not 5; screen 0 (Upper) has sprite 5 but not 0.
+        assert!(vm.sprites_for(1).is_used(0));
+        assert!(!vm.sprites_for(1).is_used(5));
+        assert!(vm.sprites_for(0).is_used(5));
+        assert!(!vm.sprites_for(0).is_used(0));
+
+        // SPUSED() queries the ACTIVE screen, so it reflects whichever DISPLAY is selected.
+        let vm = run("XSCREEN 2:DISPLAY 1:SPSET 0,0:DISPLAY 0:A=SPUSED(0):B=SPUSED(5)\nSPSET 5,0:B=SPUSED(5)");
+        assert_eq!(int(&vm, "A"), 0); // sprite 0 not on the Upper screen
+        assert_eq!(int(&vm, "B"), 1); // sprite 5 created on the Upper screen
+    }
+
+    #[test]
+    fn spdef_is_shared_across_screens() {
+        // SPDEF is a GLOBAL definition table — an edit made under one DISPLAY is visible after
+        // switching to the other screen (it is NOT duplicated per screen, #83). Define template
+        // 10 under DISPLAY 0, switch to DISPLAY 1, SPSET from template 10, and confirm the
+        // sprite copied the shared template's rectangle.
+        let vm = run(
+            "XSCREEN 2:SPDEF 10,40,48,24,32,7,9,1:DISPLAY 1:SPSET 0,10",
+        );
+        let sp = &vm.sprites_for(1).sprites[0];
+        assert_eq!((sp.u, sp.v, sp.w, sp.h), (40, 48, 24, 32));
+        // The shared table itself reads back the edit regardless of the active screen.
+        let t = vm.spdef().get(10);
+        assert_eq!((t.u, t.v, t.w, t.h), (40, 48, 24, 32));
     }
 
     #[test]
@@ -5855,6 +6016,35 @@ H$=HEX$(255)"#);
             "BGSCREEN 0,8,8\nBGSCREEN 1,8,8\nBGPUT 0,1,1,&H1234\nDIM A[64]\nBGSAVE 0,A\nBGLOAD 1,A\nPRINT BGGET(1,1,1)",
         );
         assert_eq!(vm.console_text(), "4660"); // &H1234
+    }
+
+    #[test]
+    fn bg_layers_are_per_display_screen() {
+        // BG tilemaps are per-DISPLAY-screen (#84). A tile written under DISPLAY 1 lives in
+        // screen 1's table and is absent from screen 0's, and vice-versa. XSCREEN 2 exposes the
+        // Touch screen. BGSCREEN sizes the active screen's layer; BGPUT/BGGET hit that screen.
+        let vm = run_b(
+            "XSCREEN 2:DISPLAY 1:BGSCREEN 0,8,8:BGPUT 0,1,1,&H1234\nDISPLAY 0:BGSCREEN 0,8,8:BGPUT 0,2,2,&H5678",
+        );
+        // Cell index is row-major `y * width + x` (width 8): (1,1) → 9, (2,2) → 18.
+        // Screen 1 (Touch) holds &H1234 at (1,1) and nothing at (2,2).
+        assert_eq!(vm.bg_for(1).layers[0].cells[9], 0x1234);
+        assert_eq!(vm.bg_for(1).layers[0].cells[18], 0);
+        // Screen 0 (Upper) holds &H5678 at (2,2) and nothing at (1,1).
+        assert_eq!(vm.bg_for(0).layers[0].cells[18], 0x5678);
+        assert_eq!(vm.bg_for(0).layers[0].cells[9], 0);
+
+        // BGGET() reads the ACTIVE screen, so it reflects whichever DISPLAY is selected.
+        let vm = run_b(
+            "XSCREEN 2:DISPLAY 1:BGSCREEN 0,8,8:BGPUT 0,1,1,&H1234\nDISPLAY 0:A=BGGET(0,1,1)\nDISPLAY 1:B=BGGET(0,1,1)",
+        );
+        assert_eq!(int(&vm, "A"), 0); // Upper screen layer is empty at (1,1)
+        assert_eq!(int(&vm, "B"), 0x1234); // Touch screen has the tile
+
+        // BGPAGE is per-screen (like SPPAGE), no shared sub-table — distinct values stick.
+        let vm = run_b("XSCREEN 2:DISPLAY 1:BGPAGE 3\nDISPLAY 0:BGPAGE 5");
+        assert_eq!(vm.bg_for(1).page, 3);
+        assert_eq!(vm.bg_for(0).page, 5);
     }
 
     // ---- hardware input (BUTTON/STICK/STICKEX/BREPEAT, M4-T1) ----
@@ -6621,9 +6811,9 @@ PRGDEL -1"#,
         );
         // The SPDEF definition table boots loaded with the firmware templates (not the bare
         // 16×16 placeholder for every slot): template 1 = (16,0,...), template 4095 = (192,480,…).
-        let t1 = vm.sprites().spdef_get(1);
+        let t1 = vm.spdef().get(1);
         assert_eq!((t1.u, t1.v), (16, 0), "SPDEF template 1 = firmware default");
-        let t4095 = vm.sprites().spdef_get(4095);
+        let t4095 = vm.spdef().get(4095);
         assert_eq!((t4095.u, t4095.v, t4095.w, t4095.h), (192, 480, 96, 32));
     }
 

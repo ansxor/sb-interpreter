@@ -32,8 +32,8 @@
 use sb_core::builtins::StdBuiltins;
 use sb_core::compiler::compile_with;
 use sb_core::{parse, Vm};
-use sb_render::compositor::{compose_screen, compose_top_screen, DEFAULT_BACKDROP};
-use sb_render::{Framebuffer, BOTTOM_HEIGHT, BOTTOM_WIDTH, TOP_HEIGHT};
+use sb_render::compositor::{compose_screen, DEFAULT_BACKDROP};
+use sb_render::Framebuffer;
 
 // The browser IndexedDB storage backend (M6-T1): backs the `sb-core` `Storage` trait with an
 // in-memory mirror persisted to IndexedDB. `wasm32`-only (the native host uses the filesystem);
@@ -101,42 +101,53 @@ fn prepare_vm(src: &str) -> Option<Vm> {
     Some(Vm::new(program))
 }
 
-/// Composite the VM's current scene into a framebuffer sized for the active `XSCREEN` mode
-/// and `DISPLAY` target. Modes 2/3 with `DISPLAY 1` render the 320×240 Touch Screen; mode 4
-/// renders one shared 320×480 vertical screen; everything else renders the 400×240 Upper
-/// screen.
+/// Composite one named screen (`screen_id`: 0 = Upper, 1 = Touch) from ITS OWN per-screen
+/// context — the GRP display page + clip for that screen, plus the per-screen BG / sprite
+/// tables and `VISIBLE` flags — into a framebuffer sized for that screen under the current
+/// `XSCREEN` mode (via [`ScreenConfig::display_size_for`]). This is the per-screen primitive
+/// every other entry point routes through.
+pub fn compose_for_screen(vm: &Vm, screen_id: usize) -> Framebuffer {
+    let screen = vm.screen_config();
+    let (w, h) = screen.display_size_for(screen_id as i32);
+    compose_screen(
+        w as usize,
+        h as usize,
+        vm.grp(),
+        screen_id,
+        vm.bg_for(screen_id),
+        vm.sprites_for(screen_id),
+        vm.console(),
+        DEFAULT_BACKDROP,
+        screen.visibility_for(screen_id as i32),
+    )
+}
+
+/// Composite the VM's current scene into a single framebuffer sized for the active `XSCREEN`
+/// mode and `DISPLAY` target. Modes 2/3 with `DISPLAY 1` render the 320×240 Touch Screen;
+/// mode 4 renders the one shared 320×480 vertical screen (screen 0); everything else renders
+/// the Upper screen. Delegates to [`compose_for_screen`] for whichever screen it selects.
 fn compose(vm: &Vm) -> Framebuffer {
     let screen = vm.screen_config();
     match screen.mode {
-        2 | 3 if screen.display == 1 => compose_screen(
-            BOTTOM_WIDTH,
-            BOTTOM_HEIGHT,
-            vm.grp(),
-            vm.bg(),
-            vm.sprites(),
-            vm.console(),
-            DEFAULT_BACKDROP,
-            screen.visibility_for(1),
-        ),
-        4 => compose_screen(
-            BOTTOM_WIDTH,
-            TOP_HEIGHT + BOTTOM_HEIGHT,
-            vm.grp(),
-            vm.bg(),
-            vm.sprites(),
-            vm.console(),
-            DEFAULT_BACKDROP,
-            screen.visibility_for(0),
-        ),
-        _ => compose_top_screen(
-            vm.grp(),
-            vm.bg(),
-            vm.sprites(),
-            vm.console(),
-            DEFAULT_BACKDROP,
-            screen.visibility_for(0),
-        ),
+        2 | 3 if screen.display == 1 => compose_for_screen(vm, 1),
+        // Mode 4 is a single combined surface driven by screen 0's context;
+        // `display_size_for(0)` returns the full 320×480 area in mode 4.
+        _ => compose_for_screen(vm, 0),
     }
+}
+
+/// Composite BOTH physical screens for the current `XSCREEN` mode: always the Upper-screen
+/// framebuffer, plus `Some(touch_fb)` ONLY when the mode (2 or 3) exposes the Touch Screen as
+/// an independent second graphics screen. Modes 0/1 (Upper only) and mode 4 (one combined
+/// surface) return `None`. This is the API the dual-canvas player (#81) consumes — each
+/// framebuffer comes from [`compose_for_screen`] with the matching screen id.
+pub fn compose_both(vm: &Vm) -> (Framebuffer, Option<Framebuffer>) {
+    let upper = compose_for_screen(vm, 0);
+    let touch = match vm.screen_config().mode {
+        2 | 3 => Some(compose_for_screen(vm, 1)),
+        _ => None,
+    };
+    (upper, touch)
 }
 
 /// Run `src` to completion and return the final scene composited into a top-screen
@@ -429,9 +440,21 @@ mod web {
 
 #[cfg(test)]
 mod tests {
-    use super::{keymap, render_program};
+    use super::{build_vm, compose_both, compose_for_screen, keymap, render_program};
     use sb_core::host_input::{Bind, Stick};
     use sb_core::input::{BTN_A, BTN_RIGHT, BTN_ZR};
+
+    /// The blue channel of a framebuffer pixel (ARGB8888 → `B`). Chosen as the per-screen
+    /// discriminator in the dual-screen tests because RGB(0,0,255) survives the device's 5-bit
+    /// blue truncation as a clearly-nonzero byte (0xF8), while a red/green fill leaves it 0.
+    fn blue(fb: &super::Framebuffer, x: usize, y: usize) -> u8 {
+        (fb.get_argb(x, y) & 0xFF) as u8
+    }
+
+    /// The green channel of a framebuffer pixel (ARGB8888 → `G`).
+    fn green(fb: &super::Framebuffer, x: usize, y: usize) -> u8 {
+        ((fb.get_argb(x, y) >> 8) & 0xFF) as u8
+    }
 
     #[test]
     fn renders_printed_text_to_pixels() {
@@ -477,6 +500,90 @@ mod tests {
         let fb = render_program("XSCREEN 4");
         assert_eq!(fb.width, sb_render::BOTTOM_WIDTH);
         assert_eq!(fb.height, sb_render::TOP_HEIGHT + sb_render::BOTTOM_HEIGHT);
+    }
+
+    // ---- per-screen compositing (#85) -------------------------------------------------
+
+    #[test]
+    fn compose_for_screen_renders_each_screens_own_grp_page() {
+        // Under XSCREEN 2 the two physical screens are independent graphics screens. Point each
+        // at its OWN GRP page and clear them to distinct colors; compose_for_screen must render
+        // the page belonging to the screen_id asked for, so the two framebuffers differ.
+        //   screen 0 (Upper) → page 0, red   (blue channel 0)
+        //   screen 1 (Touch) → page 2, blue  (blue channel 0xF8)
+        let vm = build_vm(
+            "XSCREEN 2\nGPAGE 0,0\nGCLS RGB(255,0,0)\nDISPLAY 1\nGPAGE 2,2\nGCLS RGB(0,0,255)",
+        )
+        .expect("program builds");
+        let upper = compose_for_screen(&vm, 0);
+        let touch = compose_for_screen(&vm, 1);
+        // The Touch screen is 320×240; the Upper screen keeps its 3D-mode 400×240.
+        assert_eq!((touch.width, touch.height), (320, 240));
+        assert_eq!((upper.width, upper.height), (400, 240));
+        // Each renders its own page: Upper has no blue, Touch is saturated blue.
+        assert_eq!(blue(&upper, 0, 0), 0, "upper screen shows its red page");
+        assert_eq!(blue(&touch, 0, 0), 0xF8, "touch screen shows its blue page");
+        // Distinct content per screen → different pixels.
+        assert_ne!(upper.get_argb(0, 0), touch.get_argb(0, 0));
+    }
+
+    #[test]
+    fn compose_both_exposes_touch_only_when_the_mode_does() {
+        // Modes 2/3 expose the Touch Screen as an independent second graphics screen → Some;
+        // modes 0/1 (Upper only) and mode 4 (one combined surface) → None.
+        // Mode 2 is a 3D upper (400×240); mode 3 is a 2D upper (320×240). Both expose Touch.
+        for (src, upper_size) in [("XSCREEN 2", (400, 240)), ("XSCREEN 3", (320, 240))] {
+            let vm = build_vm(src).expect("program builds");
+            let (upper, touch) = compose_both(&vm);
+            assert_eq!((upper.width, upper.height), upper_size, "{src} upper size");
+            let touch = touch.unwrap_or_else(|| panic!("{src} must expose a touch fb"));
+            assert_eq!((touch.width, touch.height), (320, 240), "{src} touch size");
+        }
+        for src in ["XSCREEN 0", "XSCREEN 1", "XSCREEN 4"] {
+            let vm = build_vm(src).expect("program builds");
+            let (_, touch) = compose_both(&vm);
+            assert!(touch.is_none(), "{src} must not expose a second screen");
+        }
+    }
+
+    #[test]
+    fn sprite_under_display_1_appears_only_on_the_touch_screen() {
+        // A sprite created while DISPLAY 1 is selected lives in the Touch screen's per-screen
+        // sprite table. It must composite into compose_for_screen(vm,1) but NOT (vm,0), proving
+        // end-to-end per-screen sprite compositing. The 8×8 green block is painted into the
+        // shared sprite sheet (GRP4) first, while DISPLAY 0 is still selected.
+        let vm = build_vm(
+            "XSCREEN 2\n\
+             GPAGE 4,4\nGFILL 0,0,7,7,RGB(0,255,0)\n\
+             DISPLAY 1\nSPSET 0,0,0,8,8,1\nSPOFS 0,100,100",
+        )
+        .expect("program builds");
+        let upper = compose_for_screen(&vm, 0);
+        let touch = compose_for_screen(&vm, 1);
+        // The sprite's home (0,0) lands its top-left texel at (SPOFS x, y) = (100,100).
+        assert_eq!(green(&touch, 100, 100), 0xF8, "sprite shows on the touch screen");
+        assert_eq!(green(&touch, 103, 103), 0xF8, "sprite body on the touch screen");
+        // The Upper screen's sprite table is empty here → no green there.
+        assert_eq!(green(&upper, 100, 100), 0, "sprite absent from the upper screen");
+    }
+
+    #[test]
+    fn bg_under_display_1_appears_only_on_the_touch_screen() {
+        // Same proof for BG: a BG cell placed under DISPLAY 1 lives in the Touch screen's
+        // per-screen BG table and composites only into compose_for_screen(vm,1). Char 1 is
+        // painted blue into the shared BG sheet (GRP5) under DISPLAY 0 first; the default 16×16
+        // tile means cell (0,0) covers screen pixels (0..15, 0..15).
+        let vm = build_vm(
+            "XSCREEN 2\n\
+             GPAGE 5,5\nGFILL 16,0,31,15,RGB(0,0,255)\n\
+             DISPLAY 1\nBGPUT 0,0,0,1",
+        )
+        .expect("program builds");
+        let upper = compose_for_screen(&vm, 0);
+        let touch = compose_for_screen(&vm, 1);
+        assert_eq!(blue(&touch, 0, 0), 0xF8, "BG tile shows on the touch screen");
+        assert_eq!(blue(&touch, 15, 15), 0xF8, "BG tile body on the touch screen");
+        assert_eq!(blue(&upper, 0, 0), 0, "BG tile absent from the upper screen");
     }
 
     #[test]

@@ -29,7 +29,7 @@ fn rgb(r: u8, g: u8, b: u8) -> u32 {
 fn render(draw: impl FnOnce(&mut GrpState)) -> Framebuffer {
     let mut g = GrpState::new();
     draw(&mut g);
-    grp_page_to_framebuffer(&g.pages[g.display_page as usize], W, H)
+    grp_page_to_framebuffer(&g.pages[g.cur().display_page as usize], W, H)
 }
 
 #[test]
