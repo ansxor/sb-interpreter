@@ -64,11 +64,36 @@ impl ScreenConfig {
         Self::default()
     }
 
+    /// The visible pixel dimensions of the active screen (`DISPLAY`), taking the current
+    /// `XSCREEN` mode into account. Mode 4 is 320×480; modes 0/2 upper screen is 400×240;
+    /// modes 1/3 upper and the touch screen are 320×240.
+    pub fn display_size(&self) -> (i32, i32) {
+        if self.mode == 4 {
+            return (320, 480);
+        }
+        let upper_3d = self.mode == 0 || self.mode == 2;
+        if self.display == 0 {
+            if upper_3d {
+                (400, 240)
+            } else {
+                (320, 240)
+            }
+        } else {
+            (320, 240)
+        }
+    }
+
     /// The Upper-screen layer visibility, as the compositor wants it. The reimplementation
     /// renders only the Upper screen (the Touch-screen framebuffer is queued), so the
     /// compositor always reads screen 0's flags.
     pub fn upper_visibility(&self) -> LayerVisibility {
-        let v = self.visible[0];
+        self.visibility_for(0)
+    }
+
+    /// Layer visibility for a specific screen id (0 = Upper, 1 = Touch), as the compositor
+    /// wants it.
+    pub fn visibility_for(&self, display: i32) -> LayerVisibility {
+        let v = self.visible[display as usize];
         LayerVisibility {
             console: v[CONSOLE],
             graphic: v[GRAPHIC],

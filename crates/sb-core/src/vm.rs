@@ -326,6 +326,11 @@ pub struct Vm {
     /// matching feature is enabled, the microphone / motion instructions raise errnum 36 / 37.
     /// All boot disabled — a fresh program has declared no special feature.
     device: crate::builtins::device::DeviceState,
+    /// Set by frame-timing builtins (`VSYNC`/`WAIT`) to request that the host yield control
+    /// so the platform can advance a real frame and refresh live input. Used by the wasm
+    /// canvas host (and future native frame-yielding host) to avoid blocking the UI thread
+    /// inside `BUTTON`-polling loops. Cleared by `run_frame` when it yields.
+    yielded: bool,
 }
 
 impl Vm {
@@ -347,7 +352,7 @@ impl Vm {
             data_cursor: 0,
             rng: crate::rng::Rng::new(),
             console: Console::top(),
-            grp: GrpState::new(),
+            grp: GrpState::with_defaults(),
             sprites: SpriteState::new(),
             bg: BgState::new(),
             input: InputState::new(),
@@ -376,6 +381,7 @@ impl Vm {
             exec_returns: Vec::new(),
             prg_edit: None,
             device: Default::default(),
+            yielded: false,
         }
     }
 
@@ -557,6 +563,13 @@ impl Vm {
         self.screen.upper_visibility()
     }
 
+    /// Borrow the VM's screen configuration (`XSCREEN` mode, `DISPLAY` target, `VISIBLE`
+    /// flags, `HARDWARE` model). The wasm/native host uses this to pick the right output
+    /// dimensions and the active screen's layer visibility.
+    pub fn screen_config(&self) -> &ScreenConfig {
+        &self.screen
+    }
+
     /// Mutably borrow the hardware-input snapshot so the platform layer (or a scripted-input
     /// test) can advance the frame timeline / fill the button + stick state each frame.
     pub fn input_mut(&mut self) -> &mut InputState {
@@ -635,6 +648,52 @@ impl Vm {
                 }
             }
         }
+    }
+
+    /// Run the VM for up to `budget` instructions, yielding when a frame-timing builtin
+    /// (`VSYNC`/`WAIT`) asks the host to advance a real frame. Returns `Ok(None)` on yield
+    /// (call again next frame), `Ok(Some(Halt::End))` when the program ends, or `Ok(Some(halt))`
+    /// on `STOP`/`ASSERT`. This is the execution primitive for interactive hosts that need to
+    /// keep the UI responsive while a program polls `BUTTON()` in a `VSYNC` loop.
+    pub fn run_frame(&mut self, budget: usize) -> Result<Option<Halt>, VmError> {
+        for _ in 0..budget {
+            if self.pc >= self.program.code.len() {
+                if self.try_exec_return() {
+                    continue;
+                }
+                return Ok(Some(Halt::End));
+            }
+            let here = self.pc;
+            let op = self.program.code[here].clone();
+            self.pc += 1;
+            match self.step(op) {
+                Ok(None) => {
+                    if self.yielded {
+                        self.yielded = false;
+                        return Ok(None);
+                    }
+                }
+                Ok(Some(Halt::End)) => {
+                    if self.try_exec_return() {
+                        continue;
+                    }
+                    return Ok(Some(Halt::End));
+                }
+                Ok(Some(halt)) => return Ok(Some(halt)),
+                Err(e) => {
+                    let e = self.attach_line(e, here);
+                    if let VmError::Sb { errnum, line } = e {
+                        self.errnum = errnum as i32;
+                        self.errline = line as i32;
+                        self.errprg = self.active_slot as i32;
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        // Budget exhausted without hitting a yield point or halt: return to the host so the
+        // platform loop can still paint and gather input.
+        Ok(None)
     }
 
     /// Read a global's current value by name + suffix (for tests / a future REPL).
@@ -2226,6 +2285,12 @@ impl Vm {
         // Sprite (M3-T2) and BG (M3-T5) animations advance one step per displayed frame.
         self.sprites.tick(elapsed);
         self.bg.tick(elapsed);
+        // Frame-timing builtins are natural yield points: ask the host to return to the
+        // platform loop so live input (BUTTON polls) and the wall-clock frame pacer can run.
+        // WAIT/VSYNC count <= 0 is documented as "Ignore" and should not yield.
+        if count > 0 {
+            self.yielded = true;
+        }
         Ok(Some(Value::Void))
     }
 
@@ -2266,6 +2331,11 @@ impl Vm {
                 // deliberately leave self.tabstep alone — the old `tabstep = 4` here was wrong.
                 self.back_color = 0;
                 self.grp.color = 0xFFFF_FFFF;
+                // ACLS reloads the firmware defaults (the documented "LOAD DEFSP/DEFBG" + font/
+                // SPDEF reset, acls.yaml): GRP4 ← sprite sheet, GRP5 ← BG sheet, GRPF ← font, and
+                // the SPDEF definition-template table back to its built-in state.
+                self.grp.reload_defaults();
+                self.sprites.spdef_reset();
                 self.screen = ScreenConfig::new();
                 Ok(Some(Value::Void))
             }
@@ -2304,13 +2374,19 @@ impl Vm {
         match name {
             "XSCREEN" => {
                 self.screen.xscreen(&args, wants_value)?;
+                let (w, h) = self.screen.display_size();
+                self.grp.set_display_area(w, h);
                 Ok(Some(Value::Void))
             }
-            "DISPLAY" => Ok(Some(
-                self.screen
-                    .display(&args, wants_value)?
-                    .unwrap_or(Value::Void),
-            )),
+            "DISPLAY" => {
+                let result = self.screen.display(&args, wants_value)?;
+                // Only reset the display clip when the target actually changes (SET form).
+                if result.is_none() {
+                    let (w, h) = self.screen.display_size();
+                    self.grp.set_display_area(w, h);
+                }
+                Ok(Some(result.unwrap_or(Value::Void)))
+            }
             "VISIBLE" => {
                 self.screen.visible(&args, wants_value)?;
                 Ok(Some(Value::Void))
@@ -6524,5 +6600,53 @@ PRGDEL -1"#,
         );
         assert_eq!(vm.console_text(), "XX");
         assert_eq!(int(&vm, "A"), 1);
+    }
+
+    // ---- firmware default graphic pages (GRP4 sprite, GRP5 BG, GRPF font) ----
+
+    #[test]
+    fn vm_boots_with_default_sprite_bg_and_font_pages() {
+        // SmileBASIC boots with the system sprite sheet on GRP4, the BG sheet on GRP5, and the
+        // font on the hidden GRPF page — so the interpreter renders real sprites/tiles/text out
+        // of the box. GRP0..GRP3 stay blank (programs draw their own pixels there).
+        let vm = run_b("");
+        let g = vm.grp();
+        let any_opaque = |p: &sb_render::grp::GrpPage| p.pixels.iter().any(|&h| h & 1 != 0);
+        assert!(any_opaque(&g.pages[4]), "GRP4 should hold the default sprite sheet");
+        assert!(any_opaque(&g.pages[5]), "GRP5 should hold the default BG sheet");
+        assert!(any_opaque(&g.grpf), "GRPF should hold the default font");
+        assert!(
+            g.pages[0].pixels.iter().all(|&h| h == 0),
+            "GRP0 boots blank"
+        );
+        // The SPDEF definition table boots loaded with the firmware templates (not the bare
+        // 16×16 placeholder for every slot): template 1 = (16,0,...), template 4095 = (192,480,…).
+        let t1 = vm.sprites().spdef_get(1);
+        assert_eq!((t1.u, t1.v), (16, 0), "SPDEF template 1 = firmware default");
+        let t4095 = vm.sprites().spdef_get(4095);
+        assert_eq!((t4095.u, t4095.v, t4095.w, t4095.h), (192, 480, 96, 32));
+    }
+
+    #[test]
+    fn acls_reloads_the_default_sprite_bg_and_font_pages() {
+        // The documented ACLS reset reloads DEFSP/DEFBG + the font (acls.yaml): clobber the
+        // sprite and BG pages to a flat fill, ACLS, and every default page comes back exactly.
+        let vm = run_b("GPAGE 0,4:GCLS RGB(255,0,0):GPAGE 0,5:GCLS RGB(255,0,0):ACLS");
+        let g = vm.grp();
+        assert_eq!(
+            g.pages[4].pixels,
+            sb_render::assets::default_sprite_page().pixels,
+            "ACLS restores the sprite sheet (GRP4)"
+        );
+        assert_eq!(
+            g.pages[5].pixels,
+            sb_render::assets::default_bg_page().pixels,
+            "ACLS restores the BG sheet (GRP5)"
+        );
+        assert_eq!(
+            g.grpf.pixels,
+            sb_render::assets::default_font_page().pixels,
+            "ACLS restores the font (GRPF)"
+        );
     }
 }

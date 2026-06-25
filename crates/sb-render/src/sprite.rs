@@ -42,10 +42,10 @@ pub const SPDEF_TEMPLATE_COUNT: usize = 4096;
 
 /// One `SPDEF` definition template: the pre-set source rectangle, home/origin point, and
 /// attribute that `SPSET` copies from when creating a sprite by definition number. The
-/// template table is seeded from `spdef.csv` on the real machine; absent that resource we
-/// model the initial/reset state as the documented defaults (16×16 at the sheet origin,
-/// home 0,0, attribute display-ON). The exact `spdef.csv` per-template rectangles are
-/// oracle-pending (no framebuffer harvest yet — see `HARVEST_QUEUE.md`).
+/// template table is seeded from the firmware `spdef.csv` ([`crate::assets::default_spdef`])
+/// at boot and on `SPDEF`(no-arg)/`ACLS` reset. This [`Default`] impl (16×16 at the sheet
+/// origin, home 0,0, attribute display-ON) is only the per-field fallback / the documented
+/// default for fields a `SPDEF` define omits — not the table's initial state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpdefEntry {
     /// Source-image X,Y on the sprite sheet.
@@ -336,11 +336,13 @@ impl Default for SpriteState {
 }
 
 impl SpriteState {
-    /// A fresh sprite system: every slot free (no sprite created yet).
+    /// A fresh sprite system: every slot free (no sprite created yet), the SPDEF table loaded
+    /// with the firmware default templates (the built-in definitions `SPSET <id>` copies from —
+    /// see [`crate::assets::default_spdef`]; this is SmileBASIC's power-on state).
     pub fn new() -> Self {
         Self {
             sprites: vec![Sprite::default(); SPRITE_COUNT],
-            spdef: vec![SpdefEntry::default(); SPDEF_TEMPLATE_COUNT],
+            spdef: crate::assets::default_spdef(),
             hit: HitInfo::default(),
             page: SPRITE_PAGE_DEFAULT,
         }
@@ -800,11 +802,10 @@ impl SpriteState {
 
     // -- SPDEF definition templates (M3-T3) ------------------------------------
 
-    /// `SPDEF` (no args) — reset every definition template to its initial default.
+    /// `SPDEF` (no args) — reset the definition-template table to its firmware default (the
+    /// built-in `spdef.csv`, [`crate::assets::default_spdef`]); also the SPDEF half of `ACLS`.
     pub fn spdef_reset(&mut self) {
-        for e in &mut self.spdef {
-            *e = SpdefEntry::default();
-        }
+        self.spdef = crate::assets::default_spdef();
     }
 
     /// Read a definition template (the caller has range-checked `defnum` 0..4095).
@@ -1244,9 +1245,14 @@ mod tests {
         let sp = &st.sprites[0];
         assert_eq!((sp.u, sp.v, sp.w, sp.h), (32, 48, 24, 24));
         assert_eq!((sp.home_x, sp.home_y), (12.0, 12.0));
-        // Reset restores defaults.
+        // Reset restores the firmware default table (template 1 = 16,0,16,16 — not the bare
+        // SpdefEntry::default placeholder, which is only the no-resource fallback).
         st.spdef_reset();
-        assert_eq!(st.spdef_get(1), SpdefEntry::default());
+        assert_eq!(st.spdef_get(1), crate::assets::default_spdef()[1]);
+        assert_eq!(
+            (st.spdef_get(1).u, st.spdef_get(1).v, st.spdef_get(1).w),
+            (16, 0, 16)
+        );
     }
 
     #[test]

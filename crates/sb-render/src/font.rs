@@ -1,16 +1,16 @@
-//! 8×8 console glyph table.
+//! 8×8 console glyph table — **placeholder fallback**.
 //!
 //! SmileBASIC's console cell is **8×8 dots** (osb `console.d`: `fontDefWidth/Height()` = 8;
-//! the 400×240 top screen ⇒ a 50×30 character grid). The *real* SB font is a system ROM
-//! asset that ships with the firmware; faithfully reproducing every glyph (full ASCII +
-//! Japanese kana/kanji) requires harvesting the font ROM via the oracle (queued under
-//! O-T6 / `HARVEST_QUEUE.md`).
+//! the 400×240 top screen ⇒ a 50×30 character grid). The *real* SB font now ships baked in as
+//! the firmware GRPF page ([`crate::assets::default_font_page`]); the console samples it via
+//! [`Console::render_with_font`](crate::console::Console::render_with_font), so on-screen text
+//! is the genuine font (full ASCII + Japanese kana/kanji).
 //!
-//! Until that asset exists, this module provides a **self-contained placeholder** 8×8 font
-//! covering the printable ASCII most consoles use (A–Z, 0–9, common punctuation). It is
-//! enough to drive the deterministic console-render golden in M1-T10 — the golden is the
-//! renderer's *own* output (self-consistent), NOT a pixel match against the emulator, which
-//! is gated on the real font harvest. Lowercase a–z reuse the uppercase glyphs.
+//! This module remains the **self-contained placeholder** used only when no font page is
+//! supplied (the standalone [`Console::render`](crate::console::Console::render) path and its
+//! M1-T10 determinism golden) or for a codepoint the real font lacks. It covers the printable
+//! ASCII most consoles use (A–Z, 0–9, common punctuation); lowercase a–z reuse the uppercase
+//! glyphs.
 //!
 //! Bit convention: each glyph is 8 rows top→bottom; in a row, bit `0x80` is the leftmost
 //! column (x=0), `0x01` the rightmost (x=7). A set bit is a foreground dot.

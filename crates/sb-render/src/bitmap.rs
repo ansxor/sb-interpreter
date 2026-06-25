@@ -18,9 +18,9 @@
 //! and a 32-bit word is the caller's job (it depends on the array's Int/Real type); this
 //! module deals only in device halfwords and the logical-color conversion.
 //!
-//! GRPF (source page `-1`) is not backed in this model, so reading it yields transparent
-//! pixels (the captured-screen content is a fidelity gap queued for the framebuffer oracle,
-//! O-T6).
+//! GRPF (source page `-1`) is the hidden font page ([`GrpState::grpf`]), seeded with the
+//! firmware font by [`GrpState::with_defaults`]; reading it returns those glyph pixels (a
+//! blank [`GrpState::new`] reads transparent, as before).
 
 use crate::grp::{argb8888_to_rgba5551, rgba5551_to_argb8888, GrpState, GRP_DIM};
 
@@ -50,10 +50,12 @@ impl GrpState {
             .saturating_mul(h.max(0) as i64)
             .min((GRP_DIM * GRP_DIM) as i64) as usize;
         let mut out = Vec::with_capacity(cap);
-        let src = if (0..self.pages.len() as i32).contains(&page) {
+        let src = if page == -1 {
+            Some(&self.grpf.pixels) // GRPF: the hidden font page
+        } else if (0..self.pages.len() as i32).contains(&page) {
             Some(&self.pages[page as usize].pixels)
         } else {
-            None // GRPF / out-of-set page: read as transparent
+            None // out-of-set page: read as transparent
         };
         let dim = GRP_DIM as i64;
         for j in 0..h as i64 {

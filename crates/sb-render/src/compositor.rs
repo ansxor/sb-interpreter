@@ -137,6 +137,9 @@ impl Layer for GrpLayer<'_> {
 pub struct ConsoleLayer<'a> {
     /// The console grid to paint.
     pub console: &'a Console,
+    /// The font page glyphs are sampled from (the firmware GRPF page); `None` falls back to
+    /// the placeholder font.
+    pub font: Option<&'a GrpPage>,
     /// This layer's Z depth.
     pub z: i32,
 }
@@ -147,7 +150,7 @@ impl Layer for ConsoleLayer<'_> {
     }
 
     fn composite(&self, fb: &mut Framebuffer) {
-        self.console.render(fb);
+        self.console.render_with_font(fb, self.font);
     }
 }
 
@@ -395,18 +398,21 @@ fn render_bg(layer: &BgLayer, sheet: &GrpPage, fb: &mut Framebuffer) {
     }
 }
 
-/// Compose the standard top-screen scene from the VM's graphics state into the 400×240
-/// framebuffer. Back→front the layer stack is: backdrop → the GRP display page (at its `GPRIO`
-/// Z, cropped to its display clip) → the four BG layers (each at its `BGOFS` Z) → the displayed
-/// sprites (each at its `SPOFS` Z) → console (front). Layers are sorted rear→front by Z
-/// ([`compose`]); the documented equal-Z stack `GRP < BG < sprite < console` is encoded by the
-/// slice order, and within BG **layer 0 (foreground) draws in front of layer 1+** at equal Z.
+/// Compose the scene from the VM's graphics state into a `width`×`height` framebuffer.
+/// Back→front the layer stack is: backdrop → the GRP display page (at its `GPRIO` Z, cropped
+/// to its display clip) → the four BG layers (each at its `BGOFS` Z) → the displayed sprites
+/// (each at its `SPOFS` Z) → console (front). Layers are sorted rear→front by Z ([`compose`]);
+/// the documented equal-Z stack `GRP < BG < sprite < console` is encoded by the slice order,
+/// and within BG **layer 0 (foreground) draws in front of layer 1+** at equal Z.
 ///
 /// FIDELITY: the per-layer **default Z** values, the exact equal-Z tie-break across kinds, and
 /// the sprite-vs-sprite paint order (here ascending management number = rear→front) are
 /// oracle-pending — they need the composite screenshot capture (O-T6); queued in
 /// `HARVEST_QUEUE.md` (M3-T6).
-pub fn compose_top_screen(
+#[allow(clippy::too_many_arguments)]
+pub fn compose_screen(
+    width: usize,
+    height: usize,
     grp: &GrpState,
     bg: &BgState,
     sprites: &SpriteState,
@@ -448,11 +454,25 @@ pub fn compose_top_screen(
     if vis.console {
         layers.push(Box::new(ConsoleLayer {
             console,
+            font: Some(&grp.grpf),
             z: CONSOLE_DEFAULT_Z,
         }));
     }
     let refs: Vec<&dyn Layer> = layers.iter().map(|b| b.as_ref()).collect();
-    compose(TOP_WIDTH, TOP_HEIGHT, backdrop, &refs)
+    compose(width, height, backdrop, &refs)
+}
+
+/// Compose the standard top-screen scene into a 400×240 framebuffer.
+/// This is a convenience wrapper around [`compose_screen`].
+pub fn compose_top_screen(
+    grp: &GrpState,
+    bg: &BgState,
+    sprites: &SpriteState,
+    console: &Console,
+    backdrop: u32,
+    vis: LayerVisibility,
+) -> Framebuffer {
+    compose_screen(TOP_WIDTH, TOP_HEIGHT, grp, bg, sprites, console, backdrop, vis)
 }
 
 /// Render the top-left `width`×`height` crop of a GRP page to an RGBA8888 framebuffer — the
@@ -525,6 +545,7 @@ mod tests {
     #[test]
     fn console_paints_in_front_of_grp_at_equal_z() {
         let mut grp = GrpState::new();
+        grp.grpf = crate::assets::default_font_page(); // real font glyphs for the console
         grp.gcls(0xFFFF_0000); // red GRP behind
         let mut console = Console::top();
         console.print_str("A"); // white-on-transparent glyph at (0,0)
@@ -773,6 +794,7 @@ mod tests {
     /// BG tile over the top-left 16×16, and an 8×8 green sprite at the origin.
     fn z_stack() -> (GrpState, BgState, SpriteState) {
         let mut grp = GrpState::new();
+        grp.grpf = crate::assets::default_font_page(); // real font glyphs for console text
         grp.gcls(0xFFFF_0000); // GRP display page 0 = opaque red
         paint_bg_tile(&mut grp, 1, 0xFF00_00FF); // BG sheet (GRP5): char 1 = blue
         grp.manip_page = SPRITE_PAGE_DEFAULT; // sprite sheet (GRP4)

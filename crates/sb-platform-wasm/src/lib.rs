@@ -32,8 +32,8 @@
 use sb_core::builtins::StdBuiltins;
 use sb_core::compiler::compile_with;
 use sb_core::{parse, Vm};
-use sb_render::compositor::{compose_top_screen, DEFAULT_BACKDROP};
-use sb_render::Framebuffer;
+use sb_render::compositor::{compose_screen, compose_top_screen, DEFAULT_BACKDROP};
+use sb_render::{Framebuffer, BOTTOM_HEIGHT, BOTTOM_WIDTH, TOP_HEIGHT};
 
 // The browser IndexedDB storage backend (M6-T1): backs the `sb-core` `Storage` trait with an
 // in-memory mirror persisted to IndexedDB. `wasm32`-only (the native host uses the filesystem);
@@ -88,24 +88,55 @@ pub mod keymap {
 /// to parse/compile). The halt result is ignored — a halted program's partial scene is still
 /// worth showing / animating.
 fn build_vm(src: &str) -> Option<Vm> {
-    let ast = parse(src).ok()?;
-    let program = compile_with(&ast, &StdBuiltins).ok()?;
-    let mut vm = Vm::new(program);
+    let mut vm = prepare_vm(src)?;
     let _ = vm.run();
     Some(vm)
 }
 
-/// Composite the VM's current scene into a top-screen framebuffer (backdrop → GRP → BG →
-/// sprites → console, the shared M2/M3 compositor).
+/// Parse → compile → create a fresh VM without running it. Used by the interactive wasm host
+/// so the platform's `requestAnimationFrame` loop can drive execution with live input.
+fn prepare_vm(src: &str) -> Option<Vm> {
+    let ast = parse(src).ok()?;
+    let program = compile_with(&ast, &StdBuiltins).ok()?;
+    Some(Vm::new(program))
+}
+
+/// Composite the VM's current scene into a framebuffer sized for the active `XSCREEN` mode
+/// and `DISPLAY` target. Modes 2/3 with `DISPLAY 1` render the 320×240 Touch Screen; mode 4
+/// renders one shared 320×480 vertical screen; everything else renders the 400×240 Upper
+/// screen.
 fn compose(vm: &Vm) -> Framebuffer {
-    compose_top_screen(
-        vm.grp(),
-        vm.bg(),
-        vm.sprites(),
-        vm.console(),
-        DEFAULT_BACKDROP,
-        vm.screen_visibility(),
-    )
+    let screen = vm.screen_config();
+    match screen.mode {
+        2 | 3 if screen.display == 1 => compose_screen(
+            BOTTOM_WIDTH,
+            BOTTOM_HEIGHT,
+            vm.grp(),
+            vm.bg(),
+            vm.sprites(),
+            vm.console(),
+            DEFAULT_BACKDROP,
+            screen.visibility_for(1),
+        ),
+        4 => compose_screen(
+            BOTTOM_WIDTH,
+            TOP_HEIGHT + BOTTOM_HEIGHT,
+            vm.grp(),
+            vm.bg(),
+            vm.sprites(),
+            vm.console(),
+            DEFAULT_BACKDROP,
+            screen.visibility_for(0),
+        ),
+        _ => compose_top_screen(
+            vm.grp(),
+            vm.bg(),
+            vm.sprites(),
+            vm.console(),
+            DEFAULT_BACKDROP,
+            screen.visibility_for(0),
+        ),
+    }
 }
 
 /// Run `src` to completion and return the final scene composited into a top-screen
@@ -128,7 +159,7 @@ fn blank() -> Framebuffer {
 
 #[cfg(target_arch = "wasm32")]
 mod web {
-    use super::{blank, build_vm, compose, keymap};
+    use super::{blank, compose, keymap, prepare_vm};
     use sb_core::host_input::HostInput;
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -232,10 +263,16 @@ mod web {
         STOP.store(true, Ordering::Relaxed);
     }
 
-    /// Run a SmileBASIC program, then drive it with live host input in a
-    /// `requestAnimationFrame` loop: each frame folds the accumulated keyboard / mouse input
-    /// into the VM's `InputState` (so `BUTTON`/`STICK`/`STICKEX`/`TOUCH` read live input),
-    /// ticks the frame clock, and re-paints the canvas (M4-T5). Mirrors the native host loop.
+    /// Maximum number of bytecode instructions the VM may execute inside one
+    /// `requestAnimationFrame` callback before returning to the host. Large enough that
+    /// simple programs finish in a single frame, small enough that a runaway loop cannot
+    /// freeze the browser tab for a noticeable period.
+    const FRAME_BUDGET: usize = 50_000;
+
+    /// Run a SmileBASIC program under live host input in a `requestAnimationFrame` loop.
+    /// Unlike the one-shot `run_program`, this uses `Vm::run_frame` so the VM yields at
+    /// `VSYNC`/`WAIT` and the host can refresh `BUTTON`/`STICK`/`STICKEX`/`TOUCH` each frame.
+    /// This keeps the UI responsive for programs that poll input in a `VSYNC` loop.
     #[wasm_bindgen]
     pub fn run_interactive(canvas_id: &str, src: &str) -> Result<(), JsValue> {
         let (canvas, ctx) = canvas_and_ctx(canvas_id)?;
@@ -245,7 +282,7 @@ mod web {
 
         STOP.store(false, Ordering::Relaxed);
 
-        let vm = build_vm(src);
+        let vm = prepare_vm(src);
         // Paint the initial scene (or a blank backdrop on a compile failure) once up front.
         paint(&canvas, &ctx, &vm.as_ref().map_or_else(blank, compose))?;
         let Some(vm) = vm else {
@@ -282,8 +319,10 @@ mod web {
             cb.forget();
         }
 
-        // The rAF loop: owns the VM + context, reads the shared input/touch each frame.
+        // The rAF loop: owns the VM + context, reads the shared input/touch each frame,
+        // runs one VM frame, then paints.
         let vm = Rc::new(RefCell::new(vm));
+        let halted: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
         let f: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
         let g = f.clone();
         *g.borrow_mut() = Some(Closure::<dyn FnMut()>::new(move || {
@@ -294,7 +333,18 @@ mod web {
                 let device = vm.input_mut();
                 device.advance_frame(inp.held(), inp.stick(), inp.stickex());
                 device.advance_touch(t.down, t.x, t.y);
-                vm.tick_frame();
+
+                if !*halted.borrow() {
+                    match vm.run_frame(FRAME_BUDGET) {
+                        Ok(Some(_)) | Err(_) => *halted.borrow_mut() = true,
+                        Ok(None) => {}
+                    }
+                } else {
+                    // Program has ended; keep the 60 fps heartbeat alive for any post-halt
+                    // sprite/BG animations and MAINCNT advancement.
+                    vm.tick_frame();
+                }
+
                 let _ = paint(&canvas, &ctx, &compose(&vm));
             }
             if !STOP.load(Ordering::Relaxed) {
@@ -406,5 +456,36 @@ mod tests {
             Some(Bind::AxisX(Stick::Right, 1.0))
         );
         assert_eq!(keymap::bind("Escape"), None);
+    }
+
+    #[test]
+    fn xscreen_top_screen_keeps_default_size() {
+        let fb = render_program("XSCREEN 2:DISPLAY 0");
+        assert_eq!(fb.width, sb_render::TOP_WIDTH);
+        assert_eq!(fb.height, sb_render::TOP_HEIGHT);
+    }
+
+    #[test]
+    fn xscreen_bottom_screen_changes_framebuffer_size() {
+        let fb = render_program("XSCREEN 2:DISPLAY 1");
+        assert_eq!(fb.width, sb_render::BOTTOM_WIDTH);
+        assert_eq!(fb.height, sb_render::BOTTOM_HEIGHT);
+    }
+
+    #[test]
+    fn xscreen_combined_mode_changes_framebuffer_size() {
+        let fb = render_program("XSCREEN 4");
+        assert_eq!(fb.width, sb_render::BOTTOM_WIDTH);
+        assert_eq!(fb.height, sb_render::TOP_HEIGHT + sb_render::BOTTOM_HEIGHT);
+    }
+
+    #[test]
+    fn xscreen_combined_mode_shows_bottom_half_of_page() {
+        // XSCREEN 4 must expose the full 320×480 combined area, not just the upper 240 rows.
+        let fb = render_program("XSCREEN 4:GPSET 0,240,RGB(255,0,0)");
+        assert_eq!(fb.width, sb_render::BOTTOM_WIDTH);
+        assert_eq!(fb.height, sb_render::TOP_HEIGHT + sb_render::BOTTOM_HEIGHT);
+        // (0, 240) is the top-left pixel of the bottom half and should be red.
+        assert_eq!(fb.get_argb(0, 240), 0xFFF8_0000);
     }
 }

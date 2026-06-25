@@ -29,6 +29,10 @@ pub const GRP_DIM: usize = 512;
 pub const GRP_VISIBLE_WIDTH: i32 = 400;
 /// Visible draw-area height on the top screen (Y 0..=239).
 pub const GRP_VISIBLE_HEIGHT: i32 = 240;
+/// Default display area width (matches the boot top screen).
+pub const GRP_DISPLAY_WIDTH_DEFAULT: i32 = GRP_VISIBLE_WIDTH;
+/// Default display area height (matches the boot top screen).
+pub const GRP_DISPLAY_HEIGHT_DEFAULT: i32 = GRP_VISIBLE_HEIGHT;
 
 /// Pack an ARGB8888 color into the device's 16-bit RGBA5551 halfword.
 ///
@@ -96,6 +100,10 @@ pub struct ClipRect {
 pub struct GrpState {
     /// The 6 graphic pages, GRP0..GRP5.
     pub pages: Vec<GrpPage>,
+    /// The hidden **GRPF** font page (GSAVE/GLOAD page index −1). Not on any `GPAGE`; it backs
+    /// the console glyph source and the `"GRPF"` bitmap ops. Blank in [`GrpState::new`], seeded
+    /// with the firmware font in [`GrpState::with_defaults`].
+    pub grpf: GrpPage,
     /// Page shown on screen (`GPAGE` display page), 0..=5.
     pub display_page: u8,
     /// Page targeted by drawing instructions (`GPAGE` manipulation page), 0..=5.
@@ -104,6 +112,9 @@ pub struct GrpState {
     pub color: u32,
     /// Screen Z priority (`GPRIO`), -256..=1024 (lower = nearer the viewer).
     pub prio: i32,
+    /// Default display area (width, height) used by `GCLIP 0` reset. The VM updates this when
+    /// `XSCREEN` / `DISPLAY` change the active screen size.
+    pub display_area: (i32, i32),
     /// Display clip rectangle (whole screen by default).
     pub display_clip: ClipRect,
     /// Write (drawing) clip rectangle (whole page by default).
@@ -116,15 +127,17 @@ impl GrpState {
     pub fn new() -> Self {
         Self {
             pages: (0..GRP_PAGE_COUNT).map(|_| GrpPage::new()).collect(),
+            grpf: GrpPage::new(),
             display_page: 0,
             manip_page: 0,
             color: 0xFFFF_FFFF, // opaque white
             prio: 0,
+            display_area: (GRP_DISPLAY_WIDTH_DEFAULT, GRP_DISPLAY_HEIGHT_DEFAULT),
             display_clip: ClipRect {
                 x0: 0,
                 y0: 0,
-                x1: GRP_VISIBLE_WIDTH - 1,
-                y1: GRP_VISIBLE_HEIGHT - 1,
+                x1: GRP_DISPLAY_WIDTH_DEFAULT - 1,
+                y1: GRP_DISPLAY_HEIGHT_DEFAULT - 1,
             },
             write_clip: ClipRect {
                 x0: 0,
@@ -133,6 +146,27 @@ impl GrpState {
                 y1: GRP_DIM as i32 - 1,
             },
         }
+    }
+
+    /// A GRP state with the **firmware default pages** loaded, as SmileBASIC boots: GRP4 holds
+    /// the default sprite sheet, GRP5 the default BG sheet, and the hidden GRPF page the system
+    /// font (see [`crate::assets`]). GRP0..GRP3 stay blank. This is what the VM constructs; the
+    /// bare [`GrpState::new`] keeps all pages blank for the unit/golden tests that draw their
+    /// own pixels.
+    pub fn with_defaults() -> Self {
+        let mut state = Self::new();
+        state.reload_defaults();
+        state
+    }
+
+    /// Reload the firmware default pages: GRP4 ← the sprite sheet, GRP5 ← the BG sheet, GRPF ←
+    /// the font. This is the "LOAD DEFSP/DEFBG" + font-reset part of boot and `ACLS` (see
+    /// `spec/instructions/acls.yaml`). GRP0..GRP3 and the draw-state (selected pages, color,
+    /// clips) are left untouched — those are separate ACLS reset steps.
+    pub fn reload_defaults(&mut self) {
+        self.pages[4] = crate::assets::default_sprite_page();
+        self.pages[5] = crate::assets::default_bg_page();
+        self.grpf = crate::assets::default_font_page();
     }
 
     /// Clear the manipulation page to `color` (`GCLS`).
@@ -154,8 +188,8 @@ impl GrpState {
         rgba5551_to_argb8888(h)
     }
 
-    /// Reset a clip rectangle to its whole area (`GCLIP mode` with no rectangle): the whole
-    /// screen for display mode, the whole page for write mode.
+    /// Reset a clip rectangle to its whole area (`GCLIP mode` with no rectangle): the current
+    /// screen size for display mode, the whole page for write mode.
     pub fn gclip_reset(&mut self, write: bool) {
         if write {
             self.write_clip = ClipRect {
@@ -165,13 +199,26 @@ impl GrpState {
                 y1: GRP_DIM as i32 - 1,
             };
         } else {
+            let (w, h) = self.display_area;
             self.display_clip = ClipRect {
                 x0: 0,
                 y0: 0,
-                x1: GRP_VISIBLE_WIDTH - 1,
-                y1: GRP_VISIBLE_HEIGHT - 1,
+                x1: w - 1,
+                y1: h - 1,
             };
         }
+    }
+
+    /// Set the default display area and reset the display clip to match. Called by the VM when
+    /// `XSCREEN` or `DISPLAY` changes the active screen size.
+    pub fn set_display_area(&mut self, width: i32, height: i32) {
+        self.display_area = (width, height);
+        self.display_clip = ClipRect {
+            x0: 0,
+            y0: 0,
+            x1: width - 1,
+            y1: height - 1,
+        };
     }
 
     /// Set a clip rectangle (`GCLIP mode, x0, y0, x1, y1`). The corners are normalized so

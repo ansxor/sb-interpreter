@@ -17,13 +17,17 @@
 //! - Printing past the right edge wraps to the next row; printing past the bottom row
 //!   scrolls the whole grid up by one line.
 //!
-//! The real SB font glyphs are a firmware ROM asset (see [`crate::font`]); this renderer
-//! takes whatever glyph table that module exposes, so swapping in a harvested font later
-//! does not change the model.
+//! Glyph source: [`render_with_font`](Console::render_with_font) samples the firmware **font
+//! page** (the hidden GRPF page, [`crate::assets::default_font_page`]) via the codepoint→
+//! position [`atlas`](crate::assets::atlas) — so on-screen text matches real SmileBASIC. A
+//! `FONTDEF` override takes precedence per cell, and the plain [`render`](Console::render)
+//! (no font page) falls back to the self-contained placeholder [`crate::font`] glyphs.
 
 use std::collections::HashMap;
 
+use crate::assets::atlas;
 use crate::font;
+use crate::grp::{GrpPage, GRP_DIM};
 use crate::Framebuffer;
 
 /// Cell size in dots (SB console font is 8×8 — osb `console.d` `fontDefWidth/Height`).
@@ -207,10 +211,22 @@ impl Console {
         self.custom_glyphs.clear();
     }
 
-    /// Glyph for a character code, preferring a FONTDEF override over the built-in font.
-    fn glyph_for(&self, ch: u16) -> [u8; 8] {
+    /// Glyph for a character code as an 8×8 1-bpp bitmap (bit set = foreground dot).
+    ///
+    /// Precedence: a `FONTDEF` override wins; otherwise, if a font page is supplied (the
+    /// firmware GRPF page, [`crate::assets::default_font_page`]) and it has a glyph for `ch`,
+    /// the 8×8 cell at the atlas position is sampled — an opaque (alpha-bit-set) device pixel
+    /// becomes a foreground dot (the firmware font is monochrome white-on-transparent, tinted
+    /// by the cell's `COLOR`). With no font page, or for a codepoint the font lacks, the
+    /// self-contained placeholder [`font::glyph`] is used.
+    fn glyph_for(&self, ch: u16, font_page: Option<&GrpPage>) -> [u8; 8] {
         if let Some(&g) = self.custom_glyphs.get(&ch) {
             return g;
+        }
+        if let Some(page) = font_page {
+            if let Some((gx, gy)) = atlas::pos(ch) {
+                return sample_glyph(page, gx as usize, gy as usize);
+            }
         }
         font::glyph(char::from_u32(ch as u32).unwrap_or('\u{FFFD}'))
     }
@@ -301,20 +317,28 @@ impl Console {
     /// backdrop/other layers show through). Per-cell rotation/inversion is applied via
     /// [`attr_map`].
     pub fn render(&self, fb: &mut Framebuffer) {
+        self.render_with_font(fb, None);
+    }
+
+    /// Rasterize the grid using a supplied **font page** (the firmware GRPF page) as the glyph
+    /// source. This is what the compositor uses so on-screen text matches real SmileBASIC;
+    /// [`render`](Self::render) is the `None` shorthand (placeholder font) the standalone
+    /// console tests/goldens use. `FONTDEF` overrides still take precedence per cell.
+    pub fn render_with_font(&self, fb: &mut Framebuffer, font_page: Option<&GrpPage>) {
         for row in 0..self.rows {
             for col in 0..self.cols {
-                self.render_cell(fb, col, row);
+                self.render_cell(fb, col, row, font_page);
             }
         }
     }
 
-    fn render_cell(&self, fb: &mut Framebuffer, col: usize, row: usize) {
+    fn render_cell(&self, fb: &mut Framebuffer, col: usize, row: usize, font_page: Option<&GrpPage>) {
         let cell = self.cells[self.idx(col, row)];
         // ch == 0 is an empty cell (no character), not NUL — draw only the background.
         let glyph = if cell.ch == 0 {
             [0u8; 8]
         } else {
-            self.glyph_for(cell.ch)
+            self.glyph_for(cell.ch, font_page)
         };
         let fg = TEXT_PALETTE[(cell.fg & 0x0F) as usize];
         let bg = TEXT_PALETTE[(cell.bg & 0x0F) as usize];
@@ -333,6 +357,28 @@ impl Console {
             }
         }
     }
+}
+
+/// Sample the 8×8 cell at `(gx, gy)` on a font page into a 1-bpp [`font`] bitmap: an opaque
+/// (alpha-bit-set) device pixel becomes a set foreground bit (bit `0x80` = leftmost column),
+/// transparent pixels clear. Off-page samples read transparent.
+fn sample_glyph(page: &GrpPage, gx: usize, gy: usize) -> [u8; 8] {
+    let mut rows = [0u8; CELL];
+    for (dy, out) in rows.iter_mut().enumerate() {
+        let y = gy + dy;
+        if y >= GRP_DIM {
+            break;
+        }
+        let base = y * GRP_DIM + gx;
+        let mut bits = 0u8;
+        for dx in 0..CELL {
+            if gx + dx < GRP_DIM && page.pixels[base + dx] & 1 != 0 {
+                bits |= 0x80 >> dx;
+            }
+        }
+        *out = bits;
+    }
+    rows
 }
 
 /// Map a source dot `(sx,sy)` in an 8×8 cell to its destination after applying an `ATTR`
