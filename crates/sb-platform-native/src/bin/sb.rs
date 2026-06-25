@@ -52,7 +52,7 @@ mod native {
     use sb_core::compiler::compile_with;
     use sb_core::host_input::HostInput;
     use sb_core::{parse, Vm, VmError};
-    use sb_render::compositor::{compose_top_screen, DEFAULT_BACKDROP};
+    use sb_render::compositor::{apply_fader, compose_top_screen, DEFAULT_BACKDROP};
     use sb_render::Framebuffer;
 
     use winit::application::ApplicationHandler;
@@ -137,15 +137,22 @@ mod native {
     /// transparent by default, so the backdrop must be painted first to be blittable).
     fn compose(scene: &Scene) -> Framebuffer {
         match scene {
-            Scene::Live(vm) => compose_top_screen(
-                vm.grp(),
-                // The native runner renders the Upper screen (screen 0) — draw its BG + sprites.
-                vm.bg_for(0),
-                vm.sprites_for(0),
-                vm.console_for(0),
-                DEFAULT_BACKDROP,
-                vm.screen_visibility(),
-            ),
+            Scene::Live(vm) => {
+                let mut fb = compose_top_screen(
+                    vm.grp(),
+                    // The native runner renders the Upper screen (screen 0) — draw its BG + sprites.
+                    vm.bg_for(0),
+                    vm.sprites_for(0),
+                    vm.console_for(0),
+                    DEFAULT_BACKDROP,
+                    vm.screen_visibility(),
+                );
+                // The screen fader is a global overlay drawn in front of the composed frame.
+                if let Some(color) = vm.fader_overlay() {
+                    apply_fader(&mut fb, color);
+                }
+                fb
+            }
             Scene::Failed => {
                 let mut fb = Framebuffer::top();
                 fb.clear(DEFAULT_BACKDROP);

@@ -32,7 +32,7 @@
 use sb_core::builtins::StdBuiltins;
 use sb_core::compiler::compile_with;
 use sb_core::{parse, Vm};
-use sb_render::compositor::{compose_screen, DEFAULT_BACKDROP};
+use sb_render::compositor::{apply_fader, compose_screen, DEFAULT_BACKDROP};
 use sb_render::Framebuffer;
 
 // The browser IndexedDB storage backend (M6-T1): backs the `sb-core` `Storage` trait with an
@@ -108,7 +108,7 @@ fn prepare_vm(src: &str) -> Result<Vm, String> {
 pub fn compose_for_screen(vm: &Vm, screen_id: usize) -> Framebuffer {
     let screen = vm.screen_config();
     let (w, h) = screen.display_size_for(screen_id as i32);
-    compose_screen(
+    let mut fb = compose_screen(
         w as usize,
         h as usize,
         vm.grp(),
@@ -118,7 +118,12 @@ pub fn compose_for_screen(vm: &Vm, screen_id: usize) -> Framebuffer {
         vm.console_for(screen_id),
         DEFAULT_BACKDROP,
         screen.visibility_for(screen_id as i32),
-    )
+    );
+    // The screen fader is a global overlay drawn in front of both screens.
+    if let Some(color) = vm.fader_overlay() {
+        apply_fader(&mut fb, color);
+    }
+    fb
 }
 
 /// Composite the VM's current scene into a single framebuffer sized for the active `XSCREEN`
@@ -208,14 +213,14 @@ mod web {
     use js_sys::Function;
     use sb_core::host_input::HostInput;
     use sb_core::VmError;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::rc::Rc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use wasm_bindgen::prelude::*;
     use wasm_bindgen::{Clamped, JsCast};
     use web_sys::{
-        CanvasRenderingContext2d, HtmlCanvasElement, ImageData, KeyboardEvent, MouseEvent,
-        Performance,
+        CanvasRenderingContext2d, CompositionEvent, Event, HtmlCanvasElement, HtmlInputElement,
+        ImageData, InputEvent, KeyboardEvent, MouseEvent, Performance,
     };
 
     /// A canvas together with its 2D context — the unit `paint` blits a framebuffer onto.
@@ -359,7 +364,10 @@ mod web {
         match e {
             VmError::Sb { errnum, line } => {
                 let msg = sb_core::error::error_message(*errnum);
-                format!("Runtime error (errnum {}) at line {}: {}", errnum, line, msg)
+                format!(
+                    "Runtime error (errnum {}) at line {}: {}",
+                    errnum, line, msg
+                )
             }
             VmError::Unsupported(what) => format!("Unsupported operation: {}", what),
             VmError::Assert { message, line } => {
@@ -420,19 +428,129 @@ mod web {
                 return Ok(());
             }
         }
-        let vm = vm.unwrap();
+        let vm = Rc::new(RefCell::new(vm.unwrap()));
 
         let input = Rc::new(RefCell::new(HostInput::new()));
         let touch = Rc::new(RefCell::new(Touch::default()));
+        let awaiting: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+        let input_overlay: Rc<RefCell<Option<HtmlInputElement>>> = Rc::new(RefCell::new(
+            document
+                .get_element_by_id("sb-input-line")
+                .and_then(|e| e.dyn_into().ok()),
+        ));
 
         // Keyboard → button / stick masks. keydown sets, keyup clears.
-        for (event, pressed) in [("keydown", true), ("keyup", false)] {
+        // While the VM is awaiting interactive text input, swallow game-bound keys and
+        // use Enter to submit the line.
+        {
+            let input = input.clone();
+            let vm = vm.clone();
+            let overlay = input_overlay.clone();
+            let awaiting = awaiting.clone();
+            let cb = Closure::<dyn FnMut(KeyboardEvent)>::new(move |e: KeyboardEvent| {
+                if awaiting.get() {
+                    let code = e.code();
+                    if keymap::bind(&code).is_some() {
+                        e.prevent_default();
+                        return;
+                    }
+                    if code == "Enter" {
+                        e.prevent_default();
+                        vm.borrow_mut().input_enter();
+                        if let Some(el) = overlay.borrow().as_ref() {
+                            el.set_value("");
+                            let _ = el.blur();
+                        }
+                        awaiting.set(false);
+                        return;
+                    }
+                }
+                input.borrow_mut().apply(keymap::bind(&e.code()), true);
+            });
+            document.add_event_listener_with_callback("keydown", cb.as_ref().unchecked_ref())?;
+            cb.forget();
+        }
+        {
             let input = input.clone();
             let cb = Closure::<dyn FnMut(KeyboardEvent)>::new(move |e: KeyboardEvent| {
-                input.borrow_mut().apply(keymap::bind(&e.code()), pressed);
+                input.borrow_mut().apply(keymap::bind(&e.code()), false);
             });
-            document.add_event_listener_with_callback(event, cb.as_ref().unchecked_ref())?;
-            cb.forget(); // listener lives for the page's lifetime
+            document.add_event_listener_with_callback("keyup", cb.as_ref().unchecked_ref())?;
+            cb.forget();
+        }
+
+        // Text input overlay: the browser handles typing/IME/cursor; we mirror the value
+        // into the VM's input buffer.
+        if let Some(el) = input_overlay.borrow().as_ref() {
+            // `beforeinput` lets us intercept simple typing and backspace before the DOM changes.
+            let vm2 = vm.clone();
+            let overlay2 = input_overlay.clone();
+            let awaiting2 = awaiting.clone();
+            let cb = Closure::<dyn FnMut(InputEvent)>::new(move |e: InputEvent| {
+                if !awaiting2.get() {
+                    return;
+                }
+                let composing = e.is_composing();
+                match e.input_type().as_str() {
+                    "insertText" | "insertFromPaste" if !composing => {
+                        if let Some(data) = e.data() {
+                            if !data.is_empty() {
+                                e.prevent_default();
+                                {
+                                    let mut vm = vm2.borrow_mut();
+                                    for ch in data.chars() {
+                                        vm.input_char(ch as u32);
+                                    }
+                                }
+                                if let Some(el) = overlay2.borrow().as_ref() {
+                                    el.set_value(&vm2.borrow().input_current_line());
+                                }
+                            }
+                        }
+                    }
+                    "deleteContentBackward" if !composing => {
+                        e.prevent_default();
+                        vm2.borrow_mut().input_backspace();
+                        if let Some(el) = overlay2.borrow().as_ref() {
+                            el.set_value(&vm2.borrow().input_current_line());
+                        }
+                    }
+                    _ => {}
+                }
+            });
+            el.add_event_listener_with_callback("beforeinput", cb.as_ref().unchecked_ref())?;
+            cb.forget();
+
+            // `input` and `compositionend` catch IME, paste, and any edits we didn't prevent.
+            let vm3 = vm.clone();
+            let awaiting3 = awaiting.clone();
+            let cb = Closure::<dyn FnMut(Event)>::new(move |e: Event| {
+                if !awaiting3.get() {
+                    return;
+                }
+                if let Some(target) = e.target() {
+                    if let Ok(el) = target.dyn_into::<HtmlInputElement>() {
+                        vm3.borrow_mut().input_set_current(&el.value());
+                    }
+                }
+            });
+            el.add_event_listener_with_callback("input", cb.as_ref().unchecked_ref())?;
+            cb.forget();
+
+            let vm4 = vm.clone();
+            let awaiting4 = awaiting.clone();
+            let cb = Closure::<dyn FnMut(CompositionEvent)>::new(move |e: CompositionEvent| {
+                if !awaiting4.get() {
+                    return;
+                }
+                if let Some(target) = e.target() {
+                    if let Ok(el) = target.dyn_into::<HtmlInputElement>() {
+                        vm4.borrow_mut().input_set_current(&el.value());
+                    }
+                }
+            });
+            el.add_event_listener_with_callback("compositionend", cb.as_ref().unchecked_ref())?;
+            cb.forget();
         }
 
         // Mouse → TOUCH. The Touch Screen is the bottom canvas, but we wire both so a tap reads
@@ -460,7 +578,6 @@ mod web {
         // tick loop runs the program too fast on high-refresh displays. The pacer accumulates
         // whole 1/60 s frames since the last deadline and runs that many VM frames per tick,
         // mirroring the native host's `WaitUntil(deadline)` loop (#92).
-        let vm = Rc::new(RefCell::new(vm));
         let halted: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
         let f: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
         let g = f.clone();
@@ -474,14 +591,36 @@ mod web {
         // runs exactly one frame (the deadline is at `now`, so `frames_due` counts it due
         // immediately and advances it by `FRAME_MS`), matching the native host's
         // `next_frame = Some(Instant::now() + FRAME_DURATION)` start.
-        let next_frame: Rc<RefCell<f64>> =
-            Rc::new(RefCell::new(perf.as_ref().map_or(0.0, now_ms)));
+        let next_frame: Rc<RefCell<f64>> = Rc::new(RefCell::new(perf.as_ref().map_or(0.0, now_ms)));
+        let overlay_for_frame = input_overlay.clone();
         *g.borrow_mut() = Some(Closure::<dyn FnMut()>::new(move || {
             {
                 let inp = input.borrow();
                 let t = touch.borrow();
                 let mut vm = vm.borrow_mut();
 
+                // Sync the text input overlay with the VM's INPUT/LINPUT wait state.
+                let now_waiting = vm.awaiting_input();
+                let was_waiting = awaiting.get();
+                if now_waiting != was_waiting {
+                    if let Some(el) = overlay_for_frame.borrow().as_ref() {
+                        if now_waiting {
+                            el.set_hidden(false);
+                            el.set_value(&vm.input_current_line());
+                            let _ = el.focus();
+                        } else {
+                            el.set_hidden(true);
+                            el.set_value("");
+                            let _ = el.blur();
+                        }
+                    }
+                    awaiting.set(now_waiting);
+                } else if now_waiting {
+                    // Keep focus while waiting so keystrokes go to the overlay.
+                    if let Some(el) = overlay_for_frame.borrow().as_ref() {
+                        let _ = el.focus();
+                    }
+                }
                 // Pace VM frames to wall-clock 60 fps: run however many 1/60 s frames have
                 // elapsed since the last deadline (capped, so a backgrounded tab doesn't fire
                 // a catch-up burst). Input/touch advance once per VM frame so BUTTON/STICK/TOUCH
@@ -504,14 +643,13 @@ mod web {
                     device.advance_frame(inp.held(), inp.stick(), inp.stickex());
                     device.advance_touch(t.down, t.x, t.y);
 
-                    if !*halted.borrow() {
+                    if !*halted.borrow() && !awaiting.get() {
                         match vm.run_frame(FRAME_BUDGET) {
                             Ok(Some(_)) => *halted.borrow_mut() = true,
                             Ok(None) => {}
                             Err(e) => {
                                 *halted.borrow_mut() = true;
-                                let _ = report_error(&on_error_for_frame,
-                                    &format_vm_error(&e));
+                                let _ = report_error(&on_error_for_frame, &format_vm_error(&e));
                                 break;
                             }
                         }
@@ -605,8 +743,8 @@ mod web {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_vm, compose_both, compose_for_screen, frames_due, keymap, render_program,
-        FRAME_MS, MAX_CATCHUP,
+        build_vm, compose_both, compose_for_screen, frames_due, keymap, render_program, FRAME_MS,
+        MAX_CATCHUP,
     };
     use sb_core::host_input::{Bind, Stick};
     use sb_core::input::{BTN_A, BTN_RIGHT, BTN_ZR};
@@ -658,7 +796,11 @@ mod tests {
         // after the first frame fires) and land two 120 Hz ticks at 8 and 17 ms: the first
         // owes 0, the second owes 1 — the program never runs faster than 60 fps.
         let mut next = FRAME_MS; // deadline one frame in the future (steady state)
-        assert_eq!(frames_due(8.0, &mut next), 0, "first 120 Hz tick: no frame due yet");
+        assert_eq!(
+            frames_due(8.0, &mut next),
+            0,
+            "first 120 Hz tick: no frame due yet"
+        );
         assert_eq!(frames_due(17.0, &mut next), 1, "second tick: one frame due");
         assert_eq!(next, FRAME_MS * 2.0);
     }
@@ -784,10 +926,22 @@ mod tests {
         let upper = compose_for_screen(&vm, 0);
         let touch = compose_for_screen(&vm, 1);
         // The sprite's home (0,0) lands its top-left texel at (SPOFS x, y) = (100,100).
-        assert_eq!(green(&touch, 100, 100), 0xF8, "sprite shows on the touch screen");
-        assert_eq!(green(&touch, 103, 103), 0xF8, "sprite body on the touch screen");
+        assert_eq!(
+            green(&touch, 100, 100),
+            0xF8,
+            "sprite shows on the touch screen"
+        );
+        assert_eq!(
+            green(&touch, 103, 103),
+            0xF8,
+            "sprite body on the touch screen"
+        );
         // The Upper screen's sprite table is empty here → no green there.
-        assert_eq!(green(&upper, 100, 100), 0, "sprite absent from the upper screen");
+        assert_eq!(
+            green(&upper, 100, 100),
+            0,
+            "sprite absent from the upper screen"
+        );
     }
 
     #[test]
@@ -804,9 +958,21 @@ mod tests {
         .expect("program builds");
         let upper = compose_for_screen(&vm, 0);
         let touch = compose_for_screen(&vm, 1);
-        assert_eq!(blue(&touch, 0, 0), 0xF8, "BG tile shows on the touch screen");
-        assert_eq!(blue(&touch, 15, 15), 0xF8, "BG tile body on the touch screen");
-        assert_eq!(blue(&upper, 0, 0), 0, "BG tile absent from the upper screen");
+        assert_eq!(
+            blue(&touch, 0, 0),
+            0xF8,
+            "BG tile shows on the touch screen"
+        );
+        assert_eq!(
+            blue(&touch, 15, 15),
+            0xF8,
+            "BG tile body on the touch screen"
+        );
+        assert_eq!(
+            blue(&upper, 0, 0),
+            0,
+            "BG tile absent from the upper screen"
+        );
     }
 
     #[test]

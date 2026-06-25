@@ -289,6 +289,9 @@ pub const BUILTIN_NAMES: &[&str] = &[
     "DISPLAY",
     "VISIBLE",
     "HARDWARE",
+    // Screen fader (M4/M5 frame effect): FADE/FADECHK manage the VM-owned fader state.
+    "FADE",
+    "FADECHK",
     // BGM commands (M5-T3): BGMPLAY/BGMSTOP/BGMCHK/BGMVAR/BGMVOL/BGMSET/BGMSETD/BGMCLEAR
     // manage the VM-owned `AudioState` (registered user tunes + per-track transport state).
     // BGMSETD additionally reads MML from the program's DATA pool, so the VM routes it like

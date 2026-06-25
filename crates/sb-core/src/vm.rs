@@ -55,6 +55,7 @@ use crate::builtins::sound::AudioState;
 use crate::bytecode::{CallbackKind, Const, Op, Program, VarRef, VarType};
 use crate::clock::{FrameClock, WallClock};
 use crate::input::InputState;
+use crate::input_buffer::InputBuffer;
 use crate::storage::{
     parse_files_filter, parse_resource, FilesFilter, Folder, MemStorage, ResourceKind, Storage,
     DEFAULT_PROJECT,
@@ -67,7 +68,6 @@ use sb_render::console::Console;
 use sb_render::grp::{GrpState, GRP_SCREEN_COUNT};
 use sb_render::sprite::{SpdefTable, SpriteState};
 use std::cmp::Ordering;
-use std::collections::VecDeque;
 
 /// Max combined depth of the `GOSUB` return stack + `DEF` call frames before raising
 /// **Stack overflow** (errnum 5). The exact value real SB 3.6.0 trips at is queued
@@ -197,6 +197,104 @@ struct ExecReturn {
     data_cursor: usize,
 }
 
+/// Screen-fader state (M4/M5 frame effect) behind `FADE`/`FADECHK`.
+///
+/// The fader draws in front of the composed screen, blended by its alpha channel. A color with
+/// zero alpha disables the fader. A timed `FADE color,time` interpolates linearly from the
+/// current color to the target over `time` 1/60-second frames; the interpolation ticks in both
+/// the host-driven (`tick_frame`) and headless (`WAIT`/`VSYNC`) frame-advance paths.
+#[derive(Debug, Clone, Copy, Default)]
+struct Fader {
+    /// Color at the start of the current timed fade.
+    start: i32,
+    /// Target color of the current timed fade.
+    target: i32,
+    /// Current interpolated color returned by `FADE()`.
+    current: i32,
+    /// Frames remaining until the timed fade completes.
+    remaining: u64,
+    /// Total duration of the current timed fade.
+    total: u64,
+    /// Whether the fader is enabled for rendering (i.e. current alpha is non-zero).
+    enabled: bool,
+}
+
+impl Fader {
+    fn new() -> Self {
+        Self {
+            start: 0,
+            target: 0,
+            current: 0,
+            remaining: 0,
+            total: 0,
+            enabled: false,
+        }
+    }
+
+    /// `FADE color` — instant set, zero duration.
+    fn set(&mut self, color: i32) {
+        self.start = color;
+        self.target = color;
+        self.current = color;
+        self.remaining = 0;
+        self.total = 0;
+        self.enabled = ((color as u32) >> 24) != 0;
+    }
+
+    /// `FADE color,time` — animate from `current` to `color` over `time` frames.
+    fn fade_to(&mut self, color: i32, time: u64) {
+        if time == 0 {
+            self.set(color);
+            return;
+        }
+        self.start = self.current;
+        self.target = color;
+        self.total = time;
+        self.remaining = time;
+        self.enabled = true;
+        // At frame 0 current stays at start.
+    }
+
+    fn current(&self) -> i32 {
+        self.current
+    }
+
+    fn is_animating(&self) -> bool {
+        self.remaining > 0
+    }
+
+    /// Advance the fader by `frames` displayed frames.
+    fn tick(&mut self, frames: u64) {
+        if self.remaining == 0 {
+            return;
+        }
+        self.remaining = self.remaining.saturating_sub(frames);
+        self.update_current();
+        if self.remaining == 0 {
+            self.enabled = ((self.current as u32) >> 24) != 0;
+        }
+    }
+
+    fn update_current(&mut self) {
+        if self.total == 0 {
+            self.current = self.target;
+            return;
+        }
+        let done = (self.total - self.remaining) as u32;
+        let total = self.total as u32;
+        let lerp = |a: u32, b: u32, sh: u32| -> u32 {
+            let av = (a >> sh) & 0xFF;
+            let bv = (b >> sh) & 0xFF;
+            (av * (total - done) + bv * done + total / 2) / total
+        };
+        let a = self.start as u32;
+        let b = self.target as u32;
+        let argb =
+            (lerp(a, b, 24) << 24) | (lerp(a, b, 16) << 16) | (lerp(a, b, 8) << 8) | lerp(a, b, 0);
+        self.current = argb as i32;
+    }
+}
+
 /// The stack VM.
 pub struct Vm {
     program: Program,
@@ -275,10 +373,10 @@ pub struct Vm {
     /// The wall-clock date/time behind `DATE$`/`TIME$` (M6-T3). Deterministic default epoch;
     /// the native host injects the real RTC via [`Vm::set_wall_clock`].
     wall_clock: WallClock,
-    /// Queued input lines for `INPUT`/`LINPUT` (one entry = one ENTER-terminated line).
-    /// Headless there is no live keyboard; a runner/test preloads this via
-    /// [`Vm::push_input`]. An empty queue yields an empty line.
-    input_lines: VecDeque<SbStr>,
+    /// Line-based input buffer for `INPUT`/`LINPUT`. Headless runners preload completed
+    /// lines via [`Vm::push_input`]; interactive hosts type into the current line and
+    /// commit with [`Vm::input_enter`].
+    input_buffer: InputBuffer,
     /// Error state (M1-T13): the `ERRNUM`/`ERRLINE`/`ERRPRG` read-only sysvars. Boot/`RUN`
     /// reset to 0 (= "No Error"); set at the moment of a halting error and left readable
     /// afterwards (the DIRECT-mode residue — see `spec/concepts/error-model.md`). `ERRPRG`
@@ -294,6 +392,9 @@ pub struct Vm {
     /// per-screen `VISIBLE` layer flags and the `HARDWARE` model. The compositor reads the
     /// Upper-screen visibility flags via [`Vm::screen_visibility`].
     screen: ScreenConfig,
+    /// The screen fader (M4/M5 frame effect) behind `FADE`/`FADECHK`. Drawn in front of the
+    /// composed frame; disabled when its alpha byte is zero.
+    fader: Fader,
     /// The BGM state (M5-T3): registered user-defined tunes (128..255 → compiled MML) +
     /// per-track transport state, driven by `BGMPLAY`/`BGMSTOP`/`BGMCHK`/`BGMVAR`/`BGMVOL`/
     /// `BGMSET`/`BGMSETD`/`BGMCLEAR`. The live audio backend (M5-T5) renders the playing
@@ -348,6 +449,12 @@ pub struct Vm {
     /// VBlank model (begin_wait/begin_vsync instead of instant-jump wait/vsync). Never set
     /// by `run()`, so the headless runner and all existing tests keep the instant model.
     interactive: bool,
+    /// True while an interactive `INPUT`/`LINPUT` is waiting for the user to press Enter.
+    /// The wasm host pauses `run_frame` and shows the input overlay while this is set.
+    input_wait: bool,
+    /// Set once the prompt/`?` for the current interactive `INPUT`/`LINPUT` has been printed,
+    /// so rewinding `pc` to retry the opcode does not re-print it every frame.
+    input_prompt_printed: bool,
 }
 
 impl Vm {
@@ -382,12 +489,15 @@ impl Vm {
             callback_active: false,
             freemem: DEFAULT_FREEMEM,
             wall_clock: WallClock::EPOCH,
-            input_lines: VecDeque::new(),
+            input_buffer: InputBuffer::new(),
+            input_wait: false,
+            input_prompt_printed: false,
             errnum: 0,
             errline: 0,
             errprg: 0,
             clock: FrameClock::new(),
             screen: ScreenConfig::new(),
+            fader: Fader::new(),
             audio: AudioState::new(),
             storage: Box::new(MemStorage::new()),
             current_project: DEFAULT_PROJECT.to_string(),
@@ -558,6 +668,8 @@ impl Vm {
         for bg in &mut self.bg {
             bg.tick(1);
         }
+        // The screen-fader animation advances once per displayed frame.
+        self.fader.tick(1);
     }
 
     /// Borrow the ACTIVE text console (grid + cursor + colors) for rendering / inspection.
@@ -640,6 +752,20 @@ impl Vm {
         self.screen.upper_visibility()
     }
 
+    /// The current fader color as an ARGB code, for `FADE()` / for inspection.
+    pub fn fader_color(&self) -> i32 {
+        self.fader.current()
+    }
+
+    /// The fader color to overlay when rendering, if it is currently enabled (alpha > 0).
+    pub fn fader_overlay(&self) -> Option<u32> {
+        if self.fader.enabled {
+            Some(self.fader.current() as u32)
+        } else {
+            None
+        }
+    }
+
     /// Borrow the VM's screen configuration (`XSCREEN` mode, `DISPLAY` target, `VISIBLE`
     /// flags, `HARDWARE` model). The wasm/native host uses this to pick the right output
     /// dimensions and the active screen's layer visibility.
@@ -651,6 +777,37 @@ impl Vm {
     /// test) can advance the frame timeline / fill the button + stick state each frame.
     pub fn input_mut(&mut self) -> &mut InputState {
         &mut self.input
+    }
+
+    /// True while an interactive `INPUT`/`LINPUT` is waiting for the user to press Enter.
+    pub fn awaiting_input(&self) -> bool {
+        self.input_wait
+    }
+
+    /// The text of the line currently being typed (interactive input only).
+    pub fn input_current_line(&self) -> String {
+        String::from_utf16_lossy(self.input_buffer.current())
+    }
+
+    /// Append one Unicode code point to the interactive input line.
+    pub fn input_char(&mut self, ch: u32) {
+        self.input_buffer.char(ch);
+    }
+
+    /// Append a whole string to the interactive input line (used for IME/paste resync).
+    pub fn input_set_current(&mut self, line: &str) {
+        self.input_buffer.set_current(line);
+    }
+
+    /// Remove the last code point from the interactive input line.
+    pub fn input_backspace(&mut self) {
+        self.input_buffer.backspace();
+    }
+
+    /// Commit the current interactive input line so the next `run_frame` can consume it.
+    pub fn input_enter(&mut self) {
+        self.input_buffer.enter();
+        self.input_wait = false;
     }
 
     /// The console contents as text: each grid row trimmed of trailing blanks, rows joined
@@ -681,7 +838,7 @@ impl Vm {
 
     /// Queue one line of input for the next `INPUT`/`LINPUT` (headless input source).
     pub fn push_input(&mut self, line: &str) {
-        self.input_lines.push_back(line.encode_utf16().collect());
+        self.input_buffer.push_line(line);
     }
 
     /// Run to completion (or error). The operand stack is empty between statements
@@ -2390,6 +2547,8 @@ impl Vm {
             for bg in &mut self.bg {
                 bg.tick(elapsed);
             }
+            // The screen fader advances one frame per elapsed frame in headless WAIT/VSYNC.
+            self.fader.tick(elapsed);
             // Frame-timing builtins are natural yield points: ask the host to return to the
             // platform loop so live input (BUTTON polls) and the wall-clock frame pacer can run.
             // WAIT/VSYNC count <= 0 is documented as "Ignore" and should not yield.
@@ -2440,6 +2599,7 @@ impl Vm {
                 // TABSTEP is NOT reset (`TABSTEP=8:ACLS:TABSTEP` -> 8, stays a sysvar), so we
                 // deliberately leave self.tabstep alone — the old `tabstep = 4` here was wrong.
                 self.back_color = 0;
+                self.fader = Fader::new();
                 self.grp.color = 0xFFFF_FFFF;
                 // ACLS reloads the firmware defaults (the documented "LOAD DEFSP/DEFBG" + font/
                 // SPDEF reset, acls.yaml): GRP4 ← sprite sheet, GRP5 ← BG sheet, GRPF ← font, and
@@ -2457,8 +2617,14 @@ impl Vm {
                 Ok(Some(Value::Void))
             }
             "INKEY$" => Ok(Some(cons::inkey(&mut self.input, &args)?)),
-            "CHKCHR" => Ok(Some(cons::chkchr(self.active_console(), &args, wants_value)?)),
+            "CHKCHR" => Ok(Some(cons::chkchr(
+                self.active_console(),
+                &args,
+                wants_value,
+            )?)),
             "BACKCOLOR" => Ok(Some(self.backcolor(&args, wants_value)?)),
+            "FADE" => Ok(Some(self.fade(&args, wants_value)?)),
+            "FADECHK" => Ok(Some(self.fadechk(&args, wants_value)?)),
             "ATTR" => {
                 cons::attr(self.active_console_mut(), &args, wants_value)?;
                 Ok(Some(Value::Void))
@@ -2467,7 +2633,11 @@ impl Vm {
                 cons::scroll(self.active_console_mut(), &args, wants_value)?;
                 Ok(Some(Value::Void))
             }
-            "WIDTH" => Ok(Some(cons::width(self.active_console_mut(), &args, wants_value)?)),
+            "WIDTH" => Ok(Some(cons::width(
+                self.active_console_mut(),
+                &args,
+                wants_value,
+            )?)),
             "FONTDEF" => {
                 // FONTDEF edits are global to the console font: apply to the active screen, then
                 // mirror the custom glyph table to the other screen.
@@ -3369,6 +3539,47 @@ impl Vm {
         }
     }
 
+    /// `FADE` — the screen fader (M4/M5 frame effect). The statement form `FADE color[,time]`
+    /// sets (or animates to) the target ARGB fader color; the function form `FADE()` returns the
+    /// current fader color including its alpha byte. Any other call shape → errnum 4; a negative
+    /// time → errnum 10 (see `spec/instructions/FADE.yaml`).
+    fn fade(&mut self, args: &[Value], wants_value: bool) -> Result<Value, RuntimeError> {
+        if wants_value {
+            // Function form: FADE() with no arguments.
+            if !args.is_empty() {
+                return Err(crate::builtins::illegal());
+            }
+            return Ok(Value::Int(self.fader.current()));
+        }
+        match args.len() {
+            1 => {
+                let color = args[0].to_int()?;
+                self.fader.set(color);
+                Ok(Value::Void)
+            }
+            2 => {
+                let color = args[0].to_int()?;
+                let time = args[1].to_int()?;
+                if time < 0 {
+                    return Err(crate::builtins::out_of_range());
+                }
+                self.fader.fade_to(color, time as u64);
+                Ok(Value::Void)
+            }
+            _ => Err(crate::builtins::illegal()),
+        }
+    }
+
+    /// `FADECHK()` — returns 1 (TRUE) while a timed `FADE` animation is in progress and 0
+    /// (FALSE) when idle/suspended/complete. Must be a no-argument function; any other shape
+    /// → errnum 4.
+    fn fadechk(&mut self, args: &[Value], wants_value: bool) -> Result<Value, RuntimeError> {
+        if !wants_value || !args.is_empty() {
+            return Err(crate::builtins::illegal());
+        }
+        Ok(Value::Int(if self.fader.is_animating() { 1 } else { 0 }))
+    }
+
     /// `INPUT` (M1-T8): optionally print the prompt and `?`, read one line, split it on
     /// commas into `count` fields, parse each per its receiver type, and push the fields so
     /// the following `PopVar`s assign them in receiver order.
@@ -3379,24 +3590,51 @@ impl Vm {
         has_prompt: bool,
         types: &[VarType],
     ) -> Result<(), VmError> {
-        if has_prompt {
-            let p = self.pop()?.deref();
-            self.print_units(&p)?;
+        if !self.input_prompt_printed {
+            if has_prompt {
+                let p = self.pop()?.deref();
+                self.print_units(&p)?;
+            }
+            if question {
+                self.active_console_mut().put_char(u16::from(b'?'));
+            }
+            self.input_prompt_printed = true;
         }
-        if question {
-            self.active_console_mut().put_char(u16::from(b'?'));
+
+        if let Some(line) = self.input_buffer.next_line() {
+            self.active_console_mut().newline(); // ENTER moves to the next line
+            self.input_prompt_printed = false;
+            let fields: Vec<&[u16]> = line.split(|&u| u == COMMA).collect();
+            let mut values: Vec<Value> = Vec::with_capacity(count as usize);
+            for i in 0..count as usize {
+                let field = fields.get(i).copied().unwrap_or(&[]);
+                let ty = types.get(i).copied().unwrap_or(VarType::Real);
+                values.push(parse_input_field(field, ty));
+            }
+            // The receivers' `PopVar`s pop top-first in declaration order, so push reversed
+            // (the first receiver's value ends on top).
+            for v in values.into_iter().rev() {
+                self.stack.push(v);
+            }
+            return Ok(());
         }
-        let line = self.input_lines.pop_front().unwrap_or_default();
-        self.active_console_mut().newline(); // ENTER moves to the next line
-        let fields: Vec<&[u16]> = line.split(|&u| u == COMMA).collect();
+
+        if self.interactive {
+            // No line yet: yield and retry this opcode next frame.
+            self.pc -= 1;
+            self.input_wait = true;
+            self.yielded = true;
+            return Ok(());
+        }
+
+        // Headless fallback: empty line.
+        self.active_console_mut().newline();
+        self.input_prompt_printed = false;
         let mut values: Vec<Value> = Vec::with_capacity(count as usize);
         for i in 0..count as usize {
-            let field = fields.get(i).copied().unwrap_or(&[]);
             let ty = types.get(i).copied().unwrap_or(VarType::Real);
-            values.push(parse_input_field(field, ty));
+            values.push(parse_input_field(&[], ty));
         }
-        // The receivers' `PopVar`s pop top-first in declaration order, so push reversed
-        // (the first receiver's value ends on top).
         for v in values.into_iter().rev() {
             self.stack.push(v);
         }
@@ -3406,13 +3644,31 @@ impl Vm {
     /// `LINPUT` (M1-T8): optionally print the prompt, then read one whole line (commas
     /// kept) into the single following string receiver.
     fn do_linput(&mut self, has_prompt: bool) -> Result<(), VmError> {
-        if has_prompt {
-            let p = self.pop()?.deref();
-            self.print_units(&p)?;
+        if !self.input_prompt_printed {
+            if has_prompt {
+                let p = self.pop()?.deref();
+                self.print_units(&p)?;
+            }
+            self.input_prompt_printed = true;
         }
-        let line = self.input_lines.pop_front().unwrap_or_default();
+
+        if let Some(line) = self.input_buffer.next_line() {
+            self.active_console_mut().newline();
+            self.input_prompt_printed = false;
+            self.stack.push(Value::Str(line));
+            return Ok(());
+        }
+
+        if self.interactive {
+            self.pc -= 1;
+            self.input_wait = true;
+            self.yielded = true;
+            return Ok(());
+        }
+
         self.active_console_mut().newline();
-        self.stack.push(Value::Str(line));
+        self.input_prompt_printed = false;
+        self.stack.push(Value::Str(SbStr::new()));
         Ok(())
     }
 
@@ -5669,6 +5925,62 @@ H$=HEX$(255)"#);
         assert_eq!(int(&run("BACKCOLOR -1\nA=BACKCOLOR()"), "A"), 16_777_215);
     }
 
+    // ---- Screen fader: FADE/FADECHK (M4/M5 frame effect) ----
+
+    #[test]
+    fn fade_error_conditions() {
+        // Wrong call shapes raise errnum 4.
+        assert_eq!(run_err("FADE").errnum(), Some(4)); // statement needs >=1 arg
+        assert_eq!(run_err("FADE 0,0,0").errnum(), Some(4)); // too many
+        assert_eq!(run_err("A=FADE(0)").errnum(), Some(4)); // function takes no args
+        assert_eq!(run_err("FADECHK 0").errnum(), Some(4)); // statement form forbidden
+        assert_eq!(run_err("FADECHK()").errnum(), Some(4)); // not used as statement
+                                                            // Negative fade time raises errnum 10 (Out of range).
+        assert_eq!(run_err("FADE RGB(0,0,0,255),-1").errnum(), Some(10));
+    }
+
+    #[test]
+    fn fade_round_trips_argb() {
+        // FADE() returns the full ARGB code; alpha byte is preserved, unlike BACKCOLOR.
+        // RGB uses (A,R,G,B) order in SmileBASIC.
+        let vm = run("FADE RGB(1,2,3,4)\nA=FADE()");
+        assert_eq!(int(&vm, "A"), 0x0102_0304u32 as i32);
+        let vm = run("FADE RGB(128,64,128,128)\nA=FADE()");
+        assert_eq!(int(&vm, "A"), 0x8040_8080u32 as i32);
+    }
+
+    #[test]
+    fn fade_zero_disables() {
+        // Setting a fully-transparent color disables the fader; FADE() still reads it back as 0.
+        let vm = run("FADE RGB(255,255,0,0)\nFADE 0\nA=FADE()");
+        assert_eq!(int(&vm, "A"), 0);
+    }
+
+    #[test]
+    fn acls_resets_fader() {
+        let vm = run("FADE RGB(128,255,0,0),10\nACLS\nA=FADE()");
+        assert_eq!(int(&vm, "A"), 0);
+    }
+
+    #[test]
+    fn fadechk_reports_animation_state() {
+        // 1-arg FADE is instant: FADECHK() stays FALSE (0).
+        assert_eq!(out("FADE RGB(255,0,0,0)\nPRINT FADECHK()"), "0");
+        // Timed fade is still animating when checked immediately: TRUE (1).
+        assert_eq!(out("FADE RGB(255,0,0,0),10\nPRINT FADECHK()"), "1");
+        // After WAIT elapses the animation is complete: FALSE (0).
+        assert_eq!(out("FADE RGB(255,0,0,0),10\nWAIT 10\nPRINT FADECHK()"), "0");
+    }
+
+    #[test]
+    fn fade_animation_advances_per_tick() {
+        // Headless WAIT drives the fader in a burst; after WAIT 5 of a 10-frame fade the
+        // remaining time is 5, so FADECHK() is still TRUE.
+        assert_eq!(out("FADE RGB(255,0,0,0),10\nWAIT 5\nPRINT FADECHK()"), "1");
+        // And after the full duration it is FALSE.
+        assert_eq!(out("FADE RGB(255,0,0,0),10\nWAIT 10\nPRINT FADECHK()"), "0");
+    }
+
     // ---- Screen configuration: XSCREEN/DISPLAY/VISIBLE/HARDWARE (M4-T4) ----
 
     #[test]
@@ -5763,9 +6075,7 @@ H$=HEX$(255)"#);
         assert_eq!((vm.console_for(1).cols, vm.console_for(1).rows), (40, 30));
 
         // PRINT and COLOR route to whichever DISPLAY is selected.
-        let vm = run_b(
-            "XSCREEN 2:DISPLAY 1:COLOR 3,4:PRINT \"B\":DISPLAY 0:PRINT \"A\"",
-        );
+        let vm = run_b("XSCREEN 2:DISPLAY 1:COLOR 3,4:PRINT \"B\":DISPLAY 0:PRINT \"A\"");
         assert_eq!(vm.console_for(1).cell(0, 0).ch, u16::from(b'B'));
         assert_eq!(vm.console_for(1).cell(0, 0).fg, 3);
         assert_eq!(vm.console_for(0).cell(0, 0).ch, u16::from(b'A'));
@@ -5797,9 +6107,15 @@ H$=HEX$(255)"#);
         // The Touch screen is 40 columns wide, so LOCATE 40,0 is the off-screen edge and
         // LOCATE 41,0 is out of range. The Upper screen stays 50 columns wide.
         run_b("XSCREEN 2:DISPLAY 1:LOCATE 40,0");
-        assert_eq!(run_b_err("XSCREEN 2:DISPLAY 1:LOCATE 41,0").errnum(), Some(10));
+        assert_eq!(
+            run_b_err("XSCREEN 2:DISPLAY 1:LOCATE 41,0").errnum(),
+            Some(10)
+        );
         run_b("XSCREEN 2:DISPLAY 0:LOCATE 50,0");
-        assert_eq!(run_b_err("XSCREEN 2:DISPLAY 0:LOCATE 51,0").errnum(), Some(10));
+        assert_eq!(
+            run_b_err("XSCREEN 2:DISPLAY 0:LOCATE 51,0").errnum(),
+            Some(10)
+        );
     }
 
     #[test]
@@ -5851,9 +6167,7 @@ H$=HEX$(255)"#);
         // switching to the other screen (it is NOT duplicated per screen, #83). Define template
         // 10 under DISPLAY 0, switch to DISPLAY 1, SPSET from template 10, and confirm the
         // sprite copied the shared template's rectangle.
-        let vm = run(
-            "XSCREEN 2:SPDEF 10,40,48,24,32,7,9,1:DISPLAY 1:SPSET 0,10",
-        );
+        let vm = run("XSCREEN 2:SPDEF 10,40,48,24,32,7,9,1:DISPLAY 1:SPSET 0,10");
         let sp = &vm.sprites_for(1).sprites[0];
         assert_eq!((sp.u, sp.v, sp.w, sp.h), (40, 48, 24, 32));
         // The shared table itself reads back the edit regardless of the active screen.
@@ -5922,16 +6236,28 @@ H$=HEX$(255)"#);
         let bottom_left_ch = console.cell(20, 29).ch;
         let bottom_right_ch = console.cell(20 + 29, 29).ch;
         let inside_bottom_ch = console.cell(20 + 15, 29).ch;
-        assert_ne!(bottom_left_ch, 0, "bottom-left cell should contain a border char");
-        assert_ne!(bottom_right_ch, 0, "bottom-right cell should contain a border char");
-        assert_ne!(inside_bottom_ch, 0, "bottom border cell should contain a border char");
+        assert_ne!(
+            bottom_left_ch, 0,
+            "bottom-left cell should contain a border char"
+        );
+        assert_ne!(
+            bottom_right_ch, 0,
+            "bottom-right cell should contain a border char"
+        );
+        assert_ne!(
+            inside_bottom_ch, 0,
+            "bottom border cell should contain a border char"
+        );
         // Sample pixels on the actual glyph strokes (the box glyphs are 2px-thick lines).
         let bottom_left = fb.get_argb(20 * 8 + 4, 29 * 8 + 4);
         let bottom_right = fb.get_argb((20 + 29) * 8 + 3, 29 * 8 + 3);
         let inside_bottom = fb.get_argb((20 + 15) * 8 + 4, 29 * 8 + 4);
         // The corners/border are red; the GRP line behind is white.
         assert_eq!(bottom_left, 0xFFF8_0000, "bottom-left corner should be red");
-        assert_eq!(bottom_right, 0xFFF8_0000, "bottom-right corner should be red");
+        assert_eq!(
+            bottom_right, 0xFFF8_0000,
+            "bottom-right corner should be red"
+        );
         assert_eq!(inside_bottom, 0xFFF8_0000, "bottom border should be red");
     }
 
@@ -6033,6 +6359,29 @@ H$=HEX$(255)"#);
         let vm = run_with_input(r#"INPUT "NAME";A$"#, &["bob"]);
         assert_eq!(string(&vm, "A"), "bob");
         assert!(vm.console_text().starts_with("NAME?"));
+    }
+
+    #[test]
+    fn interactive_input_yields_until_enter() {
+        let ast = parse(r#"INPUT "NAME";A$"#).expect("parse");
+        let program = compile(&ast).expect("compile");
+        let mut vm = Vm::new(program);
+
+        // First frame prints the prompt and yields, waiting for interactive input.
+        assert_eq!(vm.run_frame(1000).unwrap(), None);
+        assert!(vm.awaiting_input());
+        assert!(vm.console_text().starts_with("NAME?"));
+
+        // Type the answer and submit it.
+        for c in "bob".chars() {
+            vm.input_char(c as u32);
+        }
+        vm.input_enter();
+        assert!(!vm.awaiting_input());
+
+        // Next frame consumes the line and the program ends.
+        assert_eq!(vm.run_frame(1000).unwrap(), Some(Halt::End));
+        assert_eq!(string(&vm, "A"), "bob");
     }
 
     // -- M3-T5 BG extras (VM orchestration) ------------------------------------
@@ -7073,8 +7422,14 @@ PRGDEL -1"#,
         let vm = run_b("");
         let g = vm.grp();
         let any_opaque = |p: &sb_render::grp::GrpPage| p.pixels.iter().any(|&h| h & 1 != 0);
-        assert!(any_opaque(&g.pages[4]), "GRP4 should hold the default sprite sheet");
-        assert!(any_opaque(&g.pages[5]), "GRP5 should hold the default BG sheet");
+        assert!(
+            any_opaque(&g.pages[4]),
+            "GRP4 should hold the default sprite sheet"
+        );
+        assert!(
+            any_opaque(&g.pages[5]),
+            "GRP5 should hold the default BG sheet"
+        );
         assert!(any_opaque(&g.grpf), "GRPF should hold the default font");
         assert!(
             g.pages[0].pixels.iter().all(|&h| h == 0),

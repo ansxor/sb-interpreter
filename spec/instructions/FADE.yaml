@@ -44,6 +44,16 @@ sources:
 confidence: hw_verified
 
 tests:
+  # Arg-count / range guards (hw_verified).
   - { name: negative_time_out_of_range, code: "FADE RGB(0,0,0,255),-1", expect: { error: { errnum: 10 } } }
   - { name: statement_zero_args_err, code: "FADE", expect: { error: { errnum: 4 } } }
   - { name: fade_func_with_arg_err, code: "A=FADE(0)", expect: { error: { errnum: 4 } } }
+  # SET/GET round-trip: FADE() returns the full ARGB code (alpha byte is NOT stripped).
+  - { name: get_default, code: "PRINT FADE()", expect: { stdout: "0" } }
+  - { name: set_get_argb, code: "FADE RGB(1,2,3,4)\nPRINT FADE()", expect: { stdout: "16909060" } }
+  - { name: set_get_preserves_alpha, code: "FADE RGB(128,64,128,128)\nPRINT FADE()", expect: { stdout: "-2143256448" } }
+  - { name: set_disables_on_transparent, code: "FADE RGB(255,255,0,0)\nFADE 0\nPRINT FADE()", expect: { stdout: "0" } }
+  # time=0 is accepted and applies immediately (animation length zero).
+  - { name: time_zero_immediate, code: "FADE RGB(255,255,0,0),0\nPRINT FADE()", expect: { stdout: "-65536" } }
+  # ACLS resets the fader to its power-on disabled/transparent state.
+  - { name: acls_resets_fade, code: "FADE RGB(128,255,0,0),10\nACLS\nPRINT FADE()", expect: { stdout: "0" } }

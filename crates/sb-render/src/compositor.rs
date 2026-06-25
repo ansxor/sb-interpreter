@@ -171,6 +171,38 @@ pub fn compose(width: usize, height: usize, backdrop: u32, layers: &[&dyn Layer]
     fb
 }
 
+/// Apply the screen fader overlay to a freshly composed framebuffer.
+///
+/// The fader is drawn in front of all layers and fills the whole screen. The effect is a
+/// straight-alpha blend of `color` over every pixel: each RGB channel is mixed by the fader's
+/// alpha byte. A fully-transparent fader (`alpha == 0`) is a no-op; an opaque fader replaces
+/// every pixel outright. The exact blend math (straight vs premultiplied, alpha channel fate)
+/// is oracle-pending (O-T6 screenshot capture) — this is the best-effort deterministic model.
+pub fn apply_fader(fb: &mut Framebuffer, color: u32) {
+    let alpha = (color >> 24) & 0xFF;
+    if alpha == 0 {
+        return;
+    }
+    if alpha == 0xFF {
+        fb.clear(color);
+        return;
+    }
+    let inv = 255 - alpha;
+    let rsrc = ((color >> 16) & 0xFF) as u32;
+    let gsrc = ((color >> 8) & 0xFF) as u32;
+    let bsrc = (color & 0xFF) as u32;
+    for chunk in fb.pixels.chunks_exact_mut(4) {
+        let rd = chunk[0] as u32;
+        let gd = chunk[1] as u32;
+        let bd = chunk[2] as u32;
+        chunk[0] = ((rd * inv + rsrc * alpha + 127) / 255) as u8;
+        chunk[1] = ((gd * inv + gsrc * alpha + 127) / 255) as u8;
+        chunk[2] = ((bd * inv + bsrc * alpha + 127) / 255) as u8;
+        // Destination alpha is left unchanged — the exact alpha fate of the blended result is
+        // part of the O-T6 fidelity question.
+    }
+}
+
 /// Sample one device halfword (RGBA5551) from a sheet GRP page at `(x, y)`. Off-page reads
 /// return `0` (a fully-transparent pixel — alpha bit clear), so sprites/BG whose source
 /// rectangle runs past the 512×512 sheet edge just leave those texels transparent.
@@ -477,7 +509,9 @@ pub fn compose_top_screen(
     backdrop: u32,
     vis: LayerVisibility,
 ) -> Framebuffer {
-    compose_screen(TOP_WIDTH, TOP_HEIGHT, grp, 0, bg, sprites, console, backdrop, vis)
+    compose_screen(
+        TOP_WIDTH, TOP_HEIGHT, grp, 0, bg, sprites, console, backdrop, vis,
+    )
 }
 
 /// Render the top-left `width`×`height` crop of a GRP page to an RGBA8888 framebuffer — the
@@ -941,5 +975,41 @@ mod tests {
         }
         assert!(!saw_white, "hidden console layer must not paint its glyph");
         assert_eq!(fb.get_argb(0, 0), 0xFF00_F800); // sprite green shows instead
+    }
+
+    // ---- screen fader (M4/M5 frame effect) -----------------------------------------
+
+    #[test]
+    fn transparent_fader_is_no_op() {
+        let mut fb = Framebuffer::top();
+        fb.clear(0xFF00_00FF); // opaque blue
+        apply_fader(&mut fb, 0x0000_0000); // fully transparent
+        assert_eq!(fb.get_argb(10, 10), 0xFF00_00FF);
+    }
+
+    #[test]
+    fn opaque_fader_replaces_every_pixel() {
+        let mut fb = Framebuffer::top();
+        fb.clear(0xFF00_00FF); // opaque blue
+        apply_fader(&mut fb, 0xFFFF_0000); // opaque red
+        assert_eq!(fb.get_argb(10, 10), 0xFFFF_0000);
+        assert_eq!(fb.get_argb(300, 200), 0xFFFF_0000);
+    }
+
+    #[test]
+    fn semi_transparent_fader_blends_rgb() {
+        let mut fb = Framebuffer::top();
+        fb.clear(0xFF00_0000); // opaque dark red
+                               // 50% transparent green overlay: out = (dst * 127 + src * 128 + 127) / 255.
+        apply_fader(&mut fb, 0x8000_FF00);
+        let got = fb.get_argb(10, 10);
+        // Red channel darkens roughly by half; green channel rises roughly by half.
+        let r = (got >> 16) & 0xFF;
+        let g = (got >> 8) & 0xFF;
+        assert!(
+            r < 0x40,
+            "red should be strongly dimmed by 50% overlay: {r}"
+        );
+        assert!(g > 0x70 && g < 0x90, "green should blend to ~0x80: {g}");
     }
 }

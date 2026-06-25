@@ -144,7 +144,15 @@ const IN_SCOPE_GRAPHICS: &[&str] = &[
 /// no scalar golden, so their assertable behavior is the arg-shape (→ 4) and range (→ 10)
 /// guards, all hw_verified via sb-oracle batch s_t11d. Still excluded: `FADE`/`FADECHK`
 /// (frame effects, M5/M4 later). Listed by id.
-const IN_SCOPE_SCREEN: &[&str] = &["ACLS", "BACKCOLOR", "XSCREEN", "DISPLAY", "VISIBLE"];
+const IN_SCOPE_SCREEN: &[&str] = &[
+    "ACLS",
+    "BACKCOLOR",
+    "XSCREEN",
+    "DISPLAY",
+    "VISIBLE",
+    "FADE",
+    "FADECHK",
+];
 /// `Sprites` instructions whose lifecycle `sb-core` implements (M3-T1: the 512-slot sprite
 /// table + create/release/show/hide/query commands) and whose inline `tests:` are
 /// deterministic + checkable: `SPSET` (six forms — explicit slot or auto-allocate, range /

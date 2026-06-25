@@ -33,3 +33,8 @@ tests:
   # At RUN start no fade is animating, so FADECHK() reads 0 (FALSE) — hw_verified.
   - { name: idle_at_start, code: "PRINT FADECHK()", expect: { stdout: "0" } }
   - { name: fadechk_with_arg_err, code: "A=FADECHK(0)", expect: { error: { errnum: 4 } } }
+  # A timed FADE reports TRUE (1) immediately, then FALSE (0) once enough frames elapse.
+  - { name: animating_after_timed_fade, code: "FADE RGB(255,0,0,0),10\nPRINT FADECHK()", expect: { stdout: "1" } }
+  - { name: completed_after_wait, code: "FADE RGB(255,0,0,0),10\nWAIT 10\nPRINT FADECHK()", expect: { stdout: "0" } }
+  # A non-timed FADE (1-arg) applies instantly, so FADECHK() stays FALSE.
+  - { name: instant_fade_not_animating, code: "FADE RGB(255,0,0,0)\nPRINT FADECHK()", expect: { stdout: "0" } }
