@@ -33,6 +33,7 @@ features = [
     "Document",
     "Element",
     "EventTarget",
+    "HtmlElement",
     "HtmlCanvasElement",
     "CanvasRenderingContext2d",
     "ImageData",

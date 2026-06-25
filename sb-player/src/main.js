@@ -13,6 +13,7 @@ const els = {
   clearStorage: document.getElementById("btn-clear-storage"),
   editor: document.getElementById("editor"),
   screen: document.getElementById("screen"),
+  screenBottom: document.getElementById("screen-bottom"),
   screenFrame: document.getElementById("screen-frame"),
   touchOverlay: document.getElementById("touch-overlay"),
   settingsPanel: document.getElementById("settings"),
@@ -56,8 +57,10 @@ function applySettings() {
   applyTouchOverlay();
 }
 
-function applyScale() {
-  const canvas = els.screen;
+// Both physical screens scale by the same factor so they stay 1:1 with each other.
+const canvases = [els.screen, els.screenBottom];
+
+function scaleCanvas(canvas) {
   canvas.classList.remove("fit");
   canvas.style.width = "";
   canvas.style.height = "";
@@ -68,14 +71,18 @@ function applyScale() {
   }
 
   const scale = parseInt(settings.scale, 10);
-  const baseWidth = canvas.width || 400;
+  const baseWidth = canvas.width || (canvas === els.screenBottom ? 320 : 400);
   const baseHeight = canvas.height || 240;
   canvas.style.width = `${baseWidth * scale}px`;
   canvas.style.height = `${baseHeight * scale}px`;
 }
 
+function applyScale() {
+  canvases.forEach(scaleCanvas);
+}
+
 function applyPixelated() {
-  els.screen.classList.toggle("pixelated", settings.pixelated);
+  canvases.forEach((c) => c.classList.toggle("pixelated", settings.pixelated));
 }
 
 function applyTouchOverlay() {
@@ -103,7 +110,7 @@ function doRun() {
 
   try {
     setRunning(true);
-    run_interactive("screen", src);
+    run_interactive("screen", "screen-bottom", src);
   } catch (e) {
     console.error(e);
     alert("Failed to run program: " + e);
@@ -196,14 +203,17 @@ els.touchOverlayToggle.addEventListener("change", () => {
 
 boot();
 
-// When the wasm host changes the canvas's intrinsic resolution (e.g. after an XSCREEN
-// switch), keep the CSS display size in sync with the selected scale.
+// When the wasm host changes a canvas's intrinsic resolution (e.g. after an XSCREEN
+// switch), keep the CSS display size in sync with the selected scale. Watches both screens
+// since either can resize independently across modes.
 const canvasAttrObserver = new MutationObserver(() => {
   if (settings.scale !== "fit") {
     applyScale();
   }
 });
-canvasAttrObserver.observe(els.screen, {
-  attributes: true,
-  attributeFilter: ["width", "height"],
-});
+for (const canvas of canvases) {
+  canvasAttrObserver.observe(canvas, {
+    attributes: true,
+    attributeFilter: ["width", "height"],
+  });
+}

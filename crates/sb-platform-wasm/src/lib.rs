@@ -170,7 +170,7 @@ fn blank() -> Framebuffer {
 
 #[cfg(target_arch = "wasm32")]
 mod web {
-    use super::{blank, compose, keymap, prepare_vm};
+    use super::{blank, build_vm, compose_both, keymap, prepare_vm, Vm};
     use sb_core::host_input::HostInput;
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -181,14 +181,15 @@ mod web {
         CanvasRenderingContext2d, HtmlCanvasElement, ImageData, KeyboardEvent, MouseEvent,
     };
 
+    /// A canvas together with its 2D context — the unit `paint` blits a framebuffer onto.
+    type Surface = (HtmlCanvasElement, CanvasRenderingContext2d);
+
     /// The bottom (touch) screen is 320×240; `TOUCH` reports a coordinate in that space.
     const TOUCH_WIDTH: f64 = 320.0;
     const TOUCH_HEIGHT: f64 = 240.0;
 
     /// Look up the `<canvas>` with `canvas_id` and its 2D context.
-    fn canvas_and_ctx(
-        canvas_id: &str,
-    ) -> Result<(HtmlCanvasElement, CanvasRenderingContext2d), JsValue> {
+    fn canvas_and_ctx(canvas_id: &str) -> Result<Surface, JsValue> {
         let document = web_sys::window()
             .and_then(|w| w.document())
             .ok_or_else(|| JsValue::from_str("no document"))?;
@@ -224,14 +225,49 @@ mod web {
         ctx.put_image_data(&image, 0.0, 0.0)
     }
 
-    /// Run a SmileBASIC program and paint its console output onto the `<canvas>` with the
-    /// given element id (one-shot, no input). The framebuffer is drawn 1:1 (use CSS
-    /// `image-rendering: pixelated` + a transform to scale it up).
+    /// Show or hide a canvas by toggling its `hidden` attribute, writing only when the state
+    /// actually flips so the per-frame `paint_both` doesn't churn the attribute (and trigger
+    /// layout) every tick.
+    fn set_visible(canvas: &HtmlCanvasElement, visible: bool) {
+        if canvas.hidden() == visible {
+            canvas.set_hidden(!visible);
+        }
+    }
+
+    /// Paint BOTH physical screens for the VM's current `XSCREEN` mode (#81). The `top` canvas
+    /// always shows the Upper screen (or, in mode 4, the single combined 320×480 surface); the
+    /// `bottom` canvas shows the Touch Screen as an independent graphics screen only in the
+    /// modes that expose it (`XSCREEN` 2/3), and is hidden otherwise. This is what makes the
+    /// player dual-screen instead of painting only whichever screen `DISPLAY` points at.
+    fn paint_both(top: &Surface, bottom: &Surface, vm: &Vm) -> Result<(), JsValue> {
+        let (upper, touch) = compose_both(vm);
+        paint(&top.0, &top.1, &upper)?;
+        match touch {
+            Some(fb) => {
+                paint(&bottom.0, &bottom.1, &fb)?;
+                set_visible(&bottom.0, true);
+            }
+            None => set_visible(&bottom.0, false),
+        }
+        Ok(())
+    }
+
+    /// Run a SmileBASIC program and paint its final scene onto the two `<canvas>` elements
+    /// (one-shot, no input). `top_id` is the Upper screen; `bottom_id` is the Touch Screen,
+    /// shown only when the program's `XSCREEN` mode exposes it. The framebuffers are drawn 1:1
+    /// (use CSS `image-rendering: pixelated` + a transform to scale them up).
     #[wasm_bindgen]
-    pub fn run_program(canvas_id: &str, src: &str) -> Result<(), JsValue> {
-        let (canvas, ctx) = canvas_and_ctx(canvas_id)?;
-        let fb = super::render_program(src);
-        paint(&canvas, &ctx, &fb)
+    pub fn run_program(top_id: &str, bottom_id: &str, src: &str) -> Result<(), JsValue> {
+        let top = canvas_and_ctx(top_id)?;
+        let bottom = canvas_and_ctx(bottom_id)?;
+        match build_vm(src) {
+            Some(vm) => paint_both(&top, &bottom, &vm),
+            None => {
+                paint(&top.0, &top.1, &blank())?;
+                set_visible(&bottom.0, false);
+                Ok(())
+            }
+        }
     }
 
     /// Live touch state shared between the canvas mouse listeners and the frame loop: whether
@@ -285,8 +321,9 @@ mod web {
     /// `VSYNC`/`WAIT` and the host can refresh `BUTTON`/`STICK`/`STICKEX`/`TOUCH` each frame.
     /// This keeps the UI responsive for programs that poll input in a `VSYNC` loop.
     #[wasm_bindgen]
-    pub fn run_interactive(canvas_id: &str, src: &str) -> Result<(), JsValue> {
-        let (canvas, ctx) = canvas_and_ctx(canvas_id)?;
+    pub fn run_interactive(top_id: &str, bottom_id: &str, src: &str) -> Result<(), JsValue> {
+        let top = canvas_and_ctx(top_id)?;
+        let bottom = canvas_and_ctx(bottom_id)?;
         let document = web_sys::window()
             .and_then(|w| w.document())
             .ok_or_else(|| JsValue::from_str("no document"))?;
@@ -294,8 +331,15 @@ mod web {
         STOP.store(false, Ordering::Relaxed);
 
         let vm = prepare_vm(src);
-        // Paint the initial scene (or a blank backdrop on a compile failure) once up front.
-        paint(&canvas, &ctx, &vm.as_ref().map_or_else(blank, compose))?;
+        // Paint the initial scene once up front. On a compile failure show a blank Upper screen
+        // and hide the Touch canvas; otherwise paint both screens for the program's mode.
+        match vm.as_ref() {
+            Some(vm) => paint_both(&top, &bottom, vm)?,
+            None => {
+                paint(&top.0, &top.1, &blank())?;
+                set_visible(&bottom.0, false);
+            }
+        }
         let Some(vm) = vm else {
             return Ok(()); // nothing to animate / drive
         };
@@ -313,8 +357,10 @@ mod web {
             cb.forget(); // listener lives for the page's lifetime
         }
 
-        // Mouse → TOUCH on the canvas.
-        {
+        // Mouse → TOUCH. The Touch Screen is the bottom canvas, but we wire both so a tap reads
+        // through in single-screen modes too (where only the top canvas is shown); each canvas
+        // maps its own client rect into the shared 320×240 touch space.
+        for canvas in [&top.0, &bottom.0] {
             let touch = touch.clone();
             let canvas2 = canvas.clone();
             let cb = Closure::<dyn FnMut(MouseEvent)>::new(move |e: MouseEvent| {
@@ -330,8 +376,8 @@ mod web {
             cb.forget();
         }
 
-        // The rAF loop: owns the VM + context, reads the shared input/touch each frame,
-        // runs one VM frame, then paints.
+        // The rAF loop: owns the VM + both surfaces, reads the shared input/touch each frame,
+        // runs one VM frame, then paints both screens.
         let vm = Rc::new(RefCell::new(vm));
         let halted: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
         let f: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
@@ -356,7 +402,7 @@ mod web {
                     vm.tick_frame();
                 }
 
-                let _ = paint(&canvas, &ctx, &compose(&vm));
+                let _ = paint_both(&top, &bottom, &vm);
             }
             if !STOP.load(Ordering::Relaxed) {
                 request_frame(f.borrow().as_ref().unwrap());

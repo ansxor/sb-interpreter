@@ -28,12 +28,17 @@
         </section>
 
         <section class="screen-pane">
-          <div id="screen-frame" class="screen-frame">
-            <canvas id="screen" width="400" height="240"></canvas>
-            <div id="touch-overlay" class="touch-overlay hidden"></div>
+          <div class="screens">
+            <div id="screen-frame" class="screen-frame">
+              <canvas id="screen" width="400" height="240"></canvas>
+            </div>
+            <div id="screen-bottom-frame" class="screen-frame screen-frame-bottom">
+              <canvas id="screen-bottom" width="320" height="240" hidden></canvas>
+              <div id="touch-overlay" class="touch-overlay hidden"></div>
+            </div>
           </div>
           <p class="screen-hint">
-            top screen • touch = mouse on canvas • d-pad = arrows • face = U/I/J/K
+            top + touch screens • touch = mouse on bottom screen • d-pad = arrows • face = U/I/J/K
           </p>
         </section>
       </main>
