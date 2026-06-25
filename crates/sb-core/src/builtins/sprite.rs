@@ -712,6 +712,48 @@ pub fn sprot(
     }
 }
 
+/// `SPCOLOR mgmt, color_code` (set, ret 0, 2 args) / `SPCOLOR mgmt OUT color_code` (get, ret 1,
+/// 1 arg) — set or read a sprite's 32-bit ARGB8888 modulation color. The color is a per-channel
+/// tint multiplied against the sprite's original pixels; `&HFFFFFFFF` (opaque white) is the
+/// default after `SPSET`, showing the sprite unmodified. Any 32-bit value is accepted with no
+/// range restriction.
+///
+/// The sprite must be `SPSET` (errnum 4); mgmt ∉ 0..511 is errnum 10; the SET form requires
+/// exactly 2 arguments (else errnum 4). The GET form requires exactly 1 argument (else errnum 4).
+/// hw_verified (sb-oracle 2026-06-22): `SPCOLOR 0,&H11223344` read back `287454020` = `&H11223344`;
+/// before SPSET → errnum 4; mgmt 512 → errnum 10.
+pub fn spcolor(
+    sp: &mut SpriteState,
+    args: &[Value],
+    ret_count: usize,
+) -> Result<Vec<Value>, RuntimeError> {
+    if args.is_empty() {
+        return Err(illegal());
+    }
+    let slot = mgmt(&args[0])?;
+    if !sp.is_used(slot) {
+        return Err(illegal());
+    }
+    if ret_count == 0 {
+        let rest = &args[1..];
+        if rest.len() != 1 {
+            return Err(illegal());
+        }
+        // The color is a full 32-bit ARGB8888 value with no range restriction — any value the
+        // integer arg evaluates to is accepted verbatim (truncated to 32 bits).
+        let color = rest[0].to_int()? as u32;
+        sp.sprites[slot].color = color;
+        Ok(vec![])
+    } else if ret_count == 1 {
+        if args.len() != 1 {
+            return Err(illegal());
+        }
+        Ok(vec![Value::Int(sp.sprites[slot].color as i32)])
+    } else {
+        Err(illegal())
+    }
+}
+
 /// `SPHOME mgmt, X, Y` (set, ret 0, 3 args) / `SPHOME mgmt OUT HX,HY` (get, ret 2, 1 arg) —
 /// set or read a sprite's reference (home) point: the origin used for `SPOFS` positioning, the
 /// center for rotation/scaling, and the collision-area origin. Coordinates are relative to the
@@ -1642,6 +1684,78 @@ mod tests {
         sphome(&mut sp, &[n(1.0), n(7.0), n(8.0)], 0).unwrap();
         let g0 = sphome(&mut sp, &[n(0.0)], 2).unwrap();
         assert_eq!((g0[0].clone(), g0[1].clone()), (n(5.0), n(6.0)));
+    }
+
+    #[test]
+    fn spcolor_round_trip_and_guards() {
+        // SPCOLOR stores/reads a 32-bit ARGB8888 modulation color verbatim with no range
+        // restriction; default after SPSET is 0xFFFFFFFF (opaque white); SET needs exactly 1 extra
+        // arg (→ errnum 4 otherwise); GET needs 0 extra args; sprite must exist (→ errnum 4);
+        // mgmt ∉ 0..511 → errnum 10. hw_verified sb-oracle 2026-06-22 (s_t8e).
+        let mut sp = SpriteState::new();
+        spset0(&mut sp, 0);
+        // Fresh default 0xFFFFFFFF.
+        assert_eq!(
+            spcolor(&mut sp, &[n(0.0)], 1).unwrap(),
+            vec![Value::Int(-1)] // 0xFFFFFFFF as i32
+        );
+        // Round-trip a non-default color.
+        let code: u32 = 0x1122_3344;
+        spcolor(&mut sp, &[n(0.0), Value::Int(code as i32)], 0).unwrap();
+        assert_eq!(
+            spcolor(&mut sp, &[n(0.0)], 1).unwrap(),
+            vec![Value::Int(code as i32)]
+        );
+        // 0 round-trips.
+        spcolor(&mut sp, &[n(0.0), Value::Int(0)], 0).unwrap();
+        assert_eq!(
+            spcolor(&mut sp, &[n(0.0)], 1).unwrap(),
+            vec![Value::Int(0)]
+        );
+        // Per-sprite independence.
+        spset0(&mut sp, 1);
+        spcolor(&mut sp, &[n(0.0), Value::Int(0x00FF0000u32 as i32)], 0).unwrap();
+        spcolor(&mut sp, &[n(1.0), Value::Int(0x0000FF00u32 as i32)], 0).unwrap();
+        assert_eq!(
+            spcolor(&mut sp, &[n(0.0)], 1).unwrap(),
+            vec![Value::Int(0x00FF0000u32 as i32)]
+        );
+        assert_eq!(
+            spcolor(&mut sp, &[n(1.0)], 1).unwrap(),
+            vec![Value::Int(0x0000FF00u32 as i32)]
+        );
+        // Used before SPSET → errnum 4.
+        assert_eq!(
+            spcolor(&mut sp, &[n(5.0), Value::Int(0)], 0)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+        // Mgmt out of 0..511 → errnum 10.
+        assert_eq!(
+            spcolor(&mut sp, &[n(512.0), Value::Int(0)], 0)
+                .unwrap_err()
+                .errnum,
+            10
+        );
+        // Wrong arg shape: SET with 0 extra args, SET with 2 extra args → errnum 4.
+        assert_eq!(
+            spcolor(&mut sp, &[n(0.0)], 0).unwrap_err().errnum,
+            4
+        );
+        assert_eq!(
+            spcolor(&mut sp, &[n(0.0), Value::Int(1), Value::Int(2)], 0)
+                .unwrap_err()
+                .errnum,
+            4
+        );
+        // GET with extra args → errnum 4.
+        assert_eq!(
+            spcolor(&mut sp, &[n(0.0), Value::Int(1)], 1)
+                .unwrap_err()
+                .errnum,
+            4
+        );
     }
 
     #[test]

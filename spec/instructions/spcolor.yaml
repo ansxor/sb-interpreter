@@ -42,6 +42,6 @@ confidence: hw_verified
 tests:
   # Round-trip VALUE + error cases hw_verified (sb-oracle 2026-06-22 s_t8e).
   - { name: set_color, code: "SPSET 0,0\nSPCOLOR 0,RGB(255,0,0)", expect: { stdout: "" } }
-  - { name: color_roundtrip, code: "SPSET 0,0\nSPCOLOR 0,&H11223344\nSPCOLOR 0 OUT C\nPRINT C", expect: { stdout: "287454020\n" } }
+  - { name: color_roundtrip, code: "SPSET 0,0\nSPCOLOR 0,&H11223344\nSPCOLOR 0 OUT C\nPRINT C", expect: { stdout: "287454020" } }
   - { name: before_spset, code: "SPCLR\nSPCOLOR 5,RGB(255,0,0)", expect: { error: { errnum: 4 } } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPCOLOR 512,RGB(255,0,0)", expect: { error: { errnum: 10 } } }

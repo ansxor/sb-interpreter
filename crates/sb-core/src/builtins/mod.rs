@@ -214,6 +214,7 @@ pub const BUILTIN_NAMES: &[&str] = &[
     // (`A=SPROT(mgmt)`), so it must be a known builtin to compile as a call, not a variable.
     "SPOFS",
     "SPROT",
+    "SPCOLOR",
     // SPPAGE (M7-T2) selects/reads the global sprite render page; its GET is a 0-arg
     // function form (`P=SPPAGE()`), so it must be a known builtin to compile as a call.
     "SPPAGE",

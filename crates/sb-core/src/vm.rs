@@ -2691,6 +2691,7 @@ impl Vm {
             "SPOFS" => spr::spofs(&mut self.sprites[scr], &args, ret_count),
             "SPSCALE" => spr::spscale(&mut self.sprites[scr], &args, ret_count),
             "SPROT" => spr::sprot(&mut self.sprites[scr], &args, ret_count),
+            "SPCOLOR" => spr::spcolor(&mut self.sprites[scr], &args, ret_count),
             "SPHOME" => spr::sphome(&mut self.sprites[scr], &args, ret_count),
             "SPCHR" => spr::spchr(&mut self.sprites[scr], &self.spdef, &args, ret_count),
             "SPPAGE" => spr::sppage(&mut self.sprites[scr], &args, ret_count),
