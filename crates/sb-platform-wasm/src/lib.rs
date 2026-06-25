@@ -116,7 +116,7 @@ pub fn compose_for_screen(vm: &Vm, screen_id: usize) -> Framebuffer {
         screen_id,
         vm.bg_for(screen_id),
         vm.sprites_for(screen_id),
-        vm.console(),
+        vm.console_for(screen_id),
         DEFAULT_BACKDROP,
         screen.visibility_for(screen_id as i32),
     )

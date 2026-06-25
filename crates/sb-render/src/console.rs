@@ -37,6 +37,10 @@ pub const CELL: usize = 8;
 pub const TOP_COLS: usize = 50;
 pub const TOP_ROWS: usize = 30;
 
+/// Touch-screen console: 40 columns × 30 rows (320×240 dots).
+pub const BOTTOM_COLS: usize = 40;
+pub const BOTTOM_ROWS: usize = 30;
+
 /// Default drawing (foreground) color: white `#TWHITE` = 15.
 pub const DEFAULT_FG: u8 = 15;
 /// Default background color: transparent = 0.
@@ -139,6 +143,27 @@ impl Console {
         Self::new(TOP_COLS, TOP_ROWS)
     }
 
+    /// The standard Touch-screen console (40×30).
+    pub fn bottom() -> Self {
+        Self::new(BOTTOM_COLS, BOTTOM_ROWS)
+    }
+
+    /// Resize the grid to the given dimensions, clearing the buffer and homing the cursor.
+    /// Color/attribute/font state is preserved; this is used when `XSCREEN` changes the
+    /// active screen's resolution.
+    pub fn resize(&mut self, cols: usize, rows: usize) {
+        if self.cols == cols && self.rows == rows {
+            return;
+        }
+        self.cols = cols;
+        self.rows = rows;
+        self.cells = vec![Cell::default(); cols * rows];
+        self.cur_x = 0;
+        self.cur_y = 0;
+        self.scroll_x = 0;
+        self.scroll_y = 0;
+    }
+
     #[inline]
     fn idx(&self, x: usize, y: usize) -> usize {
         y * self.cols + x
@@ -209,6 +234,22 @@ impl Console {
     /// `FONTDEF` with no arguments: reset all custom font definitions.
     pub fn reset_font(&mut self) {
         self.custom_glyphs.clear();
+    }
+
+    /// Copy every custom glyph definition from another console. FONTDEF edits are global to
+    /// the console font, so the VM mirrors them across both physical screens.
+    pub fn copy_custom_glyphs_from(&mut self, other: &Console) {
+        self.custom_glyphs = other.custom_glyphs.clone();
+    }
+
+    /// Borrow the custom glyph table (for cross-screen mirroring).
+    pub fn custom_glyphs(&self) -> &HashMap<u16, [u8; 8]> {
+        &self.custom_glyphs
+    }
+
+    /// Replace the custom glyph table (for cross-screen mirroring).
+    pub fn set_custom_glyphs(&mut self, glyphs: HashMap<u16, [u8; 8]>) {
+        self.custom_glyphs = glyphs;
     }
 
     /// Glyph for a character code as an 8×8 1-bpp bitmap (bit set = foreground dot).
@@ -419,6 +460,24 @@ mod tests {
         assert_eq!((c.scroll_x, c.scroll_y), (0, 0));
         assert_eq!(c.cur_x, 0);
         assert_eq!(c.cur_y, 0);
+    }
+
+    #[test]
+    fn bottom_console_matches_touch_screen_dimensions() {
+        let c = Console::bottom();
+        assert_eq!((c.cols, c.rows), (40, 30));
+    }
+
+    #[test]
+    fn resize_changes_dimensions_and_clears_cells() {
+        let mut c = Console::top();
+        c.print_str("X");
+        c.resize(40, 30);
+        assert_eq!((c.cols, c.rows), (40, 30));
+        assert_eq!(c.cell(0, 0).ch, 0);
+        assert_eq!((c.cur_x, c.cur_y), (0, 0));
+        // Color/attribute state survives the resize.
+        assert_eq!((c.fg, c.bg, c.attr), (15, 0, 0));
     }
 
     #[test]

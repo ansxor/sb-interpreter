@@ -142,7 +142,7 @@ mod native {
                 // The native runner renders the Upper screen (screen 0) — draw its BG + sprites.
                 vm.bg_for(0),
                 vm.sprites_for(0),
-                vm.console(),
+                vm.console_for(0),
                 DEFAULT_BACKDROP,
                 vm.screen_visibility(),
             ),

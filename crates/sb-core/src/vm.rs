@@ -214,9 +214,10 @@ pub struct Vm {
     data_cursor: usize,
     /// The 8 TinyMT32 random series behind `RND`/`RNDF`/`RANDOMIZE` (M1-T9).
     rng: crate::rng::Rng,
-    /// The text console model (M1-T10): grid + cursor + COLOR/ATTR state, driven by
-    /// `PRINT`/`LOCATE`/`COLOR`/`CLS`/`ACLS` (M1-T8).
-    console: Console,
+    /// The text console model (M1-T10): one console per physical DISPLAY screen. Each screen
+    /// owns its own grid + cursor + COLOR/ATTR state; `PRINT`/`LOCATE`/etc. route to the active
+    /// screen's console (#86).
+    consoles: [Console; 2],
     /// The GRP graphics state (M2-T1): 6 pages + page selection / draw color / Z priority
     /// / clip rectangles, driven by `GPAGE`/`GCLS`/`GCOLOR`/`GPRIO`/`GCLIP`/`GSPOIT`. The
     /// compositor (M2-T4) turns the display page into the framebuffer.
@@ -363,7 +364,7 @@ impl Vm {
             pc: 0,
             data_cursor: 0,
             rng: crate::rng::Rng::new(),
-            console: Console::top(),
+            consoles: [Console::top(), Console::bottom()],
             grp: GrpState::with_defaults(),
             sprites: std::array::from_fn(|_| SpriteState::new()),
             spdef: SpdefTable::new(),
@@ -491,8 +492,8 @@ impl Vm {
     /// `TIME$`/`DATE$` push a [`Value`] String formatted from the injected [`WallClock`].
     fn read_sysvar(&self, sv: Sysvar) -> Value {
         match sv {
-            Sysvar::Csrx => Value::Int(self.console.cur_x as i32),
-            Sysvar::Csry => Value::Int(self.console.cur_y as i32),
+            Sysvar::Csrx => Value::Int(self.active_console().cur_x as i32),
+            Sysvar::Csry => Value::Int(self.active_console().cur_y as i32),
             // The console is a flat 2-D grid with no per-cursor depth, so CSRZ reads 0.
             Sysvar::Csrz => Value::Int(0),
             Sysvar::Freemem => Value::Int(self.freemem),
@@ -552,9 +553,32 @@ impl Vm {
         }
     }
 
-    /// Borrow the text console (grid + cursor + colors) for rendering / inspection.
+    /// Borrow the ACTIVE text console (grid + cursor + colors) for rendering / inspection.
+    /// Console commands route here; prefer [`console_for`](Self::console_for) when you need a
+    /// specific physical screen.
     pub fn console(&self) -> &Console {
-        &self.console
+        self.console_for(self.active_screen())
+    }
+
+    /// Borrow a specific physical screen's console (0 = Upper, 1 = Touch).
+    pub fn console_for(&self, screen_id: usize) -> &Console {
+        &self.consoles[screen_id]
+    }
+
+    fn active_console(&self) -> &Console {
+        self.console_for(self.active_screen())
+    }
+
+    fn active_console_mut(&mut self) -> &mut Console {
+        let id = self.active_screen();
+        &mut self.consoles[id]
+    }
+
+    /// Resize the active console to match a new display resolution (e.g. after `XSCREEN`).
+    fn resize_active_console(&mut self, width: usize, height: usize) {
+        let cols = width / sb_render::console::CELL;
+        let rows = height / sb_render::console::CELL;
+        self.active_console_mut().resize(cols, rows);
     }
 
     /// Borrow the GRP graphics state (pages + draw state) for rendering / inspection.
@@ -626,7 +650,7 @@ impl Vm {
     /// by `\n`, trailing blank rows dropped. This is the deterministic `stdout` of a run
     /// (it mirrors what the oracle scrapes from console memory — e.g. `CLS` empties it).
     pub fn console_text(&self) -> String {
-        let c = &self.console;
+        let c = self.active_console();
         let mut lines: Vec<String> = Vec::with_capacity(c.rows);
         for y in 0..c.rows {
             let mut line = String::new();
@@ -963,11 +987,14 @@ impl Vm {
                 let v = self.pop()?.deref();
                 let units = crate::builtins::console::format_print_item(&v).map_err(sb)?;
                 for u in units {
-                    self.console.put_char(u);
+                    self.active_console_mut().put_char(u);
                 }
             }
-            Op::PrintTab => self.console.tab(self.tabstep),
-            Op::PrintNewline => self.console.newline(),
+            Op::PrintTab => {
+                let step = self.tabstep;
+                self.active_console_mut().tab(step);
+            }
+            Op::PrintNewline => self.active_console_mut().newline(),
             Op::Input {
                 count,
                 question,
@@ -1893,9 +1920,9 @@ impl Vm {
         } else {
             for nm in &names {
                 for u in nm.encode_utf16() {
-                    self.console.put_char(u);
+                    self.active_console_mut().put_char(u);
                 }
-                self.console.newline();
+                self.active_console_mut().newline();
             }
         }
         Ok(())
@@ -2359,19 +2386,23 @@ impl Vm {
         let args: Vec<Value> = args.iter().map(|v| v.deref()).collect();
         match name {
             "LOCATE" => {
-                cons::locate(&mut self.console, &args, wants_value)?;
+                cons::locate(self.active_console_mut(), &args, wants_value)?;
                 Ok(Some(Value::Void))
             }
             "COLOR" => {
-                cons::color(&mut self.console, &args, wants_value)?;
+                cons::color(self.active_console_mut(), &args, wants_value)?;
                 Ok(Some(Value::Void))
             }
             "CLS" => {
-                cons::cls(&mut self.console, &args, wants_value)?;
+                cons::cls(self.active_console_mut(), &args, wants_value)?;
                 Ok(Some(Value::Void))
             }
             "ACLS" => {
-                cons::acls(&mut self.console, &args, wants_value)?;
+                // Validate the argument shape against the console builtin, then replace BOTH
+                // physical screens' consoles with fresh default grids (ACLS is a system reset).
+                let mut dummy = Console::top();
+                cons::acls(&mut dummy, &args, wants_value)?;
+                self.consoles = [Console::top(), Console::bottom()];
                 // ACLS resets the wider screen draw state too (not just the console grid),
                 // all hw_verified via reset-proofs (`<set>:ACLS:<get>()`, sb-oracle, acls.yaml):
                 //   BACKCOLOR -> 0   (`BACKCOLOR &HFF112233:ACLS:?BACKCOLOR()` -> 0)
@@ -2398,19 +2429,25 @@ impl Vm {
                 Ok(Some(Value::Void))
             }
             "INKEY$" => Ok(Some(cons::inkey(&mut self.input, &args)?)),
-            "CHKCHR" => Ok(Some(cons::chkchr(&self.console, &args, wants_value)?)),
+            "CHKCHR" => Ok(Some(cons::chkchr(self.active_console(), &args, wants_value)?)),
             "BACKCOLOR" => Ok(Some(self.backcolor(&args, wants_value)?)),
             "ATTR" => {
-                cons::attr(&mut self.console, &args, wants_value)?;
+                cons::attr(self.active_console_mut(), &args, wants_value)?;
                 Ok(Some(Value::Void))
             }
             "SCROLL" => {
-                cons::scroll(&mut self.console, &args, wants_value)?;
+                cons::scroll(self.active_console_mut(), &args, wants_value)?;
                 Ok(Some(Value::Void))
             }
-            "WIDTH" => Ok(Some(cons::width(&mut self.console, &args, wants_value)?)),
+            "WIDTH" => Ok(Some(cons::width(self.active_console_mut(), &args, wants_value)?)),
             "FONTDEF" => {
-                cons::fontdef(&mut self.console, &args, wants_value)?;
+                // FONTDEF edits are global to the console font: apply to the active screen, then
+                // mirror the custom glyph table to the other screen.
+                cons::fontdef(self.active_console_mut(), &args, wants_value)?;
+                let active = self.active_screen();
+                let other = 1 - active;
+                let glyphs = self.consoles[active].custom_glyphs().clone();
+                self.consoles[other].set_custom_glyphs(glyphs);
                 Ok(Some(Value::Void))
             }
             _ => Ok(None),
@@ -2434,6 +2471,8 @@ impl Vm {
                 self.screen.xscreen(&args, wants_value)?;
                 let (w, h) = self.screen.display_size();
                 self.grp.set_display_area(w, h);
+                // Keep the active console's grid dimensions in sync with the new resolution.
+                self.resize_active_console(w as usize, h as usize);
                 Ok(Some(Value::Void))
             }
             "DISPLAY" => {
@@ -2444,6 +2483,8 @@ impl Vm {
                     self.grp.active = self.screen.display as usize;
                     let (w, h) = self.screen.display_size();
                     self.grp.set_display_area(w, h);
+                    // The newly selected screen's console must match its resolution.
+                    self.resize_active_console(w as usize, h as usize);
                 }
                 Ok(Some(result.unwrap_or(Value::Void)))
             }
@@ -3314,10 +3355,10 @@ impl Vm {
             self.print_units(&p)?;
         }
         if question {
-            self.console.put_char(u16::from(b'?'));
+            self.active_console_mut().put_char(u16::from(b'?'));
         }
         let line = self.input_lines.pop_front().unwrap_or_default();
-        self.console.newline(); // ENTER moves to the next line
+        self.active_console_mut().newline(); // ENTER moves to the next line
         let fields: Vec<&[u16]> = line.split(|&u| u == COMMA).collect();
         let mut values: Vec<Value> = Vec::with_capacity(count as usize);
         for i in 0..count as usize {
@@ -3341,7 +3382,7 @@ impl Vm {
             self.print_units(&p)?;
         }
         let line = self.input_lines.pop_front().unwrap_or_default();
-        self.console.newline();
+        self.active_console_mut().newline();
         self.stack.push(Value::Str(line));
         Ok(())
     }
@@ -3350,7 +3391,7 @@ impl Vm {
     fn print_units(&mut self, v: &Value) -> Result<(), VmError> {
         let units = crate::builtins::console::format_print_item(v).map_err(sb)?;
         for u in units {
-            self.console.put_char(u);
+            self.active_console_mut().put_char(u);
         }
         Ok(())
     }
@@ -5683,6 +5724,69 @@ H$=HEX$(255)"#);
         assert_eq!(vm.grp().screens[0].manip_page, 2);
         assert_eq!(vm.grp().screens[1].display_page, 4); // screen 1 unchanged
         assert_eq!(vm.grp().screens[1].manip_page, 5);
+    }
+
+    #[test]
+    fn console_state_is_per_display_screen() {
+        // Each physical screen owns a console sized to its resolution.
+        let vm = run_b("XSCREEN 2");
+        assert_eq!((vm.console_for(0).cols, vm.console_for(0).rows), (50, 30));
+        assert_eq!((vm.console_for(1).cols, vm.console_for(1).rows), (40, 30));
+
+        // PRINT and COLOR route to whichever DISPLAY is selected.
+        let vm = run_b(
+            "XSCREEN 2:DISPLAY 1:COLOR 3,4:PRINT \"B\":DISPLAY 0:PRINT \"A\"",
+        );
+        assert_eq!(vm.console_for(1).cell(0, 0).ch, u16::from(b'B'));
+        assert_eq!(vm.console_for(1).cell(0, 0).fg, 3);
+        assert_eq!(vm.console_for(0).cell(0, 0).ch, u16::from(b'A'));
+        assert_eq!(vm.console_for(0).cell(0, 0).fg, 15); // default white
+
+        // CLS clears only the active screen's console.
+        let vm = run_b("XSCREEN 2:DISPLAY 1:PRINT \"B\":DISPLAY 0:PRINT \"A\":CLS");
+        assert_eq!(vm.console_for(0).cell(0, 0).ch, 0);
+        assert_eq!(vm.console_for(1).cell(0, 0).ch, u16::from(b'B'));
+    }
+
+    #[test]
+    fn console_sysvars_and_chkchr_follow_active_screen() {
+        // CSRX/CSRY read the active screen's cursor; CHKCHR reads the active screen's grid.
+        let vm = run_b(
+            "XSCREEN 2:DISPLAY 1:LOCATE 10,5:A=CSRX:B=CSRY:PRINT \"B\":C=CHKCHR(10,5)\n\
+             DISPLAY 0:LOCATE 20,7:D=CSRX:E=CSRY:PRINT \"A\":F=CHKCHR(20,7)",
+        );
+        assert_eq!(int(&vm, "A"), 10);
+        assert_eq!(int(&vm, "B"), 5);
+        assert_eq!(int(&vm, "C"), u16::from(b'B') as i32);
+        assert_eq!(int(&vm, "D"), 20);
+        assert_eq!(int(&vm, "E"), 7);
+        assert_eq!(int(&vm, "F"), u16::from(b'A') as i32);
+    }
+
+    #[test]
+    fn locate_range_matches_active_console_dimensions() {
+        // The Touch screen is 40 columns wide, so LOCATE 40,0 is the off-screen edge and
+        // LOCATE 41,0 is out of range. The Upper screen stays 50 columns wide.
+        run_b("XSCREEN 2:DISPLAY 1:LOCATE 40,0");
+        assert_eq!(run_b_err("XSCREEN 2:DISPLAY 1:LOCATE 41,0").errnum(), Some(10));
+        run_b("XSCREEN 2:DISPLAY 0:LOCATE 50,0");
+        assert_eq!(run_b_err("XSCREEN 2:DISPLAY 0:LOCATE 51,0").errnum(), Some(10));
+    }
+
+    #[test]
+    fn xscreen_resizes_the_active_console_to_match_resolution() {
+        // Mode 1 makes the Upper screen 320×240, so the top console becomes 40×30.
+        let vm = run_b("XSCREEN 1");
+        assert_eq!((vm.console_for(0).cols, vm.console_for(0).rows), (40, 30));
+    }
+
+    #[test]
+    fn acls_resets_consoles_to_default_dimensions() {
+        // After ACLS the screen mode returns to 0, so the top console is restored to 50×30
+        // and its grid is cleared.
+        let vm = run_b("XSCREEN 1:PRINT \"X\":ACLS");
+        assert_eq!((vm.console_for(0).cols, vm.console_for(0).rows), (50, 30));
+        assert_eq!(vm.console_for(0).cell(0, 0).ch, 0);
     }
 
     #[test]

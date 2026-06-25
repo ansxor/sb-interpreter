@@ -47,13 +47,16 @@ pub fn locate(
         return Err(illegal());
     }
     if let Some(x) = opt_int(&args[0])? {
-        if !(0..=50).contains(&x) {
+        // X may sit one cell past the right edge (off-screen column); the grid itself is
+        // 0..cols, so the legal SET value is 0..=cols.
+        if !(0..=console.cols as i32).contains(&x) {
             return Err(out_of_range());
         }
         console.cur_x = x as usize;
     }
     if let Some(y) = opt_int(&args[1])? {
-        if !(0..=29).contains(&y) {
+        // Y is clamped to the last row by the Console model; valid values are 0..rows-1.
+        if !(0..console.rows as i32).contains(&y) {
             return Err(out_of_range());
         }
         console.cur_y = y as usize;
