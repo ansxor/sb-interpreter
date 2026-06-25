@@ -239,7 +239,8 @@ impl GrpState {
         if x < 0 || y < 0 || x >= GRP_DIM as i32 || y >= GRP_DIM as i32 {
             return 0;
         }
-        let h = self.pages[self.cur().manip_page as usize].pixels[y as usize * GRP_DIM + x as usize];
+        let h =
+            self.pages[self.cur().manip_page as usize].pixels[y as usize * GRP_DIM + x as usize];
         rgba5551_to_argb8888(h)
     }
 

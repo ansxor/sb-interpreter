@@ -35,10 +35,13 @@ features = [
     "EventTarget",
     "HtmlElement",
     "HtmlCanvasElement",
+    "HtmlInputElement",
     "CanvasRenderingContext2d",
     "ImageData",
     "KeyboardEvent",
     "MouseEvent",
+    "InputEvent",
+    "CompositionEvent",
     # High-resolution monotonic clock for the rAF frame pacer (#92).
     "Performance",
     # WebAudio output (M5-T5 audio backend).

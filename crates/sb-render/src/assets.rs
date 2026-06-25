@@ -151,11 +151,22 @@ mod tests {
         assert_eq!(t.len(), SPDEF_TEMPLATE_COUNT);
         // From the firmware spdef.csv: template 0 = (0,0,16,16,0,0,1), template 1 = (16,0,...),
         // template 4095 = (192,480,96,32,48,16,1).
-        assert_eq!((t[0].u, t[0].v, t[0].w, t[0].h, t[0].attr), (0, 0, 16, 16, 1));
+        assert_eq!(
+            (t[0].u, t[0].v, t[0].w, t[0].h, t[0].attr),
+            (0, 0, 16, 16, 1)
+        );
         assert_eq!((t[1].u, t[1].v), (16, 0));
         let last = t[4095];
         assert_eq!(
-            (last.u, last.v, last.w, last.h, last.origin_x, last.origin_y, last.attr),
+            (
+                last.u,
+                last.v,
+                last.w,
+                last.h,
+                last.origin_x,
+                last.origin_y,
+                last.attr
+            ),
             (192, 480, 96, 32, 48, 16, 1)
         );
     }

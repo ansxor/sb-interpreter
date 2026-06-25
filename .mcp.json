@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "chainlink-safe-fetch": {
+    "beads-safe-fetch": {
       "args": [
         "run",
         ".claude/mcp/safe-fetch-server.py"

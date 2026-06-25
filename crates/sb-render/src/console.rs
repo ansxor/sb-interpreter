@@ -380,7 +380,13 @@ impl Console {
         }
     }
 
-    fn render_cell(&self, fb: &mut Framebuffer, col: usize, row: usize, font_page: Option<&GrpPage>) {
+    fn render_cell(
+        &self,
+        fb: &mut Framebuffer,
+        col: usize,
+        row: usize,
+        font_page: Option<&GrpPage>,
+    ) {
         let cell = self.cells[self.idx(col, row)];
         // ch == 0 is an empty cell (no character), not NUL — draw only the background.
         let glyph = if cell.ch == 0 {

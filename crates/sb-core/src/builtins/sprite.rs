@@ -1386,11 +1386,23 @@ mod tests {
         );
         // Single-slot range yields that slot; once full, -1.
         assert_eq!(
-            spset(&mut sp, &spdef, &[Value::Int(5), Value::Int(5), Value::Int(0)], 1).unwrap()[0],
+            spset(
+                &mut sp,
+                &spdef,
+                &[Value::Int(5), Value::Int(5), Value::Int(0)],
+                1
+            )
+            .unwrap()[0],
             Value::Int(5)
         );
         assert_eq!(
-            spset(&mut sp, &spdef, &[Value::Int(5), Value::Int(5), Value::Int(0)], 1).unwrap()[0],
+            spset(
+                &mut sp,
+                &spdef,
+                &[Value::Int(5), Value::Int(5), Value::Int(0)],
+                1
+            )
+            .unwrap()[0],
             Value::Int(-1)
         );
         // Reversed range (upper > lower) → errnum 4.
@@ -1444,7 +1456,13 @@ mod tests {
         let spdef = SpdefTable::new();
         spset0(&mut sp, 0);
         // Direct set + GET U,V,W,H,A round-trip.
-        spchr(&mut sp, &spdef, &[i(0), i(64), i(64), i(32), i(32), i(1)], 0).unwrap();
+        spchr(
+            &mut sp,
+            &spdef,
+            &[i(0), i(64), i(64), i(32), i(32), i(1)],
+            0,
+        )
+        .unwrap();
         let g5 = spchr(&mut sp, &spdef, &[i(0)], 5).unwrap();
         assert_eq!(g5, vec![i(64), i(64), i(32), i(32), i(1)]);
         // The 3-return form's THIRD value is the ATTRIBUTE, not the width.
@@ -1457,7 +1475,13 @@ mod tests {
         spchr(&mut sp, &spdef, &[i(0), i(42)], 0).unwrap();
         assert_eq!(spchr(&mut sp, &spdef, &[i(0)], 1).unwrap(), vec![i(42)]);
         // Attribute SET applies bits 1-5 only; display bit b00 is preserved (stays shown).
-        spchr(&mut sp, &spdef, &[i(0), i(64), i(64), i(16), i(16), i(0x20)], 0).unwrap();
+        spchr(
+            &mut sp,
+            &spdef,
+            &[i(0), i(64), i(64), i(16), i(16), i(0x20)],
+            0,
+        )
+        .unwrap();
         spchr(
             &mut sp,
             &spdef,
@@ -1473,18 +1497,35 @@ mod tests {
         )
         .unwrap();
         assert_eq!(spchr(&mut sp, &spdef, &[i(0)], 5).unwrap()[4], i(9)); // 8 | preserved display 1
-                                                                  // Skip-empty keeps current U,V; absent W,H default to 16.
-        spchr(&mut sp, &spdef, &[i(0), i(64), i(64), i(32), i(32), i(1)], 0).unwrap();
-        spchr(&mut sp, &spdef, &[i(0), Value::Void, Value::Void, i(8), i(8)], 0).unwrap();
+                                                                          // Skip-empty keeps current U,V; absent W,H default to 16.
+        spchr(
+            &mut sp,
+            &spdef,
+            &[i(0), i(64), i(64), i(32), i(32), i(1)],
+            0,
+        )
+        .unwrap();
+        spchr(
+            &mut sp,
+            &spdef,
+            &[i(0), Value::Void, Value::Void, i(8), i(8)],
+            0,
+        )
+        .unwrap();
         assert_eq!(
             spchr(&mut sp, &spdef, &[i(0)], 4).unwrap(),
             vec![i(64), i(64), i(8), i(8)]
         );
         // Errors: U+W over 512 → errnum 10; a 6-OUT GET → errnum 4; used-before-SPSET → 4.
         assert_eq!(
-            spchr(&mut sp, &spdef, &[i(0), i(500), i(0), i(20), i(16), i(1)], 0)
-                .unwrap_err()
-                .errnum,
+            spchr(
+                &mut sp,
+                &spdef,
+                &[i(0), i(500), i(0), i(20), i(16), i(1)],
+                0
+            )
+            .unwrap_err()
+            .errnum,
             10
         );
         assert_eq!(spchr(&mut sp, &spdef, &[i(0)], 6).unwrap_err().errnum, 4);
@@ -1708,10 +1749,7 @@ mod tests {
         );
         // 0 round-trips.
         spcolor(&mut sp, &[n(0.0), Value::Int(0)], 0).unwrap();
-        assert_eq!(
-            spcolor(&mut sp, &[n(0.0)], 1).unwrap(),
-            vec![Value::Int(0)]
-        );
+        assert_eq!(spcolor(&mut sp, &[n(0.0)], 1).unwrap(), vec![Value::Int(0)]);
         // Per-sprite independence.
         spset0(&mut sp, 1);
         spcolor(&mut sp, &[n(0.0), Value::Int(0x00FF0000u32 as i32)], 0).unwrap();
@@ -1739,10 +1777,7 @@ mod tests {
             10
         );
         // Wrong arg shape: SET with 0 extra args, SET with 2 extra args → errnum 4.
-        assert_eq!(
-            spcolor(&mut sp, &[n(0.0)], 0).unwrap_err().errnum,
-            4
-        );
+        assert_eq!(spcolor(&mut sp, &[n(0.0)], 0).unwrap_err().errnum, 4);
         assert_eq!(
             spcolor(&mut sp, &[n(0.0), Value::Int(1), Value::Int(2)], 0)
                 .unwrap_err()

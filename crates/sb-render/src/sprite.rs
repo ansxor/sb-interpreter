@@ -844,7 +844,6 @@ impl SpriteState {
         }
         bits
     }
-
 }
 
 /// Standard AABB overlap test for two `(x,y,w,h)` rectangles (touching edges do not

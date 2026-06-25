@@ -308,14 +308,17 @@ mod tests {
         // First VSYNC 2: target = 0 + 2 = 2.
         clk.begin_vsync(2);
         assert!(clk.wait_pending());
-        clk.tick(1); clk.resolve_wait();
+        clk.tick(1);
+        clk.resolve_wait();
         assert!(clk.wait_pending(), "not there yet after 1 tick");
-        clk.tick(1); clk.resolve_wait();
+        clk.tick(1);
+        clk.resolve_wait();
         assert!(!clk.wait_pending(), "reached target at frame 2");
         assert_eq!(clk.maincnt(), 2);
         // Second VSYNC 2: target = last_vsync(2) + 2 = 4.
         clk.begin_vsync(2);
-        clk.tick(2); clk.resolve_wait();
+        clk.tick(2);
+        clk.resolve_wait();
         assert!(!clk.wait_pending());
         assert_eq!(clk.maincnt(), 4);
     }
@@ -331,7 +334,8 @@ mod tests {
         // last_vsync resynced to 5, so next VSYNC 1 targets 6.
         clk.begin_vsync(1);
         assert!(clk.wait_pending());
-        clk.tick(1); clk.resolve_wait();
+        clk.tick(1);
+        clk.resolve_wait();
         assert!(!clk.wait_pending());
         assert_eq!(clk.maincnt(), 6);
     }
@@ -345,7 +349,8 @@ mod tests {
         assert_eq!(clk.maincnt(), 10);
         // last_vsync is now 10, so VSYNC 1 targets 11.
         clk.begin_vsync(1);
-        clk.tick(1); clk.resolve_wait();
+        clk.tick(1);
+        clk.resolve_wait();
         assert_eq!(clk.maincnt(), 11);
     }
 

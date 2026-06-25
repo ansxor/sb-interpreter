@@ -200,6 +200,29 @@ button:disabled {
   opacity: 0;
 }
 
+/* Text input overlay for INPUT/LINPUT on the bottom (touch) screen. The wasm host toggles
+   the `hidden` attribute and focuses the field while a program is awaiting input. */
+.sb-input-line {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.8);
+  color: #f8f8f8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.4;
+  caret-color: #f8f8f8;
+  z-index: 10;
+}
+
+.sb-input-line:focus {
+  outline: 1px solid rgba(124, 92, 255, 0.5);
+}
+
 .screen-hint {
   margin: 0;
   color: var(--muted);

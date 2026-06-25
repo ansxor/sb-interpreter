@@ -28,7 +28,7 @@ impl Huffman {
             counts[l as usize] += 1;
         }
         counts[0] = 0; // length-0 symbols are absent, not a real code
-        // Offsets of each length's first symbol in the sorted `symbols` table.
+                       // Offsets of each length's first symbol in the sorted `symbols` table.
         let mut offsets = [0u16; 16];
         for n in 1..16 {
             offsets[n] = offsets[n - 1] + counts[n - 1];
@@ -71,7 +71,11 @@ struct BitReader<'a> {
 
 impl<'a> BitReader<'a> {
     fn new(data: &'a [u8]) -> Self {
-        BitReader { data, byte: 0, bit: 0 }
+        BitReader {
+            data,
+            byte: 0,
+            bit: 0,
+        }
     }
 
     /// Read one bit (LSB-first). `None` past end of input.
@@ -183,8 +187,7 @@ fn inflate_block(
             256 => return Some(()), // end of block
             257..=285 => {
                 let li = (sym - 257) as usize;
-                let length =
-                    LEN_BASE[li] as usize + br.bits(LEN_EXTRA[li] as u32)? as usize;
+                let length = LEN_BASE[li] as usize + br.bits(LEN_EXTRA[li] as u32)? as usize;
                 let dsym = dist.decode(br)? as usize;
                 if dsym >= DIST_BASE.len() {
                     return None;

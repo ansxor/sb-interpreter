@@ -40,10 +40,8 @@ harness/harvest/out/
 /sb-player/*.log
 /sb-player/*.png
 
-.chainlink/.cache/
-
-# Beads / Dolt files (added by bd init)
+# --- Beads issue tracker ---
+# Runtime data is ignored via .beads/.gitignore; config/metadata are tracked.
 .dolt/
 *.db
 .beads-credential-key
-.beads/proxieddb/

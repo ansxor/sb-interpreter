@@ -22,6 +22,7 @@ pub mod consts;
 pub mod error;
 pub mod host_input;
 pub mod input;
+pub mod input_buffer;
 pub mod lexer;
 pub mod parser;
 pub mod rng;

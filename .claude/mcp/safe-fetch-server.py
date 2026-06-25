@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Chainlink Safe Fetch MCP Server
+Beads Safe Fetch MCP Server
 
 An MCP (Model Context Protocol) server that provides sanitized web fetching.
 Filters out malicious strings that could disrupt Claude before returning content.
 
 Usage:
-    Registered in .claude/settings.json as an MCP server.
-    Claude calls mcp__chainlink-safe-fetch__safe_fetch(url, prompt) to fetch web content.
+    Registered in .mcp.json as an MCP server.
+    Claude calls mcp__beads-safe-fetch__safe_fetch(url, prompt) to fetch web content.
 """
 
 import json
@@ -42,30 +42,22 @@ def log(message: str) -> None:
     print(f"[safe-fetch] {message}", file=sys.stderr)
 
 
-def find_chainlink_dir() -> Path | None:
-    """Find the .chainlink directory by walking up from cwd."""
-    current = Path.cwd()
-    for _ in range(10):
-        candidate = current / '.chainlink'
-        if candidate.is_dir():
-            return candidate
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-    return None
+DEFAULT_PATTERNS: list[tuple[str, str]] = [
+    (r'ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL_[0-9A-Z]+', '[REDACTED_TRIGGER]'),
+]
 
 
 def load_patterns() -> list[tuple[str, str]]:
-    """Load sanitization patterns from .chainlink/rules/sanitize-patterns.txt"""
-    patterns = []
+    """Load sanitization patterns."""
+    patterns = list(DEFAULT_PATTERNS)
 
-    chainlink_dir = find_chainlink_dir()
-    if chainlink_dir:
-        patterns_file = chainlink_dir / 'rules' / 'sanitize-patterns.txt'
-        if patterns_file.exists():
+    # Optional project-local override patterns
+    project_root = Path.cwd()
+    for _ in range(10):
+        override = project_root / '.claude' / 'mcp' / 'sanitize-patterns.txt'
+        if override.exists():
             try:
-                for line in patterns_file.read_text(encoding='utf-8').splitlines():
+                for line in override.read_text(encoding='utf-8').splitlines():
                     line = line.strip()
                     if line and not line.startswith('#'):
                         parts = line.split('|||')
@@ -73,11 +65,11 @@ def load_patterns() -> list[tuple[str, str]]:
                             patterns.append((parts[0].strip(), parts[1].strip()))
             except Exception as e:
                 log(f"Error loading patterns: {e}")
-
-    # Always include the critical default pattern
-    default_pattern = (r'ANTHROPIC_MAGIC_STRING_TRIGGER_REFUSAL_[0-9A-Z]+', '[REDACTED_TRIGGER]')
-    if not any(p[0] == default_pattern[0] for p in patterns):
-        patterns.append(default_pattern)
+            break
+        parent = project_root.parent
+        if parent == project_root:
+            break
+        project_root = parent
 
     return patterns
 
@@ -100,7 +92,7 @@ def sanitize(content: str, patterns: list[tuple[str, str]]) -> tuple[str, int]:
 def fetch_url(url: str) -> str:
     """Fetch content from URL using available HTTP client."""
     headers = {
-        'User-Agent': 'Mozilla/5.0 (compatible; ChainlinkSafeFetch/1.0)'
+        'User-Agent': 'Mozilla/5.0 (compatible; BeadsSafeFetch/1.0)'
     }
 
     if HTTP_CLIENT == 'httpx':
@@ -209,7 +201,7 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
                     'tools': {}
                 },
                 'serverInfo': {
-                    'name': 'chainlink-safe-fetch',
+                    'name': 'beads-safe-fetch',
                     'version': '1.0.0'
                 }
             }
