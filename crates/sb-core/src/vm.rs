@@ -70,11 +70,14 @@ use sb_render::sprite::{SpdefTable, SpriteState};
 use std::cmp::Ordering;
 
 /// Max combined depth of the `GOSUB` return stack + `DEF` call frames before raising
-/// **Stack overflow** (errnum 5). The exact value real SB 3.6.0 trips at is queued
-/// (`bd:sb-interpreter-air`, execution-model "recursion depth that trips Stack overflow");
-/// this is a generous hypothesis bound that lets ordinary recursion run while still
-/// catching unbounded recursion.
-pub const CALL_STACK_LIMIT: usize = 8192;
+/// **Stack overflow** (errnum 5). hw_verified 2026-06-26 (sb-oracle binary search,
+/// `harness/harvest/out/stackdepth.tsv`): real SB 3.6.0 completes a DEF recursion of
+/// 2730 frames and overflows when the 2731st is pushed (`DEF F:N=N+1:IF N<D THEN F`:
+/// D=2730 runs clean, D=2731 trips). sb-core checks `depth() >= CALL_STACK_LIMIT`
+/// *before* pushing, so `2730` trips the 2731st push, matching the device. (GOSUB-only
+/// and mixed GOSUB+DEF trip depths may differ; only pure DEF recursion was probed —
+/// `bd:sb-interpreter-air`.)
+pub const CALL_STACK_LIMIT: usize = 2730;
 
 /// The `FREEMEM` system variable's reported free user memory (M6-T3). SmileBASIC computes this
 /// from its real allocator, so it *decreases* as a program DIMs arrays / defines resources;
@@ -5606,6 +5609,18 @@ CALL "ADDOUT",2,3 OUT X"#);
         // A DEF that always recurses must trip Stack overflow (errnum 5).
         let err = run_err("DEF LOOP\nLOOP\nEND\nLOOP");
         assert_eq!(err.errnum(), Some(5));
+    }
+
+    #[test]
+    fn def_recursion_trip_depth_matches_real_sb() {
+        // hw_verified 2026-06-26 (sb-oracle binary search,
+        // harness/harvest/out/stackdepth.tsv): real SB 3.6.0 completes a DEF recursion of
+        // depth 2730 and trips Stack overflow (errnum 5) at depth 2731. `DEF F:N=N+1:IF N<D
+        // THEN F` recurses while N<D, so D frames are pushed before the recursion stops;
+        // D=2730 must run clean (run() does not panic), D=2731 must raise errnum 5.
+        run("N=0\nDEF F\nN=N+1\nIF N<2730 THEN F\nEND\nF");
+        let err = run_err("N=0\nDEF F\nN=N+1\nIF N<2731 THEN F\nEND\nF");
+        assert_eq!(err.errnum(), Some(5), "depth 2731 must trip Stack overflow");
     }
 
     #[test]
