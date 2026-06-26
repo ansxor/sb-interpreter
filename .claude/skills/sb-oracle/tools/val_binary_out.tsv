@@ -1,0 +1,6 @@
+val_b_direct	10
+val_b_concat	10
+val_b_zero	0
+val_b_ones	-1
+val_b_msb	-2147483648
+val_b_invalid	0

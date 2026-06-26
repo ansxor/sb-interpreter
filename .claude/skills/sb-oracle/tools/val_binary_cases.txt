@@ -1,0 +1,7 @@
+# VAL &B binary harvest
+val_b_direct|VAL("&B1010")
+val_b_concat|VAL("&B"+RIGHT$("1010",4))
+val_b_zero|VAL("&B0")
+val_b_ones|VAL("&B11111111111111111111111111111111")
+val_b_msb|VAL("&B10000000000000000000000000000000")
+val_b_invalid|VAL("&B2")

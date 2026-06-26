@@ -1,0 +1,8 @@
+# VAL &B binary behavior — harvested from real SB 3.6.0 (2026-06-26).
+cases:
+  - { name: binary_literal,          code: 'PRINT VAL("&B1010")', expect: { stdout: "10" } }
+  - { name: binary_concat,           code: 'PRINT VAL("&B"+RIGHT$("1010",4))', expect: { stdout: "10" } }
+  - { name: binary_zero,             code: 'PRINT VAL("&B0")', expect: { stdout: "0" } }
+  - { name: binary_32_ones_wraps,    code: 'PRINT VAL("&B11111111111111111111111111111111")', expect: { stdout: "-1" } }
+  - { name: binary_msb_int_min,      code: 'PRINT VAL("&B10000000000000000000000000000000")', expect: { stdout: "-2147483648" } }
+  - { name: binary_invalid_digit,    code: 'PRINT VAL("&B2")', expect: { stdout: "0" } }
