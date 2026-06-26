@@ -18,7 +18,7 @@ semantics:
 
 errors:
   - { errnum: 21, name: "NEXT without FOR", when: "a NEXT is reached with no matching open FOR — leading OR after other statements (errline = the NEXT's own line)" }
-  - { errnum: 3, name: SyntaxError, when: "the NEXT J,I multi-variable form is used, OR the program's first non-newline token is a `:` separator (an empty preceding statement) — `:NEXT` collapses to Syntax error 3 (general leading-`:` rule, see [[endif]]); a `:` AFTER a real statement is a normal separator." }
+  - { errnum: 3, name: SyntaxError, when: "the NEXT J,I multi-variable form is used, OR a `:` that is the FIRST token on its physical line (program top OR after a newline, in any block) is a line-starting empty statement → Syntax error 3 (e.g. `:NEXT`, or `A=1<nl>:NEXT`). General line-start `:` rule (see [[endif]]); a `:` AFTER a real statement on the same line is a normal separator." }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/next.md (NEXT [var]; control variable ignored; NEXT J,I not allowed)" }

@@ -16,7 +16,7 @@ semantics:
 
 errors:
   - { errnum: 22, name: "REPEAT without UNTIL", when: "a REPEAT has no matching UNTIL — the body runs once then control reaches EOF with no UNTIL, raising 22 at the EOF line (a bare REPEAT with no body raises 22 at the EOF line too). A COMPLETE REPEAT...UNTIL with a false exit condition loops forever (does not raise)." }
-  - { errnum: 3, name: SyntaxError, when: "the program's first non-newline token is a `:` separator (an empty preceding statement) — `:REPEAT` collapses to Syntax error 3. This is the general leading-`:` rule, not REPEAT-specific (see [[endif]]). A `:` AFTER a real statement is a normal separator and does not raise." }
+  - { errnum: 3, name: SyntaxError, when: "a `:` that is the FIRST token on its physical line (program top OR after a newline, in any block) is a line-starting empty statement → Syntax error 3 (e.g. `:REPEAT`, or `A=1<nl>:REPEAT`). General line-start `:` rule (see [[endif]]); a `:` AFTER a real statement on the same line is a normal separator." }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/repeat.md, until.md (executes the process before determining the condition; exits when the condition is satisfied)" }

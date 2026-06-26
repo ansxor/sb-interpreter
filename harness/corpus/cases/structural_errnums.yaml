@@ -26,10 +26,13 @@ cases:
   - { name: next_after_two_stmts, code: "A=1\nB=2\nNEXT",   expect: { error: { errnum: 21 } } }
   - { name: wend_after_two_stmts, code: "A=1\nB=2\nWEND",   expect: { error: { errnum: 25 } } }
   - { name: until_after_two_stmts, code: "A=1\nB=2\nUNTIL 1", expect: { error: { errnum: 23 } } }
-  # leading-`:` exception (audit 49r 2026-06-26): a `:` at the very top of the program
-  # before any statement is an empty preceding statement, which real SB 3.6.0 rejects as
-  # Syntax error 3 — for ANY keyword that follows (closers AND openers AND plain
-  # statements). Generalizes the ENDIF `:ENDIF`→3 rule to the whole language.
+  # line-start `:` rule (audit 49r 2026-06-26, generalized in dbk 2026-06-26): a `:` that is
+  # the first token on its physical line — at the program top OR after a newline, in any
+  # block — is a line-starting empty statement, which real SB 3.6.0 rejects as Syntax error 3
+  # (errline = the `:`'s line). Applies to ANY keyword that follows (closers AND openers AND
+  # plain statements), and inside FOR/WHILE/IF bodies too. A `:` AFTER a real statement on
+  # the same line is a normal separator and does NOT raise. Generalizes the ENDIF `:ENDIF`→3
+  # rule to every line of every block.
   - { name: next_leading_colon,  code: ":NEXT",             expect: { error: { errnum: 3 } } }
   - { name: wend_leading_colon,  code: ":WEND",             expect: { error: { errnum: 3 } } }
   - { name: until_leading_colon, code: ":UNTIL 1",          expect: { error: { errnum: 3 } } }
@@ -42,10 +45,20 @@ cases:
   - { name: print_leading_colon, code: ":PRINT 1",          expect: { error: { errnum: 3 } } }
   - { name: assign_leading_colon, code: ":A=1",             expect: { error: { errnum: 3 } } }
   - { name: bare_leading_colon, code: ":",                  expect: { error: { errnum: 3 } } }
+  # line-start `:` AFTER a newline (mid-program, and inside a block body) → 3
+  - { name: colon_line_start_after_stmt, code: "A=1\n:B=2", expect: { error: { errnum: 3 } } }
+  - { name: colon_line_start_bare_after_stmt, code: "A=1\n:", expect: { error: { errnum: 3 } } }
+  - { name: colon_line_start_after_blank, code: "A=1\n\n:B=2", expect: { error: { errnum: 3 } } }
+  - { name: colon_line_start_in_for, code: "FOR I=0 TO 1\n:NEXT", expect: { error: { errnum: 3 } } }
+  - { name: colon_line_start_in_while, code: "WHILE 0\n:WEND", expect: { error: { errnum: 3 } } }
+  - { name: colon_line_start_in_if,  code: "IF 1 THEN\n:PRINT 1\nENDIF", expect: { error: { errnum: 3 } } }
   # same-line `:` AFTER a real statement is NOT the exception (PRINT 1:NEXT → 21)
   - { name: next_same_line_after_stmt, code: "PRINT 1:NEXT", expect: { error: { errnum: 21 } } }
   - { name: wend_same_line_after_stmt, code: "PRINT 1:WEND", expect: { error: { errnum: 25 } } }
   - { name: until_same_line_after_stmt, code: "PRINT 1:UNTIL 1", expect: { error: { errnum: 23 } } }
+  # a TRAILING `:` at end of a line that has a real statement is fine (no empty statement)
+  - { name: trailing_colon_after_stmt, code: "A=1:",          expect: { stdout: "" } }
+  - { name: double_colon_between_stmts, code: "A=1::B=2",    expect: { stdout: "" } }
   # unterminated opening keywords (block ends / EOF before the closer)
   - { name: for_without_next,    code: "FOR I=0 TO 3\nPRINT I", expect: { error: { errnum: 20 } } }
   - { name: while_without_wend,  code: "WHILE 1\nPRINT 1",  expect: { error: { errnum: 24 } } }

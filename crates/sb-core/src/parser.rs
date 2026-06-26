@@ -131,10 +131,14 @@ pub struct Parser {
     /// Open `FOR` blocks currently being parsed. A bare `NEXT` reached as a statement with
     /// no open `FOR` is "NEXT without FOR" (errnum 21), not the loop-continue idiom.
     for_depth: u32,
-    /// How many statements have been committed so far. Used to detect a leading `:`
-    /// separator at the very top of the program (an empty preceding statement), which real
-    /// SB 3.6.0 rejects as Syntax error 3 for any following keyword (see `parse_block`).
-    stmt_count: u32,
+    /// True when the next token would be the first on its physical line (program start, or
+    /// just after a newline). Real SB 3.6.0 rejects a `:` in this position as Syntax error 3
+    /// — a line-starting empty statement (`:A=1`, `A=1\n:B=2`, `FOR I=0 TO 1\n:NEXT` → 3,
+    /// errline = the `:`'s line). A `:` AFTER a real statement on the same line is a normal
+    /// separator and does NOT raise (`A=1:B=2`, `PRINT 1:`). Persists across nested
+    /// `parse_block` calls so a same-line block body (`FOR I=0 TO 1:NEXT`) is not mistaken
+    /// for a line start. hw_verified sb-oracle 2026-06-26 (audit 49r + dbk).
+    at_line_start: bool,
 }
 
 impl Parser {
@@ -143,7 +147,7 @@ impl Parser {
             toks,
             pos: 0,
             for_depth: 0,
-            stmt_count: 0,
+            at_line_start: true,
         }
     }
 
@@ -278,28 +282,22 @@ impl Parser {
         let multiline = !matches!(kind, BlockKind::SingleLineIf);
         let mut out = Block::new();
         loop {
-            // Eat separators.
+            // Eat separators. `self.at_line_start` tracks whether the next token is the
+            // first on its physical line (program start, or just after a newline); real SB
+            // 3.6.0 rejects a `:` in that position as Syntax error 3 (a line-starting empty
+            // statement). See the field doc for the full rule + citations.
             loop {
                 match self.cur_kind() {
                     TokenKind::Colon => {
-                        // A `:` at the very top of the program before any statement is an
-                        // empty preceding statement, which real SB 3.6.0 rejects as Syntax
-                        // error 3 — for ANY keyword that follows (`:NEXT`, `:WEND`,
-                        // `:UNTIL`, `:ENDIF`, `:REPEAT`, `:FOR`, `:WHILE`, `:DEF`, even
-                        // `:PRINT 1` / `:A=1` all → 3). A `:` AFTER a real statement is a
-                        // normal separator and does NOT raise (`A=1:B=2`, `PRINT 1:`).
-                        // hw_verified sb-oracle 2026-06-26 (audit 49r generalized the
-                        // earlier ENDIF-only `:ENDIF`→3 rule to all statements).
-                        if matches!(kind, BlockKind::Program)
-                            && out.is_empty()
-                            && self.stmt_count == 0
-                        {
-                            return Err(self.syntax_error("leading `:` (empty statement)"));
+                        if multiline && self.at_line_start {
+                            return Err(self.syntax_error("line-start `:` (empty statement)"));
                         }
                         self.advance();
+                        self.at_line_start = false;
                     }
                     TokenKind::Newline if multiline => {
                         self.advance();
+                        self.at_line_start = true;
                     }
                     _ => break,
                 }
@@ -314,11 +312,14 @@ impl Parser {
                     let loc = self.cur_loc();
                     self.advance();
                     out.push(Stmt::new(StmtKind::Goto(Jump::Label(name)), loc));
+                    self.at_line_start = false;
                     continue;
                 }
             }
+            // About to consume a real statement's first token — we are mid-line, so a
+            // nested block body entered via `:` on this line is NOT a line start.
+            self.at_line_start = false;
             out.push(self.parse_statement()?);
-            self.stmt_count = self.stmt_count.saturating_add(1);
         }
         Ok(out)
     }
@@ -826,8 +827,11 @@ impl Parser {
 
     fn parse_if_body(&mut self, multiline: bool) -> PResult<Block> {
         if multiline {
-            // Skip the newline after THEN, if present.
-            self.eat(&TokenKind::Newline);
+            // Skip the newline after THEN, if present. The body starts on a fresh line, so
+            // a leading `:` there is a line-starting empty statement (→ Syntax error 3).
+            if self.eat(&TokenKind::Newline) {
+                self.at_line_start = true;
+            }
             self.parse_block(BlockKind::MultiLineIf)
         } else {
             self.parse_block(BlockKind::SingleLineIf)

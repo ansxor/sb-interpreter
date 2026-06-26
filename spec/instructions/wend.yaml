@@ -16,7 +16,7 @@ semantics:
 
 errors:
   - { errnum: 25, name: "WEND without WHILE", when: "a WEND is reached with no matching WHILE — leading OR after other statements (errline = the WEND's own line)" }
-  - { errnum: 3, name: SyntaxError, when: "the program's first non-newline token is a `:` separator (an empty preceding statement) — `:WEND` collapses to Syntax error 3. General leading-`:` rule (see [[endif]]); a `:` AFTER a real statement is a normal separator." }
+  - { errnum: 3, name: SyntaxError, when: "a `:` that is the FIRST token on its physical line (program top OR after a newline, in any block) is a line-starting empty statement → Syntax error 3 (e.g. `:WEND`, or `A=1<nl>:WEND`). General line-start `:` rule (see [[endif]]); a `:` AFTER a real statement on the same line is a normal separator." }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/wend.md (end of a WHILE loop); errnum 25 from spec/reference/errors.yaml (WEND without WHILE)" }
