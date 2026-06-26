@@ -811,7 +811,7 @@ impl<'a> Compiler<'a> {
                     let v = self.declare_decl(name, true);
                     self.emit(Op::NewArray {
                         var: v,
-                        ty: VarType::from_suffix(name.suffix),
+                        ty: VarType::from_suffix(name.suffix, self.options.defint),
                         dims: dims.len() as u8,
                     });
                 }

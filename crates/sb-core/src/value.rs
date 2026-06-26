@@ -250,11 +250,12 @@ impl Value {
     /// - `%` → Integer (Double truncates toward zero);
     /// - `#` → Double (Integer widens);
     /// - `$` → String (numeric → Type mismatch);
-    /// - none → a numeric keeps its own runtime type (no coercion); a String → Type
-    ///   mismatch (a suffix-less name is numeric).
+    /// - none → a numeric keeps its own runtime type by default, but under `OPTION DEFINT`
+    ///   a suffix-less target is treated as Integer, so Double truncates toward zero.
+    ///   A String → Type mismatch (a suffix-less name is numeric).
     ///
     /// Arrays and references are returned unchanged.
-    pub fn coerce_to_suffix(self, suffix: Suffix) -> Result<Value, RuntimeError> {
+    pub fn coerce_to_suffix(self, suffix: Suffix, defint: bool) -> Result<Value, RuntimeError> {
         match suffix {
             Suffix::Int => Ok(Value::Int(self.to_int_store()?)),
             Suffix::Real => Ok(Value::Real(self.to_real()?)),
@@ -262,24 +263,38 @@ impl Value {
                 Value::Str(_) => Ok(self),
                 _ => Err(RuntimeError::new(ERR_TYPE_MISMATCH)),
             },
-            Suffix::None => match self {
-                Value::Int(_) | Value::Real(_) | Value::Void => Ok(self),
-                // arrays/refs flow through a suffix-less array/ref name unchanged.
-                Value::IntArray(_)
-                | Value::RealArray(_)
-                | Value::StrArray(_)
-                | Value::Ref(_)
-                | Value::ElemRef(_) => Ok(self),
-                Value::Str(_) => Err(RuntimeError::new(ERR_TYPE_MISMATCH)),
-            },
+            Suffix::None => {
+                if defint {
+                    Ok(Value::Int(self.to_int_store()?))
+                } else {
+                    match self {
+                        Value::Int(_) | Value::Real(_) | Value::Void => Ok(self),
+                        // arrays/refs flow through a suffix-less array/ref name unchanged.
+                        Value::IntArray(_)
+                        | Value::RealArray(_)
+                        | Value::StrArray(_)
+                        | Value::Ref(_)
+                        | Value::ElemRef(_) => Ok(self),
+                        Value::Str(_) => Err(RuntimeError::new(ERR_TYPE_MISMATCH)),
+                    }
+                }
+            }
         }
     }
 
     /// The zero value for a variable declared with `suffix` (`dim.yaml`: numeric → 0,
-    /// string → ""). A suffix-less numeric defaults to Integer `0`.
-    pub fn default_for_suffix(suffix: Suffix) -> Value {
+    /// string → ""). A suffix-less numeric defaults to Real `0` normally and Integer `0`
+    /// under `OPTION DEFINT`.
+    pub fn default_for_suffix(suffix: Suffix, defint: bool) -> Value {
         match suffix {
-            Suffix::Int | Suffix::None => Value::Int(0),
+            Suffix::Int => Value::Int(0),
+            Suffix::None => {
+                if defint {
+                    Value::Int(0)
+                } else {
+                    Value::Real(0.0)
+                }
+            }
             Suffix::Real => Value::Real(0.0),
             Suffix::Str => Value::Str(SbStr::new()),
         }
@@ -425,12 +440,12 @@ mod tests {
     fn coerce_to_suffix_int_truncates() {
         // A%=2.7 -> Int(2)  (hw_verified iarr_coerce/ipos_27).
         assert_eq!(
-            Value::Real(2.7).coerce_to_suffix(Suffix::Int).unwrap(),
+            Value::Real(2.7).coerce_to_suffix(Suffix::Int, false).unwrap(),
             Value::Int(2)
         );
         // A#=2 -> Real(2.0)  (hw_verified iint_to_real).
         assert_eq!(
-            Value::Int(2).coerce_to_suffix(Suffix::Real).unwrap(),
+            Value::Int(2).coerce_to_suffix(Suffix::Real, false).unwrap(),
             Value::Real(2.0)
         );
     }
@@ -438,31 +453,42 @@ mod tests {
     #[test]
     fn coerce_no_suffix_keeps_runtime_type() {
         // A=2.7 stays Double (hw_verified nosuf_keepsreal); A=5 stays Integer.
-        let r = Value::Real(2.7).coerce_to_suffix(Suffix::None).unwrap();
+        let r = Value::Real(2.7)
+            .coerce_to_suffix(Suffix::None, false)
+            .unwrap();
         assert_eq!(r.value_type(), ValueType::Real);
-        let i = Value::Int(5).coerce_to_suffix(Suffix::None).unwrap();
+        let i = Value::Int(5).coerce_to_suffix(Suffix::None, false).unwrap();
         assert_eq!(i.value_type(), ValueType::Int);
+    }
+
+    #[test]
+    fn coerce_no_suffix_defint_truncates() {
+        // OPTION DEFINT makes an unsuffixed target behave like Integer.
+        let r = Value::Real(2.7).coerce_to_suffix(Suffix::None, true).unwrap();
+        assert_eq!(r, Value::Int(2));
+        let i = Value::Int(5).coerce_to_suffix(Suffix::None, true).unwrap();
+        assert_eq!(i, Value::Int(5));
     }
 
     #[test]
     fn coerce_across_string_numeric_divide_is_type_mismatch() {
         assert_eq!(
             Value::Int(1)
-                .coerce_to_suffix(Suffix::Str)
+                .coerce_to_suffix(Suffix::Str, false)
                 .unwrap_err()
                 .errnum,
             8
         );
         assert_eq!(
             Value::str_from("x")
-                .coerce_to_suffix(Suffix::None)
+                .coerce_to_suffix(Suffix::None, false)
                 .unwrap_err()
                 .errnum,
             8
         );
         assert_eq!(
             Value::str_from("x")
-                .coerce_to_suffix(Suffix::Int)
+                .coerce_to_suffix(Suffix::Int, false)
                 .unwrap_err()
                 .errnum,
             8
@@ -471,10 +497,15 @@ mod tests {
 
     #[test]
     fn defaults_match_suffix() {
-        assert_eq!(Value::default_for_suffix(Suffix::None), Value::Int(0));
-        assert_eq!(Value::default_for_suffix(Suffix::Int), Value::Int(0));
-        assert_eq!(Value::default_for_suffix(Suffix::Real), Value::Real(0.0));
-        assert_eq!(Value::default_for_suffix(Suffix::Str), Value::str_from(""));
+        // Normal default is Real; OPTION DEFINT flips suffix-less to Integer.
+        assert_eq!(Value::default_for_suffix(Suffix::None, false), Value::Real(0.0));
+        assert_eq!(Value::default_for_suffix(Suffix::None, true), Value::Int(0));
+        assert_eq!(Value::default_for_suffix(Suffix::Int, false), Value::Int(0));
+        assert_eq!(Value::default_for_suffix(Suffix::Real, false), Value::Real(0.0));
+        assert_eq!(
+            Value::default_for_suffix(Suffix::Str, false),
+            Value::str_from("")
+        );
     }
 
     #[test]

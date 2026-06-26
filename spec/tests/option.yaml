@@ -8,16 +8,34 @@
 # OPTION DEFINT flips the suffix-less numeric default from Real to Integer, and that real→int
 # conversion TRUNCATES toward zero — hw_verified on real SB: with DEFINT, A=3.7→3, A=-3.7→-3,
 # A=2.5→2, A=-2.5→-2 (and A#=3.7 stays 3.7); WITHOUT any OPTION, A=3.7→3.7 (Real default).
-# sb-core does NOT yet implement DEFINT (the compile flag is parsed but never consumed, so
-# DEFINT is a no-op and A stays Real), so the four DEFINT real→int coercion cases are NOT
-# frozen here yet — they are queued for the sb-core DEFINT implementation (bd:sb-interpreter-3a5,
-# cross-ref M1-T4). The cases below all pass against sb-core today.
+# Implemented in sb-core (bd:sb-interpreter-3a5, cross-ref M1-T4).
 tests:
   - name: "defint_int_value_unaffected"
     code: "OPTION DEFINT\nA=5\nPRINT A"
     expect: { stdout: "5" }
   - name: "defint_real_suffix_stays_real"
     code: "OPTION DEFINT\nA#=3.7\nPRINT A#"
+    expect: { stdout: "3.7" }
+  - name: "defint_truncates_positive_real"
+    code: "OPTION DEFINT\nA=3.7\nPRINT A"
+    expect: { stdout: "3" }
+  - name: "defint_truncates_negative_real"
+    code: "OPTION DEFINT\nA=-3.7\nPRINT A"
+    expect: { stdout: "-3" }
+  - name: "defint_truncates_half"
+    code: "OPTION DEFINT\nA=2.5\nPRINT A"
+    expect: { stdout: "2" }
+  - name: "defint_truncates_negative_half"
+    code: "OPTION DEFINT\nA=-2.5\nPRINT A"
+    expect: { stdout: "-2" }
+  - name: "defint_array_element_is_integer"
+    code: "OPTION DEFINT\nDIM A[3]\nA[0]=3.7\nPRINT A[0]"
+    expect: { stdout: "3" }
+  - name: "no_option_unsuffixed_keeps_real"
+    code: "A=3.7\nPRINT A"
+    expect: { stdout: "3.7" }
+  - name: "no_option_unsuffixed_array_keeps_real"
+    code: "DIM A[3]\nA[0]=3.7\nPRINT A[0]"
     expect: { stdout: "3.7" }
   - name: "strict_undeclared_errors"
     code: "OPTION STRICT\nB=2\nPRINT B"

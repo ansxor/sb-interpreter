@@ -49,13 +49,9 @@ impl Const {
 /// The element type of an array, or the static type of a scalar — derived from a
 /// name's [`Suffix`]. `$`→String, `#`→Double, `%`→Integer.
 ///
-/// KNOWN GAP (hw_verified 2026-06-24, M7-T2 run 4 — fix is M1-T4): the suffix-LESS
-/// numeric default in real SB 3.6.0 is **Real (Double)**, not Integer, and `OPTION DEFINT`
-/// flips that default to Integer. This map returns Integer for `Suffix::None`, which is
-/// correct only for declared DIM/VAR-array element typing; it makes an unsuffixed `DIM`
-/// array default to Int where real SB uses Real (`DIM A[3]:A[0]=3.7` → 3.7 on hardware,
-/// 3 here), and it leaves `OPTION DEFINT` a no-op (the compile flag is parsed but never
-/// consumed). See `bd:sb-interpreter-3a5` (suffix-less default Real + OPTION DEFINT).
+/// `OPTION DEFINT` changes the suffix-less numeric default from Real to Integer.
+/// `VarType::from_suffix` consumes that flag so array element typing matches real SB
+/// (`DIM A[3]:A[0]=3.7` → 3.7 unless `OPTION DEFINT` is active). See `bd:sb-interpreter-3a5`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VarType {
     Int,
@@ -64,12 +60,20 @@ pub enum VarType {
 }
 
 impl VarType {
-    /// Map a declaration suffix to its concrete element/scalar type.
-    pub fn from_suffix(suffix: Suffix) -> VarType {
+    /// Map a declaration suffix to its concrete element/scalar type. `defint` selects the
+    /// suffix-less numeric default: false → Real (SB's normal default), true → Integer.
+    pub fn from_suffix(suffix: Suffix, defint: bool) -> VarType {
         match suffix {
             Suffix::Str => VarType::Str,
             Suffix::Real => VarType::Real,
-            Suffix::Int | Suffix::None => VarType::Int,
+            Suffix::Int => VarType::Int,
+            Suffix::None => {
+                if defint {
+                    VarType::Int
+                } else {
+                    VarType::Real
+                }
+            }
         }
     }
 }

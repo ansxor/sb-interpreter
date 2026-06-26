@@ -461,10 +461,11 @@ impl Vm {
     /// Build a VM for a compiled program, with every global initialised to its
     /// declared type's zero value (numeric → 0, string → "").
     pub fn new(program: Program) -> Self {
+        let defint = program.options.defint;
         let globals = program
             .globals
             .iter()
-            .map(|v| Value::cell(Value::default_for_suffix(v.name.suffix)))
+            .map(|v| Value::cell(Value::default_for_suffix(v.name.suffix, defint)))
             .collect();
         Vm {
             program,
@@ -545,10 +546,11 @@ impl Vm {
     /// special). The caller MUST guarantee `slot != current_slot` (the running program lives
     /// in [`Vm::program`], not the registry, so its entry is `None` while active).
     fn stash_slot_program(&mut self, slot: u8, program: Program) {
+        let defint = program.options.defint;
         let globals = program
             .globals
             .iter()
-            .map(|v| Value::cell(Value::default_for_suffix(v.name.suffix)))
+            .map(|v| Value::cell(Value::default_for_suffix(v.name.suffix, defint)))
             .collect();
         self.slot_programs[slot as usize] = Some(LoadedSlot { program, globals });
     }
@@ -974,7 +976,8 @@ impl Vm {
             }
             Op::PopVar(vref) => {
                 let suffix = self.var_suffix(vref)?;
-                let v = self.pop()?.coerce_to_suffix(suffix).map_err(sb)?;
+                let defint = self.program.options.defint;
+                let v = self.pop()?.coerce_to_suffix(suffix, defint).map_err(sb)?;
                 *self.cell(vref)?.borrow_mut() = v;
             }
             Op::PushSysvar(sv) => {
@@ -1146,8 +1149,9 @@ impl Vm {
                 let a = as_ref(self.pop()?)?;
                 let va = a.deref();
                 let vb = b.deref();
-                let into_a = vb.coerce_to_suffix(sa).map_err(sb)?;
-                let into_b = va.coerce_to_suffix(sb_suffix).map_err(sb)?;
+                let defint = self.program.options.defint;
+                let into_a = vb.coerce_to_suffix(sa, defint).map_err(sb)?;
+                let into_b = va.coerce_to_suffix(sb_suffix, defint).map_err(sb)?;
                 a.assign_through(into_a).map_err(sb)?;
                 b.assign_through(into_b).map_err(sb)?;
             }
@@ -1451,16 +1455,18 @@ impl Vm {
         let param_suffixes: Vec<Suffix> = f.params.iter().map(|p| p.suffix).collect();
 
         // Build the frame's locals, each defaulted to its declared type's zero.
+        let defint = self.program.options.defint;
         let locals: Vec<Cell> = local_suffixes
             .iter()
-            .map(|&s| Value::cell(Value::default_for_suffix(s)))
+            .map(|&s| Value::cell(Value::default_for_suffix(s, defint)))
             .collect();
         // Bind the `argc` by-value args (topmost = last param) into the leading locals,
         // coercing each to its parameter's static type. Surplus args are dropped.
+        let defint = self.program.options.defint;
         for i in (0..argc as usize).rev() {
             let v = self.pop()?;
             if let Some(&suffix) = param_suffixes.get(i) {
-                *locals[i].borrow_mut() = v.coerce_to_suffix(suffix).map_err(sb)?;
+                *locals[i].borrow_mut() = v.coerce_to_suffix(suffix, defint).map_err(sb)?;
             }
         }
 
@@ -1705,11 +1711,12 @@ impl Vm {
     /// can't drive a self-restart without a hang); whether real SB clears variables on `EXEC 0`
     /// vs preserves them is queued for a multi-slot oracle confirm (`bd:sb-interpreter-air`).
     fn restart_active_slot(&mut self) {
+        let defint = self.program.options.defint;
         self.globals = self
             .program
             .globals
             .iter()
-            .map(|v| Value::cell(Value::default_for_suffix(v.name.suffix)))
+            .map(|v| Value::cell(Value::default_for_suffix(v.name.suffix, defint)))
             .collect();
         self.pc = 0;
         self.frames.clear();
@@ -1730,10 +1737,11 @@ impl Vm {
     /// system variables) is untouched, matching [`Vm::exec_transfer`]/[`Vm::restart_active_slot`].
     /// The slot number is unchanged (the file loads into the slot already running).
     fn load_into_running_slot(&mut self, program: Program) {
+        let defint = program.options.defint;
         self.globals = program
             .globals
             .iter()
-            .map(|v| Value::cell(Value::default_for_suffix(v.name.suffix)))
+            .map(|v| Value::cell(Value::default_for_suffix(v.name.suffix, defint)))
             .collect();
         self.program = program;
         self.pc = 0;
@@ -4815,13 +4823,13 @@ C$=A$+B$"#);
     #[test]
     fn array_declare_store_read() {
         let vm = run("DIM A[5]\nA[2]=7\nB=A[2]");
-        assert_eq!(int(&vm, "B"), 7);
+        assert_eq!(real(&vm, "B"), 7.0);
     }
 
     #[test]
     fn array_2d_row_major() {
         let vm = run("DIM P[3,2]\nP[2,1]=9\nB=P[2,1]");
-        assert_eq!(int(&vm, "B"), 9);
+        assert_eq!(real(&vm, "B"), 9.0);
     }
 
     #[test]
@@ -4948,11 +4956,11 @@ C$=A$+B$"#);
     }
 
     #[test]
-    fn swap_array_element_re_coerces_to_element_type() {
-        // An int-array element is a `%`-typed target: swapping a Double in truncates
-        // toward zero (A[0] takes 2.7 -> 2). The untyped scalar X takes 10 verbatim.
+    fn swap_array_element_no_suffix_is_real() {
+        // An unsuffixed array is Real by default: swapping a Double in keeps it as 2.7.
+        // The untyped scalar X takes 10 verbatim.
         let vm = run("DIM A[2]\nA[0]=10\nX=2.7\nSWAP A[0],X\nPRINT A[0];\",\";X");
-        assert_eq!(vm.console_text(), "2,10");
+        assert_eq!(vm.console_text(), "2.7,10");
     }
 
     #[test]
@@ -7444,7 +7452,7 @@ PRGDEL -1"#,
              EXEC 0",
         );
         assert_eq!(vm.console_text(), "XX");
-        assert_eq!(int(&vm, "A"), 1);
+        assert_eq!(real(&vm, "A"), 1.0);
     }
 
     // ---- firmware default graphic pages (GRP4 sprite, GRP5 BG, GRPF font) ----
