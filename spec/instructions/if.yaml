@@ -17,10 +17,10 @@ semantics:
   - "The condition is true when its numeric value is nonzero and false when it is exactly zero; comparison operators yield 1 (true) / 0 (false)."
   - "Negative and fractional nonzero values are true (IF -1, IF 0.5 take the THEN branch); 0 and 0.0 are false."
   - "Single-line form: IF cond THEN stmt [ELSE stmt] — multiple statements may follow with ':' separators on the same line."
-  - "GOTO may be omitted after THEN or ELSE: a bare @label means GOTO @label (IF cond THEN @label)."
+  - "GOTO may be omitted after THEN or ELSE: a bare @label means GOTO @label (IF cond THEN @label). hw_verified sb-oracle 2026-06-26 (S-T3a, harness/harvest/out/s_t3a_if.tsv): `IF 1 THEN @L` branches to @L (sets T); `IF 0 THEN @L` does NOT branch and falls through. The explicit `IF cond GOTO @L` form behaves identically (`IF 1 GOTO @L` → branches; `IF 0 GOTO @L` → falls through)."
   - "Multi-line form: IF cond THEN <newline> ... [ELSE ...] ENDIF — ENDIF closes the block when it spans lines."
   - "A single-line IF may also be explicitly closed with ENDIF on the same line: IF cond THEN stmt [ELSE stmt] ENDIF — common in real programs. See [[endif]]."
-  - "ELSEIF cond THEN adds further conditions evaluated only when earlier conditions were false."
+  - "ELSEIF cond THEN adds further conditions evaluated only when earlier conditions were false. hw_verified sb-oracle 2026-06-26 (S-T3a): a multi-line ELSEIF chain selects the first true branch — `IF 0 / ELSEIF 0 / ELSEIF 1 / ELSE` → C; all false → falls to ELSE → D. (Single-line ELSEIF branch selection was already hw_verified 2026-06-22.)"
   - "Logical operators AND/&&, OR/|| combine conditions; comparison operators are == != > < >= <=."
 
 errors:
@@ -35,6 +35,7 @@ sources:
   - { type: hw_verified, ref: "sb-oracle structural-error |err probe 2026-06-26 (re-probe; the 2026-06-23 batch's 'unterminated IF → 3' claim was a mis-harvest, superseded): an unterminated multi-line IF raises 26 'THEN without ENDIF' — `IF 1 THEN<nl>PRINT 1` → 26; with an ELSEIF — `IF 1 THEN<nl>A=1<nl>ELSEIF 0 THEN<nl>B=2` → 26. An ELSE clause with no ENDIF raises 27 'ELSE without ENDIF' — `IF 1 THEN<nl>A=1<nl>ELSE<nl>B=2` → 27. A single-line IF needs no ENDIF — `IF 1 THEN PRINT 1` → no error." }
   - { type: hw_verified, ref: "sb-oracle branch-selection probe 2026-06-22 (error-as-signal: 'IF cond THEN A=ASC(\"\")' raises errnum 4 iff the THEN branch executes): IF 1 / IF -1 / IF 0.5 / IF 2>1 take THEN (errnum 4); IF 0 / IF 0.0 / IF 1>2 skip it (no error). ELSE runs only when the condition is false; ELSEIF runs only when earlier conditions were false and its own is true. Single-line THEN/ELSE/ELSEIF confirmed." }
   - { type: community, ref: "sbsave corpus: single-line 'IF cond THEN stmt [ELSE stmt] ENDIF' attested in 86 programs (e.g. 1DVK34J/TXT/HNZBUS) — the on-one-line ENDIF-terminated form. Queued for oracle." }
+  - { type: hw_verified, ref: "sb-oracle progstr probe 2026-06-26 (S-T3a, harness/harvest/out/s_t3a_if.tsv): GOTO-omission + explicit-GOTO branch selection, multi-line ELSEIF chain, and ENDIF rejoin. `IF 1 THEN @L`→@L (T), `IF 0 THEN @L`→fall-through (no branch); `IF 1 GOTO @L`→@L (G), `IF 0 GOTO @L`→fall-through. ELSEIF chain `IF 0/ELSEIF 0/ELSEIF 1/ELSE`→C, all-false→D. ENDIF rejoin: `IF 1 THEN / A$=\"T\" / ENDIF / A$=A$+\"R\"`→TR; `IF 0 THEN / A$=\"T\" / ELSE / A$=\"F\" / ENDIF / A$=A$+\"R\"`→FR (control rejoins after whichever branch ran)." }
 
 confidence: hw_verified
 
@@ -49,3 +50,11 @@ tests:
   - { name: multiline_no_endif,      code: "IF 1 THEN\nPRINT \"A\"",            expect: { error: { errnum: 26 } } } # unterminated multi-line IF → 26 THEN without ENDIF (hw_verified 2026-06-26)
   - { name: multiline_elseif_no_endif, code: "IF 1 THEN\nA=1\nELSEIF 0 THEN\nB=2", expect: { error: { errnum: 26 } } } # unterminated ELSEIF → 26 (hw_verified 2026-06-26)
   - { name: multiline_else_no_endif, code: "IF 1 THEN\nA=1\nELSE\nB=2",         expect: { error: { errnum: 27 } } } # dangling ELSE, no ENDIF → 27 ELSE without ENDIF (hw_verified 2026-06-26)
+  # GOTO-omission + explicit-GOTO branch selection (hw_verified sb-oracle 2026-06-26, S-T3a).
+  - { name: goto_omitted_then_true,  code: 'A$=""\nIF 1 THEN @L\nA$="F"\nEND\n@L\nA$="T"', expect: { stdout: "T" } }
+  - { name: goto_omitted_then_false, code: 'A$=""\nIF 0 THEN @L\nA$="F"\nEND\n@L\nA$="T"', expect: { stdout: "F" } } # cond false → fall through, does not branch
+  - { name: goto_keyword_true,       code: 'A$=""\nIF 1 GOTO @L\nA$="X"\nEND\n@L\nA$="G"', expect: { stdout: "G" } }
+  - { name: goto_keyword_false,      code: 'A$=""\nIF 0 GOTO @L\nA$="G"\nEND\n@L\nA$="X"', expect: { stdout: "X" } } # cond false → fall through
+  # ENDIF rejoin: control rejoins after whichever branch ran (hw_verified 2026-06-26, S-T3a).
+  - { name: endif_rejoin_after_then, code: 'A$=""\nIF 1 THEN\nA$="T"\nENDIF\nA$=A$+"R"', expect: { stdout: "TR" } }
+  - { name: endif_rejoin_after_else, code: 'A$=""\nIF 0 THEN\nA$="T"\nELSE\nA$="F"\nENDIF\nA$=A$+"R"', expect: { stdout: "FR" } }

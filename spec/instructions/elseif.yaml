@@ -14,7 +14,7 @@ semantics:
   - "Used inside a multi-line IF block: each ELSEIF condition is tested in order, and the first true one's process runs."
   - "Once any branch (IF, ELSEIF, or ELSE) runs, the remaining branches are skipped."
   - "Truthiness is the same as IF: nonzero is true, zero is false."
-  - "Distinct from writing ELSE IF (with a space), which opens a nested IF that needs its own ENDIF."
+  - "Distinct from writing ELSE IF (with a space), which opens a nested IF that needs its own ENDIF. hw_verified sb-oracle 2026-06-26 (S-T3a, harness/harvest/out/s_t3a_if.tsv): single-line `IF 0 THEN A$=\"X\" ELSE IF 1 THEN A$=\"Y\" ELSE A$=\"Z\" ENDIF` → Y (the nested ELSE IF taken); the same with the nested cond false → Z. Multi-line `IF 0 THEN / A$=\"A\" / ELSE / IF 1 THEN / A$=\"B\" / ENDIF / ENDIF` → B (a nested multi-line IF inside an ELSE clause, each IF needs its own ENDIF)."
   - "See [[if]] for full conditional semantics."
 
 errors:
@@ -24,6 +24,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/elseif.md (additional conditional evaluation; note ELSE IF vs ELSEIF)" }
   - { type: disassembled, ref: "cia_3.6.0.lst ELSEIF is a parser keyword (token @0x2ed5f8), not in the builtin dispatch table; handled by the IF compiler" }
   - { type: hw_verified, ref: "sb-oracle branch-selection probe 2026-06-22: the ELSEIF process runs only when earlier conditions were false and its own is true (IF 0 THEN A=1 ELSEIF 1 THEN A=ASC(\"\") -> errnum 4) and is skipped when an earlier condition was true (IF 1 THEN A=1 ELSEIF 1 THEN A=ASC(\"\") -> no error). Single-line ELSEIF parses. See [[if]]." }
+  - { type: hw_verified, ref: "sb-oracle progstr probe 2026-06-26 (S-T3a, harness/harvest/out/s_t3a_if.tsv): ELSEIF multi-line chain `IF 0/ELSEIF 0/ELSEIF 1/ELSE`→C (first true wins), all-false→D (ELSE). ELSE IF (spaced) nested: single-line `IF 0 THEN A$=\"X\" ELSE IF 1 THEN A$=\"Y\" ELSE A$=\"Z\" ENDIF`→Y, nested cond false→Z; multi-line `IF 0 THEN / A$=\"A\" / ELSE / IF 1 THEN / A$=\"B\" / ENDIF / ENDIF`→B (nested IF inside ELSE, own ENDIF)." }
 
 confidence: hw_verified
 
@@ -31,3 +32,10 @@ tests:
   - { name: elseif_branch, code: "IF 0 THEN\nPRINT \"A\"\nELSEIF 1 THEN\nPRINT \"B\"\nELSE\nPRINT \"C\"\nENDIF", expect: { stdout: "B" } }
   - { name: first_true_wins, code: "IF 1 THEN\nPRINT \"A\"\nELSEIF 1 THEN\nPRINT \"B\"\nENDIF", expect: { stdout: "A" } }
   - { name: all_false_else, code: "IF 0 THEN\nPRINT \"A\"\nELSEIF 0 THEN\nPRINT \"B\"\nELSE\nPRINT \"C\"\nENDIF", expect: { stdout: "C" } }
+  # ELSEIF chain: first true branch wins; all false → ELSE (hw_verified sb-oracle 2026-06-26, S-T3a).
+  - { name: elseif_chain_third_wins, code: "A$=\"\"\nIF 0 THEN\nA$=\"A\"\nELSEIF 0 THEN\nA$=\"B\"\nELSEIF 1 THEN\nA$=\"C\"\nELSE\nA$=\"D\"\nENDIF\nPRINT A$", expect: { stdout: "C" } }
+  - { name: elseif_chain_all_false_else, code: "A$=\"\"\nIF 0 THEN\nA$=\"A\"\nELSEIF 0 THEN\nA$=\"B\"\nELSEIF 0 THEN\nA$=\"C\"\nELSE\nA$=\"D\"\nENDIF\nPRINT A$", expect: { stdout: "D" } }
+  # ELSE IF (spaced) opens a NESTED IF needing its own ENDIF (hw_verified 2026-06-26, S-T3a).
+  - { name: else_if_spaced_nested_y, code: 'A$=""\nIF 0 THEN A$="X" ELSE IF 1 THEN A$="Y" ELSE A$="Z" ENDIF\nPRINT A$', expect: { stdout: "Y" } }
+  - { name: else_if_spaced_nested_z, code: 'A$=""\nIF 0 THEN A$="X" ELSE IF 0 THEN A$="Y" ELSE A$="Z" ENDIF\nPRINT A$', expect: { stdout: "Z" } }
+  - { name: multiline_else_if_spaced, code: 'A$=""\nIF 0 THEN\nA$="A"\nELSE\nIF 1 THEN\nA$="B"\nENDIF\nENDIF\nPRINT A$', expect: { stdout: "B" } }
