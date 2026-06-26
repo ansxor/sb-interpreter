@@ -19,16 +19,15 @@ semantics:
   - "X must be in 0..width-1: X<0 (cmp X,#0 blt @0x164714) or X>=the layer's map width ([r0,#0xc], cmp width,X bgt = ok @0x164738) raises errnum 10 (Out of range) — mov r0,#0xa, r1=#1 @0x164748."
   - "Y must be in 0..height-1: Y<0 or Y>=the layer's map height ([r0,#0xc], cmpge height,Y bgt = ok @0x164764) raises errnum 10 (Out of range) — mov r0,#0xa, r1=#2 @0x164774."
   - "SCREEN DATA (4th argument) may be a number OR a string. If a string is supplied (type tag ldrb [r2,#0x2] != 0 @0x164794) it is parsed as a 4-digit hexadecimal value (\"0000\"-\"FFFF\") via the layer's string-to-data method (blx [r2,#0x50] @0x1647b8); otherwise the numeric value is taken directly from the value method (blx [r2,#0x40] @0x164844) with NO range check. The cell is written with a 16-bit HALFWORD STORE (strh r1,[r2,#0x90] @0x164874), so the value is MASKED to its low 16 bits — UNLIKE BGFILL, whose numeric data is range-checked to 0..65535 (errnum 10). A numeric value above 0xFFFF wraps (`&H1FFFF`→65535), and a negative value stores its low 16 bits (`-1`→65535, `-2`→65534). hw_verified 2026-06-24 via BGGET read-back."
-  - "Malformed/edge hex strings (oracle-pending, queued bead sb-interpreter-cco): the string-to-data parse path (blx [r2,#0x50] @0x1647b8) accepts a ≤4-digit hex string. Assumption (hypothesis, from the parse path + corpus): a non-hex / malformed string (e.g. \"ZZZZ\", \"12GG\") parses leniently to 0 (no error raised); an EMPTY string \"\" → 0; a SHORT string \"FF\" → 0x00FF; an OVER-LONG string (>0x2000 chars) → errnum 41 (String is too long); a non-string non-numeric screenData (wrong type, e.g. an array) → errnum 8 (Type mismatch). NOT yet hw_verified — the sb-oracle run was cut off (Azahar wedged by an unrelated endless-loop test); re-harvest when the oracle is back."
+  - "Malformed/edge hex strings (hw_verified 2026-06-26 via sb-oracle, bead sb-interpreter-cco): the string-to-data parse path (blx [r2,#0x50] @0x1647b8) accepts ONLY an EMPTY string or a string of EXACTLY 4 hex digits [0-9A-Fa-f]. An EMPTY string \"\" → stores 0 (BGGET reads 0). A valid 4-digit string parses as a 16-bit hex value, case-insensitive: \"FFFF\"→65535, \"80FF\"→33023, \"00FF\"→255, \"abcd\"→43981, \"fFfF\"→65535, \"0000\"→0. A string of 1-3 chars, or 4 chars containing ANY non-hex byte (\"G\", \"A\", \"FF\", \"FFF\", \"G123\", \"GGGG\", \"ZZZZ\", \"12GG\", \"0xFF\", \"F   \", \"FF F\", \"\\t\", \" \", \"  \") → errnum 4 (Illegal function call) — the parse does NOT fail leniently to 0 and does NOT left-pad short strings. A string LONGER than 4 chars (\"FFFFF\", \"FFFFFF\", \"ABCDE\", \"  FF  \") → errnum 41 (String is too long) — so the length threshold is strictly len > 4, not the disassembly's loose >0x2000 cap (that cap is the generic string-buffer ceiling; BGPUT's own 4-digit rule triggers first). A non-string non-numeric screenData (an INT array variable, `DIM A[4]:BGPUT 0,0,0,A`) → errnum 8 (Type mismatch); an array ELEMENT (`A[0]`) is numeric and is accepted (no error). A STRING variable holding a 4-digit hex form works identically to a literal (corpus-confirmed, hw_verified). Numeric screenData is NOT subject to the 4-digit/length rule — it takes the value path (blx [r2,#0x40] @0x164844) and is masked to 16 bits (see prior bullet)."
   - "Screen-data bit layout (documented): bits b0-b11 = character number 0-4095 (the displayed glyph repeats with a cycle of 1024); rotation is selected by the #BGROT0/#BGROT90/#BGROT180/#BGROT270 attribute bits; horizontal flip = #BGREVH; vertical flip = #BGREVV. Character number 0 displays nothing (empty/transparent cell)."
   - "BGPUT writes a single cell; it does not change the layer size (BGSCREEN), visibility (BGSHOW/BGHIDE), scroll (BGOFS) or graphic page (BGPAGE). The written cell value is read back verbatim by BGGET(layer,X,Y) (hw_verified run 29), which is how the value contract is captured framebuffer-free."
 
 errors:
-  - { errnum: 4, name: "Illegal function call", when: "used as a function (return requested) or the argument count is not 4" }
+  - { errnum: 4, name: "Illegal function call", when: "used as a function (return requested); the argument count is not 4; OR the screenData is a string that is neither empty nor exactly 4 hex digits (e.g. \"FF\", \"FFF\", \"G123\", \"GGGG\", \"0xFF\", \" \", \"F   \") — hw_verified 2026-06-26 (sb-interpreter-cco)" }
   - { errnum: 10, name: "Out of range", when: "layer not in 0..3, X not in 0..width-1, or Y not in 0..height-1" }
-  - { errnum: 8, name: "Type mismatch", when: "the screenData argument is neither a number nor a string (e.g. an array) — oracle-pending (queued sb-interpreter-cco)" }
-  - { errnum: 41, name: "String is too long", when: "a screenData string exceeds the parse length threshold (assumed >0x2000 chars) — oracle-pending (queued sb-interpreter-cco)" }
-
+  - { errnum: 8, name: "Type mismatch", when: "the screenData argument is neither a number nor a string (e.g. an array variable) — hw_verified 2026-06-26 (sb-interpreter-cco)" }
+  - { errnum: 41, name: "String is too long", when: "a screenData string is longer than 4 chars (e.g. \"FFFFF\", \"ABCDE\", \"  FF  \") — hw_verified 2026-06-26 (sb-interpreter-cco)" }
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/bgput.md (BGPUT Layer,X,Y,ScreenData — 'Places a BG character on the BG screen'; 'No image will be displayed for character number 0'; Layer 0-3; X,Y 0..BGSCREEN-1; screen data = char number 0-4095 (cycle 1024) + rotation b12/b13 + h/v inversion b14/b15, or a 4-digit hex string \"0000\"-\"FFFF\"; e.g. BGPUT 0,0,0,5 and BGPUT 0,20,15,\"80FF\")" }
   - { type: disassembled, ref: "cia_3.6.0.lst BGPUT handler @0x164660: argcount [r4,#0x4] cmp #0x4 + cmpeq return-count [r4,#0xc],#0, else mov r0,#0x4 errnum 4 @0x164688; layer range-check via bl 0x1e2504 (errnum 10 @0x1e2560); X<0 or X>=width [r0,#0xc] -> mov r0,#0xa errnum 10 @0x164748 (cmp @0x164714/@0x164738); Y<0 or Y>=height -> mov r0,#0xa errnum 10 @0x164774 (cmp @0x16475c/@0x164764); screen-data string-vs-number branch ldrb [r2,#0x2] @0x164794, string parse via blx [r2,#0x50] @0x1647b8; state ptr 0x315d60, map base const @0x164890." }
@@ -38,6 +37,8 @@ sources:
 
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t9b): BGPUT 4,0,0,5 -> errnum 10 (layer out of range); BGSCREEN 0,32,32:BGPUT 0,32,0,5 -> errnum 10 (X out of range); BGSCREEN 0,32,32:BGPUT 0,0,32,5 -> errnum 10 (Y out of range). Valid BGPUT 0,0,0,5 and BGPUT 0,20,15,\"80FF\" raise nothing. All errline 1." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2, harness/harvest/out/bgput_rt.tsv): cell VALUE/mask contract via BGGET read-back on a 32x32 layer. BGPUT 0,3,4,5 -> BGGET(0,3,4)=5, BGGET(0,4,4)=0 (only the written cell changes); BGPUT 0,20,15,\"80FF\" -> 33023 (hex string parse); BGPUT 0,1,1,0 -> 0 (char 0 = empty). Numeric data is MASKED to the low 16 bits, NOT range-checked like BGFILL: &H1FFFF->65535, 65536->0, -1->65535, &HFFFF->65535. (Confirms strh halfword store @0x164874; the 65536->0 / -1->65535 cases prove BGPUT masks where BGFILL raises errnum 10.) The packed rotation/flip attribute bits store verbatim (char 100 &H64): &H1064(#BGROT90)->4196, &H3064(#BGROT270)->12388, &H4064(#BGREVH)->16484, &H8064(#BGREVV)->32868 — BGGET returns the full 16-bit packed value, not the mod-1024 displayed glyph (bgput_attr_rt.tsv)." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-26 (bead sb-interpreter-cco, malformed-hex model): the string screenData parse accepts ONLY an empty string or EXACTLY 4 hex digits [0-9A-Fa-f]. Value cases via BGGET read-back on a 32x32 layer: BGPUT \"FFFF\"->65535, \"80FF\"->33023, \"00FF\"->255, \"abcd\"->43981, \"fFfF\"->65535, \"0000\"->0, \"\"->0 (empty=0). Error cases (errline 1): short/garbage strings -> errnum 4 (Illegal function call) — \"FF\", \"FFF\", \"A\", \"G\", \"G123\", \"GGGG\", \"ZZZZ\", \"12GG\", \"0xFF\", \" \", \"  \", \"\\t\", \"F   \", \"FF F\" ALL raise 4 (NOT lenient-to-0, NOT left-padded). Strings longer than 4 chars -> errnum 41 (String is too long): \"FFFFF\", \"FFFFFF\", \"ABCDE\", \"  FF  \". Wrong type (INT array variable `DIM A[4]:BGPUT 0,0,0,A`) -> errnum 8 (Type mismatch); array element A[0] is numeric and accepted. (The >0x2000 string-buffer cap from the disassembly is the generic ceiling; BGPUT's own 4-digit rule triggers first, so len>4 -> 41.)" }
+
 
 confidence: hw_verified
 
@@ -67,3 +68,24 @@ tests:
   # (&H1000) reads back 4196; + #BGREVV (&H8000) reads back 32868.
   - { name: put_attr_rot90, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,&H1064\nPRINT BGGET(0,0,0)", expect: { stdout: "4196" } }
   - { name: put_attr_revv, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,&H8064\nPRINT BGGET(0,0,0)", expect: { stdout: "32868" } }
+  # ── Malformed/edge hex-string screenData (hw_verified 2026-06-26, bead sb-interpreter-cco) ──
+  # The string parse accepts ONLY an empty string or EXACTLY 4 hex digits. Empty -> 0.
+  - { name: put_hex_empty, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,\"\"\nPRINT BGGET(0,0,0)", expect: { stdout: "0" } }
+  # Valid 4-digit hex strings parse case-insensitively (lower/mixed/upper all equal).
+  - { name: put_hex_lower, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,\"abcd\"\nPRINT BGGET(0,0,0)", expect: { stdout: "43981" } }
+  - { name: put_hex_mixed, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,\"fFfF\"\nPRINT BGGET(0,0,0)", expect: { stdout: "65535" } }
+  - { name: put_hex_leadingzeros, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,\"00FF\"\nPRINT BGGET(0,0,0)", expect: { stdout: "255" } }
+  # Short (1-3 char) strings -> errnum 4 (NOT left-padded to 0x00FF).
+  - { name: put_hex_short2, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,\"FF\"", expect: { error: { errnum: 4 } } }
+  - { name: put_hex_short3, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,\"FFF\"", expect: { error: { errnum: 4 } } }
+  - { name: put_hex_short1, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,\"A\"", expect: { error: { errnum: 4 } } }
+  # Garbage / non-hex 4-char strings -> errnum 4 (NOT lenient-to-0).
+  - { name: put_hex_garbage, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,\"ZZZZ\"", expect: { error: { errnum: 4 } } }
+  - { name: put_hex_partial, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,\"12GG\"", expect: { error: { errnum: 4 } } }
+  - { name: put_hex_0x_prefix, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,\"0xFF\"", expect: { error: { errnum: 4 } } }
+  # Strings longer than 4 chars -> errnum 41 (String is too long).
+  - { name: put_hex_5digit, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,\"FFFFF\"", expect: { error: { errnum: 41 } } }
+  - { name: put_hex_ws_padded, code: "BGSCREEN 0,32,32\nBGPUT 0,0,0,\"  FF  \"", expect: { error: { errnum: 41 } } }
+  # Wrong type: an INT array variable -> errnum 8 (Type mismatch). Array element is numeric (ok).
+  - { name: put_wrongtype_array, code: "BGSCREEN 0,32,32\nDIM A[4]\nBGPUT 0,0,0,A", expect: { error: { errnum: 8 } } }
+

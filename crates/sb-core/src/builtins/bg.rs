@@ -19,16 +19,19 @@
 //!
 //! ## Errors
 //!
-//! - **Illegal function call** (4): a bad return/argument *count* for the call shape, or a
-//!   `BGSCREEN` 4th arg that is not 8/16/32.
+//! - **Illegal function call** (4): a bad return/argument *count* for the call shape, a
+//!   `BGSCREEN` 4th arg that is not 8/16/32, or a `BGPUT`/`BGFILL` screen-data *string* that
+//!   is neither empty nor exactly 4 hex digits (short, garbage, whitespace, `0xFF`-style, or
+//!   — for `BGFILL` only — longer than 4 chars).
 //! - **Type mismatch** (8): a `BGFILL`/`BGPUT` screen-data argument that is neither a number
 //!   nor a string, or a non-numeric `BGCOLOR` color.
 //! - **Out of range** (10): a layer ∉ 0..3, a `BGSCREEN` width/height < 1 or area > 16383, a
 //!   `BGPAGE` page ∉ 0..5, a `BGPUT`/`BGGET` (char-coord) cell off the map, or a `BGFILL`
 //!   numeric screen-data value ∉ 0..65535 (BGFILL range-checks the value; BGPUT masks it,
 //!   and BGFILL clamps off-map *coords* rather than erroring).
-//! - **String too long** (41): a `BGFILL`/`BGPUT` screen-data string that is too long to
-//!   parse.
+//! - **String too long** (41): a `BGPUT` screen-data string longer than 4 chars. (`BGFILL`
+//!   raises errnum 4 for the same input — its 4-digit rule fires before the generic string
+//!   cap.)
 
 use sb_render::bg::{BgState, BG_DEFAULT_TILE_SIZE, BG_MAX_CELLS};
 
@@ -37,8 +40,75 @@ use crate::value::{RuntimeError, Value};
 
 /// errnum 41 — "String too long" (`spec/reference/errors.yaml`).
 const ERR_STRING_TOO_LONG: u32 = 41;
-/// The `BGFILL` handler's string-length guard (`cmp #0x2000`): longer → errnum 41.
+/// The handlers' generic string-length guard (`cmp #0x2000`): longer strings hit the cap.
+/// (BGPUT routes a >4-char string here → errnum 41; BGFILL's own 4-digit rule fires first,
+/// so it raises errnum 4 before this cap is ever reached.)
 const MAX_DATA_STRING_LEN: usize = 0x2000;
+
+/// How a BG screen-data string longer than 4 hex digits is handled. `BGPUT` raises errnum 41
+/// (its 4-digit rule + the generic `>0x2000` string cap both map to 41); `BGFILL` raises
+/// errnum 4 (its 4-digit rule fires before the generic cap). hw_verified 2026-06-26.
+enum HexTooLongPolicy {
+    Errnum41,
+    Errnum4,
+}
+
+/// Parse a BG screen-data string into a 16-bit cell value. SB 3.6.0's string-to-data path
+/// accepts ONLY an empty string (→ 0) or a string of EXACTLY 4 hex digits [0-9A-Fa-f]
+/// (case-insensitive, parsed as a 16-bit value). Any other string form is an error:
+///   - longer than 4 chars → `too_long` (errnum 41 for `BGPUT`, errnum 4 for `BGFILL`);
+///   - 1-3 chars, 4 non-hex chars, whitespace, or `0xFF`-style → errnum 4 (Illegal function
+///     call) — the parse does NOT fail leniently to 0 and does NOT left-pad short strings.
+///
+/// The generic `>0x2000` string cap (`MAX_DATA_STRING_LEN`) is also enforced for `BGPUT`
+/// (defensive: a pathologically long string still raises 41 even if the 4-digit rule were
+/// somehow bypassed). hw_verified 2026-06-26 (bead sb-interpreter-cco).
+fn parse_hex_screen_data(s: &[u16], too_long: HexTooLongPolicy) -> Result<u16, RuntimeError> {
+    if s.len() > MAX_DATA_STRING_LEN {
+        // Only reachable for BGPUT (Errnum41); BGFILL's 4-digit rule raises 4 first.
+        return Err(RuntimeError::new(ERR_STRING_TOO_LONG));
+    }
+    // Empty string → 0 (hw_verified: BGPUT/BGFILL "" → BGGET 0).
+    if s.is_empty() {
+        return Ok(0);
+    }
+    // Exactly 4 hex digits [0-9A-Fa-f] → parse; anything else is malformed.
+    if s.len() == 4
+        && s.iter()
+            .all(|&c| char::from_u32(c as u32).is_some_and(is_hex_digit))
+    {
+        let mut v: u32 = 0;
+        for &c in s {
+            let d = char::from_u32(c as u32).unwrap() as u32;
+            v = (v << 4) | hex_val(d);
+        }
+        return Ok((v & 0xFFFF) as u16);
+    }
+    // Malformed (short / garbage / whitespace / 0xFF-style) → errnum 4, OR too-long → policy.
+    if s.len() > 4 {
+        match too_long {
+            HexTooLongPolicy::Errnum41 => Err(RuntimeError::new(ERR_STRING_TOO_LONG)),
+            HexTooLongPolicy::Errnum4 => Err(illegal()),
+        }
+    } else {
+        Err(illegal())
+    }
+}
+
+#[inline]
+fn is_hex_digit(c: char) -> bool {
+    c.is_ascii_hexdigit()
+}
+
+#[inline]
+fn hex_val(c: u32) -> u32 {
+    match c as u8 {
+        b'0'..=b'9' => c - b'0' as u32,
+        b'a'..=b'f' => 10 + (c - b'a' as u32),
+        b'A'..=b'F' => 10 + (c - b'A' as u32),
+        _ => 0,
+    }
+}
 
 /// Validate + return a BG layer number in 0..3 (else errnum 10).
 fn layer(v: &Value) -> Result<usize, RuntimeError> {
@@ -52,21 +122,16 @@ fn layer(v: &Value) -> Result<usize, RuntimeError> {
 
 /// Resolve a `BGPUT` screen-data operand to a 16-bit cell value. A number uses its low 16
 /// bits (so a value above 16 bits is stored masked, e.g. `&H1FFFF`→`65535` — hw_verified
-/// BGGET 2026-06-24); a string is parsed as a (≤4-digit) hexadecimal value `"0000".."FFFF"`.
-/// An over-long string raises errnum 41; a non-number / non-string raises errnum 8. The exact
-/// behavior for malformed hex is oracle-pending (here it parses leniently to 0 — see
-/// `bd search "M3-T4"`).
+/// BGGET 2026-06-24); a string is parsed as a 4-digit hexadecimal value `"0000".."FFFF"`.
+/// A non-number / non-string raises errnum 8. The string parse accepts ONLY an empty string
+/// (→ 0) or a string of EXACTLY 4 hex digits [0-9A-Fa-f], case-insensitive — a string longer
+/// than 4 chars raises errnum 41 (String too long), and any other non-conforming string
+/// (1-3 chars, 4 non-hex chars, whitespace, `0xFF`-style) raises errnum 4 (Illegal function
+/// call). hw_verified 2026-06-26 (bead sb-interpreter-cco).
 fn screen_data(v: &Value) -> Result<u16, RuntimeError> {
     match v {
         Value::Int(_) | Value::Real(_) => Ok((v.to_int()? & 0xFFFF) as u16),
-        Value::Str(s) => {
-            if s.len() > MAX_DATA_STRING_LEN {
-                return Err(RuntimeError::new(ERR_STRING_TOO_LONG));
-            }
-            let text = String::from_utf16_lossy(s);
-            let parsed = i64::from_str_radix(text.trim(), 16).unwrap_or(0);
-            Ok((parsed & 0xFFFF) as u16)
-        }
+        Value::Str(s) => parse_hex_screen_data(s, HexTooLongPolicy::Errnum41),
         _ => Err(type_mismatch()),
     }
 }
@@ -74,9 +139,12 @@ fn screen_data(v: &Value) -> Result<u16, RuntimeError> {
 /// Resolve a `BGFILL` screen-data operand to a 16-bit cell value. UNLIKE `BGPUT`, a NUMERIC
 /// value is range-checked to `0..=65535` and raises errnum 10 (Out of range) outside it —
 /// including any negative value (handler @0x165504 `cmp r0,#0x10000` / `bcc`, else
-/// `mov r0,#0xa`). The string-hex (errnum 41 if over-long) and type-mismatch (errnum 8) paths
-/// match `BGPUT`. hw_verified 2026-06-24 (M7-T2 `bgfill_rt.tsv`: `65536`/`-1`→errnum 10,
-/// `65535` ok, array→errnum 8).
+/// `mov r0,#0xa`). The type-mismatch (errnum 8) path matches `BGPUT`, and the string path
+/// uses the SAME 4-digit hex parse — BUT differs in the over-length case: a string longer
+/// than 4 chars raises errnum 4 (Illegal function call) here, NOT errnum 41 like `BGPUT`
+/// (BGFILL's 4-digit rule fires before the disassembly's generic `cmp #0x2000` string cap).
+/// hw_verified 2026-06-24 (M7-T2 `bgfill_rt.tsv`: `65536`/`-1`→errnum 10, `65535` ok,
+/// array→errnum 8); malformed-hex/over-length model hw_verified 2026-06-26 (sb-interpreter-cco).
 fn screen_data_fill(v: &Value) -> Result<u16, RuntimeError> {
     match v {
         Value::Int(_) | Value::Real(_) => {
@@ -86,7 +154,7 @@ fn screen_data_fill(v: &Value) -> Result<u16, RuntimeError> {
             }
             Ok(n as u16)
         }
-        Value::Str(_) => screen_data(v),
+        Value::Str(s) => parse_hex_screen_data(s, HexTooLongPolicy::Errnum4),
         _ => Err(type_mismatch()),
     }
 }
