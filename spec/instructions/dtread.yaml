@@ -24,11 +24,12 @@ semantics:
   - "A receiver position may be left empty to discard that field (e.g. DTREAD OUT ,M,D skips the year) — the empty commas still count toward the required 3-or-4 receiver total. Oracle-confirmed: DTREAD \"2014/10/12\" OUT ,M,D yields M=10,D=12."
   - "An input value that is not a string raises errnum 8 (Type mismatch)."
   - "A string that does not match the YYYY/MM/DD shape raises errnum 4 (Illegal function call)."
-  - "The handler contains an out-of-range branch (errnum 10) reached after the format check, but it does NOT fire for an out-of-range month — oracle: DTREAD \"2014/13/12\" is accepted (no error). The exact trigger for the errnum-10 branch is not a simple month/day-range guard; left oracle-pending."
+  - "The errnum-10 (Out of range) branch @0x146174 fires ONLY when the W (weekday) receiver is present (4-receiver form). It validates that the date is a real Gregorian date within the weekday algorithm's supported range; without W, NO date validation occurs — the fields are split verbatim (DTREAD \"2014/02/30\" OUT Y,M,D -> 2014,2,30; \"2014/13/15\" -> 2014,13,15; \"2014/10/00\" -> 2014,10,0; \"0001/01/01\" -> 1,1,1). With W, the date must satisfy: (a) year >= 1753 (1752 -> errnum 10, 1753 -> OK, no upper bound observed through 9999); (b) day valid for the month, INCLUDING the Gregorian leap rule — Feb 30 / Apr 31 / Jun 31 / Sep 31 / Nov 31 / day 00 / day 32 all raise errnum 10; Feb 29 raises errnum 10 on non-leap years (2014, 1900, 2100) but is accepted on leap years (2000, 2024, 2400), confirming the div-100/div-400 rule. errnum 10 is raised on the statement line (errline 1). The weekday computation itself (smull/lookup @0x14619c) only runs for in-range valid dates."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "OUT receiver count is not 3 or 4, more than one input value is given, or the string is not in YYYY/MM/DD format" }
   - { errnum: 8, name: "Type mismatch", when: "the input argument is not a string" }
+  - { errnum: 10, name: "Out of range", when: "the W (weekday) receiver is present AND the date is not a valid Gregorian date in the weekday algorithm's range: year < 1753, or day-of-month invalid for the month/year (incl. Feb 29 on a non-leap year). Without W, no date validation runs." }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/dtread.md (DTREAD [\"Date string\"] OUT Y,M,D[,W]; YYYY/MM/DD; omitted=current; W: 0=Sunday)" }
@@ -36,6 +37,7 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/builtinfunctions.d:812-829 DTREAD: current date when no string (W = dayOfWeek, Sunday=0); formattedRead \"%d/%d/%d\" otherwise" }
   - { type: community, ref: "sbsave corpus: partial-receiver form 'DTREAD OUT ,M,D' / 'DTREAD OUT Y%,,' in 51VVV3NJ/TXT/XCMD.LIB; parenthesized input 'DTREAD(DATE$) OUT ...' and 'DTREAD DATE$ OUT YEAR,MONTH,DAY' common" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4e): DTREAD \"2014/10/12\" OUT Y,M,D -> 2014,10,12; OUT Y,M,D,W -> W=0 (Sunday); DTREAD \"2024/01/01\" -> W=1 (Monday); partial OUT ,M,D -> 10,12; \"2014-10-12\" -> errnum 4; numeric (non-string) input -> errnum 8; \"2014/13/12\" -> NO error (month 13 accepted)" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-26 (b17 errnum-10 trigger): errnum 10 fires ONLY with the W receiver present + an invalid-for-weekday date. Year boundary: 1752 -> errnum 10, 1753 -> W=1 (Friday); 9999 -> W=5. Without W, invalid dates split verbatim: \"2014/02/30\"->2014,2,30; \"2014/13/15\"->2014,13,15; \"2014/10/00\"->2014,10,0; \"0001/01/01\"->1,1,1. With W: Feb 30/Apr 31/Jun 31/Sep 31/Nov 31/day 00/day 32 -> errnum 10 (errline 1). Feb 29 leap rule: 2000/2024/2400 (leap) -> OK; 2014/1900/2100 (non-leap, 1900+2100 are div-100-not-400) -> errnum 10. All errline 1." }
 
 confidence: hw_verified
 
@@ -46,3 +48,9 @@ tests:
   - { name: partial_receivers, code: 'DTREAD "2014/10/12" OUT ,M,D\nPRINT M;D', expect: { stdout: "1012" } }
   - { name: bad_format_errors, code: 'DTREAD "2014-10-12" OUT Y,M,D', expect: { error: { errnum: 4 } } }
   - { name: nonstring_errors, code: 'DTREAD 20141012 OUT Y,M,D', expect: { error: { errnum: 8 } } }
+  - { name: errnum10_feb30_with_w, code: 'DTREAD "2014/02/30" OUT Y,M,D,W', expect: { error: { errnum: 10 } } }
+  - { name: errnum10_year_below_1753, code: 'DTREAD "1752/01/01" OUT Y,M,D,W', expect: { error: { errnum: 10 } } }
+  - { name: errnum10_feb29_nonleap, code: 'DTREAD "2014/02/29" OUT Y,M,D,W', expect: { error: { errnum: 10 } } }
+  - { name: no_w_feb30_accepted, code: 'DTREAD "2014/02/30" OUT Y,M,D\nPRINT Y;M;D', expect: { stdout: "2014230" } }
+  - { name: no_w_month13_accepted, code: 'DTREAD "2014/13/15" OUT Y,M,D\nPRINT Y;M;D', expect: { stdout: "20141315" } }
+  - { name: feb29_leap_accepted, code: 'DTREAD "2024/02/29" OUT Y,M,D,W\nPRINT W', expect: { stdout: "4" } }
