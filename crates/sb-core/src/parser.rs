@@ -1973,6 +1973,34 @@ mod tests {
     }
 
     #[test]
+    fn single_line_if_with_endif() {
+        // A single-line IF may be closed by an explicit ENDIF.
+        let StmtKind::If {
+            then_body,
+            else_body,
+            ..
+        } = &prog("IF 1 THEN PRINT \"A\" ENDIF")[0].kind
+        else {
+            panic!("expected if");
+        };
+        assert_eq!(then_body.len(), 1);
+        assert!(matches!(then_body[0].kind, StmtKind::Print(_)));
+        assert_eq!(else_body.len(), 0);
+
+        // ENDIF also closes an ELSE arm on the same line.
+        let StmtKind::If {
+            then_body,
+            else_body,
+            ..
+        } = &prog("IF C THEN A ELSE B ENDIF")[0].kind
+        else {
+            panic!("expected if");
+        };
+        assert_eq!(then_body.len(), 1);
+        assert_eq!(else_body.len(), 1);
+    }
+
+    #[test]
     fn if_goto_form() {
         // `IF c GOTO @L` → then-body is a single GOTO.
         let StmtKind::If { then_body, .. } = &prog("IF X GOTO @DONE")[0].kind else {
