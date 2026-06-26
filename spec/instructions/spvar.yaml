@@ -33,17 +33,18 @@ semantics:
   - "Unlike most sprite instructions, SPVAR does NOT require the sprite to be SPSET: there is no active-bit (0x80000000) guard before the variable store/load, matching the docs ('Can also be used before SPSET')."
   - "The eight internal variables are stored as consecutive doubles starting at slot offset 0x58 (variable n at slot+0x58 + n*8). The setter stores the popped value with strd r2,r3,[r0,#0x58] where r0 = slot + varnum*8 (add r0,r4,r0,lsl#0x3 @0x141e5c). The variable number is fetched as an integer via FUN_001eec7c (bl 0x1eec7c @0x141e08)."
   - "Writing variable 7 specifically clears slot flag bit 0x1000000 ([slot+0x4]: ldr r0,[sp,#0x4] / cmp #0x7 / bic r1,r1,#0x1000000 / str @0x141e44-0x141e54) before the store — i.e. variable 7 is also used as an animation/state channel marker (see the SPCHK #CHKV target). The other variables (0-6) just store/load the double."
-  - "Variable-number range (0-7) is documented; the disassembly computes slot+varnum*8 without a visible explicit 0..7 guard at this site (any bounds check would be inside FUN_001eec7c). Out-of-range variable-number behavior is oracle-pending (queued); the corpus only ever uses 0-7."
+  - "Variable-number range is 0..7 inclusive: the variable number is fetched via FUN_001eec7c, which rejects n<0 or n>7 with errnum 10 (Out of range) — the guard is inside that shared integer-getter, not at the SPVAR site itself. This applies to ALL three forms (setter `SPVAR m,n,v`, function `SPVAR(m,n)`, OUT `SPVAR m,n OUT v`)."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "no arguments are supplied, or the argument/result-count shape matches none of the three forms (setter needs 3 args + no result; reader needs 2 args + 1 result)" }
-  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511" }
+  - { errnum: 10, name: "Out of range", when: "the management number is not in 0..511, or the variable number is not in 0..7" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/spvar.md (3 forms: `SPVAR mgmt,varnum,value` write; `V=SPVAR(mgmt,varnum)` function read; `SPVAR mgmt,varnum OUT V` read. 'Each sprite has eight variables (0-7) that the user can use'; mgmt 0-511; 'Can also be used before SPSET (When SPSET is executed, all eight variables will be 0)')" }
   - { type: disassembled, ref: "cia_3.6.0.lst SPVAR handler @0x141d60: argcount gate cmp r6,#0x1 blt 0x141ddc (r6=[r0,#0x4]); error path mov r0,#0x4 bl 0x1fffdc @0x141de4 (errnum 4); form select on result-count r7=[r0,#0xc] — setter r7==0 + argcount==3 @0x141dd4, reader r7==1 + argcount==2 @0x141dc4 (covers both function and OUT forms); mgmt via FUN_001eece0 bl 0x1eece0 @0x141d88 (errnum 10 out of range); slot base[0x141ebc]+(mgmt+[[0x141eb8]+0x44])*0x48 rsb r1,r1,r1,lsl#5 @0x141db0; NO active-bit guard (usable pre-SPSET); variable store strd r2,r3,[r0,#0x58] at slot+varnum*8 add r0,r4,r0,lsl#0x3 @0x141e5c; varnum fetched via FUN_001eec7c bl 0x1eec7c @0x141e08; writing var 7 clears flag bic r1,r1,#0x1000000 [slot+0x4] @0x141e50. State ptr literal [0x141eb8]=0x00315D60, sprite-slot base [0x141ebc]=0x019A5FB0." }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg): all 3 forms appear in real programs — setter `SPVAR N,0,(S<<16)OR T` (7761 lines), function read `MT=SPVAR(C,7)AND &HFFFF` (~900), OUT read `SPVAR N,7 OUT TMP` (82, e.g. via rg '\\bSPVAR [A-Za-z0-9_%]+, ?[0-9]+ OUT'). Variable numbers are strictly 0-7; no array-index or string operands; no var number >= 8 observed. Proves the syntax of all three forms is legal." }
   - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8e): `SPSET 0,0:?SPVAR(0,0)` -> 0 (default zero); write-then-read `SPSET 0,0:SPVAR 0,3,7 :SPVAR(0,3)` -> 7; var 7 `SPVAR 0,7,12345:SPVAR(0,7)` -> 12345; before-SPSET `SPCLR:SPVAR 0,2,99:SPVAR(0,2)` -> 99 (confirms variables usable before SPSET); `SPSET 0,0:SPVAR 512,0,1` -> errnum 10 (mgmt out of range). Round-trip read/write of all eight variables confirmed." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-26 (sb1z9, harness/harvest/out/sb1z9.tsv): variable-number bound — out-of-range n raises errnum 10 errline 1 in ALL three forms: `SPCLR:SPVAR 0,8,1` (setter, n=8) errnum 10; `SPCLR:PRINT SPVAR(0,8)` (function read, n=8) errnum 10; `SPCLR:SPVAR 0,8 OUT V` (OUT read, n=8) errnum 10; `SPCLR:SPVAR 0,-1,1` (n=-1) errnum 10; `SPCLR:SPVAR 0,100,1` (n=100) errnum 10. Confirms the FUN_001eec7c integer-getter guard is 0..7 inclusive across setter/function/OUT forms — the assumption 'rejects n∉0..7 with errnum 10' holds." }
 
 confidence: hw_verified
 
@@ -56,3 +57,6 @@ tests:
   - { name: read_default_zero, code: "SPSET 0,0\nPRINT SPVAR(0,0)", expect: { stdout: "0" } }
   - { name: out_read, code: "SPSET 0,0\nSPVAR 0,7,12345\nSPVAR 0,7 OUT V\nPRINT V", expect: { stdout: "12345" } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPVAR 512,0,1", expect: { error: { errnum: 10 } } }
+  - { name: varnum_set_out_of_range, code: "SPCLR\nSPVAR 0,8,1", expect: { error: { errnum: 10 } } }
+  - { name: varnum_read_out_of_range, code: "SPCLR\nPRINT SPVAR(0,8)", expect: { error: { errnum: 10 } } }
+  - { name: varnum_out_read_out_of_range, code: "SPCLR\nSPVAR 0,8 OUT V", expect: { error: { errnum: 10 } } }
