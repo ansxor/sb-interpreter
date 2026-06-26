@@ -15,28 +15,35 @@ signatures:
       - { name: end_y, type: integer, range: "0..239", desc: "Clipping-area end Y (bottom)." }
     note: "SPCLIP sx,sy,ex,ey — restrict sprite drawing to the given rectangle."
 
-summary: "Sets the rectangular clipping area for sprite rendering: sprites are only drawn (and the visible part shown) within this rectangle. Called with no arguments it resets clipping to the whole screen. The rectangle is given as start point (sx,sy) and end point (ex,ey); the handler normalizes them so start <= end. Coordinates are screen pixels (X 0-399, Y 0-239). SPCLIP applies to the current display page (upper/lower) selected for sprites."
+summary: "Sets the global rectangular clipping area for the active display screen's sprite layer: sprites are only drawn within this rectangle. Called with no arguments it resets clipping to the whole screen. The four corners may be given in any order (the handler normalizes them) and are stored as inclusive screen-pixel coordinates. Values outside the current screen dimensions are clamped rather than raising a range error; coordinates that place the rectangle wholly off-screen disable the clip. SPCLIP applies to the current DISPLAY screen (Upper/Touch), not to individual sprites."
 
 semantics:
-  - "Call-shape gate: SPCLIP takes NO return/OUT — result-count [r4,#0xc] must be 0 (cmp r0,#0x0 / bne 0x1423f4 -> error). Then argcount [r4,#0x4] selects the form: 0 -> reset (form 1) @0x14240c, 4 -> set rectangle (form 2) @0x142420, anything else -> errnum 4 (Illegal function call) mov r0,#0x4 / b 0x1fffdc @0x142400."
-  - "Reset (no args): calls bl 0x1ee0bc with r0=1 @0x142410 to restore full-screen clipping (the documented 'If the range is omitted, the whole screen will be assumed')."
-  - "Set form: the four coordinates are fetched as integers via the gfx-context arg vtable [gfx+0x40] (blx, four times @0x142434/@0x142458/@0x142478/@0x142498). On any fetch failure an error index is recorded (str r6,[state] @0x1424a4)."
-  - "Normalization: the handler swaps so the rectangle is well-formed — it ensures the start coordinates are the smaller and computes the extent against the screen size: width/height are derived as (screenDim - coord - 1) with a min/max comparison (cmp r0,r1 / strgt swaps @0x1424f0 and @0x142504) before applying via bl 0x1edeac @0x142524. So passing sx>ex or sy>ey is tolerated (the points are sorted)."
-  - "Coordinates are documented as screen pixels X 0-399, Y 0-239. The handler clamps/normalizes against the screen dimensions rather than raising a range error for out-of-bounds points; exact clamping behavior for out-of-range inputs is oracle-pending (queued)."
+  - "Call-shape gate: SPCLIP takes NO return/OUT — result-count [r4,#0xc] must be 0 (`cmp r0,#0x0` / `bne 0x1423f4`). Then argcount [r4,#0x4] selects the form: 0 -> reset (form 1) @0x14240c, 4 -> set rectangle (form 2) @0x142420, anything else -> errnum 4 (Illegal function call) (`mov r0,#0x4` / `b 0x1fffdc` @0x142400)."
+  - "Reset (no args): calls the reset helper `bl 0x1ee0bc` with r0=1 @0x142410, restoring full-screen clipping (the documented 'If the range is omitted, the whole screen will be assumed')."
+  - "Set form: the four coordinates are fetched as integers via the gfx-context arg vtable [gfx+0x40] (`blx r2` four times @0x142434/@0x142458/@0x142478/@0x142498). On any fetch failure an error index is recorded (`str r6,[state]` @0x1424a4). Coordinates are screen pixels; floats are accepted and truncated toward zero like the shared integer getter."
+  - "Normalization: the handler swaps so the rectangle is well-formed — it ensures start coordinates are the smaller and end coordinates are the larger (`cmp r0,r1` / `strgt` swaps for both X and Y @0x1424f0 and @0x142504). Passing sx>ex or sy>ey is therefore tolerated."
+  - "Range behavior: the helper @0x1edeac clamps out-of-range coordinates to the current screen dimensions rather than raising errnum 10, and disables the clip entirely when the rectangle is wholly off-screen. hw_verified: `SPCLIP -1,0,10,10`, `SPCLIP 0,-1,10,10`, `SPCLIP 0,0,500,10`, `SPCLIP 0,0,10,300`, `SPCLIP 0,0,500,300` and `SPCLIP 200,200,100,100` all execute without error; `SPCLIP 500,0,600,10` disables the clip."
+  - "Screen scope: the clip record is per-DISPLAY screen. The handler passes screen index r0=1 to the shared clip helper, and the helper computes an offset into a per-screen/layer table at `[[0x00315D48]+0x54]` (cia_3.6.0.lst SPCLIP @0x142534 / helper @0x1edeac), matching the per-screen sprite table model."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "the argument count is neither 0 nor 4, or an OUT/return is requested" }
+  - { errnum: 8, name: "Type mismatch", when: "a coordinate is non-numeric or a skipped (Void) argument is supplied" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/spclip.md (`SPCLIP [Start point X,Start point Y,End point X,End point Y]` — specifies a clipping area in the sprite; 'If the range is omitted, the whole screen will be assumed'; X:0-399, Y:0-239; example SPCLIP 100,100,200,200)" }
-  - { type: disassembled, ref: "cia_3.6.0.lst SPCLIP handler @0x1423c8: result-count gate ldr r0,[r4,#0xc] cmp #0 bne 0x1423f4 (OUT not allowed); argcount [r4,#0x4] dispatch 0->reset @0x14240c (bl 0x1ee0bc r0=1 @0x142410), 4->set @0x142420, else errnum 4 mov r0,#0x4 b 0x1fffdc @0x142400; four coords via gfx-context vtable [r2,#0x40] blx (@0x142434/@0x142458/@0x142478/@0x142498); min/max normalization cmp r0,r1 strgt @0x1424f0/@0x142504; apply bl 0x1edeac @0x142524. State ptr literal [0x142534]; screen-state [0x142538]." }
+  - { type: disassembled, ref: "cia_3.6.0.lst SPCLIP handler @0x1423c8: result-count gate `ldr r0,[r0,#0xc] cmp #0 bne 0x1423f4` (OUT not allowed); argcount `[r4,#0x4]` dispatch 0->reset @0x14240c (`bl 0x1ee0bc` r0=1 @0x142410), 4->set @0x142420, else errnum 4 (`mov r0,#0x4 b 0x1fffdc` @0x142400); four coords via gfx-context vtable `[r2,#0x40] blx` (@0x142434/@0x142458/@0x142478/@0x142498); min/max normalization `cmp r0,r1 strgt` @0x1424f0/@0x142504; apply via `bl 0x1edeac` @0x142524. State pointer literal [0x142534]=0x00305628; screen-state literal [0x142538]=0x00315D60. Reset helper FUN_001ee0bc; set/empty helper FUN_001edeac." }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bSPCLIP\\b'): 84 files, ~151 uses — only the two documented forms: the 4-arg rectangle `SPCLIP sx,sy,ex,ey` (numeric/expression operands) and the no-arg reset `SPCLIP` (~47 uses). No 1/2/3-arg or OUT form observed, matching the handler's argcount==0||4 gate." }
-  - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8e): `SPCLIP 1,2` (2 args) -> errnum 4 (Illegal function call), confirming the argcount must be exactly 0 or 4. The visual clipping effect needs the framebuffer oracle (O-T6, queued)." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-25 (s_t8e): `SPCLIP 1,2` -> errnum 4; `A=SPCLIP(100,100,200,200)` -> errnum 4; `SPCLIP OUT X` -> errnum 4; `SPCLIP \"A\",0,10,10` and `SPCLIP 0,,10,10` -> errnum 8. `SPCLIP 100,100,200,200`, `SPCLIP`, `SPCLIP 200,200,100,100`, `SPCLIP -1,0,10,10`, `SPCLIP 0,-1,10,10`, `SPCLIP 0,0,500,10`, `SPCLIP 0,0,10,300` all execute without error, confirming out-of-range coordinates are clamped rather than raising errnum 10 and reversed corners are normalized. The exact clamped rectangle values for partially/fully off-screen inputs are pending the framebuffer oracle (O-T6)." }
 
 confidence: disassembled
 
 tests:
-  # Visual clipping effect needs the framebuffer oracle (O-T6); here we pin the static argument contract.
   - { name: set_rect, code: "SPCLIP 100,100,200,200", expect: { stdout: "" } }
   - { name: reset, code: "SPCLIP", expect: { stdout: "" } }
   - { name: bad_arg_count, code: "SPCLIP 1,2", expect: { error: { errnum: 4 } } }
+  - { name: function_form_rejected, code: "A=SPCLIP(100,100,200,200)", expect: { error: { errnum: 4 } } }
+  - { name: out_form_rejected, code: "SPCLIP OUT X", expect: { error: { errnum: 4 } } }
+  - { name: non_numeric_coord, code: "SPCLIP \"A\",0,10,10", expect: { error: { errnum: 8 } } }
+  - { name: skipped_coord, code: "SPCLIP 0,,10,10", expect: { error: { errnum: 8 } } }
+  - { name: reversed_corners_ok, code: "SPCLIP 200,200,100,100", expect: { stdout: "" } }
+  - { name: out_of_range_clamped, code: "SPCLIP -1,-1,500,300", expect: { stdout: "" } }

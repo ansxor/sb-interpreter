@@ -956,6 +956,32 @@ pub fn sppage(
     }
 }
 
+/// `SPCLIP [sx,sy,ex,ey]` — set (4 args) or reset (0 args) the global sprite clipping area
+/// for the current display screen. No return value: the handler checks `ret_count == 0`
+/// first (`cmp r0,#0` / `bne 0x1423f4`), raising errnum 4 for any OUT/function use. The
+/// four coordinates are fetched through the integer getter (truncating floats toward zero);
+/// reversed corners are normalized by the handler (`cmp r0,r1` / `strgt` swaps @0x1424f0 and
+/// @0x142504), and out-of-range coordinates are clamped to the screen dimensions by the
+/// helper rather than raising errnum 10 (cia_3.6.0.lst SPCLIP @0x1423c8-0x142524, helpers
+/// @0x1edeac / 0x1ee0bc). Non-numeric or skipped (`,,`) coords raise errnum 8.
+pub fn spclip(
+    sp: &mut SpriteState,
+    args: &[Value],
+    ret_count: usize,
+    screen: (i32, i32),
+) -> Result<Vec<Value>, RuntimeError> {
+    if ret_count != 0 {
+        return Err(illegal());
+    }
+    let rect = match args {
+        [] => None,
+        [sx, sy, ex, ey] => Some((sx.to_int()?, sy.to_int()?, ex.to_int()?, ey.to_int()?)),
+        _ => return Err(illegal()),
+    };
+    sp.set_clip(screen.0, screen.1, rect);
+    Ok(vec![])
+}
+
 // -- collision (M3-T3) --------------------------------------------------------
 
 /// The `SPCOL` scale-adjustment flag: a Void (skipped `,,`) field is the default FALSE,
@@ -1817,5 +1843,73 @@ mod tests {
         sppage(&mut sp, &[n(2.0)], 0).unwrap();
         spset0(&mut sp, 0);
         assert_eq!(sp.sprites[0].page, 2);
+    }
+
+    #[test]
+    fn spclip_contract() {
+        // SPCLIP has no return value, accepts 0 or 4 args, normalizes reversed corners,
+        // clamps out-of-range coordinates, and disables the clip when wholly off-screen.
+        // hw_verified sb-oracle 2026-06-25 (s_t8e).
+        let i = Value::Int;
+        let mut sp = SpriteState::new();
+
+        // No args resets the clip to None (whole screen).
+        spclip(&mut sp, &[], 0, (400, 240)).unwrap();
+        assert_eq!(sp.clip, None);
+
+        // Normal set stores the normalized rectangle.
+        spclip(&mut sp, &[i(100), i(100), i(200), i(200)], 0, (400, 240)).unwrap();
+        assert_eq!(sp.clip, Some((100, 100, 200, 200)));
+
+        // Reversed corners are normalized, not rejected.
+        spclip(&mut sp, &[i(200), i(200), i(100), i(100)], 0, (400, 240)).unwrap();
+        assert_eq!(sp.clip, Some((100, 100, 200, 200)));
+
+        // Out-of-range coordinates are clamped to the screen dimensions (inclusive 0..w-1,
+        // 0..h-1).
+        spclip(&mut sp, &[i(-1), i(0), i(500), i(10)], 0, (400, 240)).unwrap();
+        assert_eq!(sp.clip, Some((0, 0, 399, 10)));
+        spclip(&mut sp, &[i(0), i(-1), i(10), i(300)], 0, (400, 240)).unwrap();
+        assert_eq!(sp.clip, Some((0, 0, 10, 239)));
+
+        // Wholly off-screen disables the clip (None), rather than raising an error.
+        spclip(&mut sp, &[i(500), i(0), i(600), i(10)], 0, (400, 240)).unwrap();
+        assert_eq!(sp.clip, None);
+
+        // Float coordinates are truncated toward zero.
+        spclip(&mut sp, &[n(100.9), n(-1.9), n(200.0), n(200.0)], 0, (400, 240)).unwrap();
+        assert_eq!(sp.clip, Some((100, 0, 200, 200)));
+
+        // Return value / OUT requested → errnum 4.
+        assert_eq!(
+            spclip(&mut sp, &[i(0), i(0), i(10), i(10)], 1, (400, 240))
+                .unwrap_err()
+                .errnum,
+            4
+        );
+        // Argument count not 0 or 4 → errnum 4.
+        assert_eq!(
+            spclip(&mut sp, &[i(0), i(0)], 0, (400, 240)).unwrap_err().errnum,
+            4
+        );
+        // Non-numeric coordinate → errnum 8 (type mismatch).
+        assert_eq!(
+            spclip(&mut sp, &[i(0), Value::str_from("x"), i(10), i(10)], 0, (400, 240))
+                .unwrap_err()
+                .errnum,
+            8
+        );
+        // Skipped (Void) coordinate → errnum 8.
+        assert_eq!(
+            spclip(
+                &mut sp,
+                &[i(0), Value::Void, i(10), i(10)],
+                0,
+                (400, 240)
+            )
+            .unwrap_err()
+            .errnum,
+            8
+        );
     }
 }

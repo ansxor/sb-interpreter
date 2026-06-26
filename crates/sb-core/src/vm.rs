@@ -2893,6 +2893,12 @@ impl Vm {
             "SPHOME" => spr::sphome(&mut self.sprites[scr], &args, ret_count),
             "SPCHR" => spr::spchr(&mut self.sprites[scr], &self.spdef, &args, ret_count),
             "SPPAGE" => spr::sppage(&mut self.sprites[scr], &args, ret_count),
+            "SPCLIP" => spr::spclip(
+                &mut self.sprites[scr],
+                &args,
+                ret_count,
+                self.screen.display_size(),
+            ),
             "SPCOL" => spr::spcol(&mut self.sprites[scr], &args, ret_count),
             "SPCOLVEC" => spr::spcolvec(&mut self.sprites[scr], &args, ret_count),
             "SPCHK" => spr::spchk(&self.sprites[scr], &args, ret_count),

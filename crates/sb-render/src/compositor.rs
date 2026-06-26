@@ -260,6 +260,9 @@ pub struct SpriteLayer<'a> {
     pub sprite: &'a Sprite,
     /// The GRP page the sprite samples (`grp.pages[sprite.page]`).
     pub sheet: &'a GrpPage,
+    /// Optional screen-space clipping rectangle (`SPCLIP`), inclusive `(left, top, right, bottom)`.
+    /// Pixels outside this rectangle are skipped.
+    pub clip: Option<(i32, i32, i32, i32)>,
 }
 
 impl Layer for SpriteLayer<'_> {
@@ -268,7 +271,7 @@ impl Layer for SpriteLayer<'_> {
     }
 
     fn composite(&self, fb: &mut Framebuffer) {
-        render_sprite(self.sprite, self.sheet, fb);
+        render_sprite(self.sprite, self.sheet, fb, self.clip);
     }
 }
 
@@ -276,7 +279,14 @@ impl Layer for SpriteLayer<'_> {
 /// transformed bounding box back to a source texel. The forward transform places sprite-local
 /// point `l` (in `0..w × 0..h`) at screen `(x,y) + R(angle)·S(scale)·(l − home)`, so the home
 /// point lands exactly on `(SPOFS x, y)`; the inverse recovers `l` from each screen pixel.
-fn render_sprite(sp: &Sprite, sheet: &GrpPage, fb: &mut Framebuffer) {
+/// `clip` is the optional `SPCLIP` area in inclusive screen pixels; it further restricts the
+/// pixels the sprite may cover.
+fn render_sprite(
+    sp: &Sprite,
+    sheet: &GrpPage,
+    fb: &mut Framebuffer,
+    clip: Option<(i32, i32, i32, i32)>,
+) {
     if !sp.active || !sp.display || sp.w <= 0 || sp.h <= 0 {
         return;
     }
@@ -309,10 +319,20 @@ fn render_sprite(sp: &Sprite, sheet: &GrpPage, fb: &mut Framebuffer) {
         maxx = maxx.max(cx);
         maxy = maxy.max(cy);
     }
-    let x0 = (minx.floor() as i32).max(0);
-    let y0 = (miny.floor() as i32).max(0);
-    let x1 = (maxx.ceil() as i32).min(fb.width as i32 - 1);
-    let y1 = (maxy.ceil() as i32).min(fb.height as i32 - 1);
+    let mut x0 = (minx.floor() as i32).max(0);
+    let mut y0 = (miny.floor() as i32).max(0);
+    let mut x1 = (maxx.ceil() as i32).min(fb.width as i32 - 1);
+    let mut y1 = (maxy.ceil() as i32).min(fb.height as i32 - 1);
+    // Honor the global SPCLIP rectangle: pixels outside it are not drawn.
+    if let Some((cx0, cy0, cx1, cy1)) = clip {
+        if x1 < cx0 || x0 > cx1 || y1 < cy0 || y0 > cy1 {
+            return;
+        }
+        x0 = x0.max(cx0);
+        y0 = y0.max(cy0);
+        x1 = x1.min(cx1);
+        y1 = y1.min(cy1);
+    }
     for py in y0..=y1 {
         for px in x0..=x1 {
             let dx = px as f64 - sp.x;
@@ -484,6 +504,7 @@ pub fn compose_screen(
                 layers.push(Box::new(SpriteLayer {
                     sprite: sp,
                     sheet: &grp.pages[sp.page as usize],
+                    clip: sprites.clip,
                 }));
             }
         }
@@ -764,6 +785,33 @@ mod tests {
         sprites.set_direct(0, 0, 0, 4, 4, 0x00); // attr 0 = display OFF
         let fb = scene(&grp, &BgState::new(), &sprites, &Console::top());
         assert_eq!(fb.get_argb(0, 0), DEFAULT_BACKDROP);
+    }
+
+    #[test]
+    fn spclip_crops_sprite_to_screen_rectangle() {
+        // SPCLIP restricts sprite drawing to an inclusive screen-pixel rectangle; pixels outside
+        // the clip are skipped. Resetting the clip (None) restores full-screen drawing.
+        let mut grp = GrpState::new();
+        grp.cur_mut().manip_page = SPRITE_PAGE_DEFAULT;
+        grp.gfill(10, 10, 13, 13, 0xFFFF_0000); // 4×4 red block on the sheet
+        let mut sprites = SpriteState::new();
+        sprites.set_direct(0, 10, 10, 4, 4, 0x01);
+        sprites.sprites[0].x = 100.0;
+        sprites.sprites[0].y = 95.0; // covers screen pixels y=95..98
+
+        // Clip to rows 97..239 — only the bottom two rows of the sprite should show.
+        sprites.clip = Some((0, 97, 399, 239));
+        let fb = scene(&grp, &BgState::new(), &sprites, &Console::top());
+        assert_eq!(fb.get_argb(100, 96), DEFAULT_BACKDROP); // above clip
+        assert_eq!(fb.get_argb(100, 97), 0xFFF8_0000); // inside clip
+        assert_eq!(fb.get_argb(100, 98), 0xFFF8_0000); // inside clip
+        assert_eq!(fb.get_argb(100, 99), DEFAULT_BACKDROP); // below sprite
+
+        // Resetting the clip lets the whole sprite show.
+        sprites.clip = None;
+        let fb = scene(&grp, &BgState::new(), &sprites, &Console::top());
+        assert_eq!(fb.get_argb(100, 95), 0xFFF8_0000);
+        assert_eq!(fb.get_argb(100, 96), 0xFFF8_0000);
     }
 
     #[test]

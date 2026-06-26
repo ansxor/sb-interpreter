@@ -373,6 +373,13 @@ pub struct SpriteState {
     /// `[[0x315d60]+0x4c]`. New sprites capture it at `SPSET` time into their per-slot
     /// [`Sprite::page`].
     pub page: u8,
+    /// The global sprite clipping rectangle for this display screen (`SPCLIP`), stored as
+    /// normalized inclusive screen-pixel corners `(left, top, right, bottom)`. `None` means
+    /// the clip is reset to the whole screen. The disassembled handler rejects any return
+    /// value and accepts exactly 0 or 4 arguments; it normalizes reversed corners and clamps
+    /// out-of-range coordinates to the current screen dimensions rather than raising a range
+    /// error (cia_3.6.0.lst SPCLIP @0x1423c8-0x142524 and helpers @0x1edeac / 0x1ee0bc).
+    pub clip: Option<(i32, i32, i32, i32)>,
 }
 
 impl Default for SpriteState {
@@ -389,6 +396,7 @@ impl SpriteState {
             sprites: vec![Sprite::default(); SPRITE_COUNT],
             hit: HitInfo::default(),
             page: SPRITE_PAGE_DEFAULT,
+            clip: None,
         }
     }
 
@@ -498,6 +506,36 @@ impl SpriteState {
         for sp in &mut self.sprites {
             *sp = Sprite::default();
         }
+    }
+
+    /// `SPCLIP [sx,sy,ex,ey]` — set or reset the global sprite clipping rectangle for this
+    /// display screen. `None` resets to the whole screen; `Some((sx,sy,ex,ey))` normalizes the
+    /// corners (so reversed start/end are tolerated) and clamps them to the given screen
+    /// `width`/`height`. Coordinates that place the rectangle entirely off-screen disable the
+    /// clip, matching the hardware helper's empty-clip path.
+    pub fn set_clip(&mut self, width: i32, height: i32, rect: Option<(i32, i32, i32, i32)>) {
+        let Some((sx, sy, ex, ey)) = rect else {
+            self.clip = None;
+            return;
+        };
+        let left = sx.min(ex);
+        let right = sx.max(ex);
+        let top = sy.min(ey);
+        let bottom = sy.max(ey);
+        // Hardware rejects a clip that is wholly off-screen rather than storing a negative or
+        // oversize rectangle; the reset/empty-clip path disables clipping (equivalent to None).
+        if right < 0 || bottom < 0 || left >= width || top >= height {
+            self.clip = None;
+            return;
+        }
+        let max_x = width - 1;
+        let max_y = height - 1;
+        self.clip = Some((
+            left.max(0),
+            top.max(0),
+            right.min(max_x),
+            bottom.min(max_y),
+        ));
     }
 
     /// `SPSTOP`/`SPSTART` — pause (`stop`=true) or resume the animation of every sprite at
@@ -1310,5 +1348,41 @@ mod tests {
             st.set_anim(0, 0, false, &[0.0, 100.0, 50.0], 1),
             Err(AnimError::ZeroTime)
         );
+    }
+
+    #[test]
+    fn set_clip_contract() {
+        // set_clip normalizes reversed corners, clamps to [0, width-1]/[0, height-1], and
+        // disables clipping (None) for wholly off-screen rectangles.
+        let mut st = SpriteState::new();
+        assert_eq!(st.clip, None);
+
+        // None resets.
+        st.set_clip(400, 240, None);
+        assert_eq!(st.clip, None);
+
+        // Standard rectangle.
+        st.set_clip(400, 240, Some((100, 100, 200, 200)));
+        assert_eq!(st.clip, Some((100, 100, 200, 200)));
+
+        // Reversed corners are normalized.
+        st.set_clip(400, 240, Some((200, 200, 100, 100)));
+        assert_eq!(st.clip, Some((100, 100, 200, 200)));
+
+        // Out-of-range coordinates are clamped, not rejected.
+        st.set_clip(400, 240, Some((-1, 0, 500, 10)));
+        assert_eq!(st.clip, Some((0, 0, 399, 10)));
+        st.set_clip(400, 240, Some((0, -1, 10, 300)));
+        assert_eq!(st.clip, Some((0, 0, 10, 239)));
+
+        // Wholly off-screen disables the clip.
+        st.set_clip(400, 240, Some((500, 0, 600, 10)));
+        assert_eq!(st.clip, None);
+        st.set_clip(400, 240, Some((-200, -200, -100, -100)));
+        assert_eq!(st.clip, None);
+
+        // A rectangle that starts inside but extends past the edge is clamped.
+        st.set_clip(400, 240, Some((300, 200, 500, 300)));
+        assert_eq!(st.clip, Some((300, 200, 399, 239)));
     }
 }
