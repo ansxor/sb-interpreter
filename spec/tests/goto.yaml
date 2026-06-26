@@ -1,0 +1,49 @@
+# Oracle-harvested fixtures for GOTO/GOSUB string-expression targets (hw_verified) — real
+# SmileBASIC 3.6.0 (Azahar), bd:sb-interpreter-lvl run (2026-06-26). Harvested via
+# run_case.py batch (prog sentinel R) + the |err path for the undefined-label cases.
+#
+# A GOTO/GOSUB target need not be a literal @label: it may be a string VARIABLE
+# (GOTO L$) or a runtime CONCATENATION (GOTO "@L"+"K"), resolved when the statement
+# executes. Each success case branches to a label that sets a sentinel; a fall-through
+# would leave it 0. All forms reach the intended label (R=1). An undefined label in a
+# string-expr target raises the SAME errnum 14 (Undefined label) as a literal — at the
+# GOTO/GOSUB's own line (errline=1). Confirms the corpus-discovered forms (82+ programs
+# use `GOTO L$` / `GOTO "0:@TAB"+S$`; sibling GOSUB attested ~89x).
+#
+# Harvest TSVs: harness/harvest/out/lvl.tsv, lvl_err.tsv. sb-core already implements
+# this (Op::GotoExpr / Op::GosubExpr resolve a computed label string → errnum 14 if
+# absent); these cases freeze the behavior as a hermetic gate.
+tests:
+  # --- GOTO: string-expression target reaches the label ---
+  - name: "goto_string_variable"
+    code: "R=0:L$=\"@X\":GOTO L$\n@X\nR=1:PRINT R"
+    expect: { stdout: "1" }
+  - name: "goto_string_concat"
+    code: "R=0:GOTO \"@L\"+\"K\"\n@LK\nR=1:PRINT R"
+    expect: { stdout: "1" }
+  - name: "goto_string_literal"
+    code: "R=0:GOTO \"@X\"\n@X\nR=1:PRINT R"
+    expect: { stdout: "1" }
+  # --- GOSUB: string-expression target calls + returns ---
+  - name: "gosub_string_variable"
+    code: "R=0:L$=\"@S\":GOSUB L$:GOTO @D\n@S\nR=R+1:RETURN\n@D\nPRINT R"
+    expect: { stdout: "1" }
+  - name: "gosub_string_concat"
+    code: "R=0:GOSUB \"@L\"+\"K\":GOTO @D\n@LK\nR=R+1:RETURN\n@D\nPRINT R"
+    expect: { stdout: "1" }
+  - name: "gosub_string_literal"
+    code: "R=0:GOSUB \"@S\":GOTO @D\n@S\nR=R+1:RETURN\n@D\nPRINT R"
+    expect: { stdout: "1" }
+  # --- undefined label in a string-expr target -> errnum 14 (same as literal) ---
+  - name: "goto_undef_string_variable"
+    code: "L$=\"@NOPE\":GOTO L$"
+    expect: { error: { errnum: 14 } }
+  - name: "gosub_undef_string_variable"
+    code: "L$=\"@NOPE\":GOSUB L$"
+    expect: { error: { errnum: 14 } }
+  - name: "goto_undef_string_literal"
+    code: "GOTO \"@NOPE\""
+    expect: { error: { errnum: 14 } }
+  - name: "goto_undef_string_concat"
+    code: "GOTO \"@NO\"+\"PE\""
+    expect: { error: { errnum: 14 } }

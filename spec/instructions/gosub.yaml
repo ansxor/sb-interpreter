@@ -25,7 +25,8 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/gosub.md (GOSUB @Label; calls a sub-routine)" }
   - { type: disassembled, ref: "cia_3.6.0.lst GOSUB is a parser keyword (token @0x2ed6cc), not in the builtin dispatch table; compiled to push-return-address + jump to the label; paired with RETURN" }
   - { type: hw_verified, ref: "sb-oracle branch probe 2026-06-22: GOSUB @S calls the subroutine (which sets N=1) and RETURN comes back so a later IF N==1 fires (errnum 4) - confirming call + return; GOSUB @NOPE (undefined) raises errnum 14." }
-  - { type: community, ref: "sbsave corpus: string-expression targets attested across many programs — string variable (GOSUB L$ ~72x, GOSUB K$ ~17x) and concatenation (GOSUB \"0:@N_\"+W$). Runtime-resolved; oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle bd:sb-interpreter-lvl 2026-06-26 (harness/harvest/out/lvl.tsv + lvl_err.tsv): a string-expression target is resolved at run time and calls the intended subroutine — GOSUB L$ (L$=\"@S\"), GOSUB \"@L\"+\"K\", and the literal-string GOSUB \"@S\" all call @S/@LK and RETURN (sentinel R=1 after return). An undefined label in a string-expr target raises errnum 14 at the GOSUB's own line: GOSUB L$ (L$=\"@NOPE\") → errnum 14 (errline 1). Confirms the corpus-discovered forms." }
+  - { type: community, ref: "sbsave corpus: string-expression targets attested across many programs — string variable (GOSUB L$ ~72x, GOSUB K$ ~17x) and concatenation (GOSUB \"0:@N_\"+W$). Syntax legality proven by the corpus; runtime output now hw_verified above." }
 
 confidence: hw_verified
 

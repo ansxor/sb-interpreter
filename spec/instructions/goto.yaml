@@ -24,7 +24,8 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/goto.md (GOTO @Label; label string / SLOT:@Label forms)" }
   - { type: disassembled, ref: "cia_3.6.0.lst GOTO is a parser keyword (token @0x2ed694), not in the builtin dispatch table; compiled to an unconditional jump to the resolved label address; undefined label -> errnum 14" }
   - { type: hw_verified, ref: "sb-oracle branch probe 2026-06-22 (error-as-signal): GOTO @SK skips an intervening A=ASC(\"\") (no error raised), confirming the unconditional jump; GOTO @NOPE (undefined) raises errnum 14." }
-  - { type: community, ref: "sbsave corpus: string-expression targets attested in 82+ programs — string variable (GOTO L$ ~33x, GOTO K$ ~31x) and concatenation (e.g. 1BWX7ENV/TXT/AND-OS: GOTO ANS1$, GOTO \"@LOCK_\"+LOCK$). Runtime-resolved label strings; oracle-pending." }
+  - { type: hw_verified, ref: "sb-oracle bd:sb-interpreter-lvl 2026-06-26 (harness/harvest/out/lvl.tsv + lvl_err.tsv): a string-expression target is resolved at run time and branches to the intended label — GOTO L$ (L$=\"@X\"), GOTO \"@L\"+\"K\", and the literal-string GOTO \"@X\" all reach @X/@LK (sentinel R=1). An undefined label in a string-expr target raises errnum 14 at the GOTO's own line: GOTO L$ (L$=\"@NOPE\"), GOTO \"@NOPE\", GOTO \"@NO\"+\"PE\" all → errnum 14 (errline 1). Confirms the corpus-discovered forms." }
+  - { type: community, ref: "sbsave corpus: string-expression targets attested in 82+ programs — string variable (GOTO L$ ~33x, GOTO K$ ~31x) and concatenation (e.g. 1BWX7ENV/TXT/AND-OS: GOTO ANS1$, GOTO \"@LOCK_\"+LOCK$). Syntax legality proven by the corpus; runtime output now hw_verified above." }
 
 confidence: hw_verified
 
