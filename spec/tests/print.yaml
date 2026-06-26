@@ -50,3 +50,10 @@ tests:
   - name: "bare_print_emits_one_blank_line"
     code: "PRINT \"A\"\nPRINT\nPRINT \"B\""
     expect: { stdout: "A\n\nB" }
+  # errnum 8 (Type mismatch) — hw_verified sb-oracle 2026-06-26 (0p4 harvest):
+  # PRINT of a whole ARRAY reference (a non-printable value type) raises 8. An
+  # undeclared name auto-declares as a printable scalar default (0 / "") so does
+  # NOT raise; an array ELEMENT is printable (numeric/string) so does not raise.
+  - name: "type_mismatch_whole_numeric_array"
+    code: "DIM A[2]:PRINT A"
+    expect: { error: { errnum: 8 } }
