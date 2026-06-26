@@ -34,6 +34,9 @@ __pycache__/
 # Oracle harvest capture scratch (resumable OUTFILEs/casefiles; regenerable)
 harness/harvest/out/
 
+# --- Ralph loop state (run notes / STOP / DONE — local agent scratch, not source) ---
+/.ralph/
+
 # --- sb-player web client ---
 /sb-player/node_modules/
 /sb-player/dist/

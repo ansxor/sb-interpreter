@@ -29,6 +29,7 @@ python3 run_case.py progcase 'DIM A[5]' 'LEN(A)'   # multi-statement case (setup
 python3 run_case.py grp draw.sb out.png top        # GRAPHICS golden: draw -> SAVE GRPn -> PNG
 python3 run_case.py screenshot out.png [top|bottom|both]  # grab the CURRENT rendered screen(s)
 python3 run_case.py composite prog.sb3 out.png top # COMPOSITE golden: run prog -> screenshot
+python3 run_case.py abort [seconds]            # hold START (M) to abort a wedged program
 ```
 Run `ready` FIRST — it taps the SMILE button (which runs OBOOT to arm the five function keys)
 and proves the SAVE->dialog->disk path by writing `__OK__` to result file `O`. A `sb_window.py
@@ -72,6 +73,18 @@ that's killed keeps everything so far — re-running with the same OUTFILE skips
 retries only `ERROR` ones. Harvest a slice, fold it into the spec, harvest the next.
 
 ### Harvesting limits (queue these, don't force them)
+- **Aborting a wedged program (`abort`).** A runaway program (`WHILE 1:WEND`, the i32-wrap
+  `FOR I%=2147483640 TO 2147483647:NEXT`, etc.) spins forever and produces no result file
+  (`run_program` → `None`). Recover it by holding the 3DS **START** button ~3s: Azahar maps
+  START to keyboard **`M`** (`qt-config.ini` `button_start="code:77,engine:keyboard"`,
+  Qt::Key_M), and holding it aborts the running program back to DIRECT mode. Use
+  `run_case.py abort [seconds]` (→ `sb_window.hold_start`, osascript `key down/up "m"` —
+  cliclick `kd:` is modifier-only and can't hold a letter). **Verified live:** `WHILE 1:WEND`
+  → `progsrc` returns None → `abort` → `ready` → READY (and `1+1`→`2` after, so SB is intact).
+  An abort is NOT an error, so ERRNUM/ERRLINE stay unset — read nothing from them; just re-arm.
+  Wrap a maybe-wedging probe in `timeout 60` as a backstop: if the abort somehow doesn't fire
+  (focus lost, key unmapped), the shell kills the run and a cold `open -a Azahar` relaunch
+  (~12s) always recovers. An endless loop is recoverable, not oracle-fatal.
 - **END / STOP — clean-halt is indistinguishable from an error-halt** via the `err` harness:
   both stop the sentinel SAVE, so F2 then reads a stale/irrelevant `ERRNUM`. To probe halt
   behavior, use a **file-based stdout-diff** instead: a program like
@@ -144,6 +157,10 @@ File Manager).
 ## Graphics capture (O-T6) — `capture_grp` / `run_case.py grp`
 Deterministic pixel goldens **without screenshots**: a program draws to a GRP page, `SAVE"GRPn:NAME"`
 writes it to disk, and `sb_grp.decode_grp` decodes it to RGBA → PNG.
+- **Start draw programs with `ACLS` (or `GCLS` for the target page).** GRP pages are 512×512
+  buffers that persist across runs — without a clear, a prior program's pixels remain on the
+  page and the golden captures the union. `ACLS` clears all GRP pages + sprites/BG/console; a
+  bare `GCLS` clears just one page. The harness's F5/CLS clears console *text* only.
 - **GRP file body** = 28-byte internal header + raw pixels. Header: `"PCBN"`+`"0001"`, then
   `width`(u32 LE @12)·`height`(u32 LE @16) = **512×512** (the full page; off-screen region included).
 - **Pixels:** 16-bit **RGBA5551** LE, row-major, top-left origin. Bits MSB→LSB `R:5 G:5 B:5 A:1`
@@ -165,6 +182,19 @@ writes it to disk, and `sb_grp.decode_grp` decodes it to RGBA → PNG.
 ## Composite capture (O-T6 screenshot path) — `capture_composite` / `run_case.py composite`
 For sprite/BG/backdrop/console side-effects that don't write a GRP page — the *composited*
 display (all layers) — capture via an Azahar screenshot:
+- **Start graphical test programs with `ACLS`.** A screenshot captures *every* layer, so
+  residual state from earlier runs — console text, sprites, BG, prior GRP draws — poisons the
+  golden. `ACLS` resets all graphics screens to their initial state; the program then redraws
+  exactly what the golden should show. (The harness's F5/CLS between runs clears console *text*
+  only, not sprites/BG/GRP, so without `ACLS` a prior program's draws bleed into the capture.)
+  E.g. write `ACLS:BACKCOLOR RGB(255,0,0)` not bare `BACKCOLOR RGB(255,0,0)`.
+- **End graphical test programs with an infinite loop** (`WHILE 1:WEND`) so `capture_composite`
+  screenshots a *clean running frame*. A program that finishes returns to DIRECT mode and SB
+  renders the `Ok` prompt (top-left) before the grab — that console text bleeds into the golden
+  (verified: bare `BACKCOLOR` → 46 stray white px at (0–13,0–15) = the `Ok` glyph). The loop
+  holds the program at its rendered state; `capture_composite` grabs it; then `run_case.py abort`
+  recovers (hold START/M). Pattern: `ACLS:<draw>:WHILE 1:WEND`. Verified: the looped form is
+  100% uniform red, byte-stable across re-grabs (0/96000 px diff).
 - **The Ctrl+P chord is DEAD.** It's registered in Azahar's config but the keyboard chord never
   fires the action (the render widget doesn't take chords even when the window is frontmost —
   verified: the screenshots dir stayed empty). So `key_combo("ctrl","p")` is not used.

@@ -108,6 +108,34 @@ def key_combo(modifier, key):
     subprocess.run(["cliclick", f"kd:{modifier}", f"t:{key}", f"ku:{modifier}"])
 
 
+def hold_start(seconds=3.0):
+    """Hold the 3DS START button (Azahar maps it to keyboard 'M' — see qt-config.ini
+    `button_start="code:77,engine:keyboard"`, Qt::Key_M) for `seconds`. On real SB 3.6.0,
+    holding START ~3s ABORTS a running program and returns to DIRECT mode — the recovery
+    path for a wedged infinite-loop case (e.g. `FOR I%=2147483640 TO 2147483647:NEXT`'s
+    i32-wrap endless loop, or `WHILE 1:WEND`). Without this the only escape was killing +
+    relaunching Azahar.
+
+    cliclick's `kd:` is modifier-only (can't hold a letter), so this drives the key down/up
+    pair via System Events on the frontmost Azahar process. Raises if Azahar isn't running.
+    """
+    if not is_running():
+        raise RuntimeError("Azahar not running — start it first")
+    raise_window()
+    time.sleep(0.3)
+    _osa(
+        'tell application "System Events" to tell process "' + PROC + '"\n'
+        '  set frontmost to true\n'
+        '  delay 0.2\n'
+        f'  key down "m"\n'
+        f'  delay {seconds}\n'
+        '  key up "m"\n'
+        'end tell'
+    )
+    time.sleep(0.8)   # let the abort settle + SB return to DIRECT mode
+    return True
+
+
 def capture_screenshot_menu():
     """Fire Azahar's Tools -> 'Capture Screenshot' via the menu item (NOT the Ctrl+P chord,
     which is registered but does not reliably fire). Brings Azahar frontmost, clicks the menu

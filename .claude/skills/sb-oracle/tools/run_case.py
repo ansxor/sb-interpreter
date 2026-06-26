@@ -28,6 +28,7 @@ Usage:
                                           #   crop: full(512²,default) | top(400×240) | bottom | WxH
   run_case.py screenshot out.png [top|bottom|both]  # grab the CURRENT rendered screen(s)
   run_case.py composite prog.sb3 out.png [top|bottom|both]  # run prog -> screenshot composite
+  run_case.py abort [seconds]              # hold START (M) to abort a wedged program -> DIRECT mode
 Run `ready` FIRST — it taps SMILE to (re)arm the keys and proves the SAVE->dialog->disk path,
 so cases don't each eat a timeout. SB must be on the DIRECT-mode screen (see SKILL.md Step 0).
 `batch` writes ONE program that SAVEs all VALUE results at once (≈one LOAD+RUN, not one per
@@ -150,6 +151,17 @@ def setup_keys():
     time.sleep(1.0)
     W.confirm_dialogs()
     return "tapped SMILE (OBOOT arms KEY 1-5)"
+
+
+def abort(seconds=3.0):
+    """Abort a running SB program by holding 3DS START (Azahar's 'M' key) for `seconds`.
+    On real SB 3.6.0, holding START ~3s stops the running program and returns to DIRECT mode —
+    the recovery path for a wedged infinite-loop case (WHILE 1:WEND, the i32-wrap FOR, etc.).
+    Use this when run_program() returned None and the screen shows SB still executing.
+
+    After aborting, ERRNUM/ERRLINE are NOT set (an abort is not an error), so don't try to
+    read them as a halt; just `ready()` to re-arm + confirm recovery."""
+    return W.hold_start(seconds)
 
 
 def run_command(command, result_name="O", ftype="TXT"):
@@ -521,6 +533,10 @@ if __name__ == "__main__":
         page = int(a[4]) if len(a) > 4 else 0
         w, h, _ = capture_grp(src, out, page=page, crop=crop)
         print(f"captured GRP{page} {w}x{h} -> {out or '(no png)'}")
+    elif mode == "abort":               # hold START (M) to abort a wedged running program
+        secs = float(a[1]) if len(a) > 1 else 3.0
+        abort(secs)
+        print("aborted (held START/M — SB should be back at DIRECT mode); run 'ready' to confirm")
     elif mode == "screenshot":          # composite golden: grab the CURRENT screen (no program)
         # screenshot OUT.png [top|bottom|both]  (default top)
         out = a[1] if len(a) > 1 else "/tmp/sb_screen.png"
