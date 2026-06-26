@@ -5,7 +5,7 @@
 # direction-INDEPENDENT properties (the chosen slot is in the search range and now in use; two
 # allocations are distinct; a full range yields -1; with exactly one free slot the result is
 # forced) so no case bakes in the unverified lowest-free-first scan tie-break (that exact slot
-# selection is queued for the oracle — see HARVEST_QUEUE.md). Visible-render side-effects (a
+# selection is queued for the oracle — see bd search "visual side-effects"). Visible-render side-effects (a
 # sprite at the right place/orientation) block on the framebuffer oracle (O-T6 / M3-T6).
 # Statements are joined with `:` so each case stays a single source line.
 cases:

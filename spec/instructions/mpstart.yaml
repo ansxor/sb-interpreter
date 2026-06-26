@@ -36,7 +36,7 @@ sources:
 
 # Body-pinned arg-count / range / type / restriction errnums (4/52/10/8) are `disassembled`.
 # The runtime session-establishment + RESULT semantics need real wireless peers and are
-# oracle-pending (queued in HARVEST_QUEUE.md), so the top-level confidence stays disassembled.
+# oracle-pending (queued in bd:sb-interpreter-90l), so the top-level confidence stays disassembled.
 confidence: disassembled
 
 tests:

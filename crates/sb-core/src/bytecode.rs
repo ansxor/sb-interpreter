@@ -55,7 +55,7 @@ impl Const {
 /// correct only for declared DIM/VAR-array element typing; it makes an unsuffixed `DIM`
 /// array default to Int where real SB uses Real (`DIM A[3]:A[0]=3.7` → 3.7 on hardware,
 /// 3 here), and it leaves `OPTION DEFINT` a no-op (the compile flag is parsed but never
-/// consumed). See `HARVEST_QUEUE.md` (suffix-less default Real + OPTION DEFINT).
+/// consumed). See `bd:sb-interpreter-3a5` (suffix-less default Real + OPTION DEFINT).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VarType {
     Int,
@@ -87,7 +87,7 @@ pub enum VarRef {
 /// run: `STRICT` requires every variable be declared before use (else `Undefined
 /// variable`, errnum 15 — implemented). `DEFINT` should make the suffix-less numeric
 /// default Integer, but is NOT yet consumed (parsed + recorded only → currently a no-op;
-/// hw_verified target behavior in HARVEST_QUEUE, fix is M1-T4).
+/// hw_verified target behavior in bd:sb-interpreter-3a5, fix is M1-T4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct OptionFlags {
     pub strict: bool,

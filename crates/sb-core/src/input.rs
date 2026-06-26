@@ -26,7 +26,7 @@
 //! `BREPEAT`'s **management ID is the bit index** (0=up … 9=R, 11=ZR, 12=ZL; 10 unused),
 //! NOT the bit weight. The exact default timing + whether SB pre-seeds a non-zero repeat
 //! are not deterministically harvestable (no input injection in the oracle); repeat is
-//! modelled OFF until `BREPEAT` sets it and queued in `HARVEST_QUEUE.md`.
+//! modelled OFF until `BREPEAT` sets it and tracked in beads (bd:sb-interpreter-cjq).
 
 use crate::value::SbStr;
 use std::collections::VecDeque;

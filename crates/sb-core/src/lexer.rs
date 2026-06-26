@@ -6,7 +6,7 @@
 //! one: identifiers are **not** ASCII-only (full-width / kana names are accepted,
 //! per the manual's Japanese variable names; osb's ASCII-only limit is exactly
 //! what we must not inherit). Where the exact identifier class or leading-digit
-//! rule is undocumented it is queued for the oracle (see `HARVEST_QUEUE.md`); the
+//! rule is undocumented it is queued for the oracle (see `bd search "identifier"`); the
 //! implemented rule is "a name starts with a Unicode letter or `_` and continues
 //! with letters, digits or `_`".
 //!

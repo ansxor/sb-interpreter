@@ -84,7 +84,7 @@ system_variables:
 # ── Oracle goldens (sb-oracle, S-T14b) ───────────────────────────────────────────────
 # Deterministic-valued sysvars confirmed against real SmileBASIC 3.6.0. Dynamic ones
 # (MAINCNT/FREEMEM/TIME$/DATE$/CSR*/MIC*/MP*/ERR*) are not frozen as value goldens — their
-# results depend on runtime state — and are queued in HARVEST_QUEUE.md for behavior checks.
+# results depend on runtime state — and are queued in beads (bd:sb-interpreter-7td) for behavior checks.
 oracle:
   goldens:           # frozen: value is invariant for SmileBASIC 3.6.0
     TRUE: 1

@@ -13,7 +13,8 @@ metadata:
 # sb-oracle — drive real SmileBASIC 3.6.0 in Azahar
 
 Capture ground truth from real SB 3.6.0 to fill `hw_verified` specs (see `prd/oracle.md`).
-**Both paths work and are verified.**
+**Both graphics paths work and are verified:** GRP-page capture (`capture_grp`) and composite
+screenshot capture (`capture_composite` / `capture_screen`).
 
 ## Quick start
 
@@ -26,7 +27,8 @@ python3 run_case.py prog 'MID$("ABCDE",1,2)' str   # one value case, string resu
 python3 run_case.py errcase 'A=SQR(-1)'            # error case -> {errored, errnum, errline}
 python3 run_case.py progcase 'DIM A[5]' 'LEN(A)'   # multi-statement case (setup -> result) -> 5
 python3 run_case.py grp draw.sb out.png top        # GRAPHICS golden: draw -> SAVE GRPn -> PNG
-python3 run_case.py screenshot out.png             # COMPOSITE golden (sprites/BG): Ctrl+P
+python3 run_case.py screenshot out.png [top|bottom|both]  # grab the CURRENT rendered screen(s)
+python3 run_case.py composite prog.sb3 out.png top # COMPOSITE golden: run prog -> screenshot
 ```
 Run `ready` FIRST — it taps the SMILE button (which runs OBOOT to arm the five function keys)
 and proves the SAVE->dialog->disk path by writing `__OK__` to result file `O`. A `sb_window.py
@@ -76,13 +78,12 @@ retries only `ERROR` ones. Harvest a slice, fold it into the spec, harvest the n
   `SAVE"TXT:O","BEFORE":END:SAVE"TXT:O","AFTER"` leaves `O=="BEFORE"` iff `END` halted before the
   second SAVE (the first SAVE's dialog must be confirmed before the halt). `END` (not resumable)
   vs `STOP` (CONT-resumable) then needs a CONT tap after the halt to see if the second SAVE runs.
-  Not yet automated — queue in HARVEST_QUEUE.
+  Not yet automated — track in beads (`bd create`).
 - **XON / XOFF and other hardware-feature commands** can pop a feature-confirmation dialog that
   may hang the harness (and need an emulated peripheral). Don't drive these live; spec them from
-  docs + disassembly and queue. (`confirm_dialogs` would tap through a normal dialog, but a
-  feature prompt may differ or block.)
+  docs + disassembly and track in beads.
 - **Cross-slot behavior (COMMON / USE, EXEC into another slot)** needs a multi-program-slot
-  harness; the single-`P` flow can't express it. Queue.
+  harness; the single-`P` flow can't express it. Track in beads.
 
 Verified: FLOOR(3.7)=3, FLOOR(-2.1)=-3, FLOOR(5)=5, FLOOR(8.9)=8, 7 DIV 2=3, 7 MOD 3=1,
 LEN("ABCDE")=5, ABS(-9)=9, POW(2,10)=1024, SQR(144)=12.
@@ -158,8 +159,35 @@ writes it to disk, and `sb_grp.decode_grp` decodes it to RGBA → PNG.
 - **One SAVE per run:** two `SAVE`s in one program fight over the confirm dialog — call `capture_grp`
   once per page instead.
 - **Composite / actual display** (sprites + BG + XSCREEN 4 combined + 3D) isn't in a GRP page →
-  use `capture_screen` (Azahar **Ctrl+P** screenshot of the rendered layout, both screens).
+  use the composite screenshot path below.
 - Goldens go in `harness/corpus/golden/gfx/*.png` (see `harness/corpus/README.md`).
+
+## Composite capture (O-T6 screenshot path) — `capture_composite` / `run_case.py composite`
+For sprite/BG/backdrop/console side-effects that don't write a GRP page — the *composited*
+display (all layers) — capture via an Azahar screenshot:
+- **The Ctrl+P chord is DEAD.** It's registered in Azahar's config but the keyboard chord never
+  fires the action (the render widget doesn't take chords even when the window is frontmost —
+  verified: the screenshots dir stayed empty). So `key_combo("ctrl","p")` is not used.
+- **Drive the menu item instead:** `sb_window.capture_screenshot_menu()` clicks
+  **Tools → "Capture Screenshot"** via System Events. This reliably lands a PNG.
+- **`capture_screen(out_png, screen=)`** grabs the *current* screen (no program run): the landed
+  PNG is `400×480` RGB (both screens stacked: top rows 0–239, bottom 240–479); we split the
+  requested `screen` (`top`/`bottom`/`both`) and re-encode as `400×240` RGBA (color type 6, same
+  shape as `golden/gfx/*.png`) so the CI diff path (`harness/diff/png_util.decode_rgba`) accepts
+  it. Alpha is padded to `0xFF` (screenshots are fully opaque).
+- **`capture_composite(program, out_png, screen=)`** is the run-then-screenshot flow (mirrors
+  `capture_grp`'s F1/F4 load+run but **without SAVE** — the screenshot captures the rendered
+  layout directly, so no extdata result file and no SAVE-dialog handling). A `RUN_SETTLE` beat
+  lets sprites/BG/anims render before the grab.
+- **Verified on real SB 3.6.0:** `BACKCOLOR RGB(255,0,0)` → a uniformly `(255,0,0)` opaque top
+  screen (the backdrop composite); `SPSET 0,0:SPOFS 0,50,50:SPSHOW 0` → the sprite's dark-red
+  template pixel over the black backdrop at (50,50). Round-trips through `decode_rgba` cleanly.
+- **XSCREEN / both screens:** screenshot captures both screens stacked; pass `screen="bottom"`
+  for the touch screen, `"both"` for the full 400×480. Don't use XSCREEN 2/3/4 for capture —
+  2/3 swap the touch screen to a keyboard and 4 forbids DIRECT mode, stranding the oracle's taps.
+- Composite goldens go in `harness/corpus/golden/composite/*.png` (oracle-truth storage; no
+  hermetic CI pixel-diff gate yet — `sb-run` can't render the full composited framebuffer, which
+  is a follow-up bead).
 
 ## Audio (O-T7) — reference only, NOT a deterministic golden
 SB has no render-audio-to-file, and emulator audio is real-time (mixing/timing/sample-rate

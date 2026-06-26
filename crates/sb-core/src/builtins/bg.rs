@@ -55,7 +55,7 @@ fn layer(v: &Value) -> Result<usize, RuntimeError> {
 /// BGGET 2026-06-24); a string is parsed as a (≤4-digit) hexadecimal value `"0000".."FFFF"`.
 /// An over-long string raises errnum 41; a non-number / non-string raises errnum 8. The exact
 /// behavior for malformed hex is oracle-pending (here it parses leniently to 0 — see
-/// `HARVEST_QUEUE.md`).
+/// `bd search "M3-T4"`).
 fn screen_data(v: &Value) -> Result<u16, RuntimeError> {
     match v {
         Value::Int(_) | Value::Real(_) => Ok((v.to_int()? & 0xFFFF) as u16),
@@ -526,7 +526,7 @@ fn bg_varnum(v: &Value) -> Result<usize, RuntimeError> {
 /// Resolve a `BGANIM` `target` operand to a `(channel, relative)` pair, restricted to BG's
 /// channels: 0 XY, 1 Z, 4 R, 5 S, 6 C, 7 V. BG has NO UV(2) or definition-I(3) channel, so
 /// a target resolving to channel 2/3 is rejected (errnum 4 — the exact errnum is
-/// oracle-pending, see `HARVEST_QUEUE.md`). A non-number / non-string is errnum 8; a negative
+/// oracle-pending, see `bd:sb-interpreter-7td`). A non-number / non-string is errnum 8; a negative
 /// numeric or unknown string is errnum 4 (shared with the sprite target parser).
 pub(crate) fn parse_bg_target(v: &Value) -> Result<(usize, bool), RuntimeError> {
     let (channel, relative) = super::sprite::parse_target(v)?;

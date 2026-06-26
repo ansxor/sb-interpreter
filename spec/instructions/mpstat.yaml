@@ -38,7 +38,7 @@ sources:
 
 # Body-pinned argcount/restriction/range errnums (4/52/10) and the whole-session 'state==10'
 # decode are `disassembled`. The 0/1 connection results need real wireless peers and are
-# oracle-pending (HARVEST_QUEUE.md), so the top-level confidence stays disassembled.
+# oracle-pending (bd:sb-interpreter-90l), so the top-level confidence stays disassembled.
 confidence: disassembled
 
 tests:

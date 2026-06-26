@@ -3,7 +3,7 @@
 # round-trips within one run. The data-round-trip / listing behaviour here is the documented
 # resource model; the arg-shape/type/DIRECT-only error guards live in the per-instruction
 # spec `tests:` (replayed via IN_SCOPE_FILES). Bodies are the logical TXT (UTF-8) / DAT (SBDA)
-# payloads — real PCBN byte-layout is queued (O-T3, HARVEST_QUEUE.md).
+# payloads — real PCBN byte-layout is queued (O-T3, bd:sb-interpreter-c9d).
 cases:
   # SAVE "TXT:…",str then read it back via the function form.
   - name: save_load_text_function

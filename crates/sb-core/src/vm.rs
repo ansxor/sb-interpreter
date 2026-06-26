@@ -71,7 +71,7 @@ use std::cmp::Ordering;
 
 /// Max combined depth of the `GOSUB` return stack + `DEF` call frames before raising
 /// **Stack overflow** (errnum 5). The exact value real SB 3.6.0 trips at is queued
-/// (`HARVEST_QUEUE.md`, execution-model "recursion depth that trips Stack overflow");
+/// (`bd:sb-interpreter-air`, execution-model "recursion depth that trips Stack overflow");
 /// this is a generous hypothesis bound that lets ordinary recursion run while still
 /// catching unbounded recursion.
 pub const CALL_STACK_LIMIT: usize = 8192;
@@ -81,7 +81,7 @@ pub const CALL_STACK_LIMIT: usize = 8192;
 /// `sb-core` does not model the allocator, so it reports a fixed faithful constant. The value
 /// is anchored to real SB 3.6.0: a near-empty program reported `8314876` (sb-oracle 2026-06-23).
 /// Programs that branch on FREEMEM (low-memory guards) therefore see "plenty free"; modelling
-/// the allocator so FREEMEM tracks real usage is queued (`HARVEST_QUEUE.md`).
+/// the allocator so FREEMEM tracks real usage is queued (`bd:sb-interpreter-air`).
 const DEFAULT_FREEMEM: i32 = 8_314_876;
 
 // errnums used directly by the VM (names per `spec/reference/errors.yaml`).
@@ -368,7 +368,7 @@ pub struct Vm {
     /// [`Op::CallbackInit`]; cleared when [`Op::CallbackNext`] runs the index past the table.
     callback_active: bool,
     /// `FREEMEM` — free user memory in KB (M6-T3). A fixed faithful model (we don't track the
-    /// real allocator); the exact boot value is oracle-pending (`HARVEST_QUEUE.md`).
+    /// real allocator); the exact boot value is oracle-pending (`bd:sb-interpreter-air`).
     freemem: i32,
     /// The wall-clock date/time behind `DATE$`/`TIME$` (M6-T3). Deterministic default epoch;
     /// the native host injects the real RTC via [`Vm::set_wall_clock`].
@@ -638,7 +638,7 @@ impl Vm {
     /// Write a *writable* system variable (M6-T3). Only `TABSTEP`/`SYSBEEP` reach here (the
     /// compiler rejects assignment to the read-only ones); the value is coerced to Integer
     /// (a String → Type mismatch, errnum 8). A negative `TABSTEP` clamps to 0 (the tab math is
-    /// unsigned); the exact out-of-range behavior is oracle-pending (`HARVEST_QUEUE.md`).
+    /// unsigned); the exact out-of-range behavior is oracle-pending (`bd:sb-interpreter-7td`).
     fn write_sysvar(&mut self, sv: Sysvar, value: Value) -> Result<(), RuntimeError> {
         let n = value.to_int()?;
         match sv {
@@ -1477,14 +1477,14 @@ impl Vm {
     ///   slot (`PRG0`) → 4; a missing file → Load failed (46); an existing file marks the slot.
     ///
     /// Loading the compiled program into the slot — so its DEFs/labels resolve from a
-    /// cross-slot `CALL`/`GOSUB` — is the remaining multi-program model (queued, `HARVEST_QUEUE.md`).
+    /// cross-slot `CALL`/`GOSUB` — is the remaining multi-program model (queued, `bd:sb-interpreter-air`).
     /// Compile a stored program file into a loadable [`Program`] for a slot (M6-T6
     /// string-form `EXEC`/`USE`). The TXT body is read from the current project's storage
     /// (UTF-8, like `LOAD "TXT:"`), parsed, and lowered with the standard builtin set — the
     /// in-VM `parse`→`compile_with` pipeline, so no external compile hook is needed. The
     /// caller has already confirmed the file exists. A program that fails to parse/compile
     /// maps to Syntax error (3) — the exact errnum for a malformed stored program is
-    /// oracle-pending (queued, `HARVEST_QUEUE.md`).
+    /// oracle-pending (queued, `bd:sb-interpreter-c9d`).
     fn compile_slot_file(&self, name: &str) -> Result<Program, VmError> {
         let body = self
             .storage
@@ -1565,7 +1565,7 @@ impl Vm {
     /// documented single-level model. Per-slot vs shared variable scoping, and the exact
     /// resume-state granularity preserved when a loaded slot's `END` returns to a launcher
     /// whose own slot was overwritten by the load (the slot-0 clobber edge), stay
-    /// oracle-pending (queued, `HARVEST_QUEUE.md`).
+    /// oracle-pending (queued, `bd:sb-interpreter-air`).
     fn do_exec(&mut self, v: Value) -> Result<(), VmError> {
         if let Value::Str(s) = &v {
             let s = String::from_utf16_lossy(s);
@@ -1642,7 +1642,7 @@ impl Vm {
     /// captured into [`Vm::exec_returns`] before the swap, so that an `END` in the EXEC'd
     /// program (handled by [`Vm::try_exec_return`]) hands control back to the launcher. The
     /// running-slot *restart* is [`Vm::restart_active_slot`]. DIRECT-mode gating remains
-    /// oracle-pending (queued, `HARVEST_QUEUE.md`).
+    /// oracle-pending (queued, `bd:sb-interpreter-7td`).
     fn exec_transfer(&mut self, target: u8) {
         // Capture the launcher's resume state for the documented END-returns rule (the `pc`
         // already points past the EXEC statement). `target != active_slot` always holds here.
@@ -1693,7 +1693,7 @@ impl Vm {
     ///
     /// Grounded on docs + the corpus restart idiom (no body-readable handler, single-`P` oracle
     /// can't drive a self-restart without a hang); whether real SB clears variables on `EXEC 0`
-    /// vs preserves them is queued for a multi-slot oracle confirm (`HARVEST_QUEUE.md`).
+    /// vs preserves them is queued for a multi-slot oracle confirm (`bd:sb-interpreter-air`).
     fn restart_active_slot(&mut self) {
         self.globals = self
             .program
@@ -3351,7 +3351,7 @@ impl Vm {
     /// management/layer number (documented). The final `callidx` is left at one-past the table
     /// (e.g. 4 after `CALL BG`), matching osb. Whether real SB clears `callidx`, raises on a
     /// bound-but-not-`SPSET` sprite, or shares the counter with a nested sweep is oracle-pending
-    /// (queued, `HARVEST_QUEUE.md`).
+    /// (queued, `bd:sb-interpreter-7td`).
     fn callback_next(&mut self, kind: CallbackKind, here: usize) -> Result<(), VmError> {
         self.callidx += 1;
         if !self.callback_active {
@@ -4561,7 +4561,7 @@ mod tests {
     fn for_counter_promotes_on_overflow_and_terminates() {
         // A suffix-less FOR counter that overruns i32 PROMOTES Int→Double on the step add,
         // so the loop terminates instead of wrapping into an endless loop. Derived from the
-        // hw_verified INC promotion; FOR-specific oracle confirm queued (HARVEST_QUEUE.md).
+        // hw_verified INC promotion; FOR-specific oracle confirm queued (bd:sb-interpreter-air).
         // STEP 2e9 from 2e9: body sees I=2e9, then I=4e9 (promoted), then I=6e9 > TO → stop.
         let vm = run("N=0\nFOR I=2000000000 TO 4500000000 STEP 2000000000\nN=I\nNEXT");
         assert_eq!(real(&vm, "N"), 4_000_000_000.0);

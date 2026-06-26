@@ -26,7 +26,8 @@ Usage:
   run_case.py errcase 'A=SQR(-1)'         # one error case -> {errored, errnum, errline}
   run_case.py grp draw.sb out.png [crop] [page]  # graphics golden: draw -> SAVE GRPn -> PNG
                                           #   crop: full(512²,default) | top(400×240) | bottom | WxH
-  run_case.py screenshot out.png          # composite golden (sprites/BG/both screens): Ctrl+P
+  run_case.py screenshot out.png [top|bottom|both]  # grab the CURRENT rendered screen(s)
+  run_case.py composite prog.sb3 out.png [top|bottom|both]  # run prog -> screenshot composite
 Run `ready` FIRST — it taps SMILE to (re)arm the keys and proves the SAVE->dialog->disk path,
 so cases don't each eat a timeout. SB must be on the DIRECT-mode screen (see SKILL.md Step 0).
 `batch` writes ONE program that SAVEs all VALUE results at once (≈one LOAD+RUN, not one per
@@ -354,26 +355,69 @@ def capture_grp(program, out_png=None, page=0, name="G", crop=None):
     return w, h, rgba
 
 
-def capture_screen(out_png="/tmp/sb_screen.png"):
-    """COMPOSITE GOLDEN (sprites/BG/console): Azahar's Ctrl+P screenshot of the rendered screen.
-    Unlike capture_grp (the exact GRP page), this is the composited display (all layers) at the
-    emulator's output resolution — use it for sprite/BG goldens that GSAVE can't reach. Returns
-    the newest PNG path in Azahar's screenshot dir (copied to out_png)."""
-    import glob
-    import shutil
-    shotdir = os.path.expanduser("~/Library/Application Support/Azahar/screenshots")
+def capture_screen(out_png="/tmp/sb_screen.png", screen="top"):
+    """COMPOSITE GOLDEN (sprites/BG/console): a composited screenshot of the rendered display
+    (all layers — sprites+BG+backdrop+console — at the emulator's output resolution), for
+    goldens that GRP-page capture (capture_grp) can't reach.
+
+    Mechanism: Azahar's Tools -> 'Capture Screenshot' menu item (NOT the Ctrl+P chord, which is
+    registered but never fires — the render widget doesn't take keyboard chords even when
+    frontmost). The landed PNG is 400x480 RGB (both screens stacked: top rows 0-239, bottom
+    240-479); we split the requested screen and re-encode as a 400x240 RGBA PNG (color type 6,
+    same shape as golden/gfx/*.png) so the CI diff path (png_util.decode_rgba) accepts it.
+
+    `screen` = 'top' | 'bottom' | 'both'. 'both' returns a 400x480 RGBA image (top over bottom,
+    as captured). Returns (w, h, rgba). Writes the PNG to `out_png` if given."""
+    src = W.capture_screenshot_menu()          # raises TimeoutError if it doesn't land
+    _, _, ch, px = W._decode_png(src)          # 400x480, ch=3 (RGB) — _decode_png handles ct 2
+    SW, SH = 400, 240
+    row_bytes = SW * ch                        # 1200 bytes/row (RGB)
+
+    # Slice-interleave RGB -> RGBA (opaque) per screen: top = rows 0..SH-1, bottom = SH..2*SH-1.
+    def screen_rgba(top_offset):
+        rgba = bytearray(SW * SH * 4)
+        for y in range(SH):
+            src_off = (top_offset + y) * row_bytes
+            r = px[src_off:src_off + row_bytes]
+            base = y * SW * 4
+            rgba[base:base + SW * 4:4] = r[0::3]      # R
+            rgba[base + 1:base + SW * 4:4] = r[1::3]  # G
+            rgba[base + 2:base + SW * 4:4] = r[2::3]  # B
+        rgba[3::4] = b"\xFF" * (SW * SH)               # A = opaque
+        return rgba
+
+    top = screen_rgba(0)
+    bot = screen_rgba(SH)
+    if screen == "top":
+        w, h, rgba = SW, SH, bytes(top)
+    elif screen == "bottom":
+        w, h, rgba = SW, SH, bytes(bot)
+    elif screen == "both":
+        w, h, rgba = SW, SH * 2, bytes(top) + bytes(bot)
+    else:
+        raise ValueError(f"screen must be 'top'|'bottom'|'both', got {screen!r}")
+    if out_png:
+        G.write_png(out_png, w, h, rgba)
+    return w, h, rgba
+
+
+def capture_composite(program, out_png=None, screen="top"):
+    """COMPOSITE GOLDEN via a run-then-screenshot: write `program` to slot P, load+run it via
+    F1/F4 (same key path as capture_grp / run_program), settle so the frame renders, then
+    screenshot the composited display. Unlike capture_grp there is NO SAVE — the screenshot
+    captures the rendered layout directly, so no extdata result file and no SAVE-dialog handling
+    is needed. Use this for sprite/BG/backdrop/XSCREEN4 side-effects that don't write a GRP page.
+
+    `screen` = 'top' | 'bottom' | 'both' (see capture_screen). Returns (w, h, rgba)."""
+    X.write_file("P", program.rstrip("\n") + "\n", "TXT")
     W.raise_window()
-    time.sleep(0.5)
-    pre = set(glob.glob(os.path.join(shotdir, "*.png")))
-    W.key_combo("ctrl", "p")                # Capture Screenshot shortcut
-    for _ in range(10):
-        time.sleep(0.6)
-        new = set(glob.glob(os.path.join(shotdir, "*.png"))) - pre
-        if new:
-            src = max(new, key=os.path.getmtime)
-            shutil.copy(src, out_png)
-            return out_png
-    raise TimeoutError("no new screenshot appeared (is Ctrl+P bound + window focused?)")
+    time.sleep(0.4)
+    W.confirm_dialogs()
+    _clean()
+    _load_prog()
+    _run_prog()
+    time.sleep(RUN_SETTLE)                      # let sprites/BG/anims render before the grab
+    return capture_screen(out_png, screen=screen)
 
 
 def _load_done(outpath):
@@ -477,8 +521,19 @@ if __name__ == "__main__":
         page = int(a[4]) if len(a) > 4 else 0
         w, h, _ = capture_grp(src, out, page=page, crop=crop)
         print(f"captured GRP{page} {w}x{h} -> {out or '(no png)'}")
-    elif mode == "screenshot":          # composite golden: Azahar Ctrl+P screenshot -> PNG
-        print("saved:", capture_screen(a[1] if len(a) > 1 else "/tmp/sb_screen.png"))
+    elif mode == "screenshot":          # composite golden: grab the CURRENT screen (no program)
+        # screenshot OUT.png [top|bottom|both]  (default top)
+        out = a[1] if len(a) > 1 else "/tmp/sb_screen.png"
+        screen = a[2] if len(a) > 2 else "top"
+        w, h, _ = capture_screen(out, screen=screen)
+        print(f"captured {screen} screen {w}x{h} -> {out}")
+    elif mode == "composite":           # composite golden: run PROGFILE -> screenshot -> PNG
+        # composite PROGFILE OUT.png [top|bottom|both]
+        src = open(a[1]).read()
+        out = a[2] if len(a) > 2 else None
+        screen = a[3] if len(a) > 3 else "top"
+        w, h, _ = capture_composite(src, out, screen=screen)
+        print(f"captured composite ({screen}) {w}x{h} -> {out or '(no png)'}")
     elif mode == "progsrc":             # a full program (must SAVE its result)
         print(run_program(a[1]))
     else:                               # a verbatim DIRECT-mode command (legacy typed path)

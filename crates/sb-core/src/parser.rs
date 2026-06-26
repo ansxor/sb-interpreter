@@ -34,7 +34,7 @@
 //! and `DIV`/`MOD`/`AND`/`OR`/`XOR` are Integer. Folding is **skipped** when it would
 //! divide by zero (so the VM raises `Divide by zero` (errnum 7) only if the code is
 //! actually reached) and for shifts / comparisons / `&&` / `||` (their exact 3.6.0
-//! semantics are left to the VM, where they are verified). See `HARVEST_QUEUE.md`.
+//! semantics are left to the VM, where they are verified). See `bd search "bareword"`.
 //!
 //! Malformed input raises [`ParseError`] with `errnum: 3` (Syntax error).
 
@@ -1462,7 +1462,7 @@ impl Parser {
             // here means the value participates in constant-folding and is a legal `DATA`
             // item. An UNKNOWN `#NAME` keeps the `#`-prefixed `Var` marker (variable names
             // can never contain `#`); the compiler resolves/rejects it later. (Exact errnum
-            // for an undefined `#const` is oracle-pending — see HARVEST_QUEUE.md.)
+            // for an undefined `#const` is oracle-pending — see bd search "#const".)
             TokenKind::Const(name) => {
                 self.advance();
                 match consts::lookup(&name) {

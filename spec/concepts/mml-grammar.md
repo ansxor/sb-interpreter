@@ -9,7 +9,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-4/mml-guide.md (cross-system: @V velocity 0-127; tie '&len' short form; valid length divisors; portamento; chords '|..|' — SB4-only, flagged below)" }
   - { type: disassembled, ref: "cia_3.6.0.lst BGMPLAY handler @0x1a2d54: argcount at [r0,#0xc]; 0 args -> mov r0,#0x4 (errnum 4) @0x1a2d74; (argcount-1) >= 3 -> mov r0,#0x4 @0x1a2d9c (so 1..3 args legal); string arg path bl 0x1d44d8 (MML validate -> 0x1d475c) @0x1a2e20, on failure bl 0x1d450c (build '^' caret context, 0x5e='^') then mov r0,#0x2f -> errnum 47 Illegal MML @0x1a2e3c; number arg path @0x1a2e5c: sub r1,r0,#0x80 / cmp #0x7f -> 128..255 = user BGM, else cmp #0x2a (42) -> 0..42 = preset BGM, >42 -> error", confidence: disassembled }
   - { type: community, ref: "sbsave corpus: @V velocity in 196 programs (e.g. 1DVENVAE/TXT/PICS_R1, 2D7X32KV/TXT/BGM); SFX instruments @256..@287+ (e.g. @267 1624x, @275, @281, @287) beyond the documented single @256, and even higher @400-@411 attested; PSG @144-@149 + @D detune + @E envelope + Q gate + {macro}/$var forms all attested" }
-  - { type: community, ref: "sbsave corpus (M5-T1 parser sweep, 541/550 complete BGM* literals parse): (a) VOLUME STEP WITH OPERAND `(N`/`)N` — docs show only operand-less `(`/`)`, but `)80`/`)24`/`(3`/`)5` pervasive (20+ programs, e.g. 4KHEPXW3/TXT/3DPARKOUR `C&)16C&(16`, BGMSET 222 `{CD=)24D&(3D…}`); read as change-volume-by-N-steps, bare = 1. (b) CASE-SENSITIVE MACRO LABELS — programs define BOTH `{r=…}` and `{R=…}` as distinct macros (e.g. 4KHEPXW3 has {r},{R},{c},{C0},{b},{B0},{a},{A0}), so MML is NOT globally upper-cased the way the docs imply; notes/commands stay case-insensitive. (c) DOTTED DEFAULT LENGTH `L<n>.` — `L2.`/`L8.` set a dotted default (7+ programs, e.g. L2.C ×117). (d) LEADING ACCIDENTALS `+B`/`#F`/`-C` before a note — 62+ programs (e.g. EK3E9F/TXT/PARKOUR BGMSET 145 `A8.B8.+B8`). All output-unproven → oracle-pending (HARVEST_QUEUE M5-T1)." }
+  - { type: community, ref: "sbsave corpus (M5-T1 parser sweep, 541/550 complete BGM* literals parse): (a) VOLUME STEP WITH OPERAND `(N`/`)N` — docs show only operand-less `(`/`)`, but `)80`/`)24`/`(3`/`)5` pervasive (20+ programs, e.g. 4KHEPXW3/TXT/3DPARKOUR `C&)16C&(16`, BGMSET 222 `{CD=)24D&(3D…}`); read as change-volume-by-N-steps, bare = 1. (b) CASE-SENSITIVE MACRO LABELS — programs define BOTH `{r=…}` and `{R=…}` as distinct macros (e.g. 4KHEPXW3 has {r},{R},{c},{C0},{b},{B0},{a},{A0}), so MML is NOT globally upper-cased the way the docs imply; notes/commands stay case-insensitive. (c) DOTTED DEFAULT LENGTH `L<n>.` — `L2.`/`L8.` set a dotted default (7+ programs, e.g. L2.C ×117). (d) LEADING ACCIDENTALS `+B`/`#F`/`-C` before a note — 62+ programs (e.g. EK3E9F/TXT/PARKOUR BGMSET 145 `A8.B8.+B8`). All output-unproven → oracle-pending (bd:sb-interpreter-i8p M5-T1)." }
 confidence: disassembled
 related:
   - BGMPLAY
@@ -239,7 +239,7 @@ variable substitution) are resolved at parse time so the synth consumes a flat p
 timeline. Malformed input anywhere → **errnum 47**, with the byte offset of the failure (the
 `^` caret position) available for diagnostics.
 
-## Open questions (queued in `HARVEST_QUEUE.md`)
+## Open questions (tracked in beads — bd:sb-interpreter-i8p)
 
 - Exact tick base (192/whole-note assumed) and the precise T(tempo)→frames(60 fps) conversion —
   read the synth scheduler in the disassembly.

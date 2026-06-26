@@ -5,7 +5,7 @@
 # overlapping SPCOL'd sprites collide, separated ones return -1, the AND-mask filters). The
 # collision math is static AABB (velocities default 0); the SWEPT-collision time and the
 # SPHITINFO coordinate/velocity read-back for moving objects are oracle-pending
-# (HARVEST_QUEUE.md) — the cases here use stationary objects, so SPHITINFO's time is the
+# (bd search "visual side-effects") — the cases here use stationary objects, so SPHITINFO's time is the
 # documented 0 and its coordinates are the (hw_verified) SPOFS positions. SPDEF round-trips
 # (define/read/reset/copy/array) and SPSET's use of a template's rectangle are deterministic.
 # Statements are joined with `:` so each case stays a single source line.

@@ -2,8 +2,9 @@
 """Minimal PNG decode + (re)encode for the M2-T5 graphics golden pixel-diff.
 
 The committed goldens are ordinary 8-bit RGBA PNGs (color type 6, no interlace) — either
-harvested from real SB 3.6.0 (an oracle GRP capture decoded by `sb_grp.py`, O-T6) or, until
-that harvest lands, rendered by `sb-run --grp` (oracle-pending; see `HARVEST_QUEUE.md`). The
+harvested from real SB 3.6.0 (an oracle GRP capture decoded by `sb_grp.py`, O-T6; or a
+composite screenshot via `run_case.py composite`, O-T6 screenshot path) or, until that
+harvest lands, rendered by `sb-run --grp` (oracle-pending; tracked in beads — `bd ready`). The
 renderer (`sb_render::png`) emits *uncompressed* (stored-deflate) PNGs, so `decode_rgba`
 must accept both: it just runs the IDAT through `zlib.decompress`, which transparently
 handles stored, fixed- and dynamic-Huffman blocks alike. `encode_rgba` re-compresses

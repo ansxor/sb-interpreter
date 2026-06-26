@@ -167,7 +167,7 @@ copies the OUT locals back). `GOSUB` pushes only a return address (no new `bp`/l
 ⚠ The exact 3.6.0 frame cell order, the args-vs-locals overlap, and `RETURN`'s OUT-copy
 offsets are taken from osb (3.5.0) structurally and are **not yet confirmed against
 `cia_3.6.0.lst`**. They must be read from the disassembly (and differentially checked vs the
-oracle) before M1-T6 calls them `hw_verified` — queued in HARVEST_QUEUE.md.
+oracle) before M1-T6 calls them `hw_verified` — queued in beads (bd:sb-interpreter-air).
 
 ### Errors
 

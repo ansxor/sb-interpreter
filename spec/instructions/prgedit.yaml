@@ -40,7 +40,7 @@ sources:
 # Top-level hw_verified: the slot-range guard (errnum 10) and the arg-count guard (errnum 4)
 # are oracle-confirmed and body-pinned (@0x18a12c). The running-slot guard (errnum 4) and the
 # -1=last-line / line-range (errnum 10) logic are body-pinned but their goldens depend on a
-# loaded/running slot (queued in HARVEST_QUEUE.md).
+# loaded/running slot (queued in bd:sb-interpreter-wir).
 confidence: hw_verified
 
 tests:

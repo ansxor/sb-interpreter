@@ -963,7 +963,7 @@ impl<'a> Compiler<'a> {
         // counter (or Real step) PROMOTES Int->Double on overflow rather than wrapping (so a
         // suffix-less counter that overruns i32 terminates instead of wrapping into an endless
         // loop). Derived from the hw_verified INC promotion (overflow.yaml); FOR-specific
-        // confirmation queued in HARVEST_QUEUE.md.
+        // confirmation queued in bd:sb-interpreter-air.
         let counter_promotes = name_is_real_typed(var) || step.is_some_and(is_real_typed);
         let cont_addr = self.here();
         self.emit(Op::PushVar(counter));

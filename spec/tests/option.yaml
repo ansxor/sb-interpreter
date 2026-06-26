@@ -10,7 +10,7 @@
 # A=2.5→2, A=-2.5→-2 (and A#=3.7 stays 3.7); WITHOUT any OPTION, A=3.7→3.7 (Real default).
 # sb-core does NOT yet implement DEFINT (the compile flag is parsed but never consumed, so
 # DEFINT is a no-op and A stays Real), so the four DEFINT real→int coercion cases are NOT
-# frozen here yet — they are queued for the sb-core DEFINT implementation (HARVEST_QUEUE,
+# frozen here yet — they are queued for the sb-core DEFINT implementation (bd:sb-interpreter-3a5,
 # cross-ref M1-T4). The cases below all pass against sb-core today.
 tests:
   - name: "defint_int_value_unaffected"

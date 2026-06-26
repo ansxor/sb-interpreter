@@ -186,7 +186,7 @@ picks how pixels are stored when round-tripping a page through an array: `0` = c
 
 > **Queued (O-T3):** the exact DAT element-type tagging (how int vs double vs ushort arrays,
 > and array dimensions, are encoded in the PCBN header for `SAVE "DAT:"`/`LOAD "DAT:"`) is
-> not yet byte-verified — only the GRP image layout is pixel-exact. See `HARVEST_QUEUE.md`.
+> not yet byte-verified — only the GRP image layout is pixel-exact. See `bd:sb-interpreter-c9d`.
 
 ---
 
@@ -276,7 +276,7 @@ can via the trailing `,FALSE` flag — these are M6 behaviors, not format facts.
 
 ---
 
-## Open questions (queued for the oracle — see `HARVEST_QUEUE.md`)
+## Open questions (queued for the oracle — see `bd:sb-interpreter-c9d`)
 
 - **DAT numeric-array PCBN tagging** — exact element-type (int/double/ushort) and dimension
   encoding for `SAVE "DAT:"`/`LOAD "DAT:"`; only GRP image layout is pixel-verified.

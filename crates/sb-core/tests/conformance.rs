@@ -79,7 +79,7 @@ const IN_SCOPE_CONTROL: &[&str] = &[
 /// items (numbers, strings, const-exprs, `&H` hex, and `#NAME` named constants — the
 /// `data_named_const` case `DATA #L` → 256) all parse/fold (M1-T14 increment, `#NAME`
 /// resolution via `sb_core::consts`). Still folding in with their own increments: the
-/// `Console` LOCATE cursor-positioned scrape — queued in `HARVEST_QUEUE.md`. `INPUT`/`LINPUT`
+/// `Console` LOCATE cursor-positioned scrape — tracked in beads (bd search "S-T5a"). `INPUT`/`LINPUT`
 /// are in scope for their *error* inline tests only (the literal-receiver / function-form
 /// Syntax error 3, both hw_verified); their read forms block on live input and have no
 /// deterministic golden. Listed by id.
@@ -94,7 +94,7 @@ const IN_SCOPE_DATA_ARRAY_CONSOLE: &[&str] = &[
 /// `IN_SCOPE_PARTIAL` — its range (→ 10) / arg-shape (→ 4) error guards replay green now;
 /// only its *positioned*-output cases (`LOCATE 20,15:PRINT "X"` etc.) stay excluded, scraping
 /// to leading-whitespace/`\n`-prefixed text the value-oracle never captured (oracle-pending,
-/// see S-T5a / `HARVEST_QUEUE.md`); `ATTR`/`FONTDEF`/`SCROLL`/`WIDTH` builtins are not
+/// see S-T5a / `bd search "S-T5a"`); `ATTR`/`FONTDEF`/`SCROLL`/`WIDTH` builtins are not
 /// implemented yet (S-T5c). `CHKCHR` (read a grid cell's UTF-16 code; function only) is in
 /// scope (M1-T14 increment 2026-06-23): its empty-cell / out-of-bounds → 0 value cases and
 /// its arg-count / statement-use → 4 error cases replay green. Only its `read_printed_char`
@@ -264,7 +264,7 @@ const IN_SCOPE_INPUT: &[&str] = &["BUTTON", "STICK", "STICKEX", "BREPEAT", "TOUC
 /// `TALKCHK()` statement is rejected at parse-time with errnum 3 on real SB, but `sb-core`
 /// does not yet track function-vs-statement kind, so the handler raises errnum 4 instead
 /// (function-as-statement parse rejection is a broader feature — queued in
-/// `HARVEST_QUEUE.md`).
+/// `bd search "bareword"`).
 const IN_SCOPE_SOUND: &[&str] = &[
     "BGMPLAY", "BGMSTOP", "BGMCHK", "BGMVAR", "BGMVOL", "BGMSET", "BGMSETD", "BGMCLEAR", "BEEP",
     "TALK", "TALKCHK", "TALKSTOP", "EFCSET", "EFCON", "EFCOFF", "EFCWET", "WAVSET", "WAVSETA",
@@ -320,7 +320,7 @@ const IN_SCOPE_DEVICE: &[&str] = &[
 /// 2026-06-23). `LOCATE`: `basic_xy` now folds in with a `console_text()`-aware expect
 /// (15 leading empty rows + the positioned X); `x_edge_50_ok` stays excluded because
 /// column-50 is the off-screen right edge and the wrap/no-display behavior is
-/// oracle-pending (S-T5a, `HARVEST_QUEUE.md`). (`GSPOIT` is now fully in scope — the M2-T2
+/// oracle-pending (S-T5a, `bd search "S-T5a"`). (`GSPOIT` is now fully in scope — the M2-T2
 /// drawing primitives enabled its three `GPSET`-then-read round-trip cases, so it moved to
 /// `IN_SCOPE_GRAPHICS`.) `CHKCHR`: `read_printed_char` now folds in with the
 /// harness scrape `"A65"` (the setup glyph stays on the grid); its empty-cell/OOB/arg-count

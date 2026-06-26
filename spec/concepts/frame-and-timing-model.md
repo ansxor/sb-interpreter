@@ -145,7 +145,7 @@ monotonic frame timer uses `MAINCNT`, and one that needs the clock uses `TIME$`/
   appears in the corpus (consistent with the errnum-4 guard). *(community confidence — syntax
   proven by the corpus, semantics from docs/disasm.)*
 
-## Open questions → oracle (queued in HARVEST_QUEUE.md)
+## Open questions → oracle (tracked in beads — bd:sb-interpreter-7td)
 
 - **Boot value / monotonicity of MAINCNT** across `RUN`/`NEW`/`CLEAR` and across a program
   halt+CONT — confirm it never resets and never pauses (docs say "since launched"; the i32

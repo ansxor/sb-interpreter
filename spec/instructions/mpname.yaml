@@ -32,7 +32,7 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d MPNAME$ (3.5.0 structural cross-check only)" }
 
 # Body-pinned argcount/restriction/range/OOM errnums (4/52/10/11) are `disassembled`. The
-# returned name strings need real wireless peers and are oracle-pending (HARVEST_QUEUE.md),
+# returned name strings need real wireless peers and are oracle-pending (bd:sb-interpreter-4kf),
 # so the top-level confidence stays disassembled.
 confidence: disassembled
 

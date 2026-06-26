@@ -3,7 +3,7 @@
 # The stable/range/parallel cases below mirror otya_test.sb3's SORT/RSORT/STABLESORT
 # assertions (community-level — they encode that real SB's sort is STABLE in both
 # directions and reorders parallel arrays by the key's permutation); they are queued
-# for an oracle pass in HARVEST_QUEUE.md.
+# for an oracle pass in beads (bd search "SORT").
 cases:
   # --- SORT (ascending), spec hw_verified ---
   - name: sort_basic

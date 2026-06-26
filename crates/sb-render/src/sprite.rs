@@ -100,7 +100,7 @@ pub struct HitInfo {
 /// hold/interpolate/loop/relative advancement live in [`crate::anim`]; a sprite animation is
 /// one of those engines (`SpriteAnim`), with the sprite's [`Sprite::read_channel`]/
 /// [`Sprite::write_channel`] supplying the per-channel base/write-back. Exact interpolation
-/// rounding is oracle-pending (no framebuffer harvest yet — see `HARVEST_QUEUE.md`).
+/// rounding is oracle-pending (no framebuffer harvest yet — see `bd search "O-T6"`).
 pub use crate::anim::{AnimError, AnimKeyframe, KeyframeAnim, ANIM_MAX_KEYFRAMES};
 
 /// A running per-channel `SPANIM` animation: a [`KeyframeAnim`] driving one sprite channel.

@@ -18,7 +18,7 @@
 //! (line endpoint inclusivity, the circle/arc midpoint rule, the paint boundary test,
 //! triangle edge fill) is a draw-helper detail the disassembly leaves to the framebuffer
 //! oracle, so the algorithms here are faithful-but-unverified at the pixel level and are
-//! queued for the O-T6 golden harvest (`HARVEST_QUEUE.md`). The unit tests assert only the
+//! queued for the O-T6 golden harvest (`bd:sb-interpreter-7td`). The unit tests assert only the
 //! coverage these algorithms are *defined* to produce (a plotted pixel lands, a box is an
 //! outline, a fill is solid, clipping holds), not parity with hardware sub-pixel rules.
 

@@ -117,7 +117,7 @@ pub const WAVSETA_MAX_SAMPLES: usize = 16384;
 ///
 /// The disassembled handler also recognises bracketed (`[`/`]`) repeat groups inside the
 /// string; that expansion is not modeled here (no committed case exercises it and its exact
-/// semantics are unverified — queued in `HARVEST_QUEUE.md`), so a `[`/`]` is treated as a
+/// semantics are unverified — tracked in beads: bd:sb-interpreter-i8p), so a `[`/`]` is treated as a
 /// non-hex character.
 pub fn decode_waveform(s: &str) -> Option<Vec<u8>> {
     let bytes = s.as_bytes();

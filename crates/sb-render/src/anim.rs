@@ -10,7 +10,7 @@
 //! of channel values (`cur`). The owning state (sprite slot / BG layer) supplies the
 //! per-channel read/write back, then ticks each running animation per displayed frame. This
 //! module is the structural engine sprites and BG share; the exact interpolation rounding is
-//! oracle-pending (no framebuffer harvest yet — see `HARVEST_QUEUE.md`).
+//! oracle-pending (no framebuffer harvest yet — see `bd search "O-T6"`).
 
 /// Maximum keyframes accepted per animation target (`cmp r0,#0x20` → errnum 39 past 32).
 pub const ANIM_MAX_KEYFRAMES: usize = 32;

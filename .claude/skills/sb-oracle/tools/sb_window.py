@@ -8,7 +8,9 @@ Coordinate model: a point (wx,wy) inside the window maps to screen (bx+wx, by+wy
 (bx,by) is the window's top-left in points. cliclick uses screen POINTS. Confirmed:
 window (328,275) hits the on-screen `RUN` tab.
 """
+import glob
 import json
+import os
 import subprocess
 import sys
 import time
@@ -97,8 +99,40 @@ def press(name):
 
 def key_combo(modifier, key):
     """Send a keyboard chord to the focused window, e.g. key_combo('ctrl','p') = Ctrl+P
-    (Azahar's Capture-Screenshot shortcut). Uses cliclick: hold modifier, type key, release."""
+    (Azahar's Capture-Screenshot shortcut). Uses cliclick: hold modifier, type key, release.
+
+    NOTE: the Ctrl+P chord does NOT reliably fire Azahar's Capture-Screenshot action (the
+    render widget doesn't take the chord even when the window is frontmost). For screenshot
+    capture use capture_screenshot_menu() instead, which drives the Tools menu item directly.
+    Kept for other chords (none currently in use)."""
     subprocess.run(["cliclick", f"kd:{modifier}", f"t:{key}", f"ku:{modifier}"])
+
+
+def capture_screenshot_menu():
+    """Fire Azahar's Tools -> 'Capture Screenshot' via the menu item (NOT the Ctrl+P chord,
+    which is registered but does not reliably fire). Brings Azahar frontmost, clicks the menu
+    item, and returns the landed PNG path (newest file in the screenshots dir). Raises
+    TimeoutError if no new screenshot appears within ~6s.
+
+    The landed PNG is 400x480 RGB (both screens stacked, top then bottom). Callers split it
+    per screen + pad alpha themselves (see run_case.capture_screen)."""
+    shotdir = os.path.expanduser("~/Library/Application Support/Azahar/screenshots")
+    raise_window()
+    time.sleep(0.3)
+    pre = set(glob.glob(os.path.join(shotdir, "*.png")))
+    _osa(
+        'tell application "System Events" to tell process "' + PROC + '"\n'
+        '  set frontmost to true\n'
+        '  delay 0.2\n'
+        '  click menu item "Capture Screenshot" of menu "Tools" of menu bar 1\n'
+        'end tell'
+    )
+    for _ in range(20):
+        time.sleep(0.3)
+        new = set(glob.glob(os.path.join(shotdir, "*.png"))) - pre
+        if new:
+            return max(new, key=os.path.getmtime)
+    raise TimeoutError("no new screenshot appeared (is Azahar running + SB loaded?)")
 
 
 def enter():

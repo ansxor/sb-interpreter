@@ -29,7 +29,7 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC compiler: OPTION sets compile flags STRICT/DEFINT before codegen (3.5.0 cross-check, structural only)" }
   - { type: community, ref: "sbsave corpus: OPTION STRICT (~712), OPTION DEFINT (~206), STRICT+DEFINT pair at program top (2BC4738V/TXT/MOH_JUHSY237D lines 30-31); undocumented OPTION TOOL in 12 programs (e.g. 2383C3HE/TXT/LPM, 7Z7NE3RJ/TXT/PTC_EDITOR) [oracle-pending]" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4f): OPTION NOPE (unrecognized feature) -> errnum 3, errline 1" }
-  - { type: hw_verified, ref: "sb-oracle 2026-06-24 (M7-T2 run 4): STRICT undeclared -> `OPTION STRICT`\\n`B=2` raises errnum 15 errline 2 (Undefined variable). TOOL accepted -> `OPTION TOOL` compiles cleanly (no error). DEFINT default flip + truncation -> with DEFINT A=3.7->3, A=-3.7->-3, A=2.5->2, A=-2.5->-2, A=5->5, A#=3.7->3.7; WITHOUT OPTION A=3.7->3.7 and A=2.5->2.5 and `DIM A[3]:A[0]=3.7`->3.7 (suffix-less default is Real). Frozen in spec/tests/option.yaml (the 4 DEFINT real->int coercion cases pend the sb-core DEFINT implementation — see HARVEST_QUEUE)." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-24 (M7-T2 run 4): STRICT undeclared -> `OPTION STRICT`\\n`B=2` raises errnum 15 errline 2 (Undefined variable). TOOL accepted -> `OPTION TOOL` compiles cleanly (no error). DEFINT default flip + truncation -> with DEFINT A=3.7->3, A=-3.7->-3, A=2.5->2, A=-2.5->-2, A=5->5, A#=3.7->3.7; WITHOUT OPTION A=3.7->3.7 and A=2.5->2.5 and `DIM A[3]:A[0]=3.7`->3.7 (suffix-less default is Real). Frozen in spec/tests/option.yaml (the 4 DEFINT real->int coercion cases pend the sb-core DEFINT implementation — see bd:sb-interpreter-3a5)." }
 
 confidence: hw_verified
 

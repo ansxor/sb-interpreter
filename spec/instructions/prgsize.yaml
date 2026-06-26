@@ -44,7 +44,7 @@ sources:
 # Top-level hw_verified: the errnum-4 (too many args) and errnum-10 (slot/type out of range)
 # guards are oracle-confirmed and body-pinned (@0x189f80); the 0/1/2-arg signature, the
 # type/slot defaults, and the no-arg last-run-slot path are body-read. The returned counts
-# are stateful (depend on slot contents) and stay oracle-pending (HARVEST_QUEUE.md).
+# are stateful (depend on slot contents) and stay oracle-pending (bd:sb-interpreter-wir).
 confidence: hw_verified
 
 tests:

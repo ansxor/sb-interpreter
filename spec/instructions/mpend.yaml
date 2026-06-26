@@ -28,7 +28,7 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d MPEND (3.5.0 structural cross-check only)" }
 
 # Body-pinned argcount/restriction errnums (4/52) are `disassembled`. The session-teardown
-# runtime effect needs a real wireless session and is oracle-pending (HARVEST_QUEUE.md).
+# runtime effect needs a real wireless session and is oracle-pending (bd:sb-interpreter-90l).
 confidence: disassembled
 
 tests:

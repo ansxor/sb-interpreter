@@ -34,7 +34,7 @@ sources:
 # Top-level hw_verified: the errnum-38 (no PRGEDIT) and errnum-4 (arg supplied) guards and
 # their ordering are oracle-confirmed and body-pinned (@0x189528). The returned line text and
 # the empty-string-past-EOF result are stateful (depend on slot contents) and stay
-# oracle-pending (HARVEST_QUEUE.md).
+# oracle-pending (bd:sb-interpreter-wir).
 confidence: hw_verified
 
 tests:

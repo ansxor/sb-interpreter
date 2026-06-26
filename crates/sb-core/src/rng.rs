@@ -126,7 +126,7 @@ impl Rng {
     /// `seed_value`. `sb-core` has no I/O/entropy (it must build for wasm32 and stay
     /// deterministic), so each series gets a fixed, distinct fallback seed; a program that
     /// relies on un-seeded RND is non-reproducible on real SB anyway. The real entropy
-    /// source is oracle-queued (`HARVEST_QUEUE.md`).
+    /// source is oracle-queued (`bd:sb-interpreter-mfx`).
     pub fn new() -> Self {
         // Distinct, deterministic fallback seeds (series index + 1).
         let series = std::array::from_fn(|i| TinyMt32::new(i as u32 + 1));

@@ -313,7 +313,7 @@ it lacks the sprite-only `UV`(`#CHKUV`,4) and definition `I`(`#CHKI`,8) channels
 - [[BGCHK]]`(layer)` returns the running-channel bits. **Unlike `SPCHK`, there is NO
   `>>17 & 0xFF` shift** — BG's running bits live in the **low byte** of the layer flags word;
   the stop bit `0x40` forces the result to 0. (Which exact bit is set while a given channel
-  runs is **oracle-pending** — see HARVEST_QUEUE.md.)
+  runs is **oracle-pending** — see bd:sb-interpreter-7td.)
 - [[BGVAR]]: 8 variables (doubles) per layer, **explicitly range-guarded 0–7** (errnum 10
   outside) — stricter than sprite `SPVAR`. Writing variable 7 clears layer flag bit `0x20`
   (the `BGANIM "V"` marker). No setup required (default 0).
@@ -341,7 +341,7 @@ fidelity is an M3 acceptance item.
   SPSET, bad target → **4**; wrong operand type → **8**; SPDEF array count not a multiple of
   7 → **31**.
 
-## Open questions → oracle (queued in HARVEST_QUEUE.md)
+## Open questions → oracle (tracked in beads — bd:sb-interpreter-7td)
 
 - Exact per-channel **mid-animation bit values** that `SPCHK`/`BGCHK` report while a given
   channel runs (the `#CHK*` mapping is documented; the live bit pattern is unconfirmed).

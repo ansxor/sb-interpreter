@@ -32,7 +32,7 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/petitcomputer.d MPSET (3.5.0 structural cross-check only)" }
 
 # Body-pinned argcount/restriction/range errnums (4/52/10) are `disassembled`. The Double-operand
-# coercion rule and the corpus 3-arg anomaly are oracle-pending (HARVEST_QUEUE.md).
+# coercion rule and the corpus 3-arg anomaly are oracle-pending (bd:sb-interpreter-90l).
 confidence: disassembled
 
 tests:

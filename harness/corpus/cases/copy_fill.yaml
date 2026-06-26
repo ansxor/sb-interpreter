@@ -3,7 +3,7 @@
 # spec-derived variants. COPY has two forms (array→array and DATA→array) disambiguated
 # by argument type; FILL overwrites an element range with a value. Both mutate their
 # destination array (shared by Rc). Error edges past the harvested set are queued in
-# HARVEST_QUEUE.md (S-T4c).
+# beads (bd search "S-T4c").
 cases:
   # --- COPY form 1 (array → array), spec hw_verified ---
   - name: copy_basic

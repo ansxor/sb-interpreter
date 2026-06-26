@@ -2,7 +2,7 @@
 # Animation output is read back through the V channel (SPANIM target 7 writes the sprite's
 # internal variable 7, which SPVAR(mgmt,7) reads), so the frame clock (VSYNC/WAIT) advances
 # the animation deterministically with no framebuffer. Exact interpolation rounding for the
-# graphical channels (XY/UV/scale/color) is oracle-pending (HARVEST_QUEUE.md); the V channel
+# graphical channels (XY/UV/scale/color) is oracle-pending (bd search "visual side-effects"); the V channel
 # is an exact double round-trip. The errnum 39/40 data gates are disassembled
 # (spanim.yaml @0x163a00/@0x1639e4).
 cases:

@@ -22,7 +22,7 @@ cases:
   # without IF', but real SB 3.6.0 surfaces 28 ONLY for a LEADING stray ENDIF (the program's
   # first statement) and collapses every other IF-block mismatch — unterminated multi-line IF,
   # dangling ELSE, non-leading stray ENDIF, stray ELSE — to generic Syntax error 3. (Quirk not
-  # modeled: `REM X<nl>ENDIF` → no error; queued in HARVEST_QUEUE.md.)
+  # modeled: `REM X<nl>ENDIF` → no error; queued in bd:sb-interpreter-ctm.)
   - { name: endif_leading,       code: "ENDIF",             expect: { error: { errnum: 28 } } } # leading stray → 28
   - { name: endif_leading_then_stmt, code: "ENDIF\nPRINT 1", expect: { error: { errnum: 28 } } }
   - { name: endif_after_stmt,    code: "PRINT 1\nENDIF",    expect: { error: { errnum: 3 } } }  # non-leading → 3

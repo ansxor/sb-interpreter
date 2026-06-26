@@ -14,4 +14,4 @@ related: []   # instruction ids this model governs
 # <Model name>
 
 <Prose. Put exact numbers/bit-layouts/offsets in tables and cite them. Mark unconfirmed
-inferences as hypotheses and add them to HARVEST_QUEUE.md.>
+inferences as hypotheses and add them to beads (bd search "oracle").>

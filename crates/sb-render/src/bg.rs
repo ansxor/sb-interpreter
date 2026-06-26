@@ -86,7 +86,7 @@ pub struct BgLayer {
     /// `width * height` cells of 16-bit screen data, row-major. Character number 0 = empty.
     pub cells: Vec<u16>,
     /// Visibility flag (`BGSHOW`/`BGHIDE`). Layers are visible by default (the off-screen
-    /// rendered result is oracle-pending — see `HARVEST_QUEUE.md`).
+    /// rendered result is oracle-pending — see `bd:sb-interpreter-7td`).
     pub visible: bool,
     /// Display offset / scroll, in pixels (`BGOFS` X,Y).
     pub ofs_x: i32,
@@ -258,7 +258,7 @@ impl BgState {
     /// `BGFILL layer, sx, sy, ex, ey, data` — fill a rectangle of cells with `data`. The
     /// corners are normalized (min/max) and clamped to the map bounds, so an out-of-range
     /// rectangle fills only its in-bounds intersection (the exact OOB behavior is
-    /// oracle-pending — see `HARVEST_QUEUE.md`). The caller has validated the layer.
+    /// oracle-pending — see `bd:sb-interpreter-7td`). The caller has validated the layer.
     pub fn fill(&mut self, layer: usize, sx: i32, sy: i32, ex: i32, ey: i32, data: u16) {
         let (w, h) = (self.layers[layer].width, self.layers[layer].height);
         let x0 = sx.min(ex).max(0);
@@ -451,7 +451,7 @@ impl BgState {
     /// to a destination whose top-left is `dest` `(dx, dy)`, within the same layer. The source
     /// rectangle is read into a buffer first so overlapping source/destination copy correctly;
     /// cells whose source or destination falls outside the map are skipped (the exact OOB
-    /// behavior is oracle-pending — see `HARVEST_QUEUE.md`). The caller has validated the layer.
+    /// behavior is oracle-pending — see `bd:sb-interpreter-7td`). The caller has validated the layer.
     pub fn copy(&mut self, layer: usize, src: (i32, i32, i32, i32), dest: (i32, i32)) {
         let (sx, sy, ex, ey) = src;
         let (dx, dy) = dest;
@@ -555,7 +555,7 @@ impl BgState {
     /// matrix/table (`[0x306de0]`, indexed non-trivially by the angle) is NOT yet pinned — a
     /// `BGROT 90` of `(16,0)` returns `(-1,15)`, not a clean 90° rotation — so the rotated
     /// path stays a best-effort standard rotation about the origin, oracle-pending with the
-    /// BG framebuffer effect (O-T6 — see `HARVEST_QUEUE.md`). The continuous (`f64`) result is
+    /// BG framebuffer effect (O-T6 — see `bd search "O-T6"`). The continuous (`f64`) result is
     /// returned here; the handler truncates each component toward zero to an integer before it
     /// reaches the OUT variables (done by the caller, `builtins::bg::bgcoord`).
     pub fn coord(&self, layer: usize, src_x: f64, src_y: f64, mode: i32) -> (f64, f64) {

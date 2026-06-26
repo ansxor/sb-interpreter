@@ -82,7 +82,7 @@ fn gfill_covers_its_inclusive_rect_only() {
 fn gline_plots_inclusive_endpoints() {
     // A short HORIZONTAL run: both endpoints lit, one past the end is not. Axis-aligned lines
     // match the device exactly (hw_verified via the scene_mixed GBOX golden); the *diagonal*
-    // GLINE/GTRI stepping diverges from SB's fixed-point DDA and is queued (HARVEST_QUEUE.md,
+    // GLINE/GTRI stepping diverges from SB's fixed-point DDA and is queued (bd:sb-interpreter-tzn,
     // M2-T2), so no diagonal-line golden is committed yet.
     let fb = render(|g| g.gline(0, 0, 5, 0, rgb(255, 255, 255)));
     assert_eq!(fb.get_argb(0, 0), 0xFFF8_F8F8);

@@ -7,8 +7,9 @@ community is web-based). "Faithful" means matching not just the language but the
 numbers, MML audio, sprite/BG hardware behavior. Where real SB3 and this differ, that's
 a bug here.
 
-Open behaviors still awaiting emulator-oracle verification are tracked in
-[`HARVEST_QUEUE.md`](HARVEST_QUEUE.md).
+Open behaviors still awaiting emulator-oracle verification are tracked as beads
+issues — run `bd ready` / `bd list --status=open` (see `CLAUDE.md`), or `bd prime` for
+the full workflow.
 
 ## How fidelity is enforced
 
@@ -65,4 +66,4 @@ Milestones **M0–M7 complete**: spec pipeline, the language core (lexer → par
 compiler → bytecode VM, TinyMT RNG, console) running native + wasm, graphics (RGBA5551
 compositor), sprites/BG, input/timing, MML audio, files/projects/system, and hardening
 (fuzzing, exact error strings, float formatting, overflow/precision). Remaining work is
-oracle-pending fidelity refinements tracked in `HARVEST_QUEUE.md`.
+oracle-pending fidelity refinements tracked as beads issues (`bd ready`).

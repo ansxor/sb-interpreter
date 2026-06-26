@@ -18,7 +18,7 @@
 //! no-PRGEDIT (errnum 38) guards are `hw_verified` (sb-oracle, see the `prg*.yaml` specs). The
 //! *content* behaviour — the returned line text, the line/char/free counts, and the running-
 //! slot file name — is `community`/oracle-pending (no scalar golden in a warm session); the
-//! slot capacity constant behind `PRGSIZE(slot,2)` is queued in `HARVEST_QUEUE.md`.
+//! slot capacity constant behind `PRGSIZE(slot,2)` is tracked in beads (bd:sb-interpreter-wir).
 
 use crate::value::SbStr;
 
@@ -26,8 +26,8 @@ use crate::value::SbStr;
 pub(crate) const LF: u16 = 0x0A;
 
 /// Per-slot program capacity in characters, the base for `PRGSIZE(slot,2)` (free characters).
-/// SmileBASIC 3 slots hold a large fixed buffer; the exact value is oracle-pending (queued in
-/// `HARVEST_QUEUE.md`). `PRGSIZE(slot,1) + PRGSIZE(slot,2)` is meant to equal this total (the
+/// SmileBASIC 3 slots hold a large fixed buffer; the exact value is oracle-pending (tracked in
+/// beads: bd:sb-interpreter-wir). `PRGSIZE(slot,1) + PRGSIZE(slot,2)` is meant to equal this total (the
 /// documented memory-usage idiom `PRGSIZE(3,1)/(PRGSIZE(3,1)+PRGSIZE(3,2))`).
 pub(crate) const SLOT_CAPACITY: usize = 524_288;
 

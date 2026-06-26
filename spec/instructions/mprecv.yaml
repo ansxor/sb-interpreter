@@ -33,7 +33,7 @@ sources:
 
 # Body-pinned argcount/restriction/OOM errnums (4/52/11) and the -1 no-data sentinel are
 # `disassembled`. The runtime SID/RCV$ values and the corpus `MPRECV SID OUT RCV$` word-order
-# question need real wireless peers and are oracle-pending (HARVEST_QUEUE.md), so the
+# question need real wireless peers and are oracle-pending (bd:sb-interpreter-4kf), so the
 # top-level confidence stays disassembled.
 confidence: disassembled
 

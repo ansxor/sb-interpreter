@@ -132,7 +132,7 @@ pub(super) fn min_max(args: &[Value], want_max: bool) -> Result<Value, RuntimeEr
         let elems = array_elements(&args[0])?; // string array → Type mismatch (8)
         if elems.is_empty() {
             // An empty array has no element to return; the exact real-SB result is
-            // queued (HARVEST_QUEUE.md).
+            // queued (bd:sb-interpreter-5if).
             return Err(illegal());
         }
         return Ok(pick_extreme(&elems, want_max)?.clone());

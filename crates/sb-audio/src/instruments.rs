@@ -12,7 +12,7 @@
 //!
 //! Everything here is pure `f32`/`f64` math (no I/O, no RNG crate — noise uses a seeded LCG)
 //! so the render is bit-reproducible and builds for wasm32. The waveform tables are queued in
-//! `HARVEST_QUEUE.md` as the M5 deferred fidelity layer.
+//! beads (bd:sb-interpreter-i8p) as the M5 deferred fidelity layer.
 
 /// The analytic oscillator an instrument is rendered with. `phase` is in `[0,1)` (one full
 /// period), so [`Timbre::sample`] is a pure function of phase except [`Timbre::Noise`], which

@@ -34,7 +34,7 @@ sources:
 
 # Body-pinned argcount/restriction/range errnums (4/52/10) are `disassembled`. The returned
 # slot values need real wireless peers (peer-set via MPSET) and are oracle-pending
-# (HARVEST_QUEUE.md), so the top-level confidence stays disassembled.
+# (bd:sb-interpreter-4kf), so the top-level confidence stays disassembled.
 confidence: disassembled
 
 tests:

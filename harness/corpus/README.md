@@ -4,7 +4,8 @@
 |---|---|---|
 | `cases/*.yaml` | Cross-cutting `code`+`expect` cases (same shape as `spec/tests/`), not tied to one instruction. Deterministic + oracle-harvestable. | `diff/replay.py` (gate), `harvest.py` (fills expects) |
 | `programs/*.sb3` | Full SmileBASIC programs. Some are self-checking (use `ASSERT__`); others are run on both sb-core and the oracle and compared. | `diff/replay.py`, `diff/run.py` |
-| `golden/gfx/*.png` | Frozen oracle framebuffers for pixel-diffing (M2+). | `diff/replay.py` |
+| `golden/gfx/*.png` | Frozen oracle **GRP-page** framebuffers for pixel-diffing (M2+). Oracle-harvested via `run_case.py grp` (O-T6). | `diff/replay.py` |
+| `golden/composite/*.png` | Frozen oracle **composite** framebuffers (sprites+BG+backdrop — the rendered display, not a GRP page). Oracle-harvested via `run_case.py composite` (O-T6 screenshot path). Oracle-truth storage only — no hermetic CI gate yet (`sb-run` can't render the full composited framebuffer; tracked in beads). | (spec `hw_verified` fills) |
 | `golden/audio/*.wav` | Frozen oracle audio for sample/spectral-diffing (M5). | `diff/replay.py` |
 | `sbsave/` | 3,329 real scraped programs + 2,773 resources (test **inputs**, not goldens). `INDEX.json` committed; unpacked tree regenerable via `tools/extract_sbsave.py`. | parser/e2e fuel; oracle-diff candidates. See `sbsave/README.md`. |
 

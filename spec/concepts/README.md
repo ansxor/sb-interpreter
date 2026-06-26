@@ -33,7 +33,7 @@ related: [GPAGE, XSCREEN, DISPLAY, SPSET, BGSCREEN]   # instruction ids this mod
 - One model per file; `slug` matches the filename.
 - Put **exact, verifiable facts** (dimensions, bit layouts, Z ranges, byte offsets) in
   tables and cite the source. Inferences not yet confirmed → mark the source
-  `confidence: hypothesis` and queue confirmation in `HARVEST_QUEUE.md`.
+  `confidence: hypothesis` and queue confirmation in beads (bd search "oracle").
 - These are documentation-grade (not executed by `sb-spec`), but they are the *contract*
   for the corresponding implementation milestone, exactly like instruction specs.
 

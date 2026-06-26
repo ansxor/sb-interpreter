@@ -53,7 +53,7 @@ pub const DEFAULT_BG: u8 = 0;
 /// to SB 3.6.0's hw_verified 5-bit device precision** (`quantize8`, low 3 bits forced 0):
 /// e.g. white = `0xF8F8F8` (== the hw_verified `#WHITE`), red = `0xF80000`. osb (3.5.0)
 /// stored the un-quantized `0xFF`/`0x7F` values; the exact text-layer ARGB on 3.6.0 is
-/// oracle-pending (composite screenshot capture, O-T6 → `HARVEST_QUEUE.md`).
+/// oracle-pending (composite screenshot capture, O-T6 → `bd:sb-interpreter-7td`).
 pub const TEXT_PALETTE: [u32; 16] = [
     0x0000_0000, // 0 transparent
     0xFF00_0000, // 1 black   #TBLACK

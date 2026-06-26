@@ -333,7 +333,7 @@ pub fn spused(
 
 /// Validate a sprite internal-variable number in 0..7 (`SPVAR`). Out of range → errnum 10
 /// (the documented range; the exact errnum for a bad variable number is oracle-pending —
-/// see `HARVEST_QUEUE.md`).
+/// see `bd search "SPVAR"`).
 fn varnum(v: &Value) -> Result<usize, RuntimeError> {
     let i = v.to_int()?;
     if (0..8).contains(&i) {
@@ -1021,7 +1021,7 @@ fn rect_arg(
 ///
 /// `OUT` getters return their fields in declaration order; intermediate-slot skipping
 /// (`SPCOL m OUT ,mask`) is not yet supported (the read-back values are oracle-pending —
-/// see `HARVEST_QUEUE.md`).
+/// see `bd search "visual side-effects"`).
 pub fn spcol(
     sp: &mut SpriteState,
     args: &[Value],

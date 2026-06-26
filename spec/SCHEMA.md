@@ -43,7 +43,7 @@ documented  <  community  <  observed  <  disassembled  <  hw_verified
 A spec's top-level `confidence` is the **lowest** of its load-bearing claims. The
 autonomous loop may reach `documented`/`disassembled`; only the **oracle harvest**
 (`prd/oracle.md`) sets `hw_verified`. Behaviors that need the oracle but can't be verified
-in a given run go to `HARVEST_QUEUE.md`.
+in a given run go to beads (bd search "oracle").
 
 ## The contract (v2)
 

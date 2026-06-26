@@ -499,7 +499,7 @@ pub fn gload(
     let count = (w as usize) * (h as usize);
     let words = load_words(image, count)?;
     // Form 1 (scalar convert flag) vs form 2 (palette array). The palette path is the
-    // documented index-recolor (oracle-pending exact palette semantics — HARVEST_QUEUE).
+    // documented index-recolor (oracle-pending exact palette semantics — bd search "M2-T3").
     let halfwords: Vec<u16> = match form_op {
         Value::IntArray(_) | Value::RealArray(_) => {
             let palette = load_words(form_op, 0)?; // whole palette, not size-checked

@@ -19,7 +19,7 @@
 //! - **Timing** follows `spec/concepts/mml-grammar.md` (S-C5): 192 ticks/whole note (48/quarter),
 //!   tempo `T` = quarter-notes per minute; samples-per-tick = `32728·60 / (T·48)`.
 //!
-//! What stays `hypothesis` (queued, `HARVEST_QUEUE.md`): the actual instrument sample ROM
+//! What stays `hypothesis` (tracked in beads: bd:sb-interpreter-i8p): the actual instrument sample ROM
 //! (firmware data we don't have — analytic wavetables stand in), the exact `@E` envelope
 //! curve, `@V`/`(`/`)` volume scaling, and the LFO (`@MP`/`@MA`/`@ML`) depth/speed mapping.
 //!

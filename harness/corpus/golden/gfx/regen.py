@@ -12,7 +12,8 @@ regression pin, NOT device truth. So this tool is only for SEEDING a brand-new c
 placeholder when the oracle is unavailable: it **refuses to overwrite an existing golden**
 unless you pass `--force` (which you should not do to an oracle-harvested one). To add a real
 golden, capture it on the oracle and drop the PNG in directly — the same `replay.py` diff
-then applies, no regen needed.
+then applies, no regen needed. (Composite goldens — sprites+BG+backdrop — live in
+`golden/composite/` via `run_case.py composite`; oracle-pending CI gate tracked in beads.)
 
 Usage:  python3 regen.py NAME ...           # seed only-missing goldens for the named stems
         python3 regen.py                     # seed every program that has no golden yet

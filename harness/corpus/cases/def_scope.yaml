@@ -31,7 +31,7 @@ cases:
   # before the read. sb-core's static slot compiler pre-declares C as a global from the
   # top-level `PRINT C` (compiled before the deferred DEF body), so `C=7` writes that
   # global and it prints 7. Matching this needs execution-order dataflow; queued in
-  # HARVEST_QUEUE.md. It does NOT affect programs that create shared globals by WRITING
+  # beads (bd:sb-interpreter-cj8). It does NOT affect programs that create shared globals by WRITING
   # them at top level first (the otya pattern), which resolve correctly.
   # A DIM'd local array is usable inside the DEF; the global scalar is untouched.
   # oracle dim_then_use -> 0 (GA is itself DEF-local, top-level read is 0).

@@ -178,7 +178,7 @@ is reserved for instructions that *are* real builtins but are DIRECT-only.
   — the corpus proves these names resolve as the read-only sysvars / the STOP keyword; it does
   not prove output.)*
 
-## Open questions → oracle (queued in HARVEST_QUEUE.md)
+## Open questions → oracle (tracked in beads — bd search "oracle")
 
 - **Exact "resumable error" set.** Which errnums leave a CONT-able state vs. force errnum 33
   "Can't continue"? Docs only say "depending on the error type." Pin per-errnum on the oracle.

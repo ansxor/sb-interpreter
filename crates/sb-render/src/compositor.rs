@@ -39,7 +39,7 @@ use crate::{Framebuffer, TOP_HEIGHT, TOP_WIDTH};
 ///
 /// FIDELITY: the exact `BACKCOLOR`→backdrop composite (and its default) is oracle-pending —
 /// the *composite* framebuffer capture (O-T6) hasn't been harvested; queued in
-/// `HARVEST_QUEUE.md`. Callers may pass any ARGB8888 backdrop to [`compose`].
+/// `bd:sb-interpreter-7td`. Callers may pass any ARGB8888 backdrop to [`compose`].
 pub const DEFAULT_BACKDROP: u32 = 0xFF00_0000;
 
 /// Per-layer on/off flags for one screen (`VISIBLE console, graphic, bg, sprite`, M4-T4).
@@ -220,7 +220,7 @@ fn sample_sheet(page: &GrpPage, x: i32, y: i32) -> u16 {
 ///
 /// FIDELITY: the per-channel rounding (and whether SB modulates alpha) is oracle-pending —
 /// the *composite* framebuffer capture (O-T6, screenshot path) hasn't been harvested. Queued
-/// in `HARVEST_QUEUE.md` (M3-T6). The default white path — what every committed test uses —
+/// in `bd:sb-interpreter-7td` (M3-T6). The default white path — what every committed test uses —
 /// is exact regardless.
 #[inline]
 fn modulate(src: u32, modc: u32) -> u32 {
@@ -254,7 +254,7 @@ fn blend_add(fb: &mut Framebuffer, x: usize, y: usize, argb: u32) {
 /// are deterministic and pinned by the compositor tests. The exact sub-pixel sampling of
 /// *free* rotation / fractional `SPSCALE`, the `SPCHR` sheet offset, the color-modulate
 /// rounding and additive math are oracle-pending — they need the composite screenshot capture
-/// (O-T6), queued in `HARVEST_QUEUE.md` (M3-T6).
+/// (O-T6), queued in `bd:sb-interpreter-7td` (M3-T6).
 pub struct SpriteLayer<'a> {
     /// The sprite slot to draw (must be `active` + `display`).
     pub sprite: &'a Sprite,
@@ -373,7 +373,7 @@ fn render_sprite(
 /// wrap, H/V flip and char-0-empty transparency are deterministic and pinned by the compositor
 /// tests. The 16-color **palette** remap, the exact rotation/scale sampling, scroll *sign*, and
 /// the sheet tile layout are oracle-pending — they need the composite screenshot capture
-/// (O-T6), queued in `HARVEST_QUEUE.md` (M3-T6).
+/// (O-T6), queued in `bd:sb-interpreter-7td` (M3-T6).
 pub struct BgRenderLayer<'a> {
     /// The BG layer to draw (skipped when `!visible`).
     pub layer: &'a BgLayer,
@@ -460,7 +460,7 @@ fn render_bg(layer: &BgLayer, sheet: &GrpPage, fb: &mut Framebuffer) {
 /// FIDELITY: the per-layer **default Z** values, the exact equal-Z tie-break across kinds, and
 /// the sprite-vs-sprite paint order (here ascending management number = rear→front) are
 /// oracle-pending — they need the composite screenshot capture (O-T6); queued in
-/// `HARVEST_QUEUE.md` (M3-T6).
+/// `bd:sb-interpreter-7td` (M3-T6).
 #[allow(clippy::too_many_arguments)]
 pub fn compose_screen(
     width: usize,

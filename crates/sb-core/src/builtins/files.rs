@@ -14,7 +14,7 @@
 //!
 //! The exact real-SmileBASIC PCBN element-type tagging (how int/double/ushort arrays and their
 //! dimensions are laid out so a `DAT:` file round-trips byte-for-byte with real SB / the
-//! corpus) is **queued (O-T3)** — see `HARVEST_QUEUE.md`. Until then, loading a non-`SBDA`
+//! corpus) is **queued (O-T3)** — see `bd:sb-interpreter-c9d`. Until then, loading a non-`SBDA`
 //! body (e.g. a real corpus PCBN blob) raises Illegal file format (errnum 35) rather than
 //! decoding garbage, and the in-interpreter `SAVE`/`LOAD` round-trip uses the `SBDA` codec.
 

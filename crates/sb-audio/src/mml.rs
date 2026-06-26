@@ -12,7 +12,7 @@
 //!
 //! ## Confidence
 //! Grammar + ranges are `documented`/`disassembled` per S-C5. A few values the docs do not
-//! pin down are flagged inline and queued in `HARVEST_QUEUE.md`:
+//! pin down are flagged inline and tracked in beads (bd:sb-interpreter-i8p):
 //! - tick base = 192/whole-note (192 ticks); the exact tempo→frame conversion is the synth's
 //!   (M5-T2) concern and not modelled here;
 //! - default channel state (volume/velocity 127, pan 64 center, octave 4, length 4, gate 8,

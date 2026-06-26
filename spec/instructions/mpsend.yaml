@@ -36,7 +36,7 @@ sources:
 
 # Body-pinned arg-count/restriction/type/length/overflow errnums (4/52/8/41/42) are
 # `disassembled`. The runtime delivery + buffer-overflow timing need real wireless peers and
-# are oracle-pending (queued in HARVEST_QUEUE.md), so the top-level confidence stays disassembled.
+# are oracle-pending (queued in bd:sb-interpreter-4kf), so the top-level confidence stays disassembled.
 confidence: disassembled
 
 tests:
