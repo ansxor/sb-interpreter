@@ -27,6 +27,17 @@
 #       field is bits 12-13 (rot<<12); docs listed it one bit too low (&H0800/&H1000/&H2000).
 # Alias pairs that legitimately share a value: #ON=#YES=#TRUE=1, #OFF=#NO=#FALSE=0,
 # #FUCHSIA=#MAGENTA=&HFFF800F8, and (post-correction) #AQUA=#CYAN=&HFF00F8F8.
+#
+# UNKNOWN #NAME BEHAVIOR (hw_verified): a `#NAME` whose name (after ASCII-upper-casing)
+# is NOT one of the 79 above is a Syntax error (errnum 3) at PARSE time — it does NOT fall
+# through to an undeclared-variable read of 0, and it is NOT a runtime error. This holds in
+# every position a #constant is legal: expression (`PRINT #ZZZ`), assignment rhs (`A=#FOO`,
+# `A%=#FOO`), DATA item (`DATA #BAR`), statement argument (`COLOR #NOPE`), and IF condition
+# (`IF #FOO THEN…`). The lexer accepts `[A-Za-z0-9_]*` after `#` (incl. a bare `#` with no
+# name), so `PRINT #123`, `PRINT #_FOO`, `PRINT #A_B`, and `PRINT #` are all errnum 3 too.
+# Lookup is CASE-INSENSITIVE — `#white`/`#White` fold to the same value as `#WHITE` (only a
+# name that fails to match after upper-casing is rejected). Verified sb-oracle 2026-06-26
+# (bd sb-interpreter-fkv); frozen as `harness/corpus/cases/named_const.yaml` `undef_*` cases.
 confidence: hw_verified
 sources:
   - type: disassembled
@@ -51,6 +62,16 @@ sources:
     reference: >-
       sb-docs/smilebasic-3/reference/constants.md (all 79 constants, 8 groups) — accurate
       except the 7 values listed above, which the oracle overrode.
+  - type: hw_verified
+    reference: >-
+      sb-oracle (bd sb-interpreter-fkv, 2026-06-26): an UNKNOWN `#NAME` (not among the 79
+      built-ins after ASCII-upper-case) raises Syntax error errnum 3 at parse time in every
+      legal position — `PRINT #ZZZ`/`#NOTACONST`, `A=#FOO`, `A%=#FOO`, `DATA #BAR`,
+      `COLOR #NOPE`, `IF #FOO THEN ?"X"`. The lexer accepts `[A-Za-z0-9_]*` (and a bare empty
+      name) after `#`, so `PRINT #123`, `PRINT #_FOO`, `PRINT #A_B`, `PRINT #` → errnum 3.
+      Case-insensitive lookup confirmed: `#white`/`#White` → -460552 (== #WHITE). Captured on
+      Azahar 3.6.0; frozen as `harness/corpus/cases/named_const.yaml` `undef_*` +
+      `case_insensitive_*` cases (deterministic gate replays without the emulator).
 
 # name: constant identifier (incl. leading '#'). group: doc category. raw: the oracle-verified
 # literal (decimal or `&Hxxxx`). bits: that value as u32 (== oracle golden reinterpreted i32).

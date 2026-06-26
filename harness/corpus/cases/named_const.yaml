@@ -47,3 +47,43 @@ cases:
   - name: data_two_named_consts
     code: "READ A,B\nDATA #UP,#DOWN\nPRINT A;\",\";B"
     expect: { stdout: "1,2" }
+  # Unknown #NAME → Syntax error (errnum 3) at PARSE time, not silently 0. Case-insensitive
+  # lookup: #white / #White fold to the same value as #WHITE, but #ZZZ / #Foo (which don't
+  # case-fold to a known name) are rejected. hw_verified (sb-oracle 2026-06-26,
+  # sb-interpreter-fkv): PRINT/A=/A%= /DATA/arg/IF-condition forms all → errnum 3.
+  - name: case_insensitive_white
+    code: 'PRINT #white'
+    expect: { stdout: "-460552" }
+  - name: case_insensitive_White
+    code: 'PRINT #White'
+    expect: { stdout: "-460552" }
+  - name: undef_const_print
+    code: 'PRINT #NOTACONST'
+    expect: { error: { errnum: 3 } }
+  - name: undef_const_short
+    code: 'PRINT #ZZZ'
+    expect: { error: { errnum: 3 } }
+  - name: undef_const_assign_real
+    code: 'A=#FOO'
+    expect: { error: { errnum: 3 } }
+  - name: undef_const_assign_int
+    code: 'A%=#FOO'
+    expect: { error: { errnum: 3 } }
+  - name: undef_const_case
+    code: 'PRINT #Foo'
+    expect: { error: { errnum: 3 } }
+  - name: undef_const_digits
+    code: 'PRINT #123'
+    expect: { error: { errnum: 3 } }
+  - name: undef_const_bare_hash
+    code: 'PRINT #'
+    expect: { error: { errnum: 3 } }
+  - name: undef_const_data_item
+    code: "DATA #BAR"
+    expect: { error: { errnum: 3 } }
+  - name: undef_const_stmt_arg
+    code: 'COLOR #NOPE'
+    expect: { error: { errnum: 3 } }
+  - name: undef_const_if_cond
+    code: 'IF #FOO THEN ?"X"'
+    expect: { error: { errnum: 3 } }

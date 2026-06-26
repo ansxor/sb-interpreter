@@ -1460,14 +1460,17 @@ impl Parser {
             // to an inline Integer literal wherever they appear — they are not runtime
             // variables (see `crate::consts` / `spec/reference/constants.yaml`). Resolving
             // here means the value participates in constant-folding and is a legal `DATA`
-            // item. An UNKNOWN `#NAME` keeps the `#`-prefixed `Var` marker (variable names
-            // can never contain `#`); the compiler resolves/rejects it later. (Exact errnum
-            // for an undefined `#const` is oracle-pending — see bd search "#const".)
+            // item. An UNKNOWN `#NAME` (one not among the 79 built-ins, incl. a bare `#` /
+            // `#` followed by digits / underscores / any unrecognized identifier) is a
+            // Syntax error (errnum 3) at parse time — NOT silently 0. hw_verified on real
+            // SmileBasic 3.6.0 (sb-oracle 2026-06-26, bd sb-interpreter-fkv): `PRINT #ZZZ`,
+            // `A=#FOO`, `DATA #BAR`, `COLOR #NOPE`, `IF #FOO THEN…`, `PRINT #Foo`,
+            // `PRINT #123`, `PRINT #` all → errnum 3.
             TokenKind::Const(name) => {
                 self.advance();
                 match consts::lookup(&name) {
                     Some(v) => Ok(Expr::constant(Lit::Int(v), loc)),
-                    None => Ok(Expr::var(Name::new(format!("#{name}"), Suffix::None), loc)),
+                    None => Err(self.syntax_error(&format!("undefined #constant: #{name}"))),
                 }
             }
             TokenKind::LParen => {
@@ -1837,12 +1840,21 @@ mod tests {
     }
 
     #[test]
-    fn unknown_const_keeps_hash_marker() {
-        // An undefined `#NAME` keeps the `#`-prefixed marker for the compiler to resolve/reject.
-        let ExprKind::Var(name) = &expr("#NOTACONST").kind else {
-            panic!("expected var marker for unknown const");
-        };
-        assert_eq!(name.ident, "#NOTACONST");
+    fn unknown_const_is_syntax_error() {
+        // An undefined `#NAME` (not among the 79 built-ins after upper-casing) is a Syntax
+        // error (errnum 3) at parse time on real SB 3.6.0 — hw_verified (sb-oracle
+        // 2026-06-26, bd sb-interpreter-fkv). It does NOT fall through to an undeclared
+        // variable read of 0.
+        let err = parse_expression("#NOTACONST").expect_err("unknown #const must error");
+        assert_eq!(err.errnum, 3);
+        // Case-insensitive lookup: a name that DOES match after upper-casing still folds.
+        assert_eq!(expr("#white").kind, ExprKind::Const(Lit::Int(-460552)));
+        assert_eq!(expr("#White").kind, ExprKind::Const(Lit::Int(-460552)));
+        // `#` followed by digits / underscore / a bare `#` are all errnum 3.
+        for bad in ["#ZZZ", "#Foo", "#123", "#_FOO", "#A_B", "#"] {
+            let err = parse_expression(bad).expect_err("bad #const must error");
+            assert_eq!(err.errnum, 3, "case {bad:?}");
+        }
     }
 
     // ----- statements: assignment forms -----
