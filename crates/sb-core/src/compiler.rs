@@ -1292,6 +1292,24 @@ impl<'a> Compiler<'a> {
             ExprKind::Void => {
                 self.emit(Op::PushVoid);
             }
+            ExprKind::BarewordKeyword(name) => {
+                // A sole Class-1 statement keyword as an expression operand
+                // (`A=STOP`, the only shape the parser surfaces — see
+                // `cur_class1_keyword`). Real SB reads it as an uninitialized
+                // variable name. Under OPTION STRICT that is the normal
+                // undeclared-variable compile error (15); otherwise the read raises
+                // "Uninitialized variable used" (48) at runtime — emitted as
+                // [`Op::BarewordKeywordErr`]. hw_verified, sb-oracle 2026-06-26,
+                // harness/harvest/out/ctm_bareword_kw.tsv +
+                // ltz_bareword_kw_strict.tsv.
+                if self.options.strict {
+                    return Err(self.err(
+                        ERR_UNDEFINED_VARIABLE,
+                        format!("undefined variable {}", canonical(name)),
+                    ));
+                }
+                self.emit(Op::BarewordKeywordErr);
+            }
         }
         Ok(())
     }

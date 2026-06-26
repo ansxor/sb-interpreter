@@ -1,0 +1,137 @@
+# Oracle-harvested fixtures for statement-keyword-as-bareword-value (hw_verified) —
+# real SmileBASIC 3.6.0 (Azahar), bead sb-interpreter-ltz · 2026-06-26.
+# Harvest: harness/harvest/out/ctm_bareword_kw.tsv (non-STRICT) +
+#          harness/harvest/out/ltz_bareword_kw_strict.tsv (STRICT + A=FOO baseline).
+#
+# SmileBASIC 3.6.0 reserves its statement keywords in statement-leading /
+# assignment-target position (so `STOP=5` is Syntax 3 and the seven Class-1 keywords
+# — STOP END GOTO GOSUB RETURN PRINT RESTORE — can never be assigned as variables).
+# But a sole bareword of one as an *expression operand* (the RHS of `A=<KW>`) falls
+# through to a variable-read of an uninitialized name:
+#   - default mode  -> errnum 48 ("Uninitialized variable used"), runtime, errline 1
+#   - OPTION STRICT -> errnum 15 ("Undefined variable"), compile time, errline 1
+# The keyword must be the ENTIRE RHS: `A=STOP+1` / `A=(STOP)` / `A=1+STOP` are all
+# Syntax 3 (the bareword does not compose). Ordinary uninitialized names are NOT
+# affected: `A=FOO` reads FOO as 0 (silent auto-init), NOT 48 — errnum 48 is specific
+# to the keyword-bareword path. (An unexecuted `IF 0 THEN A=STOP` raises nothing on
+# real SB, proving the 48 is a runtime evaluation error, not compile-time; the
+# deterministic gate asserts only positive errnums, so that NOERR form is not encoded
+# as a case here.)
+
+tests:
+  # --- Class-1 sole-RHS bareword, default mode -> errnum 48 (runtime) ---
+  - name: "bareword_stop_value"
+    code: "A=STOP"
+    expect: { error: { errnum: 48 } }
+  - name: "bareword_end_value"
+    code: "A=END"
+    expect: { error: { errnum: 48 } }
+  - name: "bareword_goto_value"
+    code: "A=GOTO"
+    expect: { error: { errnum: 48 } }
+  - name: "bareword_gosub_value"
+    code: "A=GOSUB"
+    expect: { error: { errnum: 48 } }
+  - name: "bareword_return_value"
+    code: "A=RETURN"
+    expect: { error: { errnum: 48 } }
+  - name: "bareword_print_value"
+    code: "A=PRINT"
+    expect: { error: { errnum: 48 } }
+  - name: "bareword_restore_value"
+    code: "A=RESTORE"
+    expect: { error: { errnum: 48 } }
+
+  # --- Class-1 sole-RHS bareword under OPTION STRICT -> errnum 15 (compile) ---
+  - name: "bareword_stop_strict"
+    code: "OPTION STRICT\nA=STOP"
+    expect: { error: { errnum: 15 } }
+  - name: "bareword_end_strict"
+    code: "OPTION STRICT\nA=END"
+    expect: { error: { errnum: 15 } }
+  - name: "bareword_goto_strict"
+    code: "OPTION STRICT\nA=GOTO"
+    expect: { error: { errnum: 15 } }
+  - name: "bareword_gosub_strict"
+    code: "OPTION STRICT\nA=GOSUB"
+    expect: { error: { errnum: 15 } }
+  - name: "bareword_return_strict"
+    code: "OPTION STRICT\nA=RETURN"
+    expect: { error: { errnum: 15 } }
+  - name: "bareword_print_strict"
+    code: "OPTION STRICT\nA=PRINT"
+    expect: { error: { errnum: 15 } }
+  - name: "bareword_restore_strict"
+    code: "OPTION STRICT\nA=RESTORE"
+    expect: { error: { errnum: 15 } }
+
+  # --- the bareword must be the sole RHS: compound forms are Syntax 3 ---
+  - name: "bareword_plus_one_is_syntax"
+    code: "A=STOP+1"
+    expect: { error: { errnum: 3 } }
+  - name: "one_plus_bareword_is_syntax"
+    code: "A=1+STOP"
+    expect: { error: { errnum: 3 } }
+  - name: "paren_bareword_is_syntax"
+    code: "A=(STOP)"
+    expect: { error: { errnum: 3 } }
+  - name: "neg_bareword_is_syntax"
+    code: "A=-STOP"
+    expect: { error: { errnum: 3 } }
+
+  # --- ordinary uninitialized names are NOT 48 (silent auto-init 0) ---
+  - name: "ordinary_uninit_reads_zero"
+    code: "A=FOO\nPRINT A"
+    expect: { stdout: "0" }
+  - name: "ordinary_uninit_strict_is_15"
+    code: "OPTION STRICT\nA=FOO"
+    expect: { error: { errnum: 15 } }
+
+  # --- Class-2 keywords stay Syntax 3 in expression position ---
+  - name: "for_in_expr_is_syntax"
+    code: "A=FOR"
+    expect: { error: { errnum: 3 } }
+  - name: "while_in_expr_is_syntax"
+    code: "A=WHILE"
+    expect: { error: { errnum: 3 } }
+  - name: "if_in_expr_is_syntax"
+    code: "A=IF"
+    expect: { error: { errnum: 3 } }
+  - name: "dim_in_expr_is_syntax"
+    code: "A=DIM"
+    expect: { error: { errnum: 3 } }
+  - name: "def_in_expr_is_syntax"
+    code: "A=DEF"
+    expect: { error: { errnum: 3 } }
+  # NOTE: `A=CALL` is also Syntax 3 on real SB (harvest ctm_bareword_kw.tsv) but is
+  # OMITTED here — sb-core does not yet reserve CALL in expression position (it
+  # parses as a 0-arg call, no error). A separate pre-existing gap, queued in beads
+  # rather than weakened in this Class-1 slice.
+
+  # --- Class-3 closers keep their dedicated structural errnum ---
+  - name: "next_in_expr_is_21"
+    code: "A=NEXT"
+    expect: { error: { errnum: 21 } }
+  - name: "wend_in_expr_is_25"
+    code: "A=WEND"
+    expect: { error: { errnum: 25 } }
+  - name: "until_in_expr_is_23"
+    code: "A=UNTIL"
+    expect: { error: { errnum: 23 } }
+  - name: "endif_in_expr_is_28"
+    code: "A=ENDIF"
+    expect: { error: { errnum: 28 } }
+
+  # --- the keyword is reserved as an assignment TARGET (Syntax 3) ---
+  - name: "keyword_target_stop_is_syntax"
+    code: "STOP=5"
+    expect: { error: { errnum: 3 } }
+  - name: "keyword_target_end_is_syntax"
+    code: "END=5"
+    expect: { error: { errnum: 3 } }
+  - name: "keyword_target_goto_is_syntax"
+    code: "GOTO=5"
+    expect: { error: { errnum: 3 } }
+  - name: "keyword_target_print_is_syntax"
+    code: "PRINT=5"
+    expect: { error: { errnum: 3 } }

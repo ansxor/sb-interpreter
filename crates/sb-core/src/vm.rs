@@ -109,6 +109,12 @@ const ERR_RETURN_WITHOUT_GOSUB: u32 = 30;
 const ERR_SUBSCRIPT: u32 = 31;
 const ERR_USE_PRGEDIT: u32 = 38;
 const ERR_LOAD_FAILED: u32 = 46;
+/// "Uninitialized variable used" — a Class-1 statement keyword used as a sole
+/// bareword expression operand (`A=STOP`) routes to a read of an uninitialized
+/// name, raising this at runtime. hw_verified (sb-oracle 2026-06-26,
+/// harness/harvest/out/ctm_bareword_kw.tsv). Under OPTION STRICT the same form
+/// raises errnum 15 at compile time instead (see `compiler.rs`).
+const ERR_UNINITIALIZED_VARIABLE: u32 = 48;
 
 /// How a run ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1169,6 +1175,19 @@ impl Vm {
 
             Op::End => return Ok(Some(Halt::End)),
             Op::Stop => return Ok(Some(Halt::Stop)),
+
+            Op::BarewordKeywordErr => {
+                // A Class-1 statement keyword used as a sole bareword expression
+                // operand (`A=STOP`): real SB reads it as an uninitialized variable
+                // name, raising "Uninitialized variable used" (48) at runtime.
+                // (STRICT rejects the same form at compile time with 15, so this op
+                // only runs in non-STRICT programs.) hw_verified, sb-oracle
+                // 2026-06-26, harness/harvest/out/ctm_bareword_kw.tsv.
+                return Err(VmError::Sb {
+                    errnum: ERR_UNINITIALIZED_VARIABLE,
+                    line: 0,
+                });
+            }
 
             Op::CallBuiltin {
                 name,

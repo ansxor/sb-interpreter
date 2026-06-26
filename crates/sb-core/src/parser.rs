@@ -499,6 +499,49 @@ impl Parser {
         let target = self.parse_operand()?;
         if self.is(&TokenKind::Assign) {
             self.advance();
+            // SmileBASIC 3.6.0 special form (hw_verified, sb-oracle 2026-06-26,
+            // harness/harvest/out/ctm_bareword_kw.tsv): a sole Class-1 statement
+            // keyword as the RHS (`A=STOP`) is NOT a syntax error — the keyword
+            // falls through to a variable-read of an uninitialized name, which raises
+            // errnum 48 at runtime (or 15 under OPTION STRICT at compile time). The
+            // keyword must be the ENTIRE RHS: `A=STOP+1` / `A=(STOP)` / `A=1+STOP` are
+            // all Syntax 3 (the bareword does not compose). Detect that exact shape here
+            // before `parse_expr` would reject the keyword as a statement leader.
+            let after_assign = self.pos;
+            // SmileBASIC 3.6.0 special forms for a sole keyword as the ENTIRE RHS
+            // (hw_verified, sb-oracle 2026-06-26, harness/harvest/out/
+            // ctm_bareword_kw.tsv): the keyword must be the whole RHS — `A=STOP+1` /
+            // `A=(STOP)` / `A=1+STOP` are all Syntax 3 (the bareword does not
+            // compose). Detect that exact shape here, before `parse_expr` would
+            // reject the keyword as a statement leader.
+            if let Some(name) = self.cur_class1_keyword() {
+                let kw_loc = self.cur_loc();
+                self.advance();
+                if self.at_arg_end() {
+                    // Class-1 (STOP/END/GOTO/GOSUB/RETURN/PRINT/RESTORE): falls
+                    // through to a variable-read of an uninitialized name → errnum 48
+                    // at runtime (or 15 under OPTION STRICT at compile time). Built as
+                    // a dedicated AST node the compiler lowers.
+                    let rhs = Expr::new(
+                        ExprKind::BarewordKeyword(Name::new(name, Suffix::None)),
+                        kw_loc,
+                    );
+                    return self.make_assignment(target, rhs, loc);
+                }
+                // Not a sole bareword: rewind and let `parse_expr` raise the Syntax
+                // error SB raises for the compound form.
+                self.pos = after_assign;
+            } else if let Some((errnum, msg)) = self.cur_class3_closer_error() {
+                self.advance();
+                if self.at_arg_end() {
+                    // Class-3 closer (NEXT/WEND/UNTIL/ENDIF) as a sole RHS bareword
+                    // raises its dedicated structural errnum at PARSE time (errnum
+                    // 21/25/23/28), regardless of execution — `IF 0 THEN A=NEXT`
+                    // still errors 21. hw_verified ibid.
+                    return Err(self.structural_error(errnum, msg));
+                }
+                self.pos = after_assign;
+            }
             let rhs = self.parse_expr()?;
             return self.make_assignment(target, rhs, loc);
         }
@@ -712,6 +755,45 @@ impl Parser {
                     | "EXEC"
             )
         )
+    }
+
+    /// The Class-1 statement keywords (per the bead sb-interpreter-ctm harvest —
+    /// `harness/harvest/out/ctm_bareword_kw.tsv`, sb-oracle 2026-06-26) that real SB
+    /// 3.6.0 treats as a variable-read when used as a sole bareword expression
+    /// operand (the RHS of `A=<KW>`). Reserved in statement-leading / target
+    /// position, but a sole bareword in expression position falls through to a read
+    /// of an uninitialized name → errnum 48 (non-STRICT) / 15 (STRICT). The other
+    /// statement keywords stay Syntax 3 in expression position (Class 2/3 in the
+    /// harvest); `PRINT` appears in both lists — reserved as a statement leader, yet
+    /// a sole `A=PRINT` bareword routes to the var-read path (48).
+    const CLASS1_BAREWORD_KEYWORDS: &'static [&'static str] =
+        &["STOP", "END", "GOTO", "GOSUB", "RETURN", "PRINT", "RESTORE"];
+
+    /// If the current token is a suffix-less identifier naming a Class-1 bareword
+    /// keyword, return its upper-cased name. Used to detect the `A=<KW>` sole-RHS
+    /// special form.
+    fn cur_class1_keyword(&self) -> Option<String> {
+        let name = self.cur_keyword()?;
+        if Self::CLASS1_BAREWORD_KEYWORDS.contains(&name) {
+            Some(name.to_string())
+        } else {
+            None
+        }
+    }
+
+    /// If the current token is a Class-3 block-closer keyword used as a sole RHS
+    /// bareword (`A=NEXT` / `A=WEND` / `A=UNTIL` / `A=ENDIF`), return the dedicated
+    /// structural errnum + message real SB raises at parse time. (NEXT/WEND/UNTIL/
+    /// ENDIF → 21/25/23/28, the same errnums a stray closer gets — hw_verified,
+    /// sb-oracle 2026-06-26, harness/harvest/out/ctm_bareword_kw.tsv.)
+    fn cur_class3_closer_error(&self) -> Option<(u32, &'static str)> {
+        match self.cur_keyword()? {
+            "NEXT" => Some((21, "NEXT without FOR")),
+            "WEND" => Some((25, "WEND without WHILE")),
+            "UNTIL" => Some((23, "UNTIL without REPEAT")),
+            "ENDIF" => Some((28, "ENDIF without IF")),
+            _ => None,
+        }
     }
 
     // ----- PRINT -----
@@ -2367,14 +2449,19 @@ mod tests {
     /// A statement-only command keyword used in expression position is a Syntax error
     /// (errnum 3), raised before any handler runs — NOT the undefined-call errnum 16 it
     /// would get if parsed as a `Call`. `A=LINPUT("X")`→3 is hw_verified (sb-oracle s_t5b
-    /// 2026-06-22, linput.yaml); `INPUT` is the symmetric form (oracle-pending).
+    /// 2026-06-22, linput.yaml); `INPUT` is the symmetric form (oracle-pending). A keyword
+    /// mid-expression (`B=1+FOR`) is also Syntax 3. NOTE: a sole bareword Class-1 keyword
+    /// as the ENTIRE RHS (`A=PRINT`) is NOT covered here — that is the special
+    /// bareword-value form routed to errnum 48/15 (see `bareword_keyword_value.yaml` +
+    /// `cur_class1_keyword`), so it is deliberately absent from this syntax-error list.
     #[test]
     fn command_keyword_in_expression_position_is_syntax_error() {
         for src in [
             r#"A=LINPUT("X")"#, // LINPUT as a function (hw_verified → 3, was 16)
             r#"A=INPUT("X")"#,  // INPUT as a function (symmetric)
-            "A=PRINT",          // a bare statement keyword as a value
             "B=1+FOR",          // statement keyword mid-expression
+            "A=PRINT+1",        // a bare keyword composed into an expression
+            "A=(PRINT)",        // a bare keyword forced into expr position by parens
         ] {
             let err = parse(src).expect_err(&format!("`{src}` should fail"));
             assert_eq!(err.errnum, 3, "`{src}` should be Syntax error (3)");
@@ -2396,5 +2483,46 @@ mod tests {
         let err = parse("A=1\nIF X").unwrap_err();
         assert_eq!(err.errnum, 3);
         assert_eq!(err.loc.line, 2);
+    }
+
+    /// A sole Class-1 statement keyword as the ENTIRE RHS (`A=STOP`) parses (it is
+    /// not a Syntax error) and lowers to a `BarewordKeyword` operand the compiler
+    /// turns into errnum 48 (runtime) / 15 (STRICT, compile). hw_verified, sb-oracle
+    /// 2026-06-26, harness/harvest/out/ctm_bareword_kw.tsv.
+    #[test]
+    fn sole_class1_keyword_rhs_is_bareword_value() {
+        for kw in ["STOP", "END", "GOTO", "GOSUB", "RETURN", "PRINT", "RESTORE"] {
+            let p = parse(&format!("A={kw}")).expect("`A=<KW>` should parse");
+            assert_eq!(p.len(), 1, "`A={kw}` -> one statement");
+            assert!(
+                matches!(
+                    &p[0].kind,
+                    StmtKind::Assign { expr, .. }
+                        if matches!(expr.kind, ExprKind::BarewordKeyword(_))
+                ),
+                "`A={kw}` -> Assign of a BarewordKeyword"
+            );
+        }
+    }
+
+    /// A sole Class-3 closer as the ENTIRE RHS (`A=NEXT`) raises its dedicated
+    /// structural errnum at PARSE time (21/25/23/28), matching real SB. hw_verified
+    /// ibid.
+    #[test]
+    fn sole_class3_closer_rhs_is_structural_error() {
+        for (kw, want) in [("NEXT", 21u32), ("WEND", 25), ("UNTIL", 23), ("ENDIF", 28)] {
+            let err = parse(&format!("A={kw}")).expect_err("`A=<KW>` should fail");
+            assert_eq!(err.errnum, want, "`A={kw}` errnum");
+        }
+    }
+
+    /// A keyword composed into a larger RHS is NOT the bareword form — it stays a
+    /// Syntax error. hw_verified ibid (`A=STOP+1` / `A=(STOP)` / `A=1+STOP` → 3).
+    #[test]
+    fn composed_keyword_rhs_stays_syntax_error() {
+        for src in ["A=STOP+1", "A=1+STOP", "A=(STOP)", "A=-STOP"] {
+            let err = parse(src).expect_err("`{src}` should fail");
+            assert_eq!(err.errnum, 3, "`{src}` should be Syntax error (3)");
+        }
     }
 }

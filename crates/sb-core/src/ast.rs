@@ -262,6 +262,18 @@ pub enum ExprKind {
     Ref(Box<Expr>),
     /// An omitted argument, e.g. the gap in `LOCATE ,5` (`node.d:VoidExpression`).
     Void,
+    /// A Class-1 statement keyword used as a sole expression operand, e.g. the RHS of
+    /// `A=STOP`. SmileBASIC 3.6.0 (hw_verified, sb-oracle 2026-06-26,
+    /// harness/harvest/out/ctm_bareword_kw.tsv) treats the seven "structural-flow"
+    /// statement keywords — `STOP END GOTO GOSUB RETURN PRINT RESTORE` — as reserved
+    /// in statement-leading / assignment-target position (so `STOP=5` is Syntax 3 and
+    /// they can never be assigned), but a sole bareword of one as an *expression*
+    /// falls through to a variable-read of an uninitialized name: under
+    /// `OPTION STRICT` that trips the undeclared-variable gate (errnum 15, compile
+    /// time); without STRICT it raises errnum 48 (Uninitialized variable used) at
+    /// runtime when the operand is evaluated. A *compound* expression (`STOP+1`,
+    /// `(STOP)`, `1+STOP`) is Syntax 3 — only the sole bareword form routes here.
+    BarewordKeyword(Name),
 }
 
 // =============================================================================

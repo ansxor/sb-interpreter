@@ -286,6 +286,17 @@ pub enum Op {
     End,
     /// `STOP` — halt (distinct from `END`; resumable via CONT in DIRECT mode).
     Stop,
+
+    // --- special-form expression operands -------------------------------------
+    /// A Class-1 statement keyword used as a sole bareword expression operand
+    /// (`A=STOP` / `A=END` / `A=GOTO` / `A=GOSUB` / `A=RETURN` / `A=PRINT` /
+    /// `A=RESTORE`). Real SB 3.6.0 reads it as an uninitialized variable name and
+    /// raises "Uninitialized variable used" (errnum 48) at runtime when the operand
+    /// is evaluated (hw_verified, sb-oracle 2026-06-26,
+    /// harness/harvest/out/ctm_bareword_kw.tsv). The compiler emits this instead of
+    /// a `PushVar`; under OPTION STRICT the form is rejected at compile time with
+    /// errnum 15 instead, so this op only appears in non-STRICT programs.
+    BarewordKeywordErr,
 }
 
 /// A compiled user function (`DEF`/`COMMON DEF`), addressed into its slot's `code`.
