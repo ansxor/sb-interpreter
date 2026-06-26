@@ -18,12 +18,11 @@
 //!    IF/FOR/WHILE/REPEAT/GOTO/GOSUB/ON/… — see `IN_SCOPE_CONTROL`; `CALL`/`COMMON`/`XON`/
 //!    `XOFF` are later-milestone and excluded), the array/variable mutation set (`DIM`/`VAR`/
 //!    `DATA`/`SORT`/`SWAP`/`INC`/… — see `IN_SCOPE_DATA_ARRAY_CONSOLE`), and the implemented
-//!    **Console input/output** output builtins (`PRINT`/`COLOR`/`CLS`/`INKEY$` — see
+//!    **Console input/output** output builtins (`PRINT`/`COLOR`/`CLS`/`INKEY$`/`LOCATE` — see
 //!    `IN_SCOPE_CONSOLE`; the `ATTR`/`CHKCHR`/`FONTDEF`/`SCROLL`/`WIDTH` builtins fold in
 //!    with their own increments). Specs `sb-core` implements only *partially* contribute
-//!    their deterministic cases via `IN_SCOPE_PARTIAL` (per-case exclusion): `LOCATE`'s
-//!    range/arg-shape error guards fold in now while its positioned-output cases stay
-//!    oracle-pending. These produce a comparable
+//!    their deterministic cases via `IN_SCOPE_PARTIAL` (per-case exclusion): `CHKCHR`'s
+//!    `read_printed_char` setup-glyph case stays excluded (its scrape is `"A65"`). These produce a comparable
 //!    `console_text()` (or a checkable errnum). Graphics/sprite/BG/etc. instructions are
 //!    intentionally out of scope here (their behavior is page/layer state, exercised by the VM
 //!    unit tests + corpus cases) and are folded in as their milestones land.
@@ -90,12 +89,12 @@ const IN_SCOPE_DATA_ARRAY_CONSOLE: &[&str] = &[
 /// `Console input/output` instructions whose builtins `sb-core` implements (M1-T8) and whose
 /// inline `tests:` are deterministic + `console_text()`-comparable: `PRINT` (formatting),
 /// `COLOR` (fg/bg set + range errnums), `CLS` (clears the grid), and `INKEY$` (empty-buffer
-/// `""`). The category is NOT taken wholesale by id: `LOCATE` is folded PARTIALLY via
-/// `IN_SCOPE_PARTIAL` — its range (→ 10) / arg-shape (→ 4) error guards replay green now;
-/// only its *positioned*-output cases (`LOCATE 20,15:PRINT "X"` etc.) stay excluded, scraping
-/// to leading-whitespace/`\n`-prefixed text the value-oracle never captured (oracle-pending,
-/// see S-T5a / `bd search "S-T5a"`); `ATTR`/`FONTDEF`/`SCROLL`/`WIDTH` builtins are not
-/// implemented yet (S-T5c). `CHKCHR` (read a grid cell's UTF-16 code; function only) is in
+/// `""`). `LOCATE` is fully in scope (2026-06-26, xdg harvest): its range (→ 10) /
+/// arg-shape (→ 4) error guards AND its positioned-output cases replay green — including
+/// `x_edge_50_ok`, whose off-screen-right-edge wrap was harvested via the sb-oracle
+/// (`LOCATE 50,0:PRINT "X"` → "\nX", col 50 is past the displayable row so PRINT first
+/// breaks the line). `ATTR`/`FONTDEF`/`SCROLL`/`WIDTH` builtins are not implemented yet
+/// (S-T5c). `CHKCHR` (read a grid cell's UTF-16 code; function only) is in
 /// scope (M1-T14 increment 2026-06-23): its empty-cell / out-of-bounds → 0 value cases and
 /// its arg-count / statement-use → 4 error cases replay green. Only its `read_printed_char`
 /// case is folded PARTIALLY via `IN_SCOPE_PARTIAL` — its setup `PRINT "A";` leaves the glyph
@@ -103,7 +102,7 @@ const IN_SCOPE_DATA_ARRAY_CONSOLE: &[&str] = &[
 /// (the CHKCHR read itself is covered by `cases/chkchr.yaml`'s CLS-cleaned round-trip + the
 /// console-builtin unit test). Those fold in with their own increments. Listed by id.
 const IN_SCOPE_CONSOLE: &[&str] = &[
-    "PRINT", "COLOR", "CLS", "INKEY$", "CHKCHR", "ATTR", "SCROLL", "WIDTH", "FONTDEF",
+    "PRINT", "COLOR", "CLS", "INKEY$", "CHKCHR", "ATTR", "SCROLL", "WIDTH", "FONTDEF", "LOCATE",
 ];
 /// `Data operations and others` instructions whose semantics `sb-core` implements in M1 and
 /// whose inline `tests:` are deterministic + `console_text()`-comparable (M1-T14 increment
@@ -317,16 +316,16 @@ const IN_SCOPE_DEVICE: &[&str] = &[
 /// cases listed here are EXCLUDED because they block on a later milestone or the
 /// console-text oracle. Everything else in the spec — the deterministic, hw_verified
 /// arg-count / range / out-of-bounds error guards — replays green today (M1-T14 increment
-/// 2026-06-23). `LOCATE`: `basic_xy` now folds in with a `console_text()`-aware expect
-/// (15 leading empty rows + the positioned X); `x_edge_50_ok` stays excluded because
-/// column-50 is the off-screen right edge and the wrap/no-display behavior is
-/// oracle-pending (S-T5a, `bd search "S-T5a"`). (`GSPOIT` is now fully in scope — the M2-T2
+/// 2026-06-23). `LOCATE`: `basic_xy` folds in with a `console_text()`-aware expect
+/// (15 leading empty rows + the positioned X); `x_edge_50_ok` now folds in too — the
+/// off-screen-right-edge wrap was harvested (sb-oracle 2026-06-26, xdg) and expects
+/// "\nX" (col 50 is past the displayable row, so PRINT first breaks the line and the
+/// item lands at row 1 col 0). (`GSPOIT` is now fully in scope — the M2-T2
 /// drawing primitives enabled its three `GPSET`-then-read round-trip cases, so it moved to
 /// `IN_SCOPE_GRAPHICS`.) `CHKCHR`: `read_printed_char` now folds in with the
 /// harness scrape `"A65"` (the setup glyph stays on the grid); its empty-cell/OOB/arg-count
 /// cases fold in now. Tuples are `(spec id, &[excluded case names])`.
 const IN_SCOPE_PARTIAL: &[(&str, &[&str])] = &[
-    ("LOCATE", &["x_edge_50_ok"]),
     ("TALKCHK", &["bare_statement_syntax_error"]),
     // S-T3a (hw_verified sb-oracle 2026-06-26): real SB 3.6.0 accepts these IF forms.
     // The sb-core parser implements all of them — bare-label GOTO-omission
