@@ -1,0 +1,20 @@
+# Oracle-harvested fixtures for CALL (hw_verified) — real SmileBASIC 3.6.0 (Azahar),
+# s_t3e CALL function-form harvest 2026-06-26 (run_case.py + slot_copy), see
+# harness/harvest/out/s_t3e_call_func.tsv + tools/s_t3e_call_func_harvest.py.
+#
+# CALL is a STATEMENT only. Real SB 3.6.0 has NO value-returning function form: the
+# expression `V=CALL("name",args)` raises Syntax error (errnum 3), both same-slot and
+# cross-slot. A value reaches the caller ONLY via the OUT clause of the statement form
+# (`CALL "name",args OUT vars`). sb-core enforces this at compile time (compiler.rs
+# `compile_call_expr` rejects `cname == "CALL"` with errnum 3).
+tests:
+  - name: "function_form_same_slot"
+    code: |
+      DEF DBL(N)
+      RETURN N*2
+      END
+      V=CALL("DBL",21)
+    expect: { error: { errnum: 3 } }
+  - name: "function_form_minimal"
+    code: 'V=CALL("F",1)'
+    expect: { error: { errnum: 3 } }

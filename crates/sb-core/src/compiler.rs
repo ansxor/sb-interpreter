@@ -1176,6 +1176,16 @@ impl<'a> Compiler<'a> {
         }
 
         let cname = canonical(name);
+        // CALL is a statement only — real SB 3.6.0 has no value-returning function form,
+        // so `V=CALL("F",args)` raises Syntax error (errnum 3) at compile (hw_verified,
+        // harness/harvest/out/s_t3e_call_func.tsv). Values flow back only via the OUT
+        // clause of the statement form (compiled in `compile_call_stmt` above).
+        if cname == "CALL" {
+            return Err(self.err(
+                ERR_SYNTAX,
+                "CALL is not a function; use `CALL \"name\",args OUT vars` for results".into(),
+            ));
+        }
         // POP/SHIFT (M1-T14) take their operand by reference, like the statement-form
         // stack ops, so a string-scalar operand is written back after the removal.
         let leading_ref = is_stack_op(&cname);
@@ -1186,13 +1196,7 @@ impl<'a> Compiler<'a> {
                 self.compile_expr(a)?;
             }
         }
-        if cname == "CALL" {
-            self.emit(Op::CallDynamic {
-                argc: args.len().saturating_sub(1) as u8,
-                out_argc: 0,
-                wants_value: true,
-            });
-        } else if self.user_funcs.contains(&cname) {
+        if self.user_funcs.contains(&cname) {
             self.emit(Op::CallUser {
                 name: name.clone(),
                 argc: args.len() as u8,

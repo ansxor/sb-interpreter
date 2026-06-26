@@ -5245,12 +5245,25 @@ CALL "ADDOUT",2,3 OUT X"#);
 
     #[test]
     fn cross_slot_common_def_can_return_a_value() {
-        // A value-returning COMMON DEF used in an expression resolves cross-slot.
+        // A COMMON DEF returns values to its caller via the CALL statement's OUT clause
+        // (real SB 3.6.0 has NO function form `V=CALL(...)` — that raises Syntax error 3;
+        // see `call_function_form_is_syntax_error`). The OUT form resolves cross-slot.
         let vm = run_with_slot1(
-            "USE 1\nV=CALL(\"DBL\",21)\nPRINT V",
-            "COMMON DEF DBL(N)\nRETURN N*2\nEND",
+            "USE 1\nCALL \"DBL\",21 OUT V\nPRINT V",
+            "COMMON DEF DBL N OUT R\nR=N*2\nEND",
         );
         assert_eq!(vm.console_text(), "42");
+    }
+
+    #[test]
+    fn call_function_form_is_syntax_error() {
+        // `V=CALL("F",args)` (CALL used as a value-returning function expression) is a
+        // Syntax error (errnum 3) at compile — real SB 3.6.0 has no function form of
+        // CALL (hw_verified, s_t3e harvest 2026-06-26, both same- and cross-slot). A
+        // value returns to the caller only via the OUT clause of the statement form.
+        let ast = parse("V=CALL(\"DBL\",21)").expect("parse");
+        let err = crate::compiler::compile(&ast).expect_err("expected a compile error");
+        assert_eq!(err.errnum, 3, "CALL function form should be Syntax error");
     }
 
     #[test]
