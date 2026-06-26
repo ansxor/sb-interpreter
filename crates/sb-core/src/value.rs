@@ -211,6 +211,14 @@ impl Value {
     /// the limit (2147483647.9, whose truncation 2147483647 would fit) still overflows.
     /// This differs from the arithmetic-operand truncation [`Self::to_int`] (AND/DIV/
     /// MOD/shift), which saturates rather than raising here.
+    ///
+    /// NaN: a NaN Double falls through the range guard (NaN compares false to both
+    /// bounds) and truncates to 0. This is UNREACHABLE in real SB 3.6.0 — every
+    /// NaN-producing expression raises a runtime error before producing a value
+    /// (hw_verified 2026-06-26, sb324c.tsv): `0/0`→errnum 7 (Division by zero),
+    /// `SQR(-1)`→errnum 10, `LOG(-1)`→errnum 10, `ACS(2)`→errnum 3, `ATAN(0,0)`→error.
+    /// SmileBASIC's math always raises on out-of-domain input, so no NaN ever reaches a
+    /// store. The `NaN as i32 = 0` path is therefore a defensive no-op, not observable.
     pub fn to_int_store(&self) -> Result<i32, RuntimeError> {
         match self {
             Value::Int(i) => Ok(*i),

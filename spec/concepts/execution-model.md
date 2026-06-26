@@ -114,6 +114,14 @@ on a constant are folded during parse (osb `constcalc` / `calc`). The fold must 
 value the VM would compute — otherwise a divide-by-zero in dead constant code, integer
 overflow wrap, etc. would differ. Malformed input raises Syntax error (errnum 3).
 
+**NaN is unreachable**: SmileBASIC 3.6.0 never produces a NaN value. Every out-of-domain
+math expression raises a runtime error at the call rather than returning NaN
+(hw_verified 2026-06-26, sb324c.tsv): `0/0`→errnum 7 (Division by zero), `SQR(-1)`→errnum 10
+(Out of range), `LOG(-1)`→errnum 10, `ACS(2)`→errnum 3 (Syntax), `ATAN(0,0)`→error. There is
+no literal or expression form that yields a quiet NaN, so no NaN ever reaches a variable
+store or comparison. (∞ *can* arise via overflow, e.g. `1E300*1E300`, and stores-to-`%`
+raise Overflow errnum 9 — see `to_int_store`.)
+
 ## Compilation
 
 The compiler walks the AST to a flat opcode list (M1 uses `enum Op` + `Vec<Op>` with a
