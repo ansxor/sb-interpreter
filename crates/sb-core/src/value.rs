@@ -440,7 +440,9 @@ mod tests {
     fn coerce_to_suffix_int_truncates() {
         // A%=2.7 -> Int(2)  (hw_verified iarr_coerce/ipos_27).
         assert_eq!(
-            Value::Real(2.7).coerce_to_suffix(Suffix::Int, false).unwrap(),
+            Value::Real(2.7)
+                .coerce_to_suffix(Suffix::Int, false)
+                .unwrap(),
             Value::Int(2)
         );
         // A#=2 -> Real(2.0)  (hw_verified iint_to_real).
@@ -464,7 +466,9 @@ mod tests {
     #[test]
     fn coerce_no_suffix_defint_truncates() {
         // OPTION DEFINT makes an unsuffixed target behave like Integer.
-        let r = Value::Real(2.7).coerce_to_suffix(Suffix::None, true).unwrap();
+        let r = Value::Real(2.7)
+            .coerce_to_suffix(Suffix::None, true)
+            .unwrap();
         assert_eq!(r, Value::Int(2));
         let i = Value::Int(5).coerce_to_suffix(Suffix::None, true).unwrap();
         assert_eq!(i, Value::Int(5));
@@ -498,10 +502,16 @@ mod tests {
     #[test]
     fn defaults_match_suffix() {
         // Normal default is Real; OPTION DEFINT flips suffix-less to Integer.
-        assert_eq!(Value::default_for_suffix(Suffix::None, false), Value::Real(0.0));
+        assert_eq!(
+            Value::default_for_suffix(Suffix::None, false),
+            Value::Real(0.0)
+        );
         assert_eq!(Value::default_for_suffix(Suffix::None, true), Value::Int(0));
         assert_eq!(Value::default_for_suffix(Suffix::Int, false), Value::Int(0));
-        assert_eq!(Value::default_for_suffix(Suffix::Real, false), Value::Real(0.0));
+        assert_eq!(
+            Value::default_for_suffix(Suffix::Real, false),
+            Value::Real(0.0)
+        );
         assert_eq!(
             Value::default_for_suffix(Suffix::Str, false),
             Value::str_from("")

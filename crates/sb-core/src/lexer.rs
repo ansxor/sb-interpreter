@@ -180,10 +180,42 @@ impl Lexer {
                 break;
             }
         }
+
+        // Real SB accepts exponent notation on numeric literals: `1E10`,
+        // `1.5E-3`, `.5E+2`. Only consume it when an `E` is followed by an
+        // optional sign and at least one digit; otherwise `1E` stays `1`+`E`.
+        //
+        // Verified against SB 3.6.0: a trailing dot blocks the exponent slot,
+        // so `5.E2` parses as `5.` followed by `E2` (syntax error in the parser),
+        // while `.5E2` and `1.2E3` are valid.
+        let mut seen_exp = false;
+        if matches!(self.peek(), Some('e') | Some('E'))
+            && self
+                .chars
+                .get(self.i.saturating_sub(1))
+                .is_some_and(|c| c.is_ascii_digit())
+        {
+            let mut j = self.i + 1;
+            if matches!(self.chars.get(j), Some('+') | Some('-')) {
+                j += 1;
+            }
+            if self.chars.get(j).is_some_and(|c| c.is_ascii_digit()) {
+                seen_exp = true;
+                self.i = j + 1;
+                while let Some(c) = self.peek() {
+                    if c.is_ascii_digit() {
+                        self.i += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
         let text: String = self.chars[start..self.i].iter().collect();
 
-        let kind = if seen_dot {
-            // Real: rely on f64 parsing ("5.", ".5", "1.2" all valid).
+        let kind = if seen_dot || seen_exp {
+            // Real: rely on f64 parsing ("5.", ".5", "1.2", "1E10" all valid).
             TokenKind::Real(text.parse::<f64>().unwrap_or(0.0))
         } else {
             // Integer if it fits i32; otherwise SmileBASIC promotes to Double.
@@ -404,6 +436,36 @@ mod tests {
         );
         // i32 overflow promotes to a Double.
         assert_eq!(kinds("2147483648"), vec![TokenKind::Real(2147483648.0)]);
+    }
+
+    #[test]
+    fn exponent_literals() {
+        // Uppercase / lowercase, signed / unsigned, integer- and real-leading forms.
+        assert_eq!(
+            kinds("1E10 1e+5 1.5E-3 .5e2 5.0e2"),
+            vec![
+                TokenKind::Real(1e10),
+                TokenKind::Real(1e5),
+                TokenKind::Real(0.0015),
+                TokenKind::Real(50.0),
+                TokenKind::Real(500.0),
+            ]
+        );
+        // Standalone `E` and an incomplete exponent are not part of the number.
+        assert_eq!(
+            kinds("1E E5"),
+            vec![
+                TokenKind::Int(1),
+                ident("E", Suffix::None),
+                ident("E5", Suffix::None),
+            ]
+        );
+        // A trailing dot blocks the exponent slot in real SB 3.6.0; the lexer keeps
+        // `5.` as a real and `e2` becomes the start of an identifier (`E2`).
+        assert_eq!(
+            kinds("5.e2"),
+            vec![TokenKind::Real(5.0), ident("E2", Suffix::None),]
+        );
     }
 
     #[test]

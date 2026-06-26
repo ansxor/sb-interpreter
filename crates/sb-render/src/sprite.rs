@@ -530,12 +530,7 @@ impl SpriteState {
         }
         let max_x = width - 1;
         let max_y = height - 1;
-        self.clip = Some((
-            left.max(0),
-            top.max(0),
-            right.min(max_x),
-            bottom.min(max_y),
-        ));
+        self.clip = Some((left.max(0), top.max(0), right.min(max_x), bottom.min(max_y)));
     }
 
     /// `SPSTOP`/`SPSTART` — pause (`stop`=true) or resume the animation of every sprite at

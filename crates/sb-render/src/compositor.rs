@@ -188,9 +188,9 @@ pub fn apply_fader(fb: &mut Framebuffer, color: u32) {
         return;
     }
     let inv = 255 - alpha;
-    let rsrc = ((color >> 16) & 0xFF) as u32;
-    let gsrc = ((color >> 8) & 0xFF) as u32;
-    let bsrc = (color & 0xFF) as u32;
+    let rsrc = (color >> 16) & 0xFF;
+    let gsrc = (color >> 8) & 0xFF;
+    let bsrc = color & 0xFF;
     for chunk in fb.pixels.chunks_exact_mut(4) {
         let rd = chunk[0] as u32;
         let gd = chunk[1] as u32;

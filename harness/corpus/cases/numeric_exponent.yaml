@@ -1,0 +1,25 @@
+# Numeric exponent-literal cases. The lexer now tokenizes SB 3.6.0's E/e exponent
+# form (signed/unsigned, integer- and real-leading, leading-dot). A trailing dot
+# blocks the exponent slot, matching real SB behavior.
+cases:
+  - name: exp_uppercase_unsigned
+    code: 'PRINT 1E10==10000000000'
+    expect: { stdout: "1" }
+  - name: exp_lowercase_signed_positive
+    code: 'PRINT 1e+5==100000'
+    expect: { stdout: "1" }
+  - name: exp_fraction_signed_negative
+    code: 'PRINT 1.5E-3==0.0015'
+    expect: { stdout: "1" }
+  - name: exp_leading_dot
+    code: 'PRINT .5e2==50'
+    expect: { stdout: "1" }
+  - name: exp_real_mantissa
+    code: 'PRINT 5.0e2==500'
+    expect: { stdout: "1" }
+  - name: exp_zero_exponent
+    code: 'PRINT 7E0==7'
+    expect: { stdout: "1" }
+  - name: exp_negative_exponent_integer
+    code: 'PRINT 1000E-3==1'
+    expect: { stdout: "1" }

@@ -1877,7 +1877,13 @@ mod tests {
         assert_eq!(sp.clip, None);
 
         // Float coordinates are truncated toward zero.
-        spclip(&mut sp, &[n(100.9), n(-1.9), n(200.0), n(200.0)], 0, (400, 240)).unwrap();
+        spclip(
+            &mut sp,
+            &[n(100.9), n(-1.9), n(200.0), n(200.0)],
+            0,
+            (400, 240),
+        )
+        .unwrap();
         assert_eq!(sp.clip, Some((100, 0, 200, 200)));
 
         // Return value / OUT requested → errnum 4.
@@ -1889,26 +1895,28 @@ mod tests {
         );
         // Argument count not 0 or 4 → errnum 4.
         assert_eq!(
-            spclip(&mut sp, &[i(0), i(0)], 0, (400, 240)).unwrap_err().errnum,
+            spclip(&mut sp, &[i(0), i(0)], 0, (400, 240))
+                .unwrap_err()
+                .errnum,
             4
         );
         // Non-numeric coordinate → errnum 8 (type mismatch).
         assert_eq!(
-            spclip(&mut sp, &[i(0), Value::str_from("x"), i(10), i(10)], 0, (400, 240))
-                .unwrap_err()
-                .errnum,
-            8
-        );
-        // Skipped (Void) coordinate → errnum 8.
-        assert_eq!(
             spclip(
                 &mut sp,
-                &[i(0), Value::Void, i(10), i(10)],
+                &[i(0), Value::str_from("x"), i(10), i(10)],
                 0,
                 (400, 240)
             )
             .unwrap_err()
             .errnum,
+            8
+        );
+        // Skipped (Void) coordinate → errnum 8.
+        assert_eq!(
+            spclip(&mut sp, &[i(0), Value::Void, i(10), i(10)], 0, (400, 240))
+                .unwrap_err()
+                .errnum,
             8
         );
     }

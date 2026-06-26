@@ -6868,7 +6868,7 @@ H$=HEX$(255)"#);
 
     /// Run a program to completion under the interactive model, driving it with run_frame
     /// + tick_frame up to `max_frames` host ticks. Returns the VM once it halts (or panics
-    /// if it hasn't halted within `max_frames`).
+    ///   if it hasn't halted within `max_frames`).
     fn run_interactive(src: &str, max_frames: usize) -> Vm {
         let prog = compile(&parse(src).expect("parse")).expect("compile");
         let mut vm = Vm::new(prog);
