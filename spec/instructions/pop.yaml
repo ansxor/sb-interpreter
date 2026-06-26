@@ -17,13 +17,14 @@ semantics:
   - "The return value's type matches the array element type (Integer, Double, or String)."
   - "String operand (character-array form): POP(S$) removes and returns the LAST character of the string (e.g. S$=\"ABC\":POP(S$) returns \"C\" and leaves S$=\"AB\", LEN 2)."
   - "A numeric scalar operand raises errnum 8 (Type mismatch) — only arrays and strings are valid operands."
+  - "A multi-dimensional array operand raises errnum 8 (Type mismatch): the handler only accepts 1D-array/string tags (4/5/6); a multi-dim array has a different tag and falls through to the errnum 8 path (DIM A[2,2]:X=POP(A) -> errnum 8)."
   - "POP must be used as a single-valued function; the handler checks the return-value count."
   - "Wrong argument count (not exactly one operand) raises errnum 4 (Illegal function call)."
   - "POP on an empty (length-0) array raises errnum 31 (Subscript out of range)."
 
 errors:
   - { errnum: 31, name: "Subscript out of range", when: "POP on an empty (length-0) array" }
-  - { errnum: 8, name: TypeMismatch, when: "the operand is a numeric scalar (not an array or string)" }
+  - { errnum: 8, name: TypeMismatch, when: "the operand is a numeric scalar, or a multi-dimensional array (not a 1D array or string)" }
   - { errnum: 4, name: IllegalFunctionCall, when: "wrong number of arguments" }
 
 sources:
@@ -31,6 +32,7 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst POP handler FUN_00148718 @0x148718: argc==1 + return-count==1 check else errnum 4 (mov r0,#4 @0x148740 -> 0x1fffdc); element-type dispatch on array/string tag 4/5/6 @0x14875c-0x148774, any other tag -> errnum 8 (mov r0,#8 @0x148780); removes the tail via the array helpers @0x1ed6f4/0x17f1e4" }
   - { type: community, ref: "sbsave corpus: POP on string variables/arrays (A$=POP(R$), POP(SBS$[K,2])) common (~339 string POPs), e.g. 24CVA3L4/TXT/PRG; POP result used inline in expressions (RETURN POP(PBS$)), e.g. 45WEV83E/TXT/DIST" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4b): DIM A[3]:A[2]=42:POP(A) -> 42; DIM A[3]:X=POP(A) -> LEN 2; PUSH A,1:PUSH A,2:POP:POP (sequential) -> 2,1 (LIFO); string POP S$=\"ABC\":POP(S$) -> \"C\", S$ left \"AB\" (LEN 2); DIM S$[0]:PUSH S$,\"hi\":POP(S$) -> hi; DIM A[0]:X=POP(A) -> errnum 31; X=5(scalar):POP(X) -> errnum 8" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-26 (s_t4b multi-dim): DIM A[2,2]:X=POP(A) -> errnum 8 (multi-dim arrays rejected by the tag-4/5/6 dispatch, falling through to errnum 8 at @0x148780)" }
 
 confidence: hw_verified
 
@@ -42,3 +44,4 @@ tests:
   - { name: pop_string_char, code: "S$=\"ABC\"\nX$=POP(S$)\nPRINT X$;\",\";S$", expect: { stdout: "C,AB" } }
   - { name: pop_empty_error, code: "DIM A[0]\nX=POP(A)", expect: { error: { errnum: 31 } } }
   - { name: pop_scalar_mismatch, code: "X=5\nY=POP(X)", expect: { error: { errnum: 8 } } }
+  - { name: pop_multidim_mismatch, code: "DIM A[2,2]\nX=POP(A)", expect: { error: { errnum: 8 } } }

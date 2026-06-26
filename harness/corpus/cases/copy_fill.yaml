@@ -61,6 +61,6 @@ cases:
   - name: fill_type_mismatch
     code: "DIM A[2]\nFILL A,\"x\""
     expect: { error: { errnum: 8 } }
-  - name: fill_past_end_is_subscript
+  - name: fill_past_end_is_out_of_range
     code: "DIM A[3]\nFILL A,1,2,5"
-    expect: { error: { errnum: 31 } }
+    expect: { error: { errnum: 10 } }

@@ -4411,9 +4411,10 @@ mod tests {
     }
 
     #[test]
-    fn fill_past_the_end_is_subscript_out_of_range() {
-        // offset+count beyond the array bounds → Subscript out of range (31).
-        assert_eq!(run_b_err("DIM A[3]\nFILL A,1,2,5").errnum(), Some(31));
+    fn fill_past_the_end_is_out_of_range() {
+        // offset+count beyond the array bounds → Out of range (10).
+        // hw_verified sb-oracle 2026-06-26 (s_t4c): oob offset/count/neg all → 10.
+        assert_eq!(run_b_err("DIM A[3]\nFILL A,1,2,5").errnum(), Some(10));
     }
 
     // ---- PUSH / POP / SHIFT / UNSHIFT (stack/queue ops, M1-T14) ----

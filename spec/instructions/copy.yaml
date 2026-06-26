@@ -26,20 +26,23 @@ semantics:
   - "For 1D arrays, if the destination has too few elements the required elements are added automatically (the destination grows)."
   - "Both source and destination ignore dimensions — the copy operates on the flat element sequence regardless of declared shape."
   - "If count is omitted in form 1, elements are copied through the end of the source."
-  - "In form 2, if count is omitted the DATA is read to fill the destination's element count; if fewer DATA items are available than required, an error occurs (errnum oracle-pending; likely 13 Out of DATA)."
+  - "In form 2, if count is omitted the DATA is read to fill the destination's element count; if fewer DATA items are available than required, errnum 13 (Out of DATA) is raised. The same applies when an explicit count exceeds the available DATA items."
+  - "In form 2, a label string that names no defined label (\"@NOPE\") raises errnum 14 (Undefined label)."
   - "Copying between mismatched element types (e.g. numeric array <-> string array) raises errnum 8 (Type mismatch)."
   - "Wrong argument count raises errnum 4 (Illegal function call)."
 
 errors:
   - { errnum: 8, name: TypeMismatch, when: "source and destination element types differ (numeric vs string)" }
   - { errnum: 4, name: IllegalFunctionCall, when: "wrong number of arguments" }
-  - { errnum: 13, name: "Out of DATA", when: "form 2: fewer DATA items available than required (oracle-pending)" }
+  - { errnum: 13, name: "Out of DATA", when: "form 2: fewer DATA items available than required (omitted or explicit count)" }
+  - { errnum: 14, name: "Undefined label", when: "form 2: the \"@Label\" string names no defined label" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/copy.md (two forms: array-to-array and DATA-to-array; 1D dest auto-extends; dimensions ignored; offsets/count optional)" }
   - { type: disassembled, ref: "cia_3.6.0.lst COPY handler FUN_00149a94 @0x149a94: wrong argc -> errnum 4 (mov r0,#4 @0x149ac8 -> 0x1fffdc); type-tag checks @0x149af8-0x149b20 (tags 2/3/4/5 distinguish number vs array operands and disambiguate the offset/form) with mismatch -> errnum 8 (mov r0,#8 @0x149b34)" }
   - { type: community, ref: "sbsave corpus: ~2,182 COPY (excl. GCOPY/BGCOPY); full 5-arg form COPY dest,destOff,src,srcOff,count dominant (~819, e.g. 2BC4738V/TXT/MOH_JUHSY237D); DATA form COPY arr,\"@LABEL\"[,count] (~592) incl. slot-qualified labels COPY arr,\"1:@LABEL\" (e.g. 13D4DV3V/TXT/MAIN_PRG_V2); string arrays in both forms (e.g. COPY TEXT$,@TEXT)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4c): COPY D,S copies (D[1]=2); auto-extend DIM D[0]:COPY D,S -> LEN 3; COPY D,1,S -> D[1..2]=src; COPY D,S,0,2 -> first 2 only (D[2] left 0); 5-arg COPY D,1,S,2,2 -> D[1..2]=S[2..3]=3,4; DATA form COPY D,\"@SRC\" with DATA 5,1,1,2,4 -> D[0]=5,D[4]=4; numeric<-string COPY A,S$ -> errnum 8" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-26 (s_t4c form-2 errors): DIM A[3]:COPY A,\"@L\" with DATA 1,2 (fewer than 3) -> errnum 13 (Out of DATA); DIM S$[3]:COPY S$,\"@L\" with DATA \"a\",\"b\" -> errnum 13; DIM A[3]:COPY A,\"@NOPE\" (undefined) -> errnum 14 (Undefined label)" }
 
 confidence: hw_verified
 
@@ -51,3 +54,5 @@ tests:
   - { name: copy_five_arg, code: "DIM S[4]\nS[0]=1\nS[1]=2\nS[2]=3\nS[3]=4\nDIM D[4]\nCOPY D,1,S,2,2\nPRINT D[1];D[2]", expect: { stdout: "34" } }
   - { name: copy_from_data, code: "DIM D[5]\nCOPY D,\"@SRC\"\nPRINT D[0];D[4]\n@SRC\nDATA 5,1,1,2,4", expect: { stdout: "54" } }
   - { name: copy_type_mismatch, code: "DIM A[1]\nDIM S$[1]\nCOPY A,S$", expect: { error: { errnum: 8 } } }
+  - { name: copy_short_data, code: "DIM A[3]\nCOPY A,\"@L\"\nEND\n@L\nDATA 1,2", expect: { error: { errnum: 13 } } }
+  - { name: copy_undefined_label, code: "DIM A[3]\nCOPY A,\"@NOPE\"", expect: { error: { errnum: 14 } } }

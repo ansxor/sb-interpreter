@@ -17,13 +17,14 @@ semantics:
   - "The return value's type matches the array element type (Integer, Double, or String)."
   - "String operand (character-array form): SHIFT(S$) removes and returns the FIRST character (e.g. S$=\"ABC\":SHIFT(S$) returns \"A\" and leaves S$=\"BC\")."
   - "A numeric scalar operand raises errnum 8 (Type mismatch) — only arrays and strings are valid operands."
+  - "A multi-dimensional array operand raises errnum 8 (Type mismatch): the handler uses the same tag-4/5/6 dispatch as PUSH/POP/UNSHIFT (cmp r0,#0x4/0x5/0x6 @0x144d64-0x144d7c, else mov r0,#0x8 @0x144d88), so a multi-dim array falls through to errnum 8. (Structurally inferred from the handler body; oracle-confirm pending.)"
   - "SHIFT must be used as a single-valued function; the handler checks the return-value count."
   - "Wrong argument count (not exactly one operand) raises errnum 4 (Illegal function call)."
   - "SHIFT on an empty (length-0) array raises errnum 31 (Subscript out of range)."
 
 errors:
   - { errnum: 31, name: "Subscript out of range", when: "SHIFT on an empty (length-0) array" }
-  - { errnum: 8, name: TypeMismatch, when: "the operand is a numeric scalar (not an array or string)" }
+  - { errnum: 8, name: TypeMismatch, when: "the operand is a numeric scalar, or a multi-dimensional array (not a 1D array or string)" }
   - { errnum: 4, name: IllegalFunctionCall, when: "wrong number of arguments" }
 
 sources:

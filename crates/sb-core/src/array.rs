@@ -37,8 +37,12 @@ const ERR_SUBSCRIPT: u32 = 31;
 const ERR_SYNTAX: u32 = 3;
 /// `Out of memory` — a `DIM` too large to allocate.
 const ERR_OUT_OF_MEMORY: u32 = 11;
-/// `Illegal function call` — e.g. `POP` on an empty array, or a bad dim count.
+/// `Illegal function call` — e.g. `POP` on an empty array.
 const ERR_ILLEGAL_FN: u32 = 4;
+/// `Type mismatch` — PUSH/POP/SHIFT/UNSHIFT on a multi-dimensional array (only 1D
+/// arrays are accepted; the handler's tag dispatch rejects the multi-dim tag, falling
+/// through to errnum 8). hw_verified sb-oracle 2026-06-26 (s_t4b multi-dim).
+const ERR_TYPE_MISMATCH: u32 = 8;
 
 /// A shared, mutable SmileBASIC array. Cloning the `Rc` shares the storage, which
 /// is exactly the by-reference semantics SmileBASIC arrays have.
@@ -170,8 +174,10 @@ impl<T: Clone + Default + PartialEq> SbArray<T> {
     //
     // SmileBASIC's PUSH/POP/SHIFT/UNSHIFT operate on one-dimensional arrays
     // (`spec/instructions/{push,pop,shift,unshift}.yaml`). Applying them to a
-    // multi-dimensional array raises Illegal function call (errnum 4); the exact
-    // errnum is oracle-queued. POP/SHIFT of an empty array also raise errnum 4.
+    // multi-dimensional array raises Type mismatch (errnum 8) — the handler's tag
+    // dispatch accepts only 1D-array tags (4/5/6) and falls through to errnum 8 for
+    // any other (multi-dim) tag. hw_verified sb-oracle 2026-06-26 (s_t4b multi-dim).
+    // POP/SHIFT of an empty array raises errnum 4 (Illegal function call).
 
     /// Append `v` to the end and grow dimension 0 by one (`PUSH`). 1D only.
     pub fn push(&mut self, v: T) -> Result<(), RuntimeError> {
@@ -182,7 +188,8 @@ impl<T: Clone + Default + PartialEq> SbArray<T> {
     }
 
     /// Remove and return the last element, shrinking dimension 0 (`POP`). 1D only;
-    /// empty → errnum 4.
+    /// callers in `data.rs` guard the empty case and raise Subscript out of range (31),
+    /// so this `pop` is only reached on a non-empty 1D array.
     pub fn pop(&mut self) -> Result<T, RuntimeError> {
         self.require_1d()?;
         let v = self
@@ -194,7 +201,8 @@ impl<T: Clone + Default + PartialEq> SbArray<T> {
     }
 
     /// Remove and return the first element, shifting the rest down (`SHIFT`). 1D
-    /// only; empty → errnum 4.
+    /// only; callers in `data.rs` guard the empty case (Subscript out of range, 31),
+    /// so this `shift` is only reached on a non-empty 1D array.
     pub fn shift(&mut self) -> Result<T, RuntimeError> {
         self.require_1d()?;
         if self.data.is_empty() {
@@ -231,7 +239,7 @@ impl<T: Clone + Default + PartialEq> SbArray<T> {
         if self.dim_count == 1 {
             Ok(())
         } else {
-            Err(RuntimeError::new(ERR_ILLEGAL_FN))
+            Err(RuntimeError::new(ERR_TYPE_MISMATCH))
         }
     }
 }
@@ -339,11 +347,16 @@ mod tests {
 
     #[test]
     fn stack_ops_reject_multidim() {
+        // PUSH/POP/SHIFT/UNSHIFT on a multi-dim array → Type mismatch (8): the handler's
+        // tag dispatch rejects the multi-dim tag (hw_verified sb-oracle 2026-06-26,
+        // s_t4b multi-dim). `resize` shares the 1D-only guard (internal helper; the
+        // errnum is not SmileBASIC-visible since no SB op routes an empty/multi-dim
+        // array through it without first hitting the data.rs guards).
         let mut a = SbArray::<i32>::new(&[2, 2]).unwrap();
-        assert_eq!(a.push(1).unwrap_err().errnum, 4);
-        assert_eq!(a.pop().unwrap_err().errnum, 4);
-        assert_eq!(a.shift().unwrap_err().errnum, 4);
-        assert_eq!(a.resize(3).unwrap_err().errnum, 4);
+        assert_eq!(a.push(1).unwrap_err().errnum, 8);
+        assert_eq!(a.pop().unwrap_err().errnum, 8);
+        assert_eq!(a.shift().unwrap_err().errnum, 8);
+        assert_eq!(a.resize(3).unwrap_err().errnum, 8);
     }
 
     #[test]

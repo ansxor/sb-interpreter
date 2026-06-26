@@ -396,8 +396,8 @@ pub(crate) fn write_values(
 /// shared by `Rc`, so the overwrite is visible to the caller. Errors: wrong argument
 /// count → Illegal function call (4); a non-array first operand, or a value whose type
 /// does not match a numeric array's element type → Type mismatch (8); `offset`/`count`
-/// past the array bounds → Subscript out of range (31). `FILL` never changes the array
-/// length (hw_verified sb-oracle 2026-06-22, s_t4c).
+/// past the array bounds → Out of range (10). `FILL` never changes the array
+/// length (hw_verified sb-oracle 2026-06-26, s_t4c: oob offset/count/neg all → 10).
 pub(crate) fn fill(args: &[Value]) -> Result<(), RuntimeError> {
     if args.len() < 2 || args.len() > 4 {
         return Err(illegal());
@@ -413,12 +413,10 @@ pub(crate) fn fill(args: &[Value]) -> Result<(), RuntimeError> {
         Some(v) => nonneg(v)?,
         None => len.saturating_sub(offset),
     };
-    // FILL does not grow the array: a range past the end is Subscript out of range (31).
-    let end = offset
-        .checked_add(count)
-        .ok_or_else(subscript_out_of_range)?;
+    // FILL does not grow the array: a range past the end is Out of range (10).
+    let end = offset.checked_add(count).ok_or_else(out_of_range)?;
     if end > len {
-        return Err(subscript_out_of_range());
+        return Err(out_of_range());
     }
     let vals = vec![value; count];
     write_values(array, offset, &vals, false)

@@ -19,10 +19,10 @@ semantics:
   - "For a numeric array, the value's type must be numeric; a string into a numeric array raises errnum 8 (Type mismatch). Integer↔double values coerce to the numeric array's element type."
   - "A numeric scalar operand raises errnum 8 (Type mismatch) — only arrays and strings are valid first operands."
   - "Wrong argument count (not exactly array + value) raises errnum 4 (Illegal function call)."
-  - "Documented and used for 1D arrays; behavior on multi-dimensional arrays is oracle-pending."
+  - "A multi-dimensional array operand raises errnum 8 (Type mismatch): the handler only accepts 1D-array/string tags (4/5/6); a multi-dim array has a different tag and falls through to the errnum 8 path (DIM A[2,2]:UNSHIFT A,9 -> errnum 8)."
 
 errors:
-  - { errnum: 8, name: TypeMismatch, when: "the first operand is a numeric scalar, or value type does not match a numeric array's element type" }
+  - { errnum: 8, name: TypeMismatch, when: "the first operand is a numeric scalar, a multi-dimensional array, or a value type that does not match a numeric array's element type" }
   - { errnum: 4, name: IllegalFunctionCall, when: "wrong number of arguments (not array + value)" }
 
 sources:
@@ -30,6 +30,7 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst UNSHIFT handler FUN_00146420 @0x146420 (same shape as PUSH @0x14aa1c): argc==2 check else errnum 4; element-type dispatch on array/string tag 4/5/6 else errnum 8; inserts at the head via the array-resize helpers" }
   - { type: community, ref: "sbsave corpus: UNSHIFT in 377+ uses across 128 programs; UNSHIFT on string elements (UNSHIFT FILES$[I],\"TXT:\") prepending a multi-char string, e.g. 5E7QX3K4/TXT/FILESEND; computed expression values (UNSHIFT A,SPAWNX[I]-RND(10)+RND(10))" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4b): DIM A[2]:UNSHIFT A,9 -> LEN 3; DIM A[0]:UNSHIFT A,7 -> A[0]=7; PUSH A,1:UNSHIFT A,2 -> A[0]=2,A[1]=1; DIM S$[0]:UNSHIFT S$,\"hi\" -> S$[0]=hi; string-as-array S$=\"BC\":UNSHIFT S$,\"A\" -> ABC and S$=\"C\":UNSHIFT S$,\"TXT:\" -> TXT:C; DIM A[1]:UNSHIFT A,\"x\" -> errnum 8" }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-26 (s_t4b multi-dim): DIM A[2,2]:UNSHIFT A,9 -> errnum 8 (multi-dim arrays rejected by the tag-4/5/6 dispatch, falling through to errnum 8 at @0x146474)" }
 
 confidence: hw_verified
 
@@ -40,3 +41,4 @@ tests:
   - { name: unshift_string_array, code: "DIM S$[0]\nUNSHIFT S$,\"hi\"\nPRINT S$[0]", expect: { stdout: "hi" } }
   - { name: unshift_string_chars, code: "S$=\"C\"\nUNSHIFT S$,\"TXT:\"\nPRINT S$", expect: { stdout: "TXT:C" } }
   - { name: unshift_type_mismatch, code: "DIM A[1]\nUNSHIFT A,\"x\"", expect: { error: { errnum: 8 } } }
+  - { name: unshift_multidim_mismatch, code: "DIM A[2,2]\nUNSHIFT A,9", expect: { error: { errnum: 8 } } }
