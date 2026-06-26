@@ -1,27 +1,31 @@
 id: XON
 kind: statement
 category: Control
-version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
 
 signatures:
   - args:
-      - { name: feature, type: keyword, desc: "Feature to enable: MOTION, EXPAD, or MIC" }
+      - { name: feature, type: keyword, desc: "Feature to enable: MOTION, EXPAD, or MIC (a string literal of the same value is also accepted)" }
     note: "XON feature — declares use of a special hardware feature."
 
 summary: "Enables a special hardware feature (motion/gyro, Circle Pad Pro, or microphone) so its instructions become usable."
 
 semantics:
   - "Features must be declared before use: MOTION (motion/gyro sensors), EXPAD (Circle Pad Pro), MIC (microphone)."
-  - "On a successful XON EXPAD, RESULT is set to TRUE."
+  - "On a successful XON EXPAD, RESULT is set to TRUE (1). RESULT boots at 1 (TRUE) on SB 3.6.0, so the EXPAD effect is observed as RESULT reading 1 immediately after; MOTION/MIC are not documented to set RESULT and leave the boot value in place."
   - "If the feature is already on, the command does not show its confirmation dialog."
+  - "The feature operand is parsed as a bareword keyword (MOTION/EXPAD/MIC). Real SB 3.6.0 ALSO accepts a string-literal feature name (`XON \"EXPAD\"`) — the string's value is validated against the feature set, so `XON \"FOO\"` (bad value) raises Syntax error (3). osb 3.5.0 requires an identifier token here (parser.d:908) and rejects the string form — a real 3.6.0 divergence."
   - "Disabled again with [[xoff]]."
 
-errors: []
+errors:
+  - { errnum: 3, name: "Syntax error", when: "missing feature operand (`XON`), a non-bareword/non-string operand (`XON 1`), or an unrecognized feature name (`XON FOO`, `XON \"FOO\"`)" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/xon.md (XON feature; MOTION/EXPAD/MIC; XON EXPAD sets RESULT TRUE; no dialog if already on)" }
   - { type: disassembled, ref: "cia_3.6.0.lst XON is a parser keyword (token @0x2ee5e4), not in the builtin dispatch table; enables the named hardware-feature flag and may prompt a confirmation dialog" }
+  - { type: hw_verified, ref: "sb-oracle s_t3e harvest 2026-06-26 (run_case.py batch): RESULT boots 1; XON EXPAD -> RESULT 1; `XON`/`XON FOO`/`XON 1`/`XON \"FOO\"` -> errnum 3 errline 1 (parse-time); `XON \"EXPAD\"`/`XON \"MOTION\"` accepted (NOERR). See harness/harvest/out/s_t3e_xon{,_err,_str}.tsv." }
+  - { type: community, ref: "osb 3.5.0 parser.d:904-920 — XON/XOFF take an identifier feature token validated against MOTION/EXPAD/MIC (plus WIIU/3DS/COMPAT for XON); petitcomputer.d:1688-1718 sets/clears the feature flag. osb rejects the string-literal form that real 3.6.0 accepts — a divergence, not a behavior claim." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests: []

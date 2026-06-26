@@ -1,0 +1,8 @@
+xon_expad_result|XON EXPAD|RESULT|prog
+xon_motion_result|XON MOTION|RESULT|prog
+xon_mic_result|XON MIC|RESULT|prog
+xon_expad_then_motion|XON EXPAD:XON MOTION|RESULT|prog
+xon_expad_twice|XON EXPAD:XON EXPAD|RESULT|prog
+xoff_expad_result|XON EXPAD:XOFF EXPAD|RESULT|prog
+xoff_without_xon|XOFF EXPAD|RESULT|prog
+result_before_xon||RESULT|prog

@@ -1,0 +1,40 @@
+# Oracle-harvested fixtures for XON (hw_verified) — real SmileBASIC 3.6.0 (Azahar),
+# s_t3e probe 2026-06-26 (run_case.py batch, isolated prog cases).
+#
+# RESULT boots at 1 (TRUE) on real SB 3.6.0 (result_boot). The docs promise only that XON
+# EXPAD sets RESULT to TRUE; since RESULT is already 1 at boot, and no on-device path
+# reliably zeros RESULT (DIALOG auto-confirms to 1; MPSTART returns 1 in this Azahar
+# setup), "sets to 1" is indistinguishable from "leaves the boot 1" for MOTION/MIC/XOFF —
+# so only the EXPAD→1 case is asserted as a value here (matching the documented claim).
+# The error edges ARE fully harvestable: a missing or unrecognized feature is a Syntax
+# error (errnum 3) at parse time (errline 1), uniform across XON/XOFF.
+#
+# Notable: real SB 3.6.0 ACCEPTS a string-literal feature name — `XON "EXPAD"` runs without
+# error and behaves like the bareword form (NOERR, RESULT readable); only a string whose
+# value is not MOTION/EXPAD/MIC raises (`XON "FOO"` -> errnum 3). osb (3.5.0) requires an
+# identifier token here (parser.d:908) and would reject the string form — a real divergence
+# captured below. sb-core's parser currently requires the bareword too, so the
+# string-literal-accepted case is NOT asserted as passing here (queued: sb-interpreter-cj8
+# notes); only the string-bad-value Syntax error is asserted (sb-core agrees).
+tests:
+  # XON EXPAD sets RESULT to TRUE (1) — the one documented RESULT effect.
+  - name: "xon_expad_sets_result_true"
+    code: "XON EXPAD:PRINT RESULT"
+    expect: { stdout: "1" }
+  # No feature argument -> Syntax error (3), errline 1 (parse-time).
+  - name: "xon_no_arg_syntax_error"
+    code: "XON"
+    expect: { error: { errnum: 3 } }
+  # Unrecognized bareword feature -> Syntax error (3).
+  - name: "xon_bad_feature_syntax_error"
+    code: "XON FOO"
+    expect: { error: { errnum: 3 } }
+  # Numeric feature argument -> Syntax error (3).
+  - name: "xon_numeric_arg_syntax_error"
+    code: "XON 1"
+    expect: { error: { errnum: 3 } }
+  # String literal whose value is not a feature name -> Syntax error (3). Real SB accepts
+  # the string token then validates its value; a bad value raises at parse time.
+  - name: "xon_string_bad_value_syntax_error"
+    code: 'XON "FOO"'
+    expect: { error: { errnum: 3 } }

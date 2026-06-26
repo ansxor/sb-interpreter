@@ -1,0 +1,6 @@
+xon_no_arg|XON|err
+xon_bad_feature|XON FOO|err
+xon_string_arg|XON "EXPAD"|err
+xon_numeric_arg|XON 1|err
+xoff_no_arg|XOFF|err
+xoff_bad_feature|XOFF FOO|err

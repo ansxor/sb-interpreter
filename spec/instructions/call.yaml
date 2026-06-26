@@ -19,11 +19,13 @@ semantics:
 
 errors:
   - { errnum: 16, name: "Undefined function", when: "no user instruction with the given name exists" }
+  - { errnum: 3, name: "Syntax error", when: "CALL used as a value-returning function expression `V=CALL(\"name\",args)` — real SB 3.6.0 has NO function form of CALL; a value is returned to the caller only via the OUT clause of the statement form. (sb-core currently accepts the function form — a divergence, bd sb-interpreter-cj8.)" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/call.md (CALL \"name\" [,args] [OUT vars]; calls a user-defined instruction by name string)" }
   - { type: disassembled, ref: "cia_3.6.0.lst CALL is a parser keyword, not in the builtin dispatch table; resolves the name string to a DEF at runtime and invokes it; unknown name -> errnum 16 (Undefined function)" }
   - { type: hw_verified, ref: "sb-oracle CALL probe 2026-06-22: CALL \"F\" invokes the DEF-defined instruction F by name (its body runs); CALL \"NOPE\" for an undefined name raises errnum 16 (Undefined function)." }
+  - { type: hw_verified, ref: "sb-oracle s_t3e harvest 2026-06-26 (run_case.py + slotcopy): the documented OUT form `CALL \"ADD\",3,4 OUT P,Q` with `DEF ADD X,Y OUT A,B` -> P=7,Q=12 (OUT returns values); `V=CALL(\"DBL\",21)` (function form) -> errnum 3 errline 2 both same-slot and cross-slot — real SB has no value-returning function form of CALL. See harness/harvest/out/s_t3e_call_func.tsv + tools/s_t3e_call_func_harvest.py." }
 
 confidence: hw_verified
 

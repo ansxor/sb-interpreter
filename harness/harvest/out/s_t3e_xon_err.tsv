@@ -1,0 +1,6 @@
+xon_no_arg	errnum=3 errline=1
+xon_bad_feature	errnum=3 errline=1
+xon_string_arg	NOERR (statement did not raise)
+xon_numeric_arg	errnum=3 errline=1
+xoff_no_arg	errnum=3 errline=1
+xoff_bad_feature	errnum=3 errline=1

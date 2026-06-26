@@ -1,0 +1,3 @@
+call_func_form_cross_slot	errnum=3 errline=2
+call_stmt_out_cross_slot	errnum=3 errline=2
+call_func_form_inline	errnum=3 errline=2

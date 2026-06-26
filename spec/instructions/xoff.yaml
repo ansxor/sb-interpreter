@@ -1,11 +1,11 @@
 id: XOFF
 kind: statement
 category: Control
-version: { introduced: "3.0.0" } # verified_on: set when oracle-harvested
+version: { introduced: "3.0.0", verified_on: "3.6.0" }
 
 signatures:
   - args:
-      - { name: feature, type: keyword, desc: "Feature to disable: MOTION, EXPAD, or MIC" }
+      - { name: feature, type: keyword, desc: "Feature to disable: MOTION, EXPAD, or MIC (a string literal of the same value is also accepted, matching [[xon]])" }
     note: "XOFF feature — stops using a special feature previously enabled with XON."
 
 summary: "Disables a special hardware feature that was enabled with XON."
@@ -13,13 +13,16 @@ summary: "Disables a special hardware feature that was enabled with XON."
 semantics:
   - "Turns off a feature declared with XON: MOTION, EXPAD, or MIC."
   - "After XOFF, that feature's instructions are no longer available until re-enabled with [[xon]]."
+  - "The feature operand parses like [[xon]]: a bareword keyword (or, on real 3.6.0, a string-literal feature name), validated against MOTION/EXPAD/MIC. RESULT is not documented to change on XOFF and reads the boot value (1) on device."
 
-errors: []
+errors:
+  - { errnum: 3, name: "Syntax error", when: "missing feature operand (`XOFF`) or an unrecognized feature name (`XOFF FOO`)" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/xoff.md (XOFF feature; stops a feature declared with XON; MOTION/EXPAD/MIC)" }
   - { type: disassembled, ref: "cia_3.6.0.lst XOFF is a parser keyword (token @0x2ee3e8), not in the builtin dispatch table; clears the named hardware-feature flag set by XON" }
+  - { type: hw_verified, ref: "sb-oracle s_t3e harvest 2026-06-26 (run_case.py batch): `XOFF`/`XOFF FOO` -> errnum 3 errline 1 (parse-time). See harness/harvest/out/s_t3e_xon_err.tsv." }
 
-confidence: disassembled
+confidence: hw_verified
 
 tests: []

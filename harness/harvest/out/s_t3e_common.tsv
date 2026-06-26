@@ -1,0 +1,7 @@
+cross_slot_common_callable	__DONE__
+cross_slot_common_args_and_out	33
+cross_slot_common_returns_value	42
+cross_slot_call_without_use	errnum=16 errline=2
+cross_slot_non_common_def_private	errnum=16 errline=3
+cross_slot_common_globals_isolated	0,999
+cross_slot_call_restores_caller	__DONE__

@@ -1,0 +1,3 @@
+call_func_form||V=CALL("DBL",21):PRINT V|prog
+call_stmt_out_form|USE 1:CALL "DBL",21 OUT V|V|prog
+call_stmt_no_out|USE 1:CALL "DBL",21|1|prog

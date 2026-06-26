@@ -1,0 +1,3 @@
+xon_string_expad_result|XON "EXPAD"|RESULT|prog
+xon_string_motion_result|XON "MOTION"|RESULT|prog
+xon_string_bad|XON "FOO"|RESULT|prog

@@ -1,0 +1,15 @@
+# Oracle-harvested fixtures for XOFF (hw_verified) — real SmileBASIC 3.6.0 (Azahar),
+# s_t3e probe 2026-06-26 (run_case.py batch, isolated prog cases).
+#
+# XOFF's error edges mirror XON exactly: a missing or unrecognized feature is a Syntax
+# error (errnum 3) at parse time (errline 1). RESULT is not documented to change on XOFF
+# and reads 1 (the boot value) on device, so no value case is asserted for XOFF.
+tests:
+  # No feature argument -> Syntax error (3).
+  - name: "xoff_no_arg_syntax_error"
+    code: "XOFF"
+    expect: { error: { errnum: 3 } }
+  # Unrecognized bareword feature -> Syntax error (3).
+  - name: "xoff_bad_feature_syntax_error"
+    code: "XOFF FOO"
+    expect: { error: { errnum: 3 } }
