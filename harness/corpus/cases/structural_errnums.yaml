@@ -17,16 +17,30 @@ cases:
   - { name: while_without_wend,  code: "WHILE 1\nPRINT 1",  expect: { error: { errnum: 24 } } }
   - { name: repeat_without_until, code: "REPEAT\nPRINT 1",  expect: { error: { errnum: 22 } } }
   - { name: def_without_end,     code: "DEF F\nA=1",        expect: { error: { errnum: 29 } } }
-  # IF-block family — hw_verified via the sb-oracle structural-error |err probe 2026-06-23.
-  # The error table reserves 26 'THEN without ENDIF' / 27 'ELSE without ENDIF' / 28 'ENDIF
-  # without IF', but real SB 3.6.0 surfaces 28 ONLY for a LEADING stray ENDIF (the program's
-  # first statement) and collapses every other IF-block mismatch — unterminated multi-line IF,
-  # dangling ELSE, non-leading stray ENDIF, stray ELSE — to generic Syntax error 3. (Quirk not
-  # modeled: `REM X<nl>ENDIF` → no error; queued in bd:sb-interpreter-ctm.)
-  - { name: endif_leading,       code: "ENDIF",             expect: { error: { errnum: 28 } } } # leading stray → 28
+  # IF-block family — hw_verified via the sb-oracle structural-error |err probe 2026-06-26
+  # (full re-probe; the 2026-06-23 batch mis-harvested the non-leading ENDIF and unterminated-IF
+  # cases and is superseded). The error table reserves 26 'THEN without ENDIF' / 27 'ELSE
+  # without ENDIF' / 28 'ENDIF without IF', and real SB 3.6.0 surfaces ALL THREE:
+  #   - 28 for ANY stray ENDIF (leading OR after statements), errline = the ENDIF's own line.
+  #     A leading newline / blank line / comment does NOT change it (`\nENDIF`, `REM X\nENDIF`,
+  #     `'X\nENDIF` → 28). The ONE exception is a leading `:` separator (`:ENDIF` → 3): the `:`
+  #     is an empty preceding statement, so the ENDIF is not reached as a closer. A `:` AFTER a
+  #     real statement does NOT trigger this (`PRINT 1:ENDIF` → 28).
+  #   - 26 for an unterminated multi-line IF (or ELSEIF) with no ENDIF.
+  #   - 27 for an ELSE clause with no ENDIF.
+  #   - 3 for a stray ELSE (no IF at all).
+  - { name: endif_leading,       code: "ENDIF",             expect: { error: { errnum: 28 } } } # stray ENDIF → 28
   - { name: endif_leading_then_stmt, code: "ENDIF\nPRINT 1", expect: { error: { errnum: 28 } } }
-  - { name: endif_after_stmt,    code: "PRINT 1\nENDIF",    expect: { error: { errnum: 3 } } }  # non-leading → 3
-  - { name: endif_after_closed,  code: "IF 1 THEN\nENDIF\nENDIF", expect: { error: { errnum: 3 } } } # second ENDIF → 3
-  - { name: if_no_endif,         code: "IF 1 THEN\nPRINT 1", expect: { error: { errnum: 3 } } } # unterminated → 3
-  - { name: else_no_endif,       code: "IF 1 THEN\nA=1\nELSE\nB=2", expect: { error: { errnum: 3 } } } # dangling ELSE → 3
-  - { name: stray_else,          code: "ELSE",              expect: { error: { errnum: 3 } } } # stray ELSE → 3
+  - { name: endif_leading_newline, code: "\nENDIF",         expect: { error: { errnum: 28 } } } # leading blank line → 28 (errline 2)
+  - { name: endif_leading_rem,  code: "REM X\nENDIF",       expect: { error: { errnum: 28 } } } # leading comment → 28 (errline 2; NOT suppressed)
+  - { name: endif_leading_quote, code: "'X\nENDIF",         expect: { error: { errnum: 28 } } } # leading 'comment → 28 (errline 2)
+  - { name: endif_leading_colon, code: ":ENDIF",           expect: { error: { errnum: 3 } } }  # leading : → 3 (empty stmt precedes ENDIF)
+  - { name: endif_after_stmt,    code: "PRINT 1\nENDIF",    expect: { error: { errnum: 28 } } }  # non-leading stray ENDIF → 28 (was wrongly 3 in 2026-06-23)
+  - { name: endif_after_assign,  code: "A=1\nENDIF",         expect: { error: { errnum: 28 } } } # non-leading → 28
+  - { name: endif_colon_after_stmt, code: "PRINT 1:ENDIF",  expect: { error: { errnum: 28 } } }  # : after a real stmt → 28
+  - { name: endif_after_closed,  code: "IF 1 THEN\nENDIF\nENDIF", expect: { error: { errnum: 28 } } } # second ENDIF → 28 (was wrongly 3)
+  - { name: endif_after_for,     code: "FOR I=0 TO 1\nNEXT\nENDIF", expect: { error: { errnum: 28 } } } # stray ENDIF after a closed FOR → 28
+  - { name: if_no_endif,         code: "IF 1 THEN\nPRINT 1", expect: { error: { errnum: 26 } } } # unterminated multi-line IF → 26 THEN without ENDIF (was wrongly 3)
+  - { name: elseif_no_endif,     code: "IF 1 THEN\nA=1\nELSEIF 0 THEN\nB=2", expect: { error: { errnum: 26 } } } # unterminated ELSEIF → 26
+  - { name: else_no_endif,       code: "IF 1 THEN\nA=1\nELSE\nB=2", expect: { error: { errnum: 27 } } } # dangling ELSE → 27 ELSE without ENDIF (was wrongly 3)
+  - { name: stray_else,          code: "ELSE",              expect: { error: { errnum: 3 } } } # stray ELSE (no IF) → 3

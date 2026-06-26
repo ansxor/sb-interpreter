@@ -136,6 +136,12 @@ pub struct Parser {
     /// == 0`); anywhere later real SB collapses it to generic Syntax error 3 (hw_verified
     /// sb-oracle 2026-06-23 — see the `ENDIF` arm of [`Parser::parse_statement`]).
     stmt_count: u32,
+    /// True once a statement separator (`:`) has been consumed at the very top of the
+    /// program before any statement. Real SB treats a leading `:ENDIF` as a NON-leading
+    /// stray ENDIF (generic Syntax error 3, not 28): the `:` implies an (empty) preceding
+    /// statement, so the ENDIF is not the program's first. A leading newline does NOT have
+    /// this effect (`\nENDIF` → 28 errline 2). hw_verified sb-oracle 2026-06-26.
+    saw_leading_sep: bool,
 }
 
 impl Parser {
@@ -145,6 +151,7 @@ impl Parser {
             pos: 0,
             for_depth: 0,
             stmt_count: 0,
+            saw_leading_sep: false,
         }
     }
 
@@ -283,6 +290,15 @@ impl Parser {
             loop {
                 match self.cur_kind() {
                     TokenKind::Colon => {
+                        // A `:` consumed at the very top of the program before any
+                        // statement marks the next stray ENDIF as non-leading (→ 3, not
+                        // 28). See `saw_leading_sep` for the rule.
+                        if matches!(kind, BlockKind::Program)
+                            && out.is_empty()
+                            && self.stmt_count == 0
+                        {
+                            self.saw_leading_sep = true;
+                        }
                         self.advance();
                     }
                     TokenKind::Newline if multiline => {
@@ -449,17 +465,24 @@ impl Parser {
             // opener was never seen), per the error table.
             "WEND" => Err(self.structural_error(25, "WEND without WHILE")),
             "UNTIL" => Err(self.structural_error(23, "UNTIL without REPEAT")),
-            // A stray `ENDIF` (no open IF block consumed it). Real SB raises the dedicated
-            // "ENDIF without IF" (28) ONLY when the ENDIF is the program's first statement;
-            // a stray ENDIF after any other statement collapses to generic Syntax error 3
-            // (hw_verified sb-oracle 2026-06-23: `ENDIF`/`ENDIF\nPRINT 1`/`ENDIF:PRINT 1` → 28;
-            // `PRINT 1\nENDIF`/`A=1\nENDIF`/`IF 1 THEN\nENDIF\nENDIF` → 3).
-            "ENDIF" if self.stmt_count == 0 => Err(self.structural_error(28, "ENDIF without IF")),
-            // Other stray block / clause keywords must not start a statement, and a
-            // non-leading stray `ENDIF` falls here too. (`NEXT` is handled above as a
-            // loop-continue / "NEXT without FOR"; `THEN`/`ELSE`/`ELSEIF` are consumed inside
-            // `parse_if`, so reaching here means a malformed construct.)
-            "THEN" | "ELSE" | "ELSEIF" | "ENDIF" | "TO" | "STEP" => {
+            // A stray `ENDIF` (no open IF block consumed it). Real SB 3.6.0 raises the
+            // dedicated "ENDIF without IF" (28) for EVERY stray ENDIF — leading OR not —
+            // with errline = the ENDIF's own line. The ONE exception: if the program's
+            // first non-newline token is a `:` separator (`:ENDIF`, `::ENDIF`, `\n:ENDIF`),
+            // the ENDIF collapses to generic Syntax error 3 (the `:` is an empty preceding
+            // statement and the ENDIF is not reached as a closer). A `:` AFTER a real
+            // statement does NOT trigger this (`A=1:ENDIF` → 28). hw_verified sb-oracle
+            // 2026-06-26 (re-probe; the 2026-06-23 batch's "non-leading → 3" claim was a
+            // mis-harvest and is superseded).
+            "ENDIF" if self.stmt_count == 0 && self.saw_leading_sep => {
+                Err(self.syntax_error("unexpected `ENDIF`"))
+            }
+            "ENDIF" => Err(self.structural_error(28, "ENDIF without IF")),
+            // Other stray block / clause keywords must not start a statement.
+            // (`NEXT` is handled above as a loop-continue / "NEXT without FOR";
+            // `THEN`/`ELSE`/`ELSEIF` are consumed inside `parse_if`, so reaching here means
+            // a malformed construct.)
+            "THEN" | "ELSE" | "ELSEIF" | "TO" | "STEP" => {
                 Err(self.syntax_error(&format!("unexpected `{kw}`")))
             }
             // Anything else is an assignment or a command call.
@@ -766,13 +789,19 @@ impl Parser {
             else_body = self.parse_if_body(multiline)?;
         }
         // ENDIF is REQUIRED for a multi-line IF and optional for a single-line one. Real SB
-        // does NOT surface the table's "THEN/ELSE without ENDIF" (26/27) for an unterminated
-        // multi-line block — it collapses to generic Syntax error 3 (hw_verified sb-oracle
-        // 2026-06-23: `IF 1 THEN\nPRINT 1` and `IF 1 THEN\nA=1\nELSE\nB=2` both → errnum 3).
-        // (The earlier silent-accept of a missing ENDIF was a latent bug.)
+        // 3.6.0 surfaces the dedicated "THEN without ENDIF" (26) for an unterminated
+        // multi-line IF/ELSEIF body, and "ELSE without ENDIF" (27) when an ELSE was seen but
+        // no ENDIF closes it. (The 2026-06-23 batch mis-harvested these as generic 3; re-probed
+        // 2026-06-26: `IF 1 THEN\nPRINT 1`→26, `IF 1 THEN\nA=1\nELSE\nB=2`→27,
+        // `IF 1 THEN\nA=1\nELSEIF 0 THEN\nB=2`→26, `IF 1 THEN PRINT 1`→no error.)
         if multiline {
             if !self.eat_kw("ENDIF") {
-                return Err(self.syntax_error("multi-line IF block missing ENDIF"));
+                let (en, msg) = if !else_body.is_empty() {
+                    (27, "ELSE without ENDIF")
+                } else {
+                    (26, "THEN without ENDIF")
+                };
+                return Err(self.structural_error(en, msg));
             }
         } else {
             self.eat_kw("ENDIF");
@@ -2262,14 +2291,13 @@ mod tests {
             "PRINT 1 2",  // missing separator between print expressions
             "1=2",        // literal target
             ")",          // can't start a statement
-            // Real SB collapses these IF-block mismatches to generic Syntax error 3 (NOT the
-            // table's 26/27/28) — hw_verified sb-oracle 2026-06-23.
-            "IF 1 THEN\nPRINT 1",        // unterminated multi-line IF (no ENDIF)
-            "IF 1 THEN\nA=1\nELSE\nB=2", // dangling ELSE, no ENDIF
-            "PRINT 1\nENDIF",            // non-leading stray ENDIF
-            "A=1\nENDIF",                // non-leading stray ENDIF
-            "IF 1 THEN\nENDIF\nENDIF",   // second (non-leading) ENDIF after a closed block
-            "ELSE",                      // stray ELSE
+            // A leading `:` before a stray ENDIF collapses to generic Syntax error 3, and a
+            // stray ELSE (no IF) is 3. (The other IF-block mismatches carry dedicated errnums
+            // — see `block_mismatch_has_structural_errnum`.) hw_verified sb-oracle 2026-06-26.
+            ":ENDIF",   // leading `:` → 3 (empty stmt precedes ENDIF)
+            "::ENDIF",  // leading `:` → 3
+            "\n:ENDIF", // first non-newline token is `:` → 3
+            "ELSE",     // stray ELSE (no IF) → 3
         ] {
             let err = parse(src).expect_err(&format!("`{src}` should fail"));
             assert_eq!(err.errnum, 3, "`{src}` should be Syntax error (3)");
@@ -2289,14 +2317,54 @@ mod tests {
             ("WHILE 1\nPRINT 1", 24),      // WHILE without WEND
             ("REPEAT\nPRINT 1", 22),       // REPEAT without UNTIL
             ("DEF F\nA=1", 29),            // DEF without END
-            // A LEADING stray ENDIF (program's first statement) is "ENDIF without IF" (28);
-            // hw_verified sb-oracle 2026-06-23. A non-leading one is generic 3 (below).
+            // Unterminated multi-line IF → 26 "THEN without ENDIF"; with an ELSE but no ENDIF
+            // → 27 "ELSE without ENDIF". hw_verified sb-oracle 2026-06-26 (re-probe; the
+            // 2026-06-23 batch's "→ 3" claim was a mis-harvest, superseded).
+            ("IF 1 THEN\nPRINT 1", 26),
+            ("IF 1 THEN\nA=1\nELSEIF 0 THEN\nB=2", 26),
+            ("IF 1 THEN\nA=1\nELSE\nB=2", 27),
+            // A stray ENDIF (no open IF) → 28 "ENDIF without IF" for EVERY stray ENDIF —
+            // leading OR after other statements — errline = the ENDIF's own line. The ONE
+            // exception is a leading `:` (`:ENDIF` → 3, see malformed_input test above).
+            // hw_verified sb-oracle 2026-06-26 (re-probe; the 2026-06-23 "non-leading → 3"
+            // claim was a mis-harvest, superseded).
             ("ENDIF", 28),
             ("ENDIF\nPRINT 1", 28),
             ("ENDIF:PRINT 1", 28),
+            ("\nENDIF", 28),
+            ("'X\nENDIF", 28),
+            ("REM X\nENDIF", 28),
+            ("REM\nENDIF", 28),
+            ("PRINT 1\nENDIF", 28),
+            ("A=1\nENDIF", 28),
+            ("A=1\nB=2\nENDIF", 28),
+            ("PRINT 1:ENDIF", 28),
+            ("A=1:ENDIF", 28),
+            ("IF 1 THEN\nENDIF\nENDIF", 28),
+            ("FOR I=0 TO 1\nNEXT\nENDIF", 28),
         ] {
             let err = parse(src).expect_err(&format!("`{src}` should fail"));
             assert_eq!(err.errnum, want, "`{src}` errnum");
+        }
+    }
+
+    /// The ENDIF-without-IF errnum (28) points at the ENDIF's own line, which real SB
+    /// reports as the ENDIF's physical line (a leading comment/blank line bumps it).
+    /// hw_verified sb-oracle 2026-06-26.
+    #[test]
+    fn endif_without_if_errline_tracks_endif_line() {
+        for (src, want_line) in [
+            ("ENDIF", 1u32),
+            ("\nENDIF", 2),
+            ("REM X\nENDIF", 2),
+            ("'X\nENDIF", 2),
+            ("PRINT 1\nREM X\nENDIF", 3),
+            ("PRINT 1\nENDIF", 2),
+            ("A=1\nENDIF", 2),
+        ] {
+            let err = parse(src).expect_err(&format!("`{src}` should fail"));
+            assert_eq!(err.errnum, 28, "`{src}` errnum");
+            assert_eq!(err.loc.line, want_line, "`{src}` errline");
         }
     }
 
