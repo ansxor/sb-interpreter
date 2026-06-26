@@ -13,6 +13,7 @@ summary: "Returns the smallest whole number not less than value (rounds toward p
 semantics:
   - "Rounds toward positive infinity: CEIL(12.5)=13, CEIL(-12.5)=-12, CEIL(12.345)=13."
   - "An Integer argument is returned unchanged (Integer); a Double argument yields a whole-numbered Double (the ceil helper @0x1ed760 returns a double, pushed via the Double return path at vtable +0x18 — NOT coerced to Integer)."
+  - "Double magnitudes beyond the i32 range stay Double: CEIL(3000000000.0) and CEIL(2147483648.0) return whole doubles (no overflow/wrap), while CEIL(2147483647) returns the Integer 2147483647."
 
 errors:
   - { errnum: 8, name: TypeMismatch, when: "value is a string" }
@@ -34,4 +35,8 @@ tests:
   - { name: rounds_up_fraction,   code: "PRINT CEIL(3.1)",    expect: { stdout: "4" } }
   - { name: negative_fraction,    code: "PRINT CEIL(-2.1)",   expect: { stdout: "-2" } }
   - { name: integer_passthrough,  code: "PRINT CEIL(5)",      expect: { stdout: "5" } }
+  # large Double -> Double: disassembled confidence (handler's Double path + sb-core conformance).
+  - { name: double_i32max_plus1,  code: "PRINT CEIL(2147483648.0)", expect: { stdout: "2147483648" } }
+  - { name: double_large_positive, code: "PRINT CEIL(3000000000.0)", expect: { stdout: "3000000000" } }
+  - { name: double_large_negative, code: "PRINT CEIL(-3000000000.0)", expect: { stdout: "-3000000000" } }
   - { name: string_type_mismatch, code: 'A=CEIL("x")',        expect: { error: { errnum: 8 } } }

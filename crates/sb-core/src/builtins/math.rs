@@ -364,6 +364,34 @@ mod tests {
     }
 
     #[test]
+    fn rounding_family_stays_double_beyond_i32() {
+        // Double input must stay Double (whole-valued) and NOT be coerced to Integer,
+        // which would overflow/wrap for magnitudes above i32::MAX. This discriminates the
+        // type-preserving return path documented in floor/ceil/round.yaml.
+        const BIG: f64 = 3_000_000_000.0;
+        const I32MAX_PLUS_1: f64 = 2_147_483_648.0;
+        assert_eq!(call("FLOOR", vec![real(BIG)]), real(BIG));
+        assert_eq!(call("FLOOR", vec![real(-BIG)]), real(-BIG));
+        assert_eq!(
+            call("FLOOR", vec![real(I32MAX_PLUS_1)]),
+            real(I32MAX_PLUS_1)
+        );
+        assert_eq!(call("CEIL", vec![real(BIG)]), real(BIG));
+        assert_eq!(call("CEIL", vec![real(-BIG)]), real(-BIG));
+        assert_eq!(call("CEIL", vec![real(I32MAX_PLUS_1)]), real(I32MAX_PLUS_1));
+        assert_eq!(call("ROUND", vec![real(BIG)]), real(BIG));
+        assert_eq!(call("ROUND", vec![real(-BIG)]), real(-BIG));
+        assert_eq!(
+            call("ROUND", vec![real(I32MAX_PLUS_1)]),
+            real(I32MAX_PLUS_1)
+        );
+        assert_eq!(call("ROUND", vec![real(BIG + 0.5)]), real(BIG + 1.0));
+        // Sanity: Integer inputs still passthrough.
+        assert_eq!(call("FLOOR", vec![int(i32::MAX)]), int(i32::MAX));
+        assert_eq!(call("ROUND", vec![int(i32::MIN)]), int(i32::MIN));
+    }
+
+    #[test]
     fn abs_sgn_classify() {
         assert_eq!(call("ABS", vec![real(-12.345)]), real(12.345));
         assert_eq!(call("ABS", vec![int(-5)]), int(5));
