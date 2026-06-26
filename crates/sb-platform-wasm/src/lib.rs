@@ -209,7 +209,7 @@ fn frames_due(now: f64, next_frame: &mut f64) -> u32 {
 
 #[cfg(target_arch = "wasm32")]
 mod web {
-    use super::{blank, build_vm, compose_both, frames_due, keymap, prepare_vm, Vm};
+    use super::{blank, build_vm, compose_both, frames_due, keymap, prepare_vm, Vm, FRAME_MS};
     use js_sys::Function;
     use sb_core::host_input::HostInput;
     use sb_core::VmError;
@@ -587,6 +587,11 @@ mod web {
         // effectively always present in browsers; if it's missing we fall back to running one
         // VM frame per rAF tick (the pre-fix behavior) rather than stalling.
         let perf = web_sys::window().and_then(|w| w.performance());
+        // Origin of the wall-clock 60Hz frame counter. The VM's `MAINCNT` must track a free-
+        // running 60Hz source, not the number of VM execution slices, so we sync the frame
+        // clock to `floor((performance.now() - start_ms) / FRAME_MS)` each rAF tick.
+        let start_ms = perf.as_ref().map_or(0.0, now_ms);
+        let last_vblank: Rc<Cell<u64>> = Rc::new(Cell::new(0));
         // Wall-clock deadline (ms) of the next VM frame. Seeded to "now" so the first tick
         // runs exactly one frame (the deadline is at `now`, so `frames_due` counts it due
         // immediately and advances it by `FRAME_MS`), matching the native host's
@@ -630,12 +635,26 @@ mod web {
                     Some(p) => frames_due(now_ms(p), &mut next_frame.borrow_mut()),
                     None => 1,
                 };
+                // Free-running MAINCNT: sync the VM's frame clock to the wall-clock 60Hz
+                // counter once per rAF tick, independent of how many VM execution slices we
+                // are about to run. When the host has no monotonic clock we fall back to
+                // ticking once per VM frame (the pre-fix coupling).
+                if let Some(p) = &perf {
+                    let target = ((now_ms(p) - start_ms) / FRAME_MS) as u64;
+                    let last = last_vblank.get();
+                    if target > last {
+                        vm.tick_frames(target - last);
+                        last_vblank.set(target);
+                    }
+                }
                 for _ in 0..frames {
-                    // VBlank heartbeat first: MAINCNT advances, animations step, and any
-                    // pending VSYNC/WAIT target is resolved.  This mirrors the hardware model
-                    // where `swi 0xa` fires before the program resumes — and ensures MAINCNT
-                    // advances even in programs that never call VSYNC/WAIT (#94).
-                    vm.tick_frame();
+                    if perf.is_none() {
+                        // VBlank heartbeat first: MAINCNT advances, animations step, and any
+                        // pending VSYNC/WAIT target is resolved.  This mirrors the hardware
+                        // model where `swi 0xa` fires before the program resumes — and ensures
+                        // MAINCNT advances even in programs that never call VSYNC/WAIT (#94).
+                        vm.tick_frame();
+                    }
 
                     // `input_mut` borrows `vm` mutably; take it per-iteration so the borrow
                     // ends before `run_frame` borrows `vm` again below.
@@ -654,8 +673,8 @@ mod web {
                             }
                         }
                     }
-                    // (post-halt: tick_frame already fired above, keeping the heartbeat alive
-                    // for sprite/BG animations and MAINCNT advancement even after END.)
+                    // (post-halt: the wall-clock sync above keeps the heartbeat alive for
+                    // sprite/BG animations and MAINCNT advancement even after END.)
                 }
 
                 let _ = paint_both(&top, &bottom, &vm);

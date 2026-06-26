@@ -224,6 +224,12 @@ mod native {
         touching: bool,
         /// Typed text (UTF-16) buffered since the last frame, drained into the `INKEY$` queue.
         pending_keys: Vec<u16>,
+        /// Wall-clock origin for the free-running 60Hz `MAINCNT` counter (M4-T3). Set when
+        /// the window appears so the frame clock ticks by real elapsed time, not by how the
+        /// host slices VM execution.
+        clock_origin: Option<Instant>,
+        /// The wall-clock frame count already synced to the VM's clock (`clock_origin`).
+        clock_sync_frame: u64,
     }
 
     impl App {
@@ -239,6 +245,8 @@ mod native {
                 cursor: (0.0, 0.0),
                 touching: false,
                 pending_keys: Vec::new(),
+                clock_origin: None,
+                clock_sync_frame: 0,
             }
         }
 
@@ -271,13 +279,25 @@ mod native {
             let touching = self.touching;
             let keys = std::mem::take(&mut self.pending_keys);
             if let Scene::Live(vm) = &mut self.scene {
+                // Free-running MAINCNT: sync the VM's frame clock to the wall-clock 60Hz source
+                // once per displayed frame, independent of how much VM work this tick runs.
+                match self.clock_origin {
+                    Some(origin) => {
+                        let frame_ns = FRAME_DURATION.as_nanos();
+                        let target = (origin.elapsed().as_nanos() / frame_ns) as u64;
+                        if target > self.clock_sync_frame {
+                            vm.tick_frames(target - self.clock_sync_frame);
+                            self.clock_sync_frame = target;
+                        }
+                    }
+                    None => vm.tick_frame(),
+                }
                 let inp = vm.input_mut();
                 inp.advance_frame(held, stick, stickex);
                 inp.advance_touch(touching, tx, ty);
                 for unit in keys {
                     inp.push_key(unit);
                 }
-                vm.tick_frame();
                 self.fb = compose(&self.scene);
             }
         }
@@ -349,8 +369,12 @@ mod native {
                 }
             }
             self.window = Some(window);
-            // Start the 60 fps pacer from the moment the window is up.
-            self.next_frame = Some(Instant::now() + FRAME_DURATION);
+            // Start the 60 fps pacer and the free-running MAINCNT origin from the moment the
+            // window is up.
+            let now = Instant::now();
+            self.next_frame = Some(now + FRAME_DURATION);
+            self.clock_origin = Some(now);
+            self.clock_sync_frame = 0;
         }
 
         /// The 60 fps heartbeat (M4-T3). Each `FRAME_DURATION` boundary we step the scene one

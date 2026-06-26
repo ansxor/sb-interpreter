@@ -656,20 +656,30 @@ impl Vm {
     /// platform's 60 fps loop *after* `run()` returns, so animations set up by the program
     /// keep advancing in the window; it does not touch the VSYNC anchor (only VSYNC/WAIT do).
     pub fn tick_frame(&mut self) {
-        self.clock.tick(1);
+        self.tick_frames(1);
+    }
+
+    /// Advance the frame clock and all frame-driven subsystems by `frames` displayed frames.
+    ///
+    /// This is the multi-frame form of [`tick_frame`]; interactive hosts that drive the clock
+    /// from a real wall-clock 60Hz source use it to catch up after a stall without ticking one
+    /// by one. A pending VSYNC/WAIT target is resolved after the jump, and sprite/BG/fader
+    /// animation steps run by the full count.
+    pub fn tick_frames(&mut self, frames: u64) {
+        self.clock.tick(frames);
         // In the interactive model, a pending VSYNC/WAIT target may now be reached.
         self.clock.resolve_wait();
         // Both screens' sprite animations advance every frame (animation runs regardless of
         // which DISPLAY is selected).
         for sp in &mut self.sprites {
-            sp.tick(1);
+            sp.tick(frames);
         }
         // Both screens' BG animations advance every frame, too (same as sprites — #84).
         for bg in &mut self.bg {
-            bg.tick(1);
+            bg.tick(frames);
         }
         // The screen-fader animation advances once per displayed frame.
-        self.fader.tick(1);
+        self.fader.tick(frames);
     }
 
     /// Borrow the ACTIVE text console (grid + cursor + colors) for rendering / inspection.
@@ -6811,6 +6821,25 @@ H$=HEX$(255)"#);
         vm.tick_frame();
         assert_eq!(vm.maincnt(), 1);
         assert_eq!((vm.bg().layers[0].ofs_x, vm.bg().layers[0].ofs_y), (16, 8));
+    }
+
+    #[test]
+    fn tick_frames_advances_multiple_frames_at_once() {
+        // Wall-clock catch-up: a host that knows several 1/60s frames have elapsed can
+        // advance the clock/animations by the full count in one call, matching the result
+        // of stepping one frame at a time.
+        let mut fast = run_b("BGSCREEN 0,32,32\nBGANIM 0,\"XY\",2,16,8");
+        fast.tick_frames(5);
+        let mut slow = run_b("BGSCREEN 0,32,32\nBGANIM 0,\"XY\",2,16,8");
+        for _ in 0..5 {
+            slow.tick_frame();
+        }
+        assert_eq!(fast.maincnt(), 5);
+        assert_eq!(fast.maincnt(), slow.maincnt());
+        assert_eq!(
+            (fast.bg().layers[0].ofs_x, fast.bg().layers[0].ofs_y),
+            (slow.bg().layers[0].ofs_x, slow.bg().layers[0].ofs_y)
+        );
     }
 
     #[test]
