@@ -76,6 +76,8 @@ _Add a brief overview of your project architecture_
 
 _Add your project-specific conventions here_
 
+TESTS TAKE A REALLY LONG TIME TO RUN. be conservation when to run them, because it takes 5 minutes to run
+all of them, and it causes a lot of friction.
 
 ## Implementing
 - **If this is a SPEC-BUILD task (id `S-*`):** your deliverable is the spec FILE(S)

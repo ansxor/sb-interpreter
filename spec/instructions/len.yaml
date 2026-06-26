@@ -15,7 +15,7 @@ summary: "Returns the number of characters in a string, or the number of element
 
 semantics:
   - "For a string, returns its length in characters (UTF-16 code units): LEN(\"ABC123\")=6, LEN(\"\")=0."
-  - "For an array, returns the total element count (for a 1-D array, its length)."
+  - "For an array, returns the total element count across all dimensions: LEN(DIM A[5])=5, LEN(DIM A[2,3])=6, LEN(DIM A[2,3,4])=24."
   - "Each character counts as one, including full-width/kana characters."
 
 errors:
@@ -25,7 +25,8 @@ errors:
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/len.md (LEN(string or array); example LEN(\"ABC123\"))" }
   - { type: disassembled, ref: "cia_3.6.0.lst LEN handler @0x147f68; argcount!=1 -> errnum 4; string (type byte 2) -> length via vtable +0x58; array (type byte 1) -> element count via vtable +0x5c/+0x14; plain number -> errnum 8 (@0x147ffc)" }
-  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: LEN(\"ABC123\")=6, LEN(\"\")=0, LEN(\"X\")=1; LEN(5) -> errnum 8. Array form LEN(arr) queued (multi-statement DIM, not batch-harvestable)." }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: LEN(\"ABC123\")=6, LEN(\"\")=0, LEN(\"X\")=1; LEN(5) -> errnum 8." }
+  - { type: hw_verified, ref: "sb-oracle prog harvest 2026-06-26: LEN(DIM A[5])=5, LEN(DIM A[2,3])=6, LEN(DIM B[5,4])=20, LEN(DIM C[2,3,4])=24 (total element count across all dimensions)." }
 
 confidence: hw_verified
 
@@ -34,4 +35,6 @@ tests:
   - { name: empty,      code: 'PRINT LEN("")',       expect: { stdout: "0" } }
   - { name: single,     code: 'PRINT LEN("X")',      expect: { stdout: "1" } }
   - { name: array_form, code: 'DIM A[5]:PRINT LEN(A)', expect: { stdout: "5" } }
+  - { name: array_2d, code: 'DIM A[2,3]:PRINT LEN(A)', expect: { stdout: "6" } }
+  - { name: array_3d, code: 'DIM A[2,3,4]:PRINT LEN(A)', expect: { stdout: "24" } }
   - { name: number_type_mismatch, code: 'A=LEN(5)',  expect: { error: { errnum: 8 } } }
