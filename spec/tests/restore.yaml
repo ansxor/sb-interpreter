@@ -1,0 +1,22 @@
+# Oracle-harvested fixtures for RESTORE (hw_verified) — real SmileBASIC 3.6.0 (Azahar),
+# s_t4d secondary error-edge probe 2026-06-26 (run_case.py errcase, isolated probes).
+#
+# RESTORE to an undefined @Label raises Undefined label (errnum 14), errline 1 — uniform
+# for both a symbolic label (RESTORE @NOPE) and a numeric one (RESTORE @1), and the RESTORE
+# fails before any following READ runs (RESTORE @NOPE:READ A still -> 14 on line 1). sb-core
+# agrees: the compiler (compiler.rs RESTORE arm) looks up the label in `data_labels` and
+# raises ERR_UNDEFINED_LABEL (14) at compile time when it is absent. The bare-RESTORE -> 8
+# (Type mismatch) case is already hw_verified in spec/instructions/restore.yaml::tests.
+#
+# (The cross-slot RESTORE "1:@Label" form after USE 1 needs a 2nd slot loaded — single-slot
+# oracle can't test it; queued in the bead, assumption per docs.)
+tests:
+  - name: "restore_undefined_label_symbolic"
+    code: "RESTORE @NOPE"
+    expect: { error: { errnum: 14 } }
+  - name: "restore_undefined_label_numeric"
+    code: "RESTORE @1"
+    expect: { error: { errnum: 14 } }
+  - name: "restore_undefined_then_read"
+    code: "RESTORE @NOPE:READ A"
+    expect: { error: { errnum: 14 } }

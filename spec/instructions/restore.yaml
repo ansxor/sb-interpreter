@@ -28,6 +28,7 @@ sources:
   - { type: community, ref: "sbsave corpus: ~3.3k RESTORE; literal @Label dominant (~2.6k); string-variable labels (~238, RESTORE M$ in 227EVK4V/TXT/SBSMILE); computed/concatenated labels (~146, RESTORE \"@BGM\"+STR$(NUM+1) in 2D7X32KV/TXT/BGM); cross-slot \"n:@Label\" (~288, RESTORE \"1:@SAVE\" in 1BWX7ENV/TXT/AND-OS); array-element labels rare (RESTORE TOOL$[TOOL_MODE])" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4d): RESTORE @D2 selects the @D2 block (READ -> 22, not 11); RESTORE @D1 rewinds so a value is re-read (READ A:RESTORE @D1:READ B -> 9,9); string-variable label L$=\"@D1\":RESTORE L$ -> 42; computed label RESTORE \"@D\"+STR$(2) targets @D2 -> 2" }
   - { type: hw_verified, ref: "sb-oracle 2026-06-23 (M1-T14): argument-less RESTORE has NO reset-to-first form — `READ A:RESTORE:READ B:@D1:DATA 7` HALTS with errnum 8 (Type mismatch), errline 1, whereas the same program with `RESTORE @D1` returns 7. So bare RESTORE raises Type mismatch (8) at runtime; it does not rewind." }
+  - { type: hw_verified, ref: "sb-oracle errcase probe 2026-06-26 (s_t4d secondary edges): RESTORE to an undefined @Label -> errnum 14 (Undefined label), errline 1 — uniform for a symbolic label (RESTORE @NOPE -> 14) and a numeric one (RESTORE @1 -> 14); the RESTORE fails before a following READ runs (RESTORE @NOPE:READ A -> 14, line 1). The cross-slot RESTORE \"1:@Label\" form after USE 1 needs a 2nd slot loaded (single-slot oracle can't test it); assumption per docs, queued in the bead." }
 
 confidence: hw_verified
 
