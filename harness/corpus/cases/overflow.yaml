@@ -61,6 +61,16 @@ cases:
   - name: array_store_huge_overflows
     code: 'DIM A%[1]:A%[0]=10000000000'
     expect: { error: { errnum: 9 } }    # hw_verified arr_store_ovf
+  # --- unsuffixed ARRAY element promotes like a suffix-less scalar (bd:sb-interpreter-3e3) ---
+  #     DIM A[1] defaults to Real (the M1-T4 suffix-less default, bd:sb-interpreter-3a5), so
+  #     an overflowing `A[0]*2` promotes Int->Double exactly like `A=A*2` above. STR$ form is
+  #     the 6-sig harvested string; PRINT is the %.8f-trim integer display of the same Double.
+  - name: array_element_overflow_promotes
+    code: 'DIM A[1]:A[0]=2000000000:A[0]=A[0]*2:PRINT STR$(A[0])'
+    expect: { stdout: "4e+09" }         # hw_verified arr_real_promote (Double 4000000000.0)
+  - name: array_element_overflow_promotes_print
+    code: 'DIM A[1]:A[0]=2000000000:A[0]=A[0]*2:PRINT A[0]'
+    expect: { stdout: "4000000000" }    # hw_verified arr_real_promote (PRINT %.8f-trim of 4e9)
   # --- INC/DEC follow the scalar overflow rule (hw_verified 2026-06-24, prog batch) ---
   #     `INC X` is `X = X + delta`: a Real/Number-typed target (suffix-less / `#`) PROMOTES
   #     Int->Double on overflow, a `%`-typed target WRAPS mod 2^32.
