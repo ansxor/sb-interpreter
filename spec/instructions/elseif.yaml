@@ -36,6 +36,6 @@ tests:
   - { name: elseif_chain_third_wins, code: "A$=\"\"\nIF 0 THEN\nA$=\"A\"\nELSEIF 0 THEN\nA$=\"B\"\nELSEIF 1 THEN\nA$=\"C\"\nELSE\nA$=\"D\"\nENDIF\nPRINT A$", expect: { stdout: "C" } }
   - { name: elseif_chain_all_false_else, code: "A$=\"\"\nIF 0 THEN\nA$=\"A\"\nELSEIF 0 THEN\nA$=\"B\"\nELSEIF 0 THEN\nA$=\"C\"\nELSE\nA$=\"D\"\nENDIF\nPRINT A$", expect: { stdout: "D" } }
   # ELSE IF (spaced) opens a NESTED IF needing its own ENDIF (hw_verified 2026-06-26, S-T3a).
-  - { name: else_if_spaced_nested_y, code: 'A$=""\nIF 0 THEN A$="X" ELSE IF 1 THEN A$="Y" ELSE A$="Z" ENDIF\nPRINT A$', expect: { stdout: "Y" } }
-  - { name: else_if_spaced_nested_z, code: 'A$=""\nIF 0 THEN A$="X" ELSE IF 0 THEN A$="Y" ELSE A$="Z" ENDIF\nPRINT A$', expect: { stdout: "Z" } }
-  - { name: multiline_else_if_spaced, code: 'A$=""\nIF 0 THEN\nA$="A"\nELSE\nIF 1 THEN\nA$="B"\nENDIF\nENDIF\nPRINT A$', expect: { stdout: "B" } }
+  - { name: else_if_spaced_nested_y, code: "A$=\"\"\nIF 0 THEN A$=\"X\" ELSE IF 1 THEN A$=\"Y\" ELSE A$=\"Z\" ENDIF\nPRINT A$", expect: { stdout: "Y" } }
+  - { name: else_if_spaced_nested_z, code: "A$=\"\"\nIF 0 THEN A$=\"X\" ELSE IF 0 THEN A$=\"Y\" ELSE A$=\"Z\" ENDIF\nPRINT A$", expect: { stdout: "Z" } }
+  - { name: multiline_else_if_spaced, code: "A$=\"\"\nIF 0 THEN\nA$=\"A\"\nELSE\nIF 1 THEN\nA$=\"B\"\nENDIF\nENDIF\nPRINT A$", expect: { stdout: "B" } }

@@ -328,28 +328,12 @@ const IN_SCOPE_DEVICE: &[&str] = &[
 const IN_SCOPE_PARTIAL: &[(&str, &[&str])] = &[
     ("LOCATE", &["x_edge_50_ok"]),
     ("TALKCHK", &["bare_statement_syntax_error"]),
-    // S-T3a (hw_verified sb-oracle 2026-06-26): real SB 3.6.0 accepts these IF forms but the
-    // sb-core parser currently raises errnum 3. The SPEC + oracle evidence is frozen; these
-    // cases are excluded only until the parser implements them (queued, bd search "S-T3a parser").
-    (
-        "IF",
-        &[
-            "goto_omitted_then_true", // IF cond THEN @label  — bare-label GOTO-omission
-            "goto_omitted_then_false",
-            "goto_keyword_true", // IF cond GOTO @label
-            "goto_keyword_false",
-            "endif_rejoin_after_then", // ENDIF then fall-through to next statement
-            "endif_rejoin_after_else",
-        ],
-    ),
-    (
-        "ELSEIF",
-        &[
-            "else_if_spaced_nested_y", // ELSE IF (spaced) nested IF, own ENDIF
-            "else_if_spaced_nested_z",
-            "multiline_else_if_spaced", // multi-line nested IF inside an ELSE clause
-        ],
-    ),
+    // S-T3a (hw_verified sb-oracle 2026-06-26): real SB 3.6.0 accepts these IF forms.
+    // The sb-core parser implements all of them — bare-label GOTO-omission
+    // (`IF c THEN @L`, handled in parse_block's SingleLineIf label arm), explicit
+    // `IF c GOTO @L`, ENDIF rejoin, and nested `ELSE IF` (each IF owns its ENDIF) —
+    // so no case is excluded. (Earlier these were excluded pending parser support;
+    // verified passing 2026-06-26, bd sb-interpreter-tgu.)
 ];
 
 #[derive(Debug, Deserialize)]

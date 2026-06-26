@@ -51,10 +51,11 @@ tests:
   - { name: multiline_elseif_no_endif, code: "IF 1 THEN\nA=1\nELSEIF 0 THEN\nB=2", expect: { error: { errnum: 26 } } } # unterminated ELSEIF → 26 (hw_verified 2026-06-26)
   - { name: multiline_else_no_endif, code: "IF 1 THEN\nA=1\nELSE\nB=2",         expect: { error: { errnum: 27 } } } # dangling ELSE, no ENDIF → 27 ELSE without ENDIF (hw_verified 2026-06-26)
   # GOTO-omission + explicit-GOTO branch selection (hw_verified sb-oracle 2026-06-26, S-T3a).
-  - { name: goto_omitted_then_true,  code: 'A$=""\nIF 1 THEN @L\nA$="F"\nEND\n@L\nA$="T"', expect: { stdout: "T" } }
-  - { name: goto_omitted_then_false, code: 'A$=""\nIF 0 THEN @L\nA$="F"\nEND\n@L\nA$="T"', expect: { stdout: "F" } } # cond false → fall through, does not branch
-  - { name: goto_keyword_true,       code: 'A$=""\nIF 1 GOTO @L\nA$="X"\nEND\n@L\nA$="G"', expect: { stdout: "G" } }
-  - { name: goto_keyword_false,      code: 'A$=""\nIF 0 GOTO @L\nA$="G"\nEND\n@L\nA$="X"', expect: { stdout: "X" } } # cond false → fall through
+  # `IF cond THEN @L` / `IF cond GOTO @L`: true → branch to @L; false → fall through past END.
+  - { name: goto_omitted_then_true,  code: "A$=\"\"\nIF 1 THEN @L\nA$=\"F\"\nPRINT A$\nEND\n@L\nA$=\"T\"\nPRINT A$", expect: { stdout: "T" } }
+  - { name: goto_omitted_then_false, code: "A$=\"\"\nIF 0 THEN @L\nA$=\"F\"\nPRINT A$\nEND\n@L\nA$=\"T\"\nPRINT A$", expect: { stdout: "F" } } # cond false → fall through, does not branch
+  - { name: goto_keyword_true,       code: "A$=\"\"\nIF 1 GOTO @L\nA$=\"X\"\nPRINT A$\nEND\n@L\nA$=\"G\"\nPRINT A$", expect: { stdout: "G" } }
+  - { name: goto_keyword_false,      code: "A$=\"\"\nIF 0 GOTO @L\nA$=\"G\"\nPRINT A$\nEND\n@L\nA$=\"X\"\nPRINT A$", expect: { stdout: "G" } } # cond false → fall through, does not branch
   # ENDIF rejoin: control rejoins after whichever branch ran (hw_verified 2026-06-26, S-T3a).
-  - { name: endif_rejoin_after_then, code: 'A$=""\nIF 1 THEN\nA$="T"\nENDIF\nA$=A$+"R"', expect: { stdout: "TR" } }
-  - { name: endif_rejoin_after_else, code: 'A$=""\nIF 0 THEN\nA$="T"\nELSE\nA$="F"\nENDIF\nA$=A$+"R"', expect: { stdout: "FR" } }
+  - { name: endif_rejoin_after_then, code: "A$=\"\"\nIF 1 THEN\nA$=\"T\"\nENDIF\nA$=A$+\"R\"\nPRINT A$", expect: { stdout: "TR" } }
+  - { name: endif_rejoin_after_else, code: "A$=\"\"\nIF 0 THEN\nA$=\"T\"\nELSE\nA$=\"F\"\nENDIF\nA$=A$+\"R\"\nPRINT A$", expect: { stdout: "FR" } }
