@@ -22,7 +22,7 @@ semantics:
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "argument slot count is not 2 or 3, or a return value is requested (used as a function)" }
-  - { errnum: 10, name: "Out of range", when: "X not in 0..49, Y not in 0..29, or Z not in -256.0..1024.0" }
+  - { errnum: 10, name: "Out of range", when: "X not in 0..50, Y not in 0..29, or Z not in -256.0..1024.0 (inclusive at both ends)" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/locate.md (LOCATE [X],[Y][,Z]; X:0-49, Y:0-29; omitted X/Y keep previous; Z depth Rear 1024 < surface 0 < Front -256; omitted Z keeps previous)" }
@@ -30,6 +30,7 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/console.d LOCATE: sets cursor X/Y(/Z), keeps previous on omission (3.5.0 structural cross-check only)" }
   - { type: community, ref: "sbsave corpus: `LOCATE ,,z` (both X and Y omitted, only depth set) in ~41 programs, e.g. 13D4DV3V/TXT/MAIN_PRG_V2 line 778 (`LOCATE ,,-20`); Z heavily used with negative depth (-256..-1) for layering. Single-slot form `LOCATE 0` appears once (XRLEC2HE/TXT/LODING_SIM line 6, a 7-line abandoned program) — it parses but raises errnum 4 at runtime (confirmed below), so it is a latent bug in that program." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5a): X bound -> LOCATE 49,0 NOERR, LOCATE 50,0 NOERR, LOCATE 51,0/80,0/100,0 errnum 10 errline 1 (X max = 50 inclusive, NOT 49); Y bound -> LOCATE 0,29 NOERR, LOCATE 0,30 errnum 10 (Y max = 29); Z bound -> LOCATE 0,0,2000 errnum 10; LOCATE 0 (single slot) -> errnum 4 errline 1; A=LOCATE(0,0) (used as a function) -> errnum 4 errline 1." }
+  - { type: hw_verified, ref: "sb-oracle batch 2026-06-26 (o4o, harness/harvest/out/o4o.tsv): Z bound inclusive at BOTH ends — LOCATE 0,0,-256 NOERR (lower -256.0 accepted), LOCATE 0,0,-257 errnum 10, LOCATE 0,0,1024 NOERR (upper 1024.0 accepted), LOCATE 0,0,1025 errnum 10, LOCATE 0,0,-1000 errnum 10, LOCATE 0,0,5000 errnum 10 (all errline 1). Confirms the disasm constants 0xC3800000=-256.0 / 0x44800000=1024.0 are inclusive (vcmpe .../bcc err and vcmpe .../ble ok)." }
 
 confidence: hw_verified
 
@@ -42,5 +43,9 @@ tests:
   - { name: x_out_of_range, code: "LOCATE 51,0", expect: { error: { errnum: 10 } } }
   - { name: y_out_of_range, code: "LOCATE 0,30", expect: { error: { errnum: 10 } } }
   - { name: z_out_of_range, code: "LOCATE 0,0,2000", expect: { error: { errnum: 10 } } }
+  - { name: z_lower_bound_inclusive, code: 'LOCATE 0,0,-256:PRINT "OK"', expect: { stdout: "OK" } }
+  - { name: z_lower_bound_exceeded, code: "LOCATE 0,0,-257", expect: { error: { errnum: 10 } } }
+  - { name: z_upper_bound_inclusive, code: 'LOCATE 0,0,1024:PRINT "OK"', expect: { stdout: "OK" } }
+  - { name: z_upper_bound_exceeded, code: "LOCATE 0,0,1025", expect: { error: { errnum: 10 } } }
   - { name: single_arg_errors, code: "LOCATE 0", expect: { error: { errnum: 4 } } }
   - { name: as_function_errors, code: "A=LOCATE(0,0)", expect: { error: { errnum: 4 } } }
