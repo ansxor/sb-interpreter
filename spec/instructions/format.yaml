@@ -12,8 +12,8 @@ signatures:
 summary: "Formats values into a string using printf-style %-directives."
 
 semantics:
-  - "Directives: %S string, %D integer (decimal), %X integer (uppercase hex), %F real number. Literal text is copied verbatim; %% emits a literal percent sign (e.g. \"%02D%%\")."
-  - "A %B (binary) directive appears in real programs (e.g. FORMAT$(\"%04B\",x)) though it is absent from the official directive list; its exact output is oracle-pending."
+  - "Directives: %S string, %D integer (decimal), %X integer (uppercase hex), %F real number, %B integer (unsigned binary, MSB-first). Literal text is copied verbatim; %% emits a literal percent sign (e.g. \"%02D%%\")."
+  - "%B formats an integer as binary digits, MSB-first, with no leading zeros beyond the minimum width; negative values emit the 32-bit two's-complement bit pattern (e.g. FORMAT$(\"%B\",-1) = 32 ones). Width/zero-pad apply as for %D: %04B zero-pads to width 4, %016B zero-pads to 16. A non-integer value for %B raises errnum 8 (TypeMismatch), like the other directives."
   - "Width: a number after % sets the minimum field width (%8D, %4X), right-justified by default."
   - "Precision for %F: integer.fraction digit counts as (width).(fraction), e.g. %8.2F gives 2 fractional digits in a width-8 field."
   - "Flags after %: space pads with spaces (% 4D), 0 pads with zeros (%08D), '-' left-aligns (%-8D), '+' shows the sign on positives (%+8D)."
@@ -27,7 +27,8 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/format.md (%S/%D/%X/%F; width, .fraction, space/0/-/+ flags; example FORMAT$(\"%06D\",A))" }
   - { type: disassembled, ref: "cia_3.6.0.lst FORMAT$ handler @0x14576c; argcount<1 / non-string format -> errnum 8 (@0x145808); scans format for '%' (0x25) directives, building output into a wide buffer; buffer overflow -> errnum 0x29 (41)" }
   - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: FORMAT$(\"%D\",42)=42, FORMAT$(\"%06D\",42)=000042, FORMAT$(\"%X\",255)=FF, FORMAT$(\"%4X\",255)=\"  FF\", FORMAT$(\"%8.2F\",3.14159)=\"    3.14\", FORMAT$(\"%S\",\"HI\")=HI, FORMAT$(\"%+D\",5)=+5, FORMAT$(\"V=%D\",7)=V=7, FORMAT$(\"%-6D\",42)=\"42    \"; FORMAT$(5,1) -> errnum 8" }
-  - { type: community, ref: "sbsave corpus: %% literal-percent attested in 19 programs (e.g. 2BC4738V/TXT/MOH_JUHSY237D: FORMAT$(\"WAIT:%7D%%\",...), \"%02D%%\"); %B directive in 7 programs (e.g. 4K241XVD/TXT/DOTMAGICS-C: FORMAT$(\"%04B\",CHC%)). %% literal output added below; %% and %B exact output queued for oracle." }
+  - { type: community, ref: "sbsave corpus: %% literal-percent attested in 19 programs (e.g. 2BC4738V/TXT/MOH_JUHSY237D: FORMAT$(\"WAIT:%7D%%\",...), \"%02D%%\"); %B directive in 7 programs (e.g. 4K241XVD/TXT/DOTMAGICS-C: FORMAT$(\"%04B\",CHC%))." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-26 (bead xfi): FORMAT$(\"%D%%\",50)=\"50%%\" -> literal '%'; FORMAT$(\"%B\",5)=\"101\"; FORMAT$(\"%04B\",10)=\"1010\"; FORMAT$(\"%B\",255)=\"11111111\"; FORMAT$(\"%016B\",256)=\"0000000100000000\"; FORMAT$(\"%B\",-1)=\"11111111111111111111111111111111\" (32-bit two's complement); FORMAT$(\"%%=%D\",7)=\"%=7\"; FORMAT$(\"%B\",\"X\") -> errnum 8." }
 
 confidence: hw_verified
 
@@ -41,5 +42,12 @@ tests:
   - { name: plus_flag,    code: 'PRINT FORMAT$("%+D",5)',       expect: { stdout: "+5" } }
   - { name: left_align,   code: 'PRINT "["+FORMAT$("%-6D",42)+"]"', expect: { stdout: "[42    ]" } }
   - { name: literal_text, code: 'PRINT FORMAT$("V=%D",7)',      expect: { stdout: "V=7" } }
-  - { name: literal_percent, code: 'PRINT FORMAT$("%D%%",50)',  expect: { stdout: "50%" } } # corpus-attested (%%); oracle-pending
+  - { name: literal_percent, code: 'PRINT FORMAT$("%D%%",50)',  expect: { stdout: "50%" } }
+  - { name: binary,          code: 'PRINT FORMAT$("%B",5)',       expect: { stdout: "101" } }
+  - { name: binary_zpad,     code: 'PRINT FORMAT$("%04B",10)',   expect: { stdout: "1010" } }
+  - { name: binary_byte,     code: 'PRINT FORMAT$("%B",255)',    expect: { stdout: "11111111" } }
+  - { name: binary_wide,    code: 'PRINT FORMAT$("%016B",256)',  expect: { stdout: "0000000100000000" } }
+  - { name: binary_neg,     code: 'PRINT FORMAT$("%B",-1)',      expect: { stdout: "11111111111111111111111111111111" } }
+  - { name: pct_then_d,     code: 'PRINT FORMAT$("%%=%D",7)',    expect: { stdout: "%=7" } }
+  - { name: binary_type_mismatch, code: 'A$=FORMAT$("%B","X")',  expect: { error: { errnum: 8 } } }
   - { name: non_string_format, code: 'A$=FORMAT$(5,1)',         expect: { error: { errnum: 8 } } }
