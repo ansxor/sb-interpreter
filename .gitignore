@@ -8,15 +8,15 @@
 *.cxi
 *_code.bin
 *.dec.bin
-sb-disassembly/*.bin
 
-# --- Large derived disassembly artifacts (regenerable; see sb-disassembly/README.md) ---
-sb-disassembly/listings/*.lst
-sb-disassembly/ghidra_project/
+# --- Disassembly artifacts (regenerable from ROM; see sb-disassembly/README.md) ---
+# Kept locally for development, but never published.
+/sb-disassembly/
 
 # --- Extracted sbsave corpus (~765MB; regenerable: python3 tools/extract_sbsave.py) ---
 # The committed INDEX.json manifest is the reference; the unpacked tree is not.
 harness/corpus/sbsave/files/
+/sbsave/
 
 # --- Source PDFs (copyrighted; text is extracted into sb-docs/) ---
 *.pdf
@@ -45,3 +45,4 @@ harness/harvest/out/
 .dolt/
 *.db
 .beads-credential-key
+.beads/interactions.jsonl
