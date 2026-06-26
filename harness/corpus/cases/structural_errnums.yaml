@@ -59,6 +59,21 @@ cases:
   # a TRAILING `:` at end of a line that has a real statement is fine (no empty statement)
   - { name: trailing_colon_after_stmt, code: "A=1:",          expect: { stdout: "" } }
   - { name: double_colon_between_stmts, code: "A=1::B=2",    expect: { stdout: "" } }
+  # BREAK / CONTINUE outside any loop — hw_verified via sb-oracle isolated errcase probes
+  # 2026-06-26 (run_case.py errcase). NOT a dedicated errnum in the error table (only 20-25
+  # and 29 cover loop keywords); real SB 3.6.0 raises the generic Syntax error 3, with
+  # errline = the keyword's own line (same line-rule as the stray closers: `BREAK`→3 line 1,
+  # `PRINT 1\nBREAK`→3 line 2, `A=1\nB=2\nBREAK`→3 line 3; CONTINUE identical). Inside an IF
+  # that is itself not inside a loop, BREAK/CONTINUE still see no enclosing loop → 3. Matches
+  # sb-core's compiler (compile_stmt Break/Continue with no active loop → ERR_SYNTAX/3).
+  - { name: break_outside,            code: "BREAK",                       expect: { error: { errnum: 3 } } } # errline 1
+  - { name: break_after_stmt,        code: "PRINT 1\nBREAK",               expect: { error: { errnum: 3 } } } # errline 2
+  - { name: break_after_two_stmts,   code: "A=1\nB=2\nBREAK",              expect: { error: { errnum: 3 } } } # errline 3
+  - { name: continue_outside,        code: "CONTINUE",                    expect: { error: { errnum: 3 } } } # errline 1
+  - { name: continue_after_stmt,    code: "PRINT 1\nCONTINUE",            expect: { error: { errnum: 3 } } } # errline 2
+  - { name: continue_after_two_stmts, code: "A=1\nB=2\nCONTINUE",         expect: { error: { errnum: 3 } } } # errline 3
+  - { name: break_in_if_no_loop,    code: "IF 1 THEN\nBREAK\nENDIF",      expect: { error: { errnum: 3 } } } # errline 2
+  - { name: continue_in_if_no_loop, code: "IF 1 THEN\nCONTINUE\nENDIF",  expect: { error: { errnum: 3 } } } # errline 2
   # unterminated opening keywords (block ends / EOF before the closer)
   - { name: for_without_next,    code: "FOR I=0 TO 3\nPRINT I", expect: { error: { errnum: 20 } } }
   - { name: while_without_wend,  code: "WHILE 1\nPRINT 1",  expect: { error: { errnum: 24 } } }

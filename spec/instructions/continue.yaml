@@ -14,15 +14,20 @@ semantics:
   - "Statements after CONTINUE in the body are skipped for that pass."
   - "Affects the innermost enclosing loop only; works in FOR ... NEXT, WHILE ... WEND, REPEAT ... UNTIL."
 
-errors: []
+errors:
+  - { errnum: 3, name: "Syntax error", when: "a CONTINUE is reached with no enclosing FOR/WHILE/REPEAT loop — leading OR after statements, OR inside an IF that is not itself in a loop (errline = the CONTINUE's own line). Not a dedicated errnum: the error table reserves 20-25 for the loop keyword pair and CONTINUE is not in it, so real SB 3.6.0 surfaces the generic Syntax error 3." }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/continue.md (forces a loop to proceed; used in FOR/WHILE/REPEAT)" }
   - { type: disassembled, ref: "cia_3.6.0.lst CONTINUE is a parser keyword (token @0x2ed620), not in the builtin dispatch table; compiled to a jump to the loop's continuation point" }
   - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: CONTINUE skips the rest of the body (FOR I=1 TO 3 ... CONTINUE: N=N+1 leaves N=0; same for WHILE), confirming the post-CONTINUE statements do not run." }
+  - { type: hw_verified, ref: "sb-oracle isolated errcase probes 2026-06-26 (run_case.py errcase): CONTINUE with no enclosing loop raises errnum 3, errline = the CONTINUE's own line — `CONTINUE`→3 line 1, `PRINT 1\\nCONTINUE`→3 line 2, `A=1\\nB=2\\nCONTINUE`→3 line 3, `IF 1 THEN\\nCONTINUE\\nENDIF`→3 line 2. Same rule as BREAK (see [[break]]); not a dedicated errnum." }
 
 confidence: hw_verified
 
 tests:
   - { name: continue_for,   code: "N=0\nFOR I=1 TO 3\nCONTINUE\nN=N+1\nNEXT\nPRINT N", expect: { stdout: "0" } }
   - { name: continue_while, code: "C=0\nN=0\nWHILE C<3\nC=C+1\nCONTINUE\nN=N+1\nWEND\nPRINT N", expect: { stdout: "0" } }
+  - { name: continue_outside,         code: "CONTINUE",                  expect: { error: { errnum: 3 } } } # errline 1
+  - { name: continue_after_two_stmts, code: "A=1\nB=2\nCONTINUE",         expect: { error: { errnum: 3 } } } # errline 3
+  - { name: continue_in_if_no_loop,   code: "IF 1 THEN\nCONTINUE\nENDIF", expect: { error: { errnum: 3 } } } # errline 2

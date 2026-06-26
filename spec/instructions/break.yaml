@@ -14,15 +14,20 @@ semantics:
   - "Affects the innermost enclosing loop only; outer loops continue."
   - "Works in FOR ... NEXT, WHILE ... WEND, and REPEAT ... UNTIL."
 
-errors: []
+errors:
+  - { errnum: 3, name: "Syntax error", when: "a BREAK is reached with no enclosing FOR/WHILE/REPEAT loop — leading OR after statements, OR inside an IF that is not itself in a loop (errline = the BREAK's own line). Not a dedicated errnum: the error table reserves 20-25 for the loop keyword pair (FOR/NEXT, WHILE/WEND, REPEAT/UNTIL) and BREAK/CONTINUE are not in it, so real SB 3.6.0 surfaces the generic Syntax error 3." }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/break.md (forces a loop to end; used in FOR/WHILE/REPEAT)" }
   - { type: disassembled, ref: "cia_3.6.0.lst BREAK is a parser keyword (token @0x2ed544), not in the builtin dispatch table; compiled to a jump past the loop end" }
   - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: BREAK on the first pass exits the loop (FOR I=1 TO 100 ... BREAK leaves I=1; WHILE with BREAK runs the body once)." }
+  - { type: hw_verified, ref: "sb-oracle isolated errcase probes 2026-06-26 (run_case.py errcase): BREAK with no enclosing loop raises errnum 3, errline = the BREAK's own line — `BREAK`→3 line 1, `PRINT 1\\nBREAK`→3 line 2, `A=1\\nB=2\\nBREAK`→3 line 3, `IF 1 THEN\\nBREAK\\nENDIF`→3 line 2 (an IF body is not a loop). Confirmed NOT a dedicated errnum: the error table (spec/reference/errors.yaml) has no BREAK entry, only the 20-25 loop-keyword pair + DEF 29." }
 
 confidence: hw_verified
 
 tests:
   - { name: break_for,    code: "FOR I=1 TO 100\nBREAK\nNEXT\nPRINT I", expect: { stdout: "1" } }
   - { name: break_while,  code: "C=0\nWHILE C<100\nC=C+1\nBREAK\nWEND\nPRINT C", expect: { stdout: "1" } }
+  - { name: break_outside,         code: "BREAK",                  expect: { error: { errnum: 3 } } } # errline 1
+  - { name: break_after_two_stmts, code: "A=1\nB=2\nBREAK",        expect: { error: { errnum: 3 } } } # errline 3
+  - { name: break_in_if_no_loop,   code: "IF 1 THEN\nBREAK\nENDIF", expect: { error: { errnum: 3 } } } # errline 2
