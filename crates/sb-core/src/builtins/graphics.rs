@@ -188,13 +188,20 @@ pub fn gclip(
         }
         [mode, x0, y0, x1, y1] => {
             let write = mode.to_int()? != 0;
-            grp.gclip_rect(
-                write,
-                x0.to_int()?,
-                y0.to_int()?,
-                x1.to_int()?,
-                y1.to_int()?,
-            );
+            let (x0, y0, x1, y1) = (x0.to_int()?, y0.to_int()?, x1.to_int()?, y1.to_int()?);
+            // Write-mode 5-arg GCLIP: the page clip-set helper (0x209e98) normalizes the
+            // corners (min/max), then rejects — errnum 10 — iff ANY corner coordinate is
+            // < 0 or >= the page dimension (512). Display mode (0) never range-checks and
+            // never raises errnum 10 (gclip.yaml, hw_verified 2026-06-26).
+            if write {
+                let dim = sb_render::grp::GRP_DIM as i32;
+                let (nx0, nx1) = (x0.min(x1), x0.max(x1));
+                let (ny0, ny1) = (y0.min(y1), y0.max(y1));
+                if nx0 < 0 || ny0 < 0 || nx1 >= dim || ny1 >= dim {
+                    return Err(out_of_range());
+                }
+            }
+            grp.gclip_rect(write, x0, y0, x1, y1);
             Ok(vec![])
         }
         _ => Err(illegal()),

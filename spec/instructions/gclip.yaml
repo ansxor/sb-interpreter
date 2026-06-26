@@ -23,13 +23,14 @@ semantics:
   - "1-arg form: with the rectangle omitted, the clip is reset to the whole area — the whole screen for display mode (bl 0x1ee0bc @0x152d04) or the whole graphic page for write mode (page width-1 bounds, bl 0x209e98 @0x152cf0)."
   - "5-arg form: the rectangle corners are normalized so the smaller coordinate becomes the start and the larger becomes the end (cmp/strgt min-max swaps on X and Y @0x152e34..@0x152e58), so (x0,y0,x1,y1) may be given in any order."
   - "Display-mode rectangle clipping always succeeds (bl 0x1edeac @0x152e6c). Write-mode rectangle clipping calls the page clip-set helper (bl 0x209e98 @0x152de8); if that helper rejects the region (returns 0) the call raises errnum 10 (Out of range) @0x152e7c."
+  - "hw_verified errnum-10 reject rule (write mode only): the page clip-set helper 0x209e98 normalizes the corners (min/max on X and Y), then tests every corner coordinate against the page dimension held in [r0,#0x8] (value 512). It returns 0 (reject → errnum 10) iff ANY corner coordinate is < 0 OR >= 512; the valid range on all four corners is 0..511 inclusive. Probed via the sentinel-after path (ACLS:<stmt>:SAVE\"TXT:O\",\"AFTER\" — AFTER present = no error, None = raised): GCLIP 1,0,0,511,511 ok, GCLIP 1,0,0,512,512 -> errnum 10, GCLIP 1,512,512,512,512 -> errnum 10 (start corner >= 512 rejects), GCLIP 1,-1,0,100,100 / GCLIP 1,0,0,100,-1 / GCLIP 1,-512,0,100,100 -> errnum 10 (any negative rejects), GCLIP 1,0,0,1000,1000 -> errnum 10. Display mode (0) NEVER rejects regardless of the rectangle — GCLIP 0,0,0,1000,1000 and GCLIP 0,-1,-1,100,100 both succeed (the display-clip path bl 0x1edeac does not range-check)."
   - "Write clip (mode != 0) RESTRICTS DRAWING to the rectangle: GPSET/GLINE/GFILL etc. only modify pixels inside the clip ∩ page; pixels outside are left untouched. The rectangle is inclusive on BOTH corners (the corner pixels are drawable, one pixel beyond each corner is not). hw_verified via GSPOIT read-back: `GCLIP 1,100,100,200,200:GFILL 0,0,300,300` fills (150,150)/(100,100)/(200,200) but leaves (50,50)/(99,100)/(201,200) at 0; `GPSET 50,50` outside is dropped while `GPSET 150,150` inside plots; a `GLINE` crossing the boundary draws only its in-clip span."
   - "Display clip (mode 0) does NOT restrict writes to the graphic page — it only constrains what is shown on screen. A whole-page GFILL under an active display clip fills the entire page; GSPOIT (which reads the page buffer) sees the fill both inside and outside the display rect. hw_verified: `GCLIP 0,100,100,200,200:GFILL 0,0,300,300,RGB(255,255,255)` → GSPOIT(50,50)=GSPOIT(150,150)=white."
   - "1-arg reset clears the clip back to the whole area: `GCLIP 1,100,100,200,200:GCLIP 1` then a whole-page GFILL fills everywhere (GSPOIT(50,50)=white). hw_verified."
 
 errors:
   - { errnum: 4, name: "Illegal function call", when: "the argument count is neither 1 nor 5, or a return value is requested (used as a function)" }
-  - { errnum: 10, name: "Out of range", when: "a write-mode (5-arg) clip rectangle is rejected by the page clip helper" }
+  - { errnum: 10, name: "Out of range", when: "a write-mode (5-arg) clip rectangle has any corner coordinate < 0 or >= 512 (valid range 0..511 on all four corners); the page clip-set helper 0x209e98 rejects the region. Display mode (0) never range-checks and never raises errnum 10." }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/gclip.md (GCLIP Clip mode [,Start X,Start Y,End X,End Y]; 0: display clipping, 1: write clipping; omitted range clips the whole screen in display mode / whole page in write mode; e.g. GCLIP 0,100,100,200,200)" }
@@ -37,6 +38,7 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/graphic.d clip rectangle handling (3.5.0 structural cross-check only); sbsave corpus: GCLIP TRUE (boolean mode = non-zero = write) in EKA3X4H1/TXT/CRAFT-21 — consistent with the zero/non-zero mode test." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t7a): GCLIP 0,1,2 (3 args) -> errnum 4, errline 1; A=GCLIP(0) (used as a function) -> errnum 4, errline 1." }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-24 (M7-T2 run 47, harness/harvest/out/gclip.tsv): write-clip side-effects via GSPOIT read-back, 7/7 confirmed. write_clip_restricts_fill GCLIP 1,100,100,200,200:GFILL 0,0,300,300,white -> GSPOIT(150,150)=-460552 (inside), GSPOIT(50,50)=0 (outside); corners inclusive GSPOIT(100,100)=GSPOIT(200,200)=-460552, GSPOIT(99,100)=GSPOIT(201,200)=0; reversed corners GCLIP 1,200,200,100,100 clip same region; display clip GCLIP 0,... does NOT restrict writes (GSPOIT(50,50)=GSPOIT(150,150)=-460552); GCLIP 1 reset -> whole page fills (GSPOIT(50,50)=-460552); GPSET outside dropped (GSPOIT(50,50)=0) inside plots (-524288); GLINE crossing boundary draws only in-clip span (GSPOIT 50,150=0 / 150,150=-524288 / 250,150=0)." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-26 (d82, sentinel-after progcase probe): errnum-10 reject rule for write-mode 5-arg GCLIP — page clip-set helper 0x209e98 rejects (errnum 10) iff any corner coord < 0 or >= 512 (valid 0..511). GCLIP 1,0,0,511,511 -> ok; GCLIP 1,0,0,512,512 -> errnum 10; GCLIP 1,512,512,512,512 -> errnum 10 (start-corner >= 512 rejects); GCLIP 1,-1,0,100,100 / GCLIP 1,0,0,100,-1 / GCLIP 1,-512,0,100,100 -> errnum 10 (any negative rejects); GCLIP 1,0,0,1000,1000 -> errnum 10. Display mode (0) never rejects: GCLIP 0,0,0,1000,1000 and GCLIP 0,-1,-1,100,100 both succeed." }
 
 confidence: hw_verified
 
@@ -72,3 +74,20 @@ tests:
   - { name: gline_clipped_left_end, code: "ACLS:GCLIP 1,100,100,200,200:GLINE 0,150,300,150,RGB(255,0,0):PRINT GSPOIT(50,150)", expect: { stdout: "0" } }
   - { name: gline_clipped_middle, code: "ACLS:GCLIP 1,100,100,200,200:GLINE 0,150,300,150,RGB(255,0,0):PRINT GSPOIT(150,150)", expect: { stdout: "-524288" } }
   - { name: gline_clipped_right_end, code: "ACLS:GCLIP 1,100,100,200,200:GLINE 0,150,300,150,RGB(255,0,0):PRINT GSPOIT(250,150)", expect: { stdout: "0" } }
+  # --- errnum-10 reject boundary hw_verified 2026-06-26 (d82, sentinel-after probe): write-mode 5-arg
+  # GCLIP rejects iff any corner coord < 0 or >= 512 (valid 0..511). Display mode (0) never rejects. ---
+  # valid max corner (511) -> no error
+  - { name: write_clip_max_511_ok, code: "GCLIP 1,0,0,511,511", expect: { stdout: "" } }
+  # 512 is one beyond the valid range -> errnum 10 (end corner)
+  - { name: write_clip_end_512_errors, code: "GCLIP 1,0,0,512,512", expect: { error: { errnum: 10 } } }
+  # start corner >= 512 also rejects (after min/max normalization the 512 is still a corner)
+  - { name: write_clip_start_512_errors, code: "GCLIP 1,512,512,512,512", expect: { error: { errnum: 10 } } }
+  # any negative coordinate rejects (here the start corner)
+  - { name: write_clip_neg_start_errors, code: "GCLIP 1,-1,0,100,100", expect: { error: { errnum: 10 } } }
+  # a negative end corner rejects too
+  - { name: write_clip_neg_end_errors, code: "GCLIP 1,0,0,100,-1", expect: { error: { errnum: 10 } } }
+  # a far-out-of-range rectangle rejects
+  - { name: write_clip_huge_errors, code: "GCLIP 1,0,0,1000,1000", expect: { error: { errnum: 10 } } }
+  # display mode (0) never range-checks: 1000 and negatives are accepted
+  - { name: display_clip_huge_ok, code: "GCLIP 0,0,0,1000,1000", expect: { stdout: "" } }
+  - { name: display_clip_neg_ok, code: "GCLIP 0,-1,-1,100,100", expect: { stdout: "" } }
