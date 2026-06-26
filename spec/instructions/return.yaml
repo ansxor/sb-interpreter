@@ -7,27 +7,33 @@ signatures:
   - args: []
     note: "RETURN — returns from a GOSUB subroutine to the statement after the call."
   - args:
-      - { name: value, type: any, desc: "Value handed back to the caller (only inside a DEF user-defined function)" }
-    note: "RETURN value [,value...] — inside a DEF function, returns the value(s) to the caller. See [[def]]. Invalid for a GOSUB return."
+      - { name: value, type: any, desc: "Single value handed back to the caller (only inside a DEF user-defined function)" }
+    note: "RETURN value — inside a DEF function, returns the value to the caller. See [[def]]. Invalid for a GOSUB return. Only ONE value; a comma-separated list (RETURN a,b) is a Syntax error."
 
 summary: "Returns from a GOSUB subroutine to the statement following the call."
 
 semantics:
   - "Pops the most recent GOSUB return address and continues execution there."
   - "A RETURN reached without a pending GOSUB is an error."
-  - "Inside a DEF user-defined function, RETURN carries a value back to the caller (RETURN R$, RETURN SQR(X), RETURN TRUE); the bare form here is the GOSUB return."
+  - "Inside a DEF user-defined function, RETURN carries a single value back to the caller (RETURN R$, RETURN SQR(X), RETURN TRUE, RETURN 7); the bare form here is the GOSUB return."
+  - "Multi-value return is NOT a comma list: `RETURN a,b` raises errnum 3 (Syntax error). SmileBASIC returns multiple values via the OUT protocol (DEF-header OUT params; see [[out]]), never via `RETURN a,b`."
 
 errors:
   - { errnum: 30, name: "RETURN without GOSUB", when: "a RETURN is reached with no pending GOSUB" }
+  - { errnum: 3, name: "Syntax error", when: "RETURN is given a comma-separated value list (e.g. `RETURN 1,2` inside a DEF) — only a single value is permitted" }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/return.md (returns from a sub-routine to the caller)" }
   - { type: disassembled, ref: "cia_3.6.0.lst RETURN is a parser keyword (token @0x2ed558), not in the builtin dispatch table; pops the GOSUB return stack; empty stack -> errnum 30" }
   - { type: hw_verified, ref: "sb-oracle branch probe 2026-06-22: RETURN returns from a GOSUB to the statement after the call (verified via a GOSUB roundtrip); a bare RETURN with no pending GOSUB raises errnum 30 (RETURN without GOSUB)." }
-  - { type: community, ref: "sbsave corpus: value-returning RETURN attested in 1143 programs (RETURN TRUE/FALSE ~1250x, RETURN I ~488x, RETURN R$ ~283x, RETURN SQR(...)) — the DEF-function return form. Value-return roundtrip oracle-pending (see [[def]])." }
+  - { type: hw_verified, ref: "sb-oracle progcase 2026-06-26: DEF F():RETURN 7:END makes PRINT F() print 7 — the DEF-function single-value return roundtrip (community form now confirmed)." }
+  - { type: hw_verified, ref: "sb-oracle errcase 2026-06-26: `RETURN 1,2` inside a DEF raises errnum 3 (Syntax error), errline 1 — the comma form is rejected by the parser; multiple return values use OUT, not RETURN (corrects the queued assumption that RETURN a,b hands back a tuple)." }
+  - { type: community, ref: "sbsave corpus: value-returning RETURN attested in 1143 programs (RETURN TRUE/FALSE ~1250x, RETURN I ~488x, RETURN R$ ~283x, RETURN SQR(...)) — the DEF-function return form, all single-valued." }
 
 confidence: hw_verified
 
 tests:
   - { name: returns_to_caller, code: "GOSUB @S\nPRINT \"B\"\nEND\n@S\nPRINT \"A\"\nRETURN", expect: { stdout: "A\nB" } }
   - { name: return_without_gosub, code: "RETURN", expect: { error: { errnum: 30 } } }
+  - { name: def_return_value, code: "DEF F():RETURN 7:END\nPRINT F()", expect: { stdout: "7" } }
+  - { name: comma_list_syntax_error, code: "DEF F():RETURN 1,2:END\nA=F()", expect: { error: { errnum: 3 } } }

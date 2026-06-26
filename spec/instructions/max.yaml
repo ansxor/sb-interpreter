@@ -30,6 +30,7 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/max.md (forms: 2 — array and varargs)" }
   - { type: disassembled, ref: "cia_3.6.0.lst MAX handler FUN_00148230 @0x148230: arg-count 0 -> errnum 4 (mov r0,#0x4 @0x1483e0); single-arg array path @0x148288 coerces each element to Double (vtable +0x44) and rejects a string element with errnum 8 (mov r0,#0x8 @0x1482f4); the multi-arg scalar path (argcount>=2) exits via the Double return vldr.64 d0,[sp,#0x8] @0x14833c — i.e. the dispatched handler's scalar result is always Double" }
   - { type: hw_verified, ref: "sb-oracle 2026-06-23: result-type rule isolated with the overflow probe *&H7FFFFFFF (a Double product is exact, an Integer product i32-wraps). MAX(2,0)*&H7FFFFFFF==-2 -> 1; MAX(2,0,0)*&H7FFFFFFF==4294967294 -> 1; MAX(7,3)*&H7FFFFFFF==2147483641 -> 1; MAX(7,3,1)*&H7FFFFFFF==15032385529 -> 1; MAX(7,3.0)==7.0 -> 1; MAX(A%,3)*&H7FFFFFFF -> 2147483641 (2-arg Integer), MAX(A%,3,1)*&H7FFFFFFF -> 1.50324e+10 (3-arg Double), MAX(A%,3.0)*&H7FFFFFFF -> 1.50324e+10 (mixed Double) for A%=7; array MAX(Q%) of [7,3,1] *&H7FFFFFFF==2147483641 -> 1 (Integer array preserved). This CORRECTS the 2026-06-22 claim that MAX(3,2.5) stays Integer: PRINT 3.0 also shows '3', so the older capture could not see the Double type." }
+  - { type: hw_verified, ref: "sb-oracle progcase/errcase 2026-06-26: array form MAX(TMP) over DIM TMP[2]:TMP[0]=50:TMP[1]=3 returns 50 (largest element); A=MAX(1,\"x\") raises errnum 8 (TypeMismatch), errline 1 (re-capture of the 2026-06-22 flaked case)." }
 
 confidence: hw_verified
 

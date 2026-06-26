@@ -20,8 +20,9 @@ errors:
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/pi.md (documented value 3.14159265)" }
   - { type: disassembled, ref: "cia_3.6.0.lst niladic-function name table @0x2c9288 -> name 'PI' @0x2ef420 / full form 'PI()' @0x2eeebc (PI takes no args); returned value is the pi double constant 0x400921FB54442D18 (=3.141592653589793), the same literal the RAD handler loads @0x148a08. NOTE: exact dispatch handler not pinned (constant-folded niladic function, not in builtin dispatch table) — value is disassembled-grade, dispatch path inferred." }
-  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: PI()=3.14159, PI()*2=6.28319 (printed to 6 significant figures). NOTE: the 'PI() with argument -> errnum 4' edge is not yet harvested (queued)." }
+  - { type: hw_verified, ref: "sb-oracle batch run 2026-06-22: PI()=3.14159, PI()*2=6.28319 (printed to 6 significant figures)." }
   - { type: hw_verified, ref: "sb-oracle PRINT read-back 2026-06-23: PRINT renders doubles via %.8f (M7-T4) — PRINT PI()=3.14159265, PI()*2=6.28318531; distinct from STR$ %g shown above" }
+  - { type: hw_verified, ref: "sb-oracle errcase 2026-06-26: A=PI(1) raises errnum 4 (IllegalFunctionCall), errline 1 — supplying an argument to niladic PI is rejected at the builtin arg-count check, not by the parser." }
 
 confidence: hw_verified
 
@@ -29,3 +30,4 @@ tests:
   - { name: value,   code: "PRINT PI()",     expect: { stdout: "3.14159265" } }
   - { name: doubled, code: "PRINT PI()*2",   expect: { stdout: "6.28318531" } }
   - { name: deg_roundtrip, code: "PRINT DEG(PI())", expect: { stdout: "180" } }
+  - { name: arg_rejected, code: "A=PI(1)",   expect: { error: { errnum: 4 } } }
