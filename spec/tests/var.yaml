@@ -1,0 +1,21 @@
+# Oracle-harvested fixtures for VAR (hw_verified) — real SmileBASIC 3.6.0 (Azahar),
+# s_t4a secondary error-edge probe 2026-06-26 (run_case.py errcase, isolated probes).
+#
+# `()` instead of `[]` for the array-size form is a Syntax error (errnum 3), uniform across
+# VAR/DIM, every dimensionality (1D/2D/3D), and even when a following `:`-separated
+# statement tries to use the array — the `(` is rejected at parse time on line 1, so the
+# whole line never executes. errline is the declaration's own line. sb-core agrees: its
+# parser (parse_dim) only accepts `[` after the name for the array form, so a stray `(` is
+# left unconsumed and raises Syntax error 3.
+#
+# (The OPTION STRICT → errnum 15 case lives in spec/tests/option.yaml::strict_undeclared_errors.)
+tests:
+  - name: "paren_instead_of_bracket_1d"
+    code: "VAR A(3)"
+    expect: { error: { errnum: 3 } }
+  - name: "paren_instead_of_bracket_2d"
+    code: "VAR A(3,2)"
+    expect: { error: { errnum: 3 } }
+  - name: "paren_instead_of_bracket_3d"
+    code: "VAR A(3,2,1)"
+    expect: { error: { errnum: 3 } }

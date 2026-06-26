@@ -44,6 +44,7 @@ sources:
   - { type: community, ref: "sbsave corpus: VAR with initial value (VAR X=5, VAR S$=\"\") in 756+ programs, e.g. 1DE453HV/TXT/SPACE_MOLE; type-suffixed scalars (VAR X%, VAR M#) in 884+ programs, e.g. 12C3NWQE/TXT/3DSCLOSEGAME; all forms are legal syntax" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4a): VAR X=7->7; VAR N->0; VAR S$=\"hi\"->hi; VAR T$->\"\"; VAR A=1,B=2->1,2; VAR X%=42->42; VAR A[4] gives A[0]=0; VAR A[3]:A[1]=99->99; VAR POS[3,2]:POS[1,0]=5->5; VAR M#[3]:M#[0]=1.5->1.5; VAR Q=1:VAR Q=2 -> errnum 18 (Duplicate variable), errline 1" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-23 (m1_t4 coercion): A%=2.7->2, A%=2.5->2, A%=3.5->3, A%=4.5->4, A%=-2.7->-2, A%=-2.5->-2, A%=-3.5->-3 (Double->Integer truncates toward zero); A=2.7 keeps Double (A==FLOOR(A) is 0/false), A=5 keeps Integer; A#=2->2 (Integer widens to Double)" }
+  - { type: hw_verified, ref: "sb-oracle errcase probe 2026-06-26 (s_t4a secondary edges): VAR A(3) / VAR A(3,2) / VAR A(3,2,1) all -> errnum 3 (Syntax error — () instead of [] for the array-size form), errline 1. The OPTION STRICT + undeclared -> errnum 15 edge is hw_verified in spec/tests/option.yaml::strict_undeclared_errors. The over-large-array -> errnum 11 (Out of memory) edge is hw_verified via DIM A[10000,10000] -> errnum 11 (shared VAR/DIM allocation path); see dim.yaml sources for the cap probe." }
 
 confidence: hw_verified
 
