@@ -131,17 +131,10 @@ pub struct Parser {
     /// Open `FOR` blocks currently being parsed. A bare `NEXT` reached as a statement with
     /// no open `FOR` is "NEXT without FOR" (errnum 21), not the loop-continue idiom.
     for_depth: u32,
-    /// How many statements have been committed so far. A stray `ENDIF` raises the dedicated
-    /// "ENDIF without IF" (28) ONLY when it is the program's first statement (`stmt_count
-    /// == 0`); anywhere later real SB collapses it to generic Syntax error 3 (hw_verified
-    /// sb-oracle 2026-06-23 — see the `ENDIF` arm of [`Parser::parse_statement`]).
+    /// How many statements have been committed so far. Used to detect a leading `:`
+    /// separator at the very top of the program (an empty preceding statement), which real
+    /// SB 3.6.0 rejects as Syntax error 3 for any following keyword (see `parse_block`).
     stmt_count: u32,
-    /// True once a statement separator (`:`) has been consumed at the very top of the
-    /// program before any statement. Real SB treats a leading `:ENDIF` as a NON-leading
-    /// stray ENDIF (generic Syntax error 3, not 28): the `:` implies an (empty) preceding
-    /// statement, so the ENDIF is not the program's first. A leading newline does NOT have
-    /// this effect (`\nENDIF` → 28 errline 2). hw_verified sb-oracle 2026-06-26.
-    saw_leading_sep: bool,
 }
 
 impl Parser {
@@ -151,7 +144,6 @@ impl Parser {
             pos: 0,
             for_depth: 0,
             stmt_count: 0,
-            saw_leading_sep: false,
         }
     }
 
@@ -290,14 +282,19 @@ impl Parser {
             loop {
                 match self.cur_kind() {
                     TokenKind::Colon => {
-                        // A `:` consumed at the very top of the program before any
-                        // statement marks the next stray ENDIF as non-leading (→ 3, not
-                        // 28). See `saw_leading_sep` for the rule.
+                        // A `:` at the very top of the program before any statement is an
+                        // empty preceding statement, which real SB 3.6.0 rejects as Syntax
+                        // error 3 — for ANY keyword that follows (`:NEXT`, `:WEND`,
+                        // `:UNTIL`, `:ENDIF`, `:REPEAT`, `:FOR`, `:WHILE`, `:DEF`, even
+                        // `:PRINT 1` / `:A=1` all → 3). A `:` AFTER a real statement is a
+                        // normal separator and does NOT raise (`A=1:B=2`, `PRINT 1:`).
+                        // hw_verified sb-oracle 2026-06-26 (audit 49r generalized the
+                        // earlier ENDIF-only `:ENDIF`→3 rule to all statements).
                         if matches!(kind, BlockKind::Program)
                             && out.is_empty()
                             && self.stmt_count == 0
                         {
-                            self.saw_leading_sep = true;
+                            return Err(self.syntax_error("leading `:` (empty statement)"));
                         }
                         self.advance();
                     }
@@ -462,21 +459,16 @@ impl Parser {
                 Ok(Stmt::new(StmtKind::Exec(e), loc))
             }
             // Stray loop-closing keywords get their own structural errnum (the matching
-            // opener was never seen), per the error table.
+            // opener was never seen), per the error table. (A leading `:WEND`/`:UNTIL` is
+            // caught earlier as a leading-`:` Syntax error 3 in `parse_block`.)
             "WEND" => Err(self.structural_error(25, "WEND without WHILE")),
             "UNTIL" => Err(self.structural_error(23, "UNTIL without REPEAT")),
             // A stray `ENDIF` (no open IF block consumed it). Real SB 3.6.0 raises the
             // dedicated "ENDIF without IF" (28) for EVERY stray ENDIF — leading OR not —
-            // with errline = the ENDIF's own line. The ONE exception: if the program's
-            // first non-newline token is a `:` separator (`:ENDIF`, `::ENDIF`, `\n:ENDIF`),
-            // the ENDIF collapses to generic Syntax error 3 (the `:` is an empty preceding
-            // statement and the ENDIF is not reached as a closer). A `:` AFTER a real
-            // statement does NOT trigger this (`A=1:ENDIF` → 28). hw_verified sb-oracle
+            // with errline = the ENDIF's own line. (A leading `:ENDIF` is caught earlier
+            // as a leading-`:` Syntax error 3 in `parse_block`.) hw_verified sb-oracle
             // 2026-06-26 (re-probe; the 2026-06-23 batch's "non-leading → 3" claim was a
             // mis-harvest and is superseded).
-            "ENDIF" if self.stmt_count == 0 && self.saw_leading_sep => {
-                Err(self.syntax_error("unexpected `ENDIF`"))
-            }
             "ENDIF" => Err(self.structural_error(28, "ENDIF without IF")),
             // Other stray block / clause keywords must not start a statement.
             // (`NEXT` is handled above as a loop-continue / "NEXT without FOR";

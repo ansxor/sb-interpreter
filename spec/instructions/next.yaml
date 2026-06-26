@@ -17,13 +17,14 @@ semantics:
   - "See [[for]] for full loop semantics."
 
 errors:
-  - { errnum: 21, name: "NEXT without FOR", when: "a NEXT is reached with no matching open FOR" }
-  - { errnum: 3, name: SyntaxError, when: "the NEXT J,I multi-variable form is used" }
+  - { errnum: 21, name: "NEXT without FOR", when: "a NEXT is reached with no matching open FOR — leading OR after other statements (errline = the NEXT's own line)" }
+  - { errnum: 3, name: SyntaxError, when: "the NEXT J,I multi-variable form is used, OR the program's first non-newline token is a `:` separator (an empty preceding statement) — `:NEXT` collapses to Syntax error 3 (general leading-`:` rule, see [[endif]]); a `:` AFTER a real statement is a normal separator." }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/next.md (NEXT [var]; control variable ignored; NEXT J,I not allowed)" }
   - { type: disassembled, ref: "cia_3.6.0.lst NEXT is a parser keyword (token @0x2ed6e0), not in the builtin dispatch table; compiled as the increment + back-jump of the FOR loop" }
   - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: NEXT closes the FOR (FOR I=1 TO 3 ... NEXT runs 3x); the control variable is ignored (NEXT I behaves as NEXT, S==2 for a 2-pass loop); a bare NEXT with no FOR raises errnum 21 (NEXT without FOR)." }
+  - { type: hw_verified, ref: "sb-oracle audit 49r isolated re-probe 2026-06-26 (run_case.py errcase, harness/harvest/out/audit_49r_single.tsv): a stray `NEXT` (no FOR) → errnum 21 errline 1; non-leading `PRINT 1\\nNEXT` → 21 errline 2; `A=1\\nB=2\\nNEXT` → 21 errline 3 — uniform, errline = the NEXT's own line. Leading-`:` exception: `:NEXT` / `::NEXT` → errnum 3 (empty preceding statement) — generalizes the ENDIF `:ENDIF`→3 rule. Confirms the 2026-06-23 batch |err claim was NOT a mis-harvest (unlike the IF/ENDIF family fixed in 0e165f3)." }
 
 confidence: hw_verified
 
@@ -31,3 +32,5 @@ tests:
   - { name: closes_loop,  code: "S=0\nFOR I=1 TO 3\nS=S+1\nNEXT\nPRINT S", expect: { stdout: "3" } }
   - { name: var_ignored,  code: "S=0\nFOR I=1 TO 3\nS=S+1\nNEXT I\nPRINT S", expect: { stdout: "3" } }
   - { name: next_without_for, code: "NEXT", expect: { error: { errnum: 21 } } }
+  - { name: next_without_for_after_stmt, code: "PRINT 1\nNEXT", expect: { error: { errnum: 21 } } } # errline 2 (the NEXT own line)
+  - { name: next_without_for_leading_colon, code: ":NEXT", expect: { error: { errnum: 3 } } }

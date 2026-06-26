@@ -16,15 +16,19 @@ semantics:
   - "See [[repeat]] for full loop semantics."
 
 errors:
-  - { errnum: 23, name: "UNTIL without REPEAT", when: "an UNTIL is reached with no matching REPEAT" }
+  - { errnum: 23, name: "UNTIL without REPEAT", when: "an UNTIL is reached with no matching REPEAT — leading OR after other statements (errline = the UNTIL's own line)" }
+  - { errnum: 3, name: SyntaxError, when: "the program's first non-newline token is a `:` separator (an empty preceding statement) — `:UNTIL` collapses to Syntax error 3. General leading-`:` rule (see [[endif]]); a `:` AFTER a real statement is a normal separator." }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/until.md (repeats from REPEAT until the condition is satisfied)" }
   - { type: disassembled, ref: "cia_3.6.0.lst UNTIL is a parser keyword (token @0x2ed574), not in the builtin dispatch table; compiled as the bottom-of-loop test + back-jump of REPEAT" }
   - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: REPEAT ... UNTIL C>=3 (incrementing C) runs exactly 3x and exits when true; a bare UNTIL with no REPEAT raises errnum 23 (UNTIL without REPEAT)." }
+  - { type: hw_verified, ref: "sb-oracle audit 49r isolated re-probe 2026-06-26 (run_case.py errcase, harness/harvest/out/audit_49r_single.tsv): stray `UNTIL` (no REPEAT) → errnum 23 errline 1; non-leading `PRINT 1\\nUNTIL` → 23 errline 2; `A=1\\nB=2\\nUNTIL` → 23 errline 3 — uniform, errline = the UNTIL's own line. Leading-`:` exception: `:UNTIL` → errnum 3 (empty preceding statement) — the leading-`:` rule is general (any statement; audit 49r 2026-06-26). Confirms the 2026-06-23 batch |err claim was NOT a mis-harvest (unlike the IF/ENDIF family fixed in 0e165f3)." }
 
 confidence: hw_verified
 
 tests:
   - { name: exit_when_true, code: "C=0\nREPEAT\nC=C+1\nUNTIL C>=4\nPRINT C", expect: { stdout: "4" } }
   - { name: until_without_repeat, code: "UNTIL 1", expect: { error: { errnum: 23 } } }
+  - { name: until_without_repeat_after_stmt, code: "PRINT 1\nUNTIL 1", expect: { error: { errnum: 23 } } } # errline 2 (the UNTIL own line)
+  - { name: until_without_repeat_leading_colon, code: ":UNTIL 1", expect: { error: { errnum: 3 } } }

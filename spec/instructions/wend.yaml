@@ -15,15 +15,19 @@ semantics:
   - "See [[while]] for full loop semantics."
 
 errors:
-  - { errnum: 25, name: "WEND without WHILE", when: "a WEND is reached with no matching WHILE" }
+  - { errnum: 25, name: "WEND without WHILE", when: "a WEND is reached with no matching WHILE — leading OR after other statements (errline = the WEND's own line)" }
+  - { errnum: 3, name: SyntaxError, when: "the program's first non-newline token is a `:` separator (an empty preceding statement) — `:WEND` collapses to Syntax error 3. General leading-`:` rule (see [[endif]]); a `:` AFTER a real statement is a normal separator." }
 
 sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/wend.md (end of a WHILE loop); errnum 25 from spec/reference/errors.yaml (WEND without WHILE)" }
   - { type: disassembled, ref: "cia_3.6.0.lst WEND is a parser keyword (token @0x2ed608), not in the builtin dispatch table; compiled as the back-jump of the WHILE loop" }
   - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22: WEND closes the WHILE (WHILE C<3 ... WEND runs exactly 3x). The bare-WEND errnum 25 capture was confirmed live 2026-06-23 (sb-oracle structural-error |err probe): a stray WEND with no open WHILE raises errnum 25 (WEND without WHILE) — not generic Syntax error 3." }
+  - { type: hw_verified, ref: "sb-oracle audit 49r isolated re-probe 2026-06-26 (run_case.py errcase, harness/harvest/out/audit_49r_single.tsv): stray `WEND` (no WHILE) → errnum 25 errline 1; non-leading `PRINT 1\\nWEND` → 25 errline 2; `A=1\\nB=2\\nWEND` → 25 errline 3 — uniform, errline = the WEND's own line. Leading-`:` exception: `:WEND` → errnum 3 (empty preceding statement) — the leading-`:` rule is general (any statement; audit 49r 2026-06-26). Confirms the 2026-06-23 batch |err claim was NOT a mis-harvest (unlike the IF/ENDIF family fixed in 0e165f3)." }
 
 confidence: hw_verified
 
 tests:
   - { name: closes_loop, code: "C=0\nWHILE C<4\nC=C+1\nWEND\nPRINT C", expect: { stdout: "4" } }
   - { name: wend_without_while, code: "WEND", expect: { error: { errnum: 25 } } }
+  - { name: wend_without_while_after_stmt, code: "PRINT 1\nWEND", expect: { error: { errnum: 25 } } } # errline 2 (the WEND own line)
+  - { name: wend_without_while_leading_colon, code: ":WEND", expect: { error: { errnum: 3 } } }

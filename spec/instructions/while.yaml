@@ -23,7 +23,8 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/while.md (repeats up to WEND while satisfied; same conditions as IF)" }
   - { type: disassembled, ref: "cia_3.6.0.lst WHILE/WEND are parser keywords (tokens WHILE @0x2ed708, WEND @0x2ed608), not in the builtin dispatch table; compiled to a top-of-loop test + body + back-jump" }
   - { type: hw_verified, ref: "sb-oracle loop probe 2026-06-22 (error-as-signal): WHILE 0 runs 0x (top-tested); WHILE C<3 (incrementing C) runs exactly 3x. See [[wend]]." }
-  - { type: hw_verified, ref: "sb-oracle structural-error probe 2026-06-23 (|err): an unterminated WHILE (WHILE 1 with no WEND) raises errnum 24 (WHILE without WEND) — not generic Syntax error 3. See [[wend]]." }
+  - { type: hw_verified, ref: "sb-oracle structural-error probe 2026-06-23 (|err): an unterminated WHILE (a WHILE with no matching WEND) raises errnum 24 (WHILE without WEND) — not generic Syntax error 3. See [[wend]]." }
+  - { type: hw_verified, ref: "sb-oracle audit 49r isolated re-probe 2026-06-26 (run_case.py errcase): the errnum 24 was re-verified via isolated probes. An unterminated WHILE (no WEND) raises 24 regardless of the condition — SB detects the missing WEND structurally at EOF rather than by executing the loop body. `WHILE 1` (no WEND) → errnum 24 errline 4 (EOF); `WHILE 0` (no WEND) → 24 errline 4; `WHILE C<3` (C uninit=0) → 24 errline 4; `WHILE 1\\nPRINT 1` (body present, no WEND) → 24 errline 5 (EOF). (An earlier 2026-06-26 probe reported `WHILE 1` as a hang/None — that was a stale-session flake of the kind noted in beads sb-interpreter-thg; the isolated re-probe is authoritative.) Confirms the 2026-06-23 batch |err `WHILE 1 → 24` claim was NOT a mis-harvest (unlike the IF/ENDIF family fixed in 0e165f3)." }
 
 confidence: hw_verified
 

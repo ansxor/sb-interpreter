@@ -1,22 +1,60 @@
 # Block-structure mismatch errnums — hw_verified via the sb-oracle skill (real SB 3.6.0),
-# structural-error |err probe 2026-06-23. Unmatched control-flow keywords raise their
-# DEDICATED errnum from the error table (spec/reference/errors.yaml, @0x3054f8) — NOT the
-# generic Syntax error 3. Two families:
+# structural-error |err probe 2026-06-23, then audit 49r isolated re-probe 2026-06-26
+# (run_case.py errcase). Unmatched control-flow keywords raise their DEDICATED errnum from
+# the error table (spec/reference/errors.yaml, @0x3054f8) — NOT the generic Syntax error 3.
+# Two families:
 #   stray CLOSER  (no matching opener) : NEXT->21, WEND->25, UNTIL->23
 #   unterminated OPENER (no closer, EOF first) : FOR->20, WHILE->24, REPEAT->22, DEF->29
-# All seven match sb-core's parser (Parser::structural_error). The earlier batch run reported
-# errnum 0 for a lone NEXT as the batch's first case — a bisect artifact; a focused re-probe
-# (NEXT, NEXT I, ?1:NEXT, NEXT:NEXT) all returned errnum 21 errline 1, confirming the spec.
+# The 2026-06-23 batch mis-harvested ONLY the IF/ENDIF family (26/27/28, fixed in 0e165f3);
+# the loop family (20..25) + DEF (29) were re-verified by isolated probes in the 49r audit and
+# are CORRECT. The stray closers are UNIFORM — leading or after statements, errline = the
+# closer's own line — and share the ENDIF `:ENDIF`→3 leading-colon exception (an empty
+# preceding statement): `:NEXT`/`:WEND`/`:UNTIL` all → errnum 3. All match sb-core's parser
+# (Parser::structural_error). The earlier batch run reported errnum 0 for a lone NEXT as the
+# batch's first case — a bisect artifact; a focused re-probe (NEXT, NEXT I, ?1:NEXT, NEXT:NEXT)
+# all returned errnum 21 errline 1, confirming the spec.
 cases:
   # stray closing keywords
   - { name: next_without_for,    code: "NEXT",              expect: { error: { errnum: 21 } } }
   - { name: wend_without_while,  code: "WEND",              expect: { error: { errnum: 25 } } }
   - { name: until_without_repeat, code: "UNTIL 1",          expect: { error: { errnum: 23 } } }
+  # stray closers AFTER statements (audit 49r 2026-06-26: uniform — errline = closer's own line;
+  # the IF family's "non-leading stray → 3" mis-harvest does NOT extend to the loop family)
+  - { name: next_after_stmt,     code: "PRINT 1\nNEXT",     expect: { error: { errnum: 21 } } }
+  - { name: wend_after_stmt,     code: "PRINT 1\nWEND",     expect: { error: { errnum: 25 } } }
+  - { name: until_after_stmt,    code: "PRINT 1\nUNTIL 1",  expect: { error: { errnum: 23 } } }
+  - { name: next_after_two_stmts, code: "A=1\nB=2\nNEXT",   expect: { error: { errnum: 21 } } }
+  - { name: wend_after_two_stmts, code: "A=1\nB=2\nWEND",   expect: { error: { errnum: 25 } } }
+  - { name: until_after_two_stmts, code: "A=1\nB=2\nUNTIL 1", expect: { error: { errnum: 23 } } }
+  # leading-`:` exception (audit 49r 2026-06-26): a `:` at the very top of the program
+  # before any statement is an empty preceding statement, which real SB 3.6.0 rejects as
+  # Syntax error 3 — for ANY keyword that follows (closers AND openers AND plain
+  # statements). Generalizes the ENDIF `:ENDIF`→3 rule to the whole language.
+  - { name: next_leading_colon,  code: ":NEXT",             expect: { error: { errnum: 3 } } }
+  - { name: wend_leading_colon,  code: ":WEND",             expect: { error: { errnum: 3 } } }
+  - { name: until_leading_colon, code: ":UNTIL 1",          expect: { error: { errnum: 3 } } }
+  - { name: next_leading_double_colon, code: "::NEXT",      expect: { error: { errnum: 3 } } }
+  - { name: repeat_leading_colon, code: ":REPEAT",          expect: { error: { errnum: 3 } } }
+  - { name: for_leading_colon,  code: ":FOR I=0 TO 1",      expect: { error: { errnum: 3 } } }
+  - { name: while_leading_colon, code: ":WHILE 0",         expect: { error: { errnum: 3 } } }
+  - { name: def_leading_colon,  code: ":DEF F",             expect: { error: { errnum: 3 } } }
+  - { name: if_leading_colon,   code: ":IF 1 THEN PRINT 1", expect: { error: { errnum: 3 } } }
+  - { name: print_leading_colon, code: ":PRINT 1",          expect: { error: { errnum: 3 } } }
+  - { name: assign_leading_colon, code: ":A=1",             expect: { error: { errnum: 3 } } }
+  - { name: bare_leading_colon, code: ":",                  expect: { error: { errnum: 3 } } }
+  # same-line `:` AFTER a real statement is NOT the exception (PRINT 1:NEXT → 21)
+  - { name: next_same_line_after_stmt, code: "PRINT 1:NEXT", expect: { error: { errnum: 21 } } }
+  - { name: wend_same_line_after_stmt, code: "PRINT 1:WEND", expect: { error: { errnum: 25 } } }
+  - { name: until_same_line_after_stmt, code: "PRINT 1:UNTIL 1", expect: { error: { errnum: 23 } } }
   # unterminated opening keywords (block ends / EOF before the closer)
   - { name: for_without_next,    code: "FOR I=0 TO 3\nPRINT I", expect: { error: { errnum: 20 } } }
   - { name: while_without_wend,  code: "WHILE 1\nPRINT 1",  expect: { error: { errnum: 24 } } }
   - { name: repeat_without_until, code: "REPEAT\nPRINT 1",  expect: { error: { errnum: 22 } } }
   - { name: def_without_end,     code: "DEF F\nA=1",        expect: { error: { errnum: 29 } } }
+  # unterminated openers — bare (no body), audit 49r 2026-06-26: also raise at EOF
+  - { name: repeat_bare,         code: "REPEAT",            expect: { error: { errnum: 22 } } }
+  - { name: while_bare_false,    code: "WHILE 0",            expect: { error: { errnum: 24 } } }
+  - { name: while_bare_true,     code: "WHILE 1",           expect: { error: { errnum: 24 } } }
   # IF-block family — hw_verified via the sb-oracle structural-error |err probe 2026-06-26
   # (full re-probe; the 2026-06-23 batch mis-harvested the non-leading ENDIF and unterminated-IF
   # cases and is superseded). The error table reserves 26 'THEN without ENDIF' / 27 'ELSE
