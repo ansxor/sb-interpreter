@@ -1,0 +1,24 @@
+# Oracle-harvested fixtures for ON (hw_verified) — real SmileBASIC 3.6.0 (Azahar),
+# s_t4d ON array/expr-index probe 2026-06-26 (run_case.py run_program, isolated per case).
+#
+# Confirms the ON index is a GENERAL integer expression — not just a scalar literal:
+# an ARRAY ELEMENT index (ON A[I] GOSUB ...) and an ARITHMETIC expression (ON 1+1, ON 5-3)
+# both select the label at the evaluated 0-based position. Each case GOSUBs into a label that
+# sets a distinct X, PRINTs it, then ENDs before the subroutine labels (a stray RETURN past
+# END would otherwise raise errnum 30 — RETURN without GOSUB).
+#
+# (ON RND(3) GOTO with all labels defined runs clean — no errnum 14 — confirming a function-
+# result index is accepted too; the specific label selected is seed-dependent and not pinned.)
+tests:
+  - name: "array_element_index_1"
+    code: "DIM A[3]:A[0]=0:A[1]=1:A[2]=0\nX=0\nON A[1] GOSUB @A,@B,@C\nPRINT X\nEND\n@A\nX=10\nRETURN\n@B\nX=20\nRETURN\n@C\nX=30\nRETURN"
+    expect: { stdout: "20" }
+  - name: "array_element_index_0"
+    code: "DIM A[3]:A[0]=0:A[1]=0:A[2]=0\nX=0\nON A[0] GOSUB @A,@B,@C\nPRINT X\nEND\n@A\nX=10\nRETURN\n@B\nX=20\nRETURN\n@C\nX=30\nRETURN"
+    expect: { stdout: "10" }
+  - name: "arithmetic_expr_index_2"
+    code: "X=0\nON 1+1 GOSUB @A,@B,@C\nPRINT X\nEND\n@A\nX=10\nRETURN\n@B\nX=20\nRETURN\n@C\nX=30\nRETURN"
+    expect: { stdout: "30" }
+  - name: "arithmetic_expr_index_2_sub"
+    code: "X=0\nON 5-3 GOSUB @A,@B,@C\nPRINT X\nEND\n@A\nX=10\nRETURN\n@B\nX=20\nRETURN\n@C\nX=30\nRETURN"
+    expect: { stdout: "30" }

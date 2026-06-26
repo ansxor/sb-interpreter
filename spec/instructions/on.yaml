@@ -25,6 +25,7 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst ON is a parser keyword (token @0x2ed12c), not in the builtin dispatch table; compiled to an index bounds-check + jump-table; out-of-range index falls through" }
   - { type: hw_verified, ref: "sb-oracle branch probe 2026-06-22: ON 0 GOTO @A,@B branches to @A (index 0 = first label, confirming 0-based) which errors; ON 5 (out of range for a 1-label list) takes no branch and falls through to the next statement (errnum 4)." }
   - { type: community, ref: "sbsave corpus: array-element index attested in 33 programs (e.g. 13D4DV3V/TXT/MAIN_PRG_V2: ON MOVEPATERN[CALLIDX] GOSUB ...; 227YK34J: ON SHT[SH] GOSUB ...) — confirming the index is a general integer expression, not just a scalar variable." }
+  - { type: hw_verified, ref: "sb-oracle run_program probe 2026-06-26 (s_t4d ON array/expr index): ON A[1] (A[1]=1) GOSUB @A,@B,@C selects the 2nd label (X->20); ON A[0] (A[0]=0) selects the 1st (X->10); ON 1+1 (=2) selects the 3rd (X->30); ON 5-3 (=2) selects the 3rd (X->30). So an array-element index and an arithmetic-expression index both select by the evaluated 0-based integer. ON RND(3) GOTO with all labels defined runs clean (no errnum 14) — a function-result index is accepted too; the selected label is seed-dependent and not pinned." }
 
 confidence: hw_verified
 
