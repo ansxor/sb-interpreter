@@ -40,11 +40,13 @@ sources:
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg '\\bPRGSIZE\\b': ~249 occurrences; no-arg `FOR I=0 TO PRGSIZE()` (53383XCF/TXT/EXECUTE), single-arg `PRGSIZE(0..3)` / `PRGSIZE(S1)`, two-arg `PRGSIZE(2,0)`, `PRGSIZE(C,1)`, `PRGSIZE(3,2)`; no type value beyond 0/1/2 observed). Syntax legal (shipped programs); runtime counts oracle-pending." }
   - { type: community, ref: "osb/SMILEBASIC/program.d Program size (3.5.0 structural cross-check only)" }
   - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-22 (s_t12c): `A=PRGSIZE(4)` -> errnum 10 errline 1; `A=PRGSIZE(-1)` -> errnum 10; `A=PRGSIZE(0,3)` (type out of 0-2) -> errnum 10; `A=PRGSIZE(0,0,0)` (3 args) -> errnum 4 errline 1. Confirms the slot 0-3 and type 0-2 range guards (errnum 10) and the >2-arg guard (errnum 4). The returned counts are program-slot state with no scalar golden (queued)." }
+  - { type: hw_verified, ref: "sb-oracle SB 3.6.0 (Azahar) batch 2026-06-26 (bd:sb-interpreter-wir, harness/harvest/out/wir.tsv): cold-boot per-slot capacity invariant — `PRGSIZE(slot,1) + PRGSIZE(slot,2) == 1,048,576` (= 0x100000, 1 MiB) for ALL four slots. slot 0: 671 + 1,047,905; slot 1: 18 + 1,048,558; slot 2: 0 + 1,048,576; slot 3: 0 + 1,048,576. Line counts (type 0): slot 0=16, slot 1=3, slot 2=0, slot 3=0; no-arg `PRGSIZE()` on the running slot 0 = 16. The used-char counts (671/18) reflect SB's cold-boot slot 0/1 stub content (not replicated by sb-core, which starts slots empty), but the CAPACITY 1,048,576 is the deterministic invariant behind the documented memory-usage idiom `ROUND(PRGSIZE(3,1)/(PRGSIZE(3,1)+PRGSIZE(3,2))*100)`." }
 
 # Top-level hw_verified: the errnum-4 (too many args) and errnum-10 (slot/type out of range)
 # guards are oracle-confirmed and body-pinned (@0x189f80); the 0/1/2-arg signature, the
-# type/slot defaults, and the no-arg last-run-slot path are body-read. The returned counts
-# are stateful (depend on slot contents) and stay oracle-pending (bd:sb-interpreter-wir).
+# type/slot defaults, the no-arg last-run-slot path are body-read, and the per-slot capacity
+# (1,048,576 chars) is oracle-confirmed (bd:sb-interpreter-wir). The line/used-char counts of a
+# WARM slot are stateful (depend on slot contents) and stay oracle-pending.
 confidence: hw_verified
 
 tests:
@@ -52,3 +54,8 @@ tests:
   - { name: slot_out_of_range_negative, code: "A=PRGSIZE(-1)", expect: { error: { errnum: 10 } } }
   - { name: type_out_of_range, code: "A=PRGSIZE(0,3)", expect: { error: { errnum: 10 } } }
   - { name: too_many_args, code: "A=PRGSIZE(0,0,0)", expect: { error: { errnum: 4 } } }
+  # Cold-boot capacity invariant (bd:sb-interpreter-wir): an EMPTY slot reports 1,048,576 free
+  # chars and 0 used — sb-core starts slots empty, matching SB's slot 2/3 cold-boot state.
+  - { name: empty_slot_free_capacity, code: "PRINT PRGSIZE(2,2)", expect: { stdout: "1048576" } }
+  - { name: empty_slot_used_zero, code: "PRINT PRGSIZE(2,1)", expect: { stdout: "0" } }
+  - { name: empty_slot_lines_zero, code: "PRINT PRGSIZE(2,0)", expect: { stdout: "0" } }
