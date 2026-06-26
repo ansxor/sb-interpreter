@@ -59,6 +59,7 @@ pub(crate) const ERR_OVERFLOW: u32 = 9;
 pub(crate) const ERR_OUT_OF_RANGE: u32 = 10;
 const ERR_UNDEFINED_FUNCTION: u32 = 16;
 pub(crate) const ERR_SUBSCRIPT_OUT_OF_RANGE: u32 = 31;
+pub(crate) const ERR_ILLEGAL_SYMBOL_STRING: u32 = 34;
 
 /// Build a `Syntax error` (errnum 3) — e.g. the `EFC*` commands' wrong-arg-count gate.
 pub(crate) fn syntax_error() -> RuntimeError {
@@ -79,6 +80,14 @@ pub(crate) fn out_of_range() -> RuntimeError {
 /// Build a `Subscript out of range` (errnum 31) — e.g. POP/SHIFT of an empty array.
 pub(crate) fn subscript_out_of_range() -> RuntimeError {
     RuntimeError::new(ERR_SUBSCRIPT_OUT_OF_RANGE)
+}
+/// Build an `Illegal symbol string` (errnum 34) — a non-numeric value where SmileBASIC
+/// expects a symbol/label-string context (e.g. an inline `SPANIM` keyframe TIME slot,
+/// which real SB parses through the same label-string getter as `GOTO`/`GOSUB`, NOT the
+/// numeric value getter the keyframe ITEMs use). hw_verified 2026-06-26 (sb64u.tsv):
+/// `SPANIM 0,"XY","S",5,5` → errnum 34 errline 1.
+pub(crate) fn illegal_symbol_string() -> RuntimeError {
+    RuntimeError::new(ERR_ILLEGAL_SYMBOL_STRING)
 }
 
 /// Canonical names of every builtin implemented in this slice (Mathematics + Strings).

@@ -3263,7 +3263,16 @@ impl Vm {
                 (data, loop_count)
             }
             // Form 2 — keyframes from DATA via "@label"; first DATA value is the count.
-            Value::Str(label) => {
+            // Real SB routes ANY string args[2] through its label-string parser, which treats
+            // a leading `@` as a label lookup (errnum 14 if undefined) and a bare non-`@`
+            // string as the first inline TIME (a symbol-string context → errnum 34 if
+            // non-numeric). We mirror that by selecting form-2 only when the string starts
+            // with `@`; otherwise the string falls through to the inline form-3 path, where
+            // `parse_anim_time` raises errnum 34 for it. hw_verified 2026-06-26 (sb64u_form.tsv):
+            // `SPANIM 0,"XY","@S"` → errnum 14 (undefined label); `SPANIM 0,"XY","S"` →
+            // errnum 34 (bare string = inline time). The corpus confirms every form-2 label
+            // string starts with `@` (e.g. `SPANIM 115,3,"@ANIM_M1"`).
+            Value::Str(label) if label.first().is_some_and(|&c| c == b'@' as u16) => {
                 let data = self.read_anim_data(label, stride)?;
                 let loop_count = match args.get(3) {
                     Some(v) => v.to_int().map_err(sb)?,
@@ -3275,15 +3284,42 @@ impl Vm {
                 (data, loop_count)
             }
             // Form 3 — inline keyframes; a leftover trailing value (after whole keyframes) is
-            // the loop count.
+            // the loop count. The TIME slot of each keyframe is parsed as a symbol/label-string
+            // context (real SB routes it through the same getter as GOTO/GOSUB), so a
+            // non-numeric TIME raises errnum 34 (Illegal symbol string) — NOT the errnum 8 a
+            // non-numeric ITEM raises (hw_verified 2026-06-26, sb64u.tsv). The trailing loop
+            // count is a plain integer (errnum 8 on a non-numeric value).
             _ => {
-                let vals = values_to_f64(&args[2..]).map_err(sb)?;
-                if vals.len() % stride == 1 {
-                    let (kf, last) = vals.split_at(vals.len() - 1);
-                    (kf.to_vec(), last[0] as i32)
+                let rest = &args[2..];
+                // A trailing lone value (rest.len() % stride == 1) is the LOOP count ONLY
+                // when at least one full keyframe precedes it. With fewer than `stride`
+                // values, position 0 is always a TIME (real SB parses the time slot before
+                // the count check), so a bare `SPANIM 0,"XY","S"` raises errnum 34, not 8
+                // (sb64u_edge.tsv: `one_bad_time` → 34; `one_time_only` → 4 count-check).
+                let (n_full, leftover) = if rest.len() % stride == 1 && rest.len() > stride {
+                    (rest.len() - 1, Some(rest.len() - 1))
                 } else {
-                    (vals, 1)
+                    (rest.len(), None)
+                };
+                let mut data = Vec::with_capacity(n_full);
+                let mut i = 0;
+                while i < n_full {
+                    let pos_in_kf = i % stride;
+                    let v = &rest[i];
+                    if pos_in_kf == 0 {
+                        // TIME slot — symbol-string context: a non-numeric value here is
+                        // errnum 34, not 8.
+                        data.push(parse_anim_time(v).map_err(sb)?);
+                    } else {
+                        data.push(v.to_real().map_err(sb)?);
+                    }
+                    i += 1;
                 }
+                let loop_count = match leftover {
+                    Some(j) => rest[j].to_int().map_err(sb)?,
+                    None => 1,
+                };
+                (data, loop_count)
             }
         };
         let scr = self.active_screen();
@@ -3932,6 +3968,23 @@ fn const_to_value(c: &Const) -> Value {
 /// value is a Type mismatch (8).
 fn values_to_f64(vals: &[Value]) -> Result<Vec<f64>, RuntimeError> {
     vals.iter().map(|v| v.to_real()).collect()
+}
+
+/// Parse an inline `SPANIM`/`BGANIM` keyframe **TIME** slot to `f64`. Real SmileBASIC
+/// routes this slot through the same symbol/label-string getter as `GOTO`/`GOSUB` rather
+/// than the numeric value getter the keyframe ITEMs use, so a non-numeric value here is
+/// `Illegal symbol string` (errnum 34) — NOT the `Type mismatch` (errnum 8) a non-numeric
+/// ITEM raises. hw_verified 2026-06-26 (sb64u.tsv): `SPANIM 0,"XY","S",5,5` → errnum 34
+/// errline 1 (string target); `SPANIM 0,1,"S",5` → errnum 34 errline 1 (numeric target).
+/// Only the inline form-3 path raises 34 — the form-1 array path raises 8 for the same
+/// bad time (sb64u_arr.tsv), so callers must route inline times through this helper and
+/// array times through [`values_to_f64`].
+fn parse_anim_time(v: &Value) -> Result<f64, RuntimeError> {
+    match v {
+        Value::Int(i) => Ok(*i as f64),
+        Value::Real(d) => Ok(*d),
+        _ => Err(crate::builtins::illegal_symbol_string()),
+    }
 }
 
 /// Wrap a [`RuntimeError`] (no line yet) as a [`VmError::Sb`]; the run loop fills the
