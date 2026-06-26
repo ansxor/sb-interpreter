@@ -17,7 +17,7 @@ semantics:
   - "The return value's type matches the array element type (Integer, Double, or String)."
   - "String operand (character-array form): SHIFT(S$) removes and returns the FIRST character (e.g. S$=\"ABC\":SHIFT(S$) returns \"A\" and leaves S$=\"BC\")."
   - "A numeric scalar operand raises errnum 8 (Type mismatch) — only arrays and strings are valid operands."
-  - "A multi-dimensional array operand raises errnum 8 (Type mismatch): the handler uses the same tag-4/5/6 dispatch as PUSH/POP/UNSHIFT (cmp r0,#0x4/0x5/0x6 @0x144d64-0x144d7c, else mov r0,#0x8 @0x144d88), so a multi-dim array falls through to errnum 8. (Structurally inferred from the handler body; oracle-confirm pending.)"
+  - "A multi-dimensional array operand raises errnum 8 (Type mismatch): the handler uses the same tag-4/5/6 dispatch as PUSH/POP/UNSHIFT (cmp r0,#0x4/0x5/0x6 @0x144d64-0x144d7c, else mov r0,#0x8 @0x144d88), so a multi-dim array falls through to errnum 8. Oracle-confirmed 2026-06-26: DIM A[2,2]:X=SHIFT(A) -> errnum 8, errline 1."
   - "SHIFT must be used as a single-valued function; the handler checks the return-value count."
   - "Wrong argument count (not exactly one operand) raises errnum 4 (Illegal function call)."
   - "SHIFT on an empty (length-0) array raises errnum 31 (Subscript out of range)."
@@ -32,6 +32,7 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst SHIFT handler FUN_00144d20 @0x144d20: argc==1 + return-count==1 check else errnum 4 (mov r0,#4 @0x144d48 -> 0x1fffdc); element-type dispatch on array/string tag 4/5/6 @0x144d64-0x144d7c, any other tag -> errnum 8 (mov r0,#8 @0x144d88); removes the head via the array helpers @0x1ed6f4/0x17f694" }
   - { type: community, ref: "sbsave corpus: genuine SHIFT(array) dequeue in 1,136+ calls across 209 files; SHIFT on string scalars (SHIFT(DAT$), SHIFT(D$)) common, e.g. EK2K45N6/TXT/_COM (38 uses) and 5KXKNDLS/TXT/UNDERTALE; RETURN SHIFT(P1) inline, e.g. LACYY3LJ/TXT/HANOI_TOWER" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t4b): DIM A[3]:A[0]=11:SHIFT(A) -> 11; DIM A[3]:X=SHIFT(A) -> LEN 2; PUSH A,1:PUSH A,2:SHIFT:SHIFT (sequential) -> 1,2 (FIFO); shift then A[0] compacts (-> 2); string SHIFT S$=\"ABC\":SHIFT(S$) -> \"A\", S$ left \"BC\"; DIM S$[0]:PUSH S$,\"hi\":SHIFT(S$) -> hi; DIM A[0]:X=SHIFT(A) -> errnum 31" }
+  - { type: hw_verified, ref: "sb-oracle errcase 2026-06-26 (sb-interpreter-0ka): DIM A[2,2]:X=SHIFT(A) -> errnum 8, errline 1 (multi-dim array falls through the tag-4/5/6 dispatch to the TypeMismatch site @0x144d88)" }
 
 confidence: hw_verified
 
@@ -43,3 +44,4 @@ tests:
   - { name: shift_string_array, code: "DIM S$[0]\nPUSH S$,\"hi\"\nPRINT SHIFT(S$)", expect: { stdout: "hi" } }
   - { name: shift_string_char, code: "S$=\"ABC\"\nX$=SHIFT(S$)\nPRINT X$;\",\";S$", expect: { stdout: "A,BC" } }
   - { name: shift_empty_error, code: "DIM A[0]\nX=SHIFT(A)", expect: { error: { errnum: 31 } } }
+  - { name: shift_multidim_error, code: "DIM A[2,2]\nX=SHIFT(A)", expect: { error: { errnum: 8 } } }
