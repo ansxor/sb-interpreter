@@ -45,4 +45,4 @@ pub use storage::{
 };
 pub use token::{SourceLoc, Suffix, Token, TokenKind};
 pub use value::{swap_cells, Cell, RuntimeError, SbStr, Value, ValueType};
-pub use vm::{Halt, Vm, VmError, CALL_STACK_LIMIT};
+pub use vm::{DEF_STACK_LIMIT, GOSUB_STACK_LIMIT, Halt, Vm, VmError};

@@ -13,8 +13,8 @@
 //! the full operator set, `IF`/`FOR`/`WHILE`/`REPEAT` (lowered to jumps by the
 //! compiler), `GOTO`/`GOSUB`/`RETURN`, `ON … GOTO/GOSUB`, `DEF`/`COMMON DEF` calls
 //! with by-value params, `OUT` results and a return value, `DATA`/`READ`/`RESTORE`,
-//! and scalar `INC`/`DEC`/`SWAP`. Recursion past [`CALL_STACK_LIMIT`] raises **Stack
-//! overflow** (errnum 5).
+//! and scalar `INC`/`DEC`/`SWAP`. Recursion past [`DEF_STACK_LIMIT`] (DEF call frames)
+//! or [`GOSUB_STACK_LIMIT`] (GOSUB return addresses) raises **Stack overflow** (errnum 5).
 //!
 //! Builtins ([`Op::CallBuiltin`]/[`Op::CallDynamic`], M1-T7) and console + input
 //! (`Print*`/`Input`/`Linput` plus the `LOCATE`/`COLOR`/`BACKCOLOR`/`CLS`/`ACLS`/`INKEY$`
@@ -69,15 +69,23 @@ use sb_render::grp::{GrpState, GRP_SCREEN_COUNT};
 use sb_render::sprite::{SpdefTable, SpriteState};
 use std::cmp::Ordering;
 
-/// Max combined depth of the `GOSUB` return stack + `DEF` call frames before raising
-/// **Stack overflow** (errnum 5). hw_verified 2026-06-26 (sb-oracle binary search,
-/// `harness/harvest/out/stackdepth.tsv`): real SB 3.6.0 completes a DEF recursion of
-/// 2730 frames and overflows when the 2731st is pushed (`DEF F:N=N+1:IF N<D THEN F`:
-/// D=2730 runs clean, D=2731 trips). sb-core checks `depth() >= CALL_STACK_LIMIT`
-/// *before* pushing, so `2730` trips the 2731st push, matching the device. (GOSUB-only
-/// and mixed GOSUB+DEF trip depths may differ; only pure DEF recursion was probed —
+/// Max depth of the `DEF` call-frame stack before raising **Stack overflow** (errnum 5).
+/// hw_verified 2026-06-26 (sb-oracle binary search, `harness/harvest/out/stackdepth.tsv`):
+/// real SB 3.6.0 completes a DEF recursion of 2730 frames and overflows when the 2731st is
+/// pushed (`DEF F:N=N+1:IF N<D THEN F`: D=2730 runs clean, D=2731 trips). sb-core checks
+/// `frames.len() >= DEF_STACK_LIMIT` *before* pushing, so `2730` trips the 2731st push.
+pub const DEF_STACK_LIMIT: usize = 2730;
+
+/// Max depth of the `GOSUB` return-address stack before raising **Stack overflow** (errnum 5).
+/// hw_verified 2026-06-26 (sb-oracle binary search, `harness/harvest/out/stackdepth_gosub.tsv`):
+/// real SB 3.6.0 completes a GOSUB nesting of 16384 frames and overflows when the 16385th is
+/// pushed (`N=0:GOSUB @A:…:@A:N=N+1:IF N<D THEN GOSUB @A:RETURN`: D=16384 clean, D=16385
+/// trips). The GOSUB limit is ~6× the DEF limit, so real SB keeps **separate** stacks for
+/// GOSUB return addresses vs DEF call frames — not one combined limit. sb-core checks
+/// `gosub.len() >= GOSUB_STACK_LIMIT` before pushing, so `16384` trips the 16385th push.
+/// (The mixed GOSUB+DEF trip depth is unprobed; the two limits are applied independently —
 /// `bd:sb-interpreter-air`.)
-pub const CALL_STACK_LIMIT: usize = 2730;
+pub const GOSUB_STACK_LIMIT: usize = 16384;
 
 /// The `FREEMEM` system variable's reported free user memory (M6-T3). SmileBASIC computes this
 /// from its real allocator, so it *decreases* as a program DIMs arrays / defines resources;
@@ -1443,7 +1451,7 @@ impl Vm {
         out_argc: u8,
         wants_value: bool,
     ) -> Result<(), VmError> {
-        if self.depth() >= CALL_STACK_LIMIT {
+        if self.frames.len() >= DEF_STACK_LIMIT {
             return Err(VmError::Sb {
                 errnum: ERR_STACK_OVERFLOW,
                 line: 0,
@@ -3779,13 +3787,8 @@ impl Vm {
 
     // -- helpers ---------------------------------------------------------------
 
-    /// Combined `GOSUB` + `DEF`-frame depth (for the Stack-overflow guard).
-    fn depth(&self) -> usize {
-        self.frames.len() + self.gosub.len()
-    }
-
     fn push_gosub(&mut self, addr: usize) -> Result<(), VmError> {
-        if self.depth() >= CALL_STACK_LIMIT {
+        if self.gosub.len() >= GOSUB_STACK_LIMIT {
             return Err(VmError::Sb {
                 errnum: ERR_STACK_OVERFLOW,
                 line: 0,
@@ -5621,6 +5624,22 @@ CALL "ADDOUT",2,3 OUT X"#);
         run("N=0\nDEF F\nN=N+1\nIF N<2730 THEN F\nEND\nF");
         let err = run_err("N=0\nDEF F\nN=N+1\nIF N<2731 THEN F\nEND\nF");
         assert_eq!(err.errnum(), Some(5), "depth 2731 must trip Stack overflow");
+    }
+
+    #[test]
+    fn gosub_nesting_trip_depth_matches_real_sb() {
+        // hw_verified 2026-06-26 (sb-oracle binary search,
+        // harness/harvest/out/stackdepth_gosub.tsv): real SB 3.6.0 completes a GOSUB
+        // nesting of depth 16384 and trips Stack overflow (errnum 5) at depth 16385. The
+        // GOSUB return-address stack is separate from the DEF call-frame stack (~6×
+        // deeper). D=16384 must run clean, D=16385 must raise errnum 5.
+        run("N=0\nGOSUB @A\nEND\n@A\nN=N+1\nIF N<16384 THEN GOSUB @A\nRETURN");
+        let err = run_err("N=0\nGOSUB @A\nEND\n@A\nN=N+1\nIF N<16385 THEN GOSUB @A\nRETURN");
+        assert_eq!(
+            err.errnum(),
+            Some(5),
+            "depth 16385 must trip Stack overflow"
+        );
     }
 
     #[test]
