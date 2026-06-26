@@ -10,13 +10,14 @@
 //! Body model (matching the [`Storage`](crate::storage::Storage) contract — the *logical*
 //! payload, not the on-disk extdata container):
 //! - **TXT** (`TXT:` resources, programs) — UTF-8 bytes of the string.
-//! - **DAT** (`DAT:` numeric arrays) — a self-describing `"SBDA"` blob (see [`encode_dat`]).
+//! - **DAT** (`DAT:` numeric arrays) — either the self-describing `"SBDA"` blob the interpreter
+//!   uses for internal `SAVE`/`LOAD` round-trips, or the real-SmileBASIC `"PCBN0001"` numeric-array
+//!   layout decoded by [`decode_dat_into`].
 //!
-//! The exact real-SmileBASIC PCBN element-type tagging (how int/double/ushort arrays and their
-//! dimensions are laid out so a `DAT:` file round-trips byte-for-byte with real SB / the
-//! corpus) is **queued (O-T3)** — see `bd:sb-interpreter-c9d`. Until then, loading a non-`SBDA`
-//! body (e.g. a real corpus PCBN blob) raises Illegal file format (errnum 35) rather than
-//! decoding garbage, and the in-interpreter `SAVE`/`LOAD` round-trip uses the `SBDA` codec.
+//! The real-SmileBASIC `DAT:` body layout (PCBN0001 header + dimensions + row-major `f64`
+//! elements) was oracle-verified on SB 3.6.0 — see `spec/concepts/file-and-extdata-format.md` §3
+//! and `bd:sb-interpreter-c9d`. The in-memory `SAVE`/`LOAD` round-trip keeps the simpler `SBDA`
+//! format; `PCBN` decode is used when loading files from the device/extdata/corpus.
 
 use crate::builtins::ERR_TYPE_MISMATCH;
 use crate::storage::{ResourceKind, ResourceSpec};
@@ -29,6 +30,13 @@ pub(crate) const ERR_CANT_USE_IN_PROGRAM: u32 = 44;
 
 /// Magic prefix for our self-describing DAT body codec (see [`encode_dat`]).
 const DAT_MAGIC: &[u8; 4] = b"SBDA";
+
+/// PCBN header for a real-SmileBASIC `DAT:` numeric-array body (O-T3, hw_verified).
+const PCBN_MAGIC: &[u8; 4] = b"PCBN";
+const PCBN_VERSION: &[u8; 4] = b"0001";
+const PCBN_HEADER_LEN: usize = 28;
+const PCBN_DAT_TYPE: u16 = 5;
+const PCBN_MAX_RANK: usize = 4;
 
 /// Resolve a parsed [`ResourceSpec`] to its concrete [`ResourceKind`]. A bare name (no
 /// `TYPE:` prefix) defaults to the **current program slot** — `SAVE "NAME"` / `LOAD "NAME"`
@@ -80,39 +88,84 @@ pub(crate) fn encode_dat(v: &Value) -> Result<Vec<u8>, RuntimeError> {
     Ok(out)
 }
 
+/// Decode a real-SmileBASIC `"PCBN0001"` numeric-array body into a value vector.
+/// Returns `Illegal file format` (errnum 35) for any malformed header or truncated data.
+fn decode_pcbn_values(body: &[u8]) -> Result<Vec<f64>, RuntimeError> {
+    let illegal = || RuntimeError::new(ERR_ILLEGAL_FILE_FORMAT);
+    if body.len() < PCBN_HEADER_LEN || &body[0..4] != PCBN_MAGIC || &body[4..8] != PCBN_VERSION {
+        return Err(illegal());
+    }
+    let type_tag = u16::from_le_bytes([body[8], body[9]]);
+    if type_tag != PCBN_DAT_TYPE {
+        return Err(illegal());
+    }
+    let rank = u16::from_le_bytes([body[10], body[11]]) as usize;
+    if rank == 0 || rank > PCBN_MAX_RANK {
+        return Err(illegal());
+    }
+    let mut count: usize = 1;
+    for i in 0..rank {
+        let d = u32::from_le_bytes([
+            body[12 + i * 4],
+            body[13 + i * 4],
+            body[14 + i * 4],
+            body[15 + i * 4],
+        ]);
+        count = count.checked_mul(d as usize).ok_or_else(illegal)?;
+    }
+    let data_len = count.checked_mul(8).ok_or_else(illegal)?;
+    if PCBN_HEADER_LEN + data_len > body.len() {
+        return Err(illegal());
+    }
+    let mut vals = Vec::with_capacity(count);
+    for i in 0..count {
+        let off = PCBN_HEADER_LEN + i * 8;
+        let bytes: [u8; 8] = body[off..off + 8].try_into().unwrap();
+        vals.push(f64::from_le_bytes(bytes));
+    }
+    Ok(vals)
+}
+
 /// Decode a DAT body into the supplied numeric array, in place. A 1-D destination is extended
 /// to the stored element count; a fixed-shape (multi-D) destination keeps its shape and
 /// receives as many elements as fit. Element values are coerced to the destination's type
-/// (Integer ⇄ Double). A body without the `"SBDA"` magic (or truncated) is Illegal file
-/// format (errnum 35); a non-numeric-array destination is Type mismatch (errnum 8).
+/// (Integer ⇄ Double). Accepts both the interpreter's internal `"SBDA"` format and the
+/// real-SmileBASIC `"PCBN0001"` format; anything else (or a truncated header/body) raises
+/// Illegal file format (errnum 35). A non-numeric-array destination is Type mismatch (errnum 8).
 pub(crate) fn decode_dat_into(dest: &Value, body: &[u8]) -> Result<(), RuntimeError> {
     let illegal = || RuntimeError::new(ERR_ILLEGAL_FILE_FORMAT);
-    if body.len() < 9 || &body[0..4] != DAT_MAGIC {
+    let vals: Vec<f64> = if body.len() >= 9 && &body[0..4] == DAT_MAGIC {
+        let tag = body[4];
+        let count = u32::from_le_bytes([body[5], body[6], body[7], body[8]]) as usize;
+        let mut vals: Vec<f64> = Vec::with_capacity(count);
+        let mut p = 9;
+        match tag {
+            0 => {
+                for _ in 0..count {
+                    let end = p + 4;
+                    let bytes: [u8; 4] = body.get(p..end).ok_or_else(illegal)?.try_into().unwrap();
+                    vals.push(i32::from_le_bytes(bytes) as f64);
+                    p = end;
+                }
+            }
+            1 => {
+                for _ in 0..count {
+                    let end = p + 8;
+                    let bytes: [u8; 8] = body.get(p..end).ok_or_else(illegal)?.try_into().unwrap();
+                    vals.push(f64::from_le_bytes(bytes));
+                    p = end;
+                }
+            }
+            _ => return Err(illegal()),
+        }
+        vals
+    } else if body.len() >= PCBN_HEADER_LEN && &body[0..4] == PCBN_MAGIC {
+        decode_pcbn_values(body)?
+    } else {
         return Err(illegal());
-    }
-    let tag = body[4];
-    let count = u32::from_le_bytes([body[5], body[6], body[7], body[8]]) as usize;
-    let mut vals: Vec<f64> = Vec::with_capacity(count);
-    let mut p = 9;
-    match tag {
-        0 => {
-            for _ in 0..count {
-                let end = p + 4;
-                let bytes: [u8; 4] = body.get(p..end).ok_or_else(illegal)?.try_into().unwrap();
-                vals.push(i32::from_le_bytes(bytes) as f64);
-                p = end;
-            }
-        }
-        1 => {
-            for _ in 0..count {
-                let end = p + 8;
-                let bytes: [u8; 8] = body.get(p..end).ok_or_else(illegal)?.try_into().unwrap();
-                vals.push(f64::from_le_bytes(bytes));
-                p = end;
-            }
-        }
-        _ => return Err(illegal()),
-    }
+    };
+
+    let count = vals.len();
     match dest {
         Value::IntArray(a) => {
             let mut a = a.borrow_mut();
@@ -182,9 +235,104 @@ mod tests {
     #[test]
     fn dat_rejects_foreign_body() {
         let dest = int_array(&[0, 0]);
-        // A non-SBDA body (e.g. a real PCBN blob) is Illegal file format (35), not garbage.
+        // A truncated/foreign PCBN body still raises Illegal file format (35).
         assert_eq!(
             decode_dat_into(&dest, b"PCBN0001....").unwrap_err().errnum,
+            ERR_ILLEGAL_FILE_FORMAT
+        );
+    }
+
+    fn real_array(vals: &[f64]) -> Value {
+        let mut a = SbArray::<f64>::new(&[vals.len() as i32]).unwrap();
+        a.as_mut_slice().copy_from_slice(vals);
+        Value::RealArray(a.into_ref())
+    }
+
+    fn int_2d_array(d0: i32, d1: i32) -> Value {
+        let a = SbArray::<i32>::new(&[d0, d1]).unwrap();
+        Value::IntArray(a.into_ref())
+    }
+
+    fn make_pcbn_1d(vals: &[f64]) -> Vec<u8> {
+        let mut body = Vec::with_capacity(PCBN_HEADER_LEN + vals.len() * 8);
+        body.extend_from_slice(PCBN_MAGIC);
+        body.extend_from_slice(PCBN_VERSION);
+        body.extend_from_slice(&PCBN_DAT_TYPE.to_le_bytes());
+        body.push(1);
+        body.push(0); // rank = 1 u16 LE
+        body.extend_from_slice(&(vals.len() as u32).to_le_bytes()); // dim0
+                                                                    // Unused dimension slots and the 4-byte reserved field (all zero, matching hw_verified).
+        body.extend_from_slice(&[0u8; 12]);
+        for &v in vals {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body
+    }
+
+    fn make_pcbn_2d(d0: u32, d1: u32, vals: &[f64]) -> Vec<u8> {
+        let mut body = Vec::with_capacity(PCBN_HEADER_LEN + vals.len() * 8);
+        body.extend_from_slice(PCBN_MAGIC);
+        body.extend_from_slice(PCBN_VERSION);
+        body.extend_from_slice(&PCBN_DAT_TYPE.to_le_bytes());
+        body.push(2);
+        body.push(0); // rank = 2
+        body.extend_from_slice(&d0.to_le_bytes());
+        body.extend_from_slice(&d1.to_le_bytes());
+        // Reserved trailing dimension slot + reserved field.
+        body.extend_from_slice(&[0u8; 8]);
+        for &v in vals {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body
+    }
+
+    #[test]
+    fn dat_pcbn_1d_decodes_into_int_array() {
+        let dest = int_array(&[0]);
+        let body = make_pcbn_1d(&[10.0, -20.0, 30.0]);
+        decode_dat_into(&dest, &body).unwrap();
+        if let Value::IntArray(a) = &dest {
+            assert_eq!(a.borrow().as_slice(), &[10, -20, 30]);
+        } else {
+            panic!("dest changed type");
+        }
+    }
+
+    #[test]
+    fn dat_pcbn_2d_decodes_row_major() {
+        // DIM A[2,3] saved by SB 3.6.0 is stored as dims [2,3] and row-major values.
+        let dest = int_2d_array(2, 3);
+        let body = make_pcbn_2d(2, 3, &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0]);
+        decode_dat_into(&dest, &body).unwrap();
+        if let Value::IntArray(a) = &dest {
+            assert_eq!(a.borrow().get(&[0, 0]).unwrap(), 10);
+            assert_eq!(a.borrow().get(&[0, 2]).unwrap(), 30);
+            assert_eq!(a.borrow().get(&[1, 0]).unwrap(), 40);
+            assert_eq!(a.borrow().get(&[1, 2]).unwrap(), 60);
+        } else {
+            panic!("dest changed type");
+        }
+    }
+
+    #[test]
+    fn dat_pcbn_decodes_into_real_array() {
+        let dest = real_array(&[0.0, 0.0]);
+        let body = make_pcbn_1d(&[1.5, -2.5]);
+        decode_dat_into(&dest, &body).unwrap();
+        if let Value::RealArray(a) = &dest {
+            assert_eq!(a.borrow().as_slice(), &[1.5, -2.5]);
+        } else {
+            panic!("dest changed type");
+        }
+    }
+
+    #[test]
+    fn dat_pcbn_truncated_data_is_rejected() {
+        let dest = int_array(&[0]);
+        let mut body = make_pcbn_1d(&[1.0, 2.0]);
+        body.truncate(body.len() - 4); // cut last element in half
+        assert_eq!(
+            decode_dat_into(&dest, &body).unwrap_err().errnum,
             ERR_ILLEGAL_FILE_FORMAT
         );
     }

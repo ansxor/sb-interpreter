@@ -9,11 +9,12 @@ sources:
   - { type: documented, ref: "sb-docs/smilebasic-3/{gsave,gload}.md (image array color-conversion flag: 0=32-bit logical, 1=16-bit physical)" }
   - { type: disassembled, ref: "cia_3.6.0.lst SAVE handler @0x18e7d4: argcount guard `ldr r0,[r0,#0x4]`/`cmp r0,#0x1`/else `mov r0,#0x3` (errnum 3); resource string parsed by shared parser `bl 0x001d6d6c` (result type code checked `cmp r0,#0xe`/`bls`); unknown resource `mov r0,#0x4` @0x18e898 (errnum 4); type/page range guards @0x18e8e4 `cmp r2,#0x4`/`bcc` and @0x18e900 `cmp r2,#0x6`/`bge` -> `mov r0,#0xa` (errnum 10); resource-type switch table @0x18e930 `ldrcc pc,[pc,r0,lsl #0x2]` (cases 0..6)" }
   - { type: hw_verified, ref: "sb-oracle skill sb_extdata.py: extdata SB3 container (80-byte header + UTF-8/PCBN body + 20-byte HMAC-SHA1 footer; markers TXT/DAT/GRP; HMAC key) round-tripped both directions against real SB 3.6.0 (O-T3 write valid file SB accepts + O-T4 read result off disk)" }
+  - { type: hw_verified, ref: "sb-oracle skill run_case.py/sb_extdata.py: DAT numeric-array body = 28-byte PCBN0001 header (u16 type=5 @8, u16 rank @10, u32 LE dims @0x0C/0x10/0x14, 4-byte reserved @0x18) + row-major f64 LE elements; 1-D..3-D arrays round-trip through real SB 3.6.0 (O-T3)" }
   - { type: hw_verified, ref: "sb-oracle skill sb_grp.py: DAT/GRP body = 28-byte PCBN header (magic 'PCBN'+'0001', u32 LE width/height @12/@16) + 512x512 RGBA5551 LE row-major pixels; pixel-exact GRP0 capture (O-T6)" }
   - { type: community, ref: "tools/extract_sbsave.py: PETC smilebasicsource.com server container (type 0=TXT/1=DAT/2=PRJ; project directory at 0x54/0x58; internal name prefix T/B) validated against 915/915 scraped downloads" }
-# On-disk container + GRP body are hw_verified (round-trip); resource parsing/errnums are
-# disassembled; project model is documented; DAT-array tagging is queued. Top-level = the
-# lowest load-bearing tier so the whole model isn't overclaimed as hw_verified.
+# On-disk container + DAT/GRP bodies are hw_verified round-trip; resource parsing/errnums are
+# disassembled; project model is documented. Top-level confidence stays disassembled because the
+# logical command guards remain disassembly-derived even though the wire format is verified.
 confidence: disassembled
 related:
   - SAVE
@@ -178,15 +179,29 @@ RGBA5551 bit layout (MSB→LSB): `R:5 G:5 B:5 A:1` — alpha is **bit 0** (1 = o
 e.g. `#WHITE = &HFFF8F8F8`). **A GRP page always saves the full 512×512 buffer**, independent
 of `XSCREEN` mode and of the visible 400×240 / 320×240 regions.
 
-For a **DAT numeric array**, the PCBN container holds int / double / ushort element data
-(per `GSAVE`'s color-conversion flag and `osb` `project.d loadDataFile`); a raw blob with no
-`PCBN` magic is treated as a raw `int32` array. The `GSAVE`/`GLOAD` **color-conversion flag**
-picks how pixels are stored when round-tripping a page through an array: `0` = convert to
-32-bit logical colors, `1` = leave the 16-bit physical codes as-is.
+For a **DAT numeric array** (`hw_verified` on real SB 3.6.0, O-T3):
 
-> **Queued (O-T3):** the exact DAT element-type tagging (how int vs double vs ushort arrays,
-> and array dimensions, are encoded in the PCBN header for `SAVE "DAT:"`/`LOAD "DAT:"`) is
-> not yet byte-verified — only the GRP image layout is pixel-exact. See `bd:sb-interpreter-c9d`.
+| Offset (in body) | Size | Field |
+|---|---|---|
+| 0x00 | 4 | magic `"PCBN"` |
+| 0x04 | 4 | version `"0001"` |
+| 0x08 | 2 | type tag — `0x0005` for a numeric-array DAT body |
+| 0x0A | 2 | rank — `1`..`3` (observed), matching the array's declared dimension count |
+| 0x0C | 4 | dimension 0 size (`u32` LE) |
+| 0x10 | 4 | dimension 1 size (`u32` LE), unused/garbage when `rank < 2` |
+| 0x14 | 4 | dimension 2 size (`u32` LE), unused/garbage when `rank < 3` |
+| 0x18 | 4 | reserved (zeros in valid files) |
+| 0x1C | `count × 8` | elements as **`f64` LE**, row-major (`count = dim0·dim1·dim2`) |
+
+`SAVE "DAT:"` stores every numeric array as `f64` elements, regardless of whether the source
+array is Integer (`%`) or Double (`#`); `LOAD "DAT:"` coerces them back to the destination
+array's element type (`%` truncates toward zero). Unused dimension slots in a lower-rank array
+hold stale values on a real save (`0x57`, `0x001E7DBC` observed for rank-1 files), so a decoder
+must use the `rank` field and ignore the trailing slots.
+
+The `GSAVE`/`GLOAD` **color-conversion flag** picks how pixels are stored when round-tripping
+a page through an array: `0` = convert to 32-bit logical colors, `1` = leave the 16-bit physical
+codes as-is. (`GSAVE`/`GLOAD` dat-file layout is the same numeric-array PCBN format above.)
 
 ---
 
@@ -276,15 +291,15 @@ can via the trailing `,FALSE` flag — these are M6 behaviors, not format facts.
 
 ---
 
-## Open questions (queued for the oracle — see `bd:sb-interpreter-c9d`)
+## Open questions (queued for the oracle — see beads)
 
-- **DAT numeric-array PCBN tagging** — exact element-type (int/double/ushort) and dimension
-  encoding for `SAVE "DAT:"`/`LOAD "DAT:"`; only GRP image layout is pixel-verified.
 - **GRPF page** — whether the font page is the same 512×512 PCBN layout as GRP0-5 (assumed) or
   a distinct size.
 - **Header date semantics** — what SB stamps at `0x0C` on a real save (the injector uses a
   fixed constant); whether SB validates it on load.
 - **errnum 35 vs 46** — which file-corruption modes raise 35 (illegal format) vs 46 (load
   failed) on real hardware.
+- **`DAT:` ushort PCBN bodies from `GSAVE` color-conversion `1`** — whether these share the
+  same type tag `0x0005` or a distinct tag/bit, and how element size is encoded.
 </content>
 </invoke>
