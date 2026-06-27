@@ -1,0 +1,29 @@
+# SPANIM timing confirmation #2 (bxm): prove VSYNC advances the frame clock but NOT sprite
+# animation, while WAIT advances both; pin the WAIT timing curve; isolate the SPSTART snap.
+# --- CONTROL: does the frame clock (MAINCNT) advance under VSYNC vs WAIT? ---
+mc_vsync1|M=MAINCNT:VSYNC 1:R=MAINCNT-M|R|prog
+mc_vsync6|M=MAINCNT:VSYNC 6:R=MAINCNT-M|R|prog
+mc_wait1|M=MAINCNT:WAIT 1:R=MAINCNT-M|R|prog
+mc_wait6|M=MAINCNT:WAIT 6:R=MAINCNT-M|R|prog
+# --- VSYNC re-confirm: hold never applies even at 6 frames ---
+v_hold6|SPSET 0,0:SPANIM 0,"V",5,42:VSYNC 6|SPVAR(0,7)|prog
+# --- WAIT hold curve (positive time 5, target 42) ---
+w_hold1|SPSET 0,0:SPANIM 0,"V",5,42:WAIT 1|SPVAR(0,7)|prog
+w_hold2|SPSET 0,0:SPANIM 0,"V",5,42:WAIT 2|SPVAR(0,7)|prog
+w_hold5|SPSET 0,0:SPANIM 0,"V",5,42:WAIT 5|SPVAR(0,7)|prog
+w_hold6|SPSET 0,0:SPANIM 0,"V",5,42:WAIT 6|SPVAR(0,7)|prog
+# --- WAIT interp curve (-4 over 4 frames, base 0, target 100) ---
+w_int1|SPSET 0,0:SPANIM 0,"V",-4,100:WAIT 1|SPVAR(0,7)|prog
+w_int2|SPSET 0,0:SPANIM 0,"V",-4,100:WAIT 2|SPVAR(0,7)|prog
+w_int3|SPSET 0,0:SPANIM 0,"V",-4,100:WAIT 3|SPVAR(0,7)|prog
+w_int4|SPSET 0,0:SPANIM 0,"V",-4,100:WAIT 4|SPVAR(0,7)|prog
+w_int5|SPSET 0,0:SPANIM 0,"V",-4,100:WAIT 5|SPVAR(0,7)|prog
+# --- WAIT two-keyframe sequence: hold 10 for 2f, then hold 20 for 2f ---
+w_seq1|SPSET 0,0:SPANIM 0,"V",2,10,2,20:WAIT 1|SPVAR(0,7)|prog
+w_seq2|SPSET 0,0:SPANIM 0,"V",2,10,2,20:WAIT 2|SPVAR(0,7)|prog
+w_seq3|SPSET 0,0:SPANIM 0,"V",2,10,2,20:WAIT 3|SPVAR(0,7)|prog
+w_seq4|SPSET 0,0:SPANIM 0,"V",2,10,2,20:WAIT 4|SPVAR(0,7)|prog
+w_seq5|SPSET 0,0:SPANIM 0,"V",2,10,2,20:WAIT 5|SPVAR(0,7)|prog
+# --- SPSTART snap isolation: does SPSTART alone apply the current value (no frame waited)? ---
+snap_start|SPSET 0,0:SPANIM 0,"V",5,42:SPSTART 0|SPVAR(0,7)|prog
+snap_stopstart|SPSET 0,0:SPANIM 0,"V",5,42:SPSTOP 0:SPSTART 0|SPVAR(0,7)|prog

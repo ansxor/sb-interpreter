@@ -37,6 +37,42 @@ cases:
   - name: anim_advances_on_wait
     code: "SPSET 0,0\nSPANIM 0,\"V\",5,9\nWAIT 1\nPRINT SPVAR(0,7)"
     expect: { stdout: "9" }
+  # ── hw_verified V-channel timing, WAIT-driven (bxm; harness/harvest/out/spanim_timing2.tsv,
+  #    2026-06-27). WAIT is the trustworthy frame driver: the control MAINCNT-delta harvest shows
+  #    VSYNC advances 0 frames under the isolated-prog oracle path (mc_vsync6=0) while WAIT 6 → 6,
+  #    so VSYNC cases test sb-core's deterministic frame-advance only and these WAIT cases pin the
+  #    real SB 3.6.0 values. The earlier f7h "VSYNC 1 → 0 ⇒ one frame early" reading was that VSYNC
+  #    no-op, NOT a startup delay: WAIT 1 already shows the hold value, matching sb-core.
+  # Hold: the keyframe value is present from the FIRST advanced frame and held thereafter.
+  - name: anim_hold_applies_on_wait1
+    code: "SPSET 0,0\nSPANIM 0,\"V\",5,42\nWAIT 1\nPRINT SPVAR(0,7)"
+    expect: { stdout: "42" }
+  - name: anim_hold_holds_through_wait6
+    code: "SPSET 0,0\nSPANIM 0,\"V\",5,42\nWAIT 6\nPRINT SPVAR(0,7)"
+    expect: { stdout: "42" }
+  # Interpolation (negative time -4 to 100, base 0): frame N → 100·N/4, snapping/holding at target.
+  - name: anim_interp_wait1_quarter
+    code: "SPSET 0,0\nSPANIM 0,\"V\",-4,100\nWAIT 1\nPRINT SPVAR(0,7)"
+    expect: { stdout: "25" }
+  - name: anim_interp_wait3_three_quarters
+    code: "SPSET 0,0\nSPANIM 0,\"V\",-4,100\nWAIT 3\nPRINT SPVAR(0,7)"
+    expect: { stdout: "75" }
+  - name: anim_interp_wait4_reaches_target
+    code: "SPSET 0,0\nSPANIM 0,\"V\",-4,100\nWAIT 4\nPRINT SPVAR(0,7)"
+    expect: { stdout: "100" }
+  - name: anim_interp_wait5_holds_target
+    code: "SPSET 0,0\nSPANIM 0,\"V\",-4,100\nWAIT 5\nPRINT SPVAR(0,7)"
+    expect: { stdout: "100" }
+  # Two-keyframe sequence (10 held 2 frames, then 20 held 2 frames): frames 1-2 → 10, 3-5 → 20.
+  - name: anim_seq_first_kf_wait2
+    code: "SPSET 0,0\nSPANIM 0,\"V\",2,10,2,20\nWAIT 2\nPRINT SPVAR(0,7)"
+    expect: { stdout: "10" }
+  - name: anim_seq_second_kf_wait3
+    code: "SPSET 0,0\nSPANIM 0,\"V\",2,10,2,20\nWAIT 3\nPRINT SPVAR(0,7)"
+    expect: { stdout: "20" }
+  - name: anim_seq_done_holds_last_wait5
+    code: "SPSET 0,0\nSPANIM 0,\"V\",2,10,2,20\nWAIT 5\nPRINT SPVAR(0,7)"
+    expect: { stdout: "20" }
   # The undocumented SPLINK() getter returns the parent (or -1) — see splink.yaml.
   - name: splink_getter_chain
     code: "SPSET 0,0\nSPSET 1,0\nSPLINK 1,0\nPRINT SPLINK(1)"

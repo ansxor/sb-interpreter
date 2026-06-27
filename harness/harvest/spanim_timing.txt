@@ -1,0 +1,34 @@
+# SPANIM V-channel (target 7) timing harvest — pin the 1-frame startup offset (bxm).
+# Each case is an isolated prog: SPSET+SPANIM+VSYNC/WAIT N, then read SPVAR(0,7).
+# HOLD: positive time 5, target 42 (base 0)
+hold_v0|SPSET 0,0:SPANIM 0,"V",5,42|SPVAR(0,7)|prog
+hold_v1|SPSET 0,0:SPANIM 0,"V",5,42:VSYNC 1|SPVAR(0,7)|prog
+hold_v2|SPSET 0,0:SPANIM 0,"V",5,42:VSYNC 2|SPVAR(0,7)|prog
+hold_v3|SPSET 0,0:SPANIM 0,"V",5,42:VSYNC 3|SPVAR(0,7)|prog
+hold_v5|SPSET 0,0:SPANIM 0,"V",5,42:VSYNC 5|SPVAR(0,7)|prog
+hold_v6|SPSET 0,0:SPANIM 0,"V",5,42:VSYNC 6|SPVAR(0,7)|prog
+# INTERP: negative time -4, base 0, target 100
+interp_v1|SPSET 0,0:SPANIM 0,"V",-4,100:VSYNC 1|SPVAR(0,7)|prog
+interp_v2|SPSET 0,0:SPANIM 0,"V",-4,100:VSYNC 2|SPVAR(0,7)|prog
+interp_v3|SPSET 0,0:SPANIM 0,"V",-4,100:VSYNC 3|SPVAR(0,7)|prog
+interp_v4|SPSET 0,0:SPANIM 0,"V",-4,100:VSYNC 4|SPVAR(0,7)|prog
+interp_v5|SPSET 0,0:SPANIM 0,"V",-4,100:VSYNC 5|SPVAR(0,7)|prog
+interp_v6|SPSET 0,0:SPANIM 0,"V",-4,100:VSYNC 6|SPVAR(0,7)|prog
+# RELATIVE hold: base 30, +5, time 3
+rel_v1|SPSET 0,0:SPVAR 0,7,30:SPANIM 0,"V+",3,5:VSYNC 1|SPVAR(0,7)|prog
+rel_v2|SPSET 0,0:SPVAR 0,7,30:SPANIM 0,"V+",3,5:VSYNC 2|SPVAR(0,7)|prog
+rel_v4|SPSET 0,0:SPVAR 0,7,30:SPANIM 0,"V+",3,5:VSYNC 4|SPVAR(0,7)|prog
+# WAIT drives frames too
+wait_v1|SPSET 0,0:SPANIM 0,"V",5,9:WAIT 1|SPVAR(0,7)|prog
+wait_v2|SPSET 0,0:SPANIM 0,"V",5,9:WAIT 2|SPVAR(0,7)|prog
+# SPSTOP/SPSTART
+stop_v|SPSET 0,0:SPANIM 0,"V",10,77:SPSTOP 0:VSYNC 5|SPVAR(0,7)|prog
+resume_v1|SPSET 0,0:SPANIM 0,"V",10,77:SPSTOP 0:VSYNC 5:SPSTART 0:VSYNC 1|SPVAR(0,7)|prog
+resume_v2|SPSET 0,0:SPANIM 0,"V",10,77:SPSTOP 0:VSYNC 5:SPSTART 0:VSYNC 2|SPVAR(0,7)|prog
+# Two-keyframe hold sequence: 10 for 2 frames, then 20 for 2 frames (pin segment boundary)
+seq_v1|SPSET 0,0:SPANIM 0,"V",2,10,2,20:VSYNC 1|SPVAR(0,7)|prog
+seq_v2|SPSET 0,0:SPANIM 0,"V",2,10,2,20:VSYNC 2|SPVAR(0,7)|prog
+seq_v3|SPSET 0,0:SPANIM 0,"V",2,10,2,20:VSYNC 3|SPVAR(0,7)|prog
+seq_v4|SPSET 0,0:SPANIM 0,"V",2,10,2,20:VSYNC 4|SPVAR(0,7)|prog
+seq_v5|SPSET 0,0:SPANIM 0,"V",2,10,2,20:VSYNC 5|SPVAR(0,7)|prog
+seq_v6|SPSET 0,0:SPANIM 0,"V",2,10,2,20:VSYNC 6|SPVAR(0,7)|prog
