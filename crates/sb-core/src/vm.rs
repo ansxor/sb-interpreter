@@ -6567,6 +6567,32 @@ H$=HEX$(255)"#);
         assert_eq!(string(&vm, "A"), "bob");
     }
 
+    #[test]
+    fn input_into_array_element_receiver() {
+        // S-T5b: array elements are assignable INPUT receivers (parser `is_lvalue` accepts
+        // `Index`; the runtime stores into the element), not only scalar variables. Syntax
+        // proven legal by the sbsave corpus (`INPUT "...";WORD$[0]` e.g. D5243E8E/TXT/TXTDEMO:41);
+        // the live keyboard read is oracle-pending, but the receiver/assign path is
+        // deterministic. The prompt+`;` form (string-var guide allowed) is exercised too.
+        let vm = run_with_input(
+            "DIM A[3]\nDIM S$[3]\nINPUT \"N\";A[1]\nLINPUT S$[2]\nR=A[1]\nT$=S$[2]",
+            &["42", "x,y,z"],
+        );
+        // `A` is a numeric (Double) array, so the element read into `R` is a Real.
+        assert_eq!(real(&vm, "R"), 42.0);
+        // LINPUT keeps commas, even into an array element.
+        assert_eq!(string(&vm, "T"), "x,y,z");
+    }
+
+    #[test]
+    fn input_array_element_among_scalar_receivers() {
+        // A comma-list of mixed scalar + array-element receivers all assign left-to-right.
+        let vm = run_with_input("DIM A[2]\nINPUT B,A[0],C\nP=A[0]", &["1,2,3"]);
+        assert_eq!(int(&vm, "B"), 1);
+        assert_eq!(real(&vm, "P"), 2.0);
+        assert_eq!(int(&vm, "C"), 3);
+    }
+
     // -- M3-T5 BG extras (VM orchestration) ------------------------------------
 
     #[test]
