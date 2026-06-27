@@ -39,6 +39,37 @@ cases:
   # GPAGE(0) is the 1-arg value-getter form -> 4 (was mislabeled 3 from the GPAGE() empty harvest)
   - { name: gpage1_stmt,  code: 'GPAGE(0)',        expect: { error: { errnum: 4 } } }
 
+  # -- Illegal function call (4): VM-routed value getters, 1-arg whole-paren statement form
+  # (bead sb-interpreter-imk; hw_verified sb-oracle 2026-06-27, harness/harvest/out/
+  # exprstmt_getters.tsv, anchored GPAGE(0)->4 / SPPAGE(0)->NOERR / GCLS(0)->NOERR for fresh
+  # reads). These used to fall through as BuiltinCommand and RUN their 1-arg form; the per-
+  # builtin value-vs-command split now classifies them as value functions. CHKCHR/BUTTON are
+  # 2-/0-arg in their normal form but their single-arg whole-paren statement still -> 4;
+  # VISIBLE is a 4-arg command yet VISIBLE(0) -> 4 (wrong-arity command and value-fn-as-
+  # statement are indistinguishable by errnum, both raise runtime 4).
+  - { name: spused_stmt,  code: 'SPUSED(0)',      expect: { error: { errnum: 4 } } }
+  - { name: spchk_stmt,   code: 'SPCHK(0)',       expect: { error: { errnum: 4 } } }
+  - { name: bgchk_stmt,   code: 'BGCHK(0)',       expect: { error: { errnum: 4 } } }
+  - { name: bgmchk_stmt,  code: 'BGMCHK(0)',      expect: { error: { errnum: 4 } } }
+  - { name: chkfile_stmt, code: 'CHKFILE("TEST")', expect: { error: { errnum: 4 } } }
+  - { name: chkchr1_stmt, code: 'CHKCHR(0)',      expect: { error: { errnum: 4 } } }
+  - { name: button_stmt,  code: 'BUTTON(0)',      expect: { error: { errnum: 4 } } }
+  - { name: talkchk_stmt, code: 'TALKCHK(0)',     expect: { error: { errnum: 4 } } }
+  - { name: fadechk_stmt, code: 'FADECHK(0)',     expect: { error: { errnum: 4 } } }
+  - { name: prgname_stmt, code: 'PRGNAME$(0)',    expect: { error: { errnum: 4 } } }
+  - { name: mpstat_stmt,  code: 'MPSTAT(0)',      expect: { error: { errnum: 4 } } }
+  - { name: mpname_stmt,  code: 'MPNAME$(0)',     expect: { error: { errnum: 4 } } }
+  - { name: splink_stmt,  code: 'SPLINK(0)',      expect: { error: { errnum: 4 } } }
+  - { name: visible_stmt, code: 'VISIBLE(0)',     expect: { error: { errnum: 4 } } }
+
+  # -- Syntax error (3): HARDWARE is a zero-arg system constant, not a callable. ANY whole-
+  # paren form is a parse error (hw_verified HARDWARE(0) -> 3, exprstmt_getters.tsv).
+  - { name: hardware1_stmt, code: 'HARDWARE(0)',  expect: { error: { errnum: 3 } } }
+
+  # -- NOERR: DISPLAY is a true command — its 1-arg whole-paren form runs (DISPLAY(0) selects
+  # the output screen; hw_verified -> NOERR, exprstmt_getters.tsv).
+  - { name: display1_stmt, code: 'DISPLAY(0)',    expect: { stdout: "" } }
+
   # -- Syntax error (3): a value function with ZERO or 2+ arguments ---------------------
   - { name: abs2_stmt,    code: 'ABS(5,6)',        expect: { error: { errnum: 3 } } }
   - { name: rgb_stmt,     code: 'RGB(1,2,3)',      expect: { error: { errnum: 3 } } }

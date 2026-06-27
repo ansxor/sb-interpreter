@@ -95,6 +95,11 @@ enum ExprStmtClass {
     /// the explicit [`ExprStmtClass::ValueFunction`] list above currently *run* their
     /// 1-arg form (no worse than before this generalization, which left them `Unknown`).
     BuiltinCommand,
+    /// A zero-arg read-only system constant (`HARDWARE`). It has no callable form, so EVERY
+    /// whole-paren statement `HARDWARE(…)` is a parse-time Syntax error (3) regardless of arg
+    /// count — never Illegal function call (4) and never a run. hw_verified `HARDWARE(0)` → 3
+    /// (bead sb-interpreter-imk, sb-oracle 2026-06-27, `harness/harvest/out/exprstmt_getters.tsv`).
+    SystemConst,
     /// Not a registered builtin — a user `DEF` call or a plain variable. Keep the existing
     /// command-call / array-read behavior (a multi-arg `SIMPLE_INIT("a","b",1)` subroutine
     /// call must still compile), so the ≠1-arg → 3 rule never reaches it.
@@ -120,9 +125,26 @@ fn expr_stmt_class(name: &str) -> ExprStmtClass {
         | "LEN" | "LEFT$" | "RIGHT$" | "MID$" | "SUBST$" | "STR$" | "VAL" | "HEX$" | "BIN$"
         | "FORMAT$" | "ASC" | "CHR$" | "INSTR"
         // Graphics/sprite value getters (hw_verified 1-arg → 4):
-        | "RGB" | "RGBREAD" | "GSPOIT" | "GPAGE" | "SPROT" | "BGCOLOR" => {
+        | "RGB" | "RGBREAD" | "GSPOIT" | "GPAGE" | "SPROT" | "BGCOLOR"
+        // VM-routed value getters whose 1-arg whole-paren statement form is Illegal function
+        // call (4), not a silent run (bead sb-interpreter-imk, hw_verified sb-oracle 2026-06-27,
+        // harness/harvest/out/exprstmt_getters.tsv — anchored against GPAGE(0)→4 / SPPAGE(0)→
+        // NOERR / GCLS(0)→NOERR so the reads are proven fresh). These were previously
+        // BuiltinCommand and RAN their 1-arg form. CHKCHR/BUTTON are otherwise 2-/0-arg, but
+        // their single-arg whole-paren statement form still reaches the dispatcher and is
+        // rejected. VISIBLE is documented as a 4-arg command, yet VISIBLE(0) → 4 (a wrong-arity
+        // command call and a value-fn-as-statement are indistinguishable by errnum — both raise
+        // runtime 4 after evaluating the arg — so the IllegalFnStmt lowering is faithful here).
+        | "SPUSED" | "SPCHK" | "BGCHK" | "BGMCHK" | "CHKFILE" | "CHKCHR" | "BUTTON"
+        | "TALKCHK" | "FADECHK" | "PRGNAME$" | "MPSTAT" | "MPNAME$" | "SPLINK" | "VISIBLE" => {
             ExprStmtClass::ValueFunction
         }
+        // System constant: a zero-arg read-only sysvar (like `PI`, but `HARDWARE` is a bare
+        // value, not a callable). Real SB 3.6.0 rejects ANY whole-paren form `HARDWARE(…)` as a
+        // Syntax error (3), not Illegal function call (4) — hw_verified `HARDWARE(0)` → 3
+        // (sb-oracle 2026-06-27, exprstmt_getters.tsv). The generic ≠1-arg → 3 rule already
+        // covers 0/2+ args; this arm forces the 1-arg case to 3 too (instead of running).
+        "HARDWARE" => ExprStmtClass::SystemConst,
         // Every other registered builtin: the ≠1-arg → 3 rule applies (the 1-arg form runs,
         // pending the per-builtin value-vs-command split — bead sb-interpreter-imk).
         _ if crate::builtins::BUILTIN_NAMES.contains(&name) => ExprStmtClass::BuiltinCommand,
@@ -680,6 +702,12 @@ impl Parser {
                     ExprStmtClass::BuiltinCommand if args.len() != 1 => {
                         return Err(self.syntax_error(
                             "builtin command in whole-paren form takes a single grouped argument",
+                        ));
+                    }
+                    // A system constant has no call form: any whole-paren shape is Syntax error 3.
+                    ExprStmtClass::SystemConst => {
+                        return Err(self.syntax_error(
+                            "system constant cannot be used in a whole-paren call form",
                         ));
                     }
                     ExprStmtClass::BuiltinCommand | ExprStmtClass::Unknown => {}
