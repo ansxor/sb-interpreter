@@ -3,12 +3,18 @@
 //! Implements the scan described in `spec/concepts/execution-model.md`
 //! ("Source text & lexing"). The scan loop and token kinds follow osb's
 //! `parser.d` `Lexical` *structurally only* — the behavior is the SmileBASIC 3.6.0
-//! one: identifiers are **not** ASCII-only (full-width / kana names are accepted,
-//! per the manual's Japanese variable names; osb's ASCII-only limit is exactly
-//! what we must not inherit). Where the exact identifier class or leading-digit
-//! rule is undocumented it is queued for the oracle (see `bd search "identifier"`); the
-//! implemented rule is "a name starts with a Unicode letter or `_` and continues
-//! with letters, digits or `_`".
+//! one. Identifiers are **ASCII-only**: a name starts with an ASCII letter `[A-Za-z]`
+//! or `_` and continues with `[A-Za-z0-9_]`. Any non-ASCII char in a name — full-width
+//! Latin `Ａ`, hiragana `あ`, katakana `ア`, kanji `愛`, or a full-width digit `１` — is
+//! **not** an identifier char: it lexes as [`TokenKind::Unknown`], which the parser
+//! rejects as **Syntax error (errnum 3)**. ASCII names are case-folded to upper
+//! (`abc` == `ABC`). hw_verified via the sb-oracle skill (real SB 3.6.0, 2026-06-26):
+//! `Ａ=1`/`あ=1`/`愛=1`/`１A=1`/`1A=1` all → errnum 3, while `_X=4`→4 and `abc`==`ABC`==11.
+//! This **reverses** the earlier unverified assumption (repeated in osb's comments and the
+//! manual's Japanese examples) that kana/full-width names are accepted — they are not.
+//! Labels `@name` and `#const` names share the ASCII class, except a label may *start*
+//! with a digit: `@1X` is legal where `1A` as a variable is not (both hw_verified). See
+//! beads sb-interpreter-x01 / -29m.
 //!
 //! What the scan recognizes:
 //! - decimal integers, `.`-leading and trailing-`.` reals;
@@ -124,7 +130,10 @@ impl Lexer {
         }
 
         // ----- identifier / keyword / word-operator -----
-        if c.is_alphabetic() || c == '_' {
+        // ASCII letters and `_` only — a non-ASCII char (full-width / kana / kanji) is
+        // NOT a name start; it falls through to `lex_operator` → `Unknown` → Syntax
+        // error 3 (hw_verified, sb-oracle 2026-06-26: `Ａ=1`/`あ=1`/`愛=1` → errnum 3).
+        if c.is_ascii_alphabetic() || c == '_' {
             return self.lex_ident(loc);
         }
 
@@ -232,14 +241,16 @@ impl Lexer {
     fn lex_ident(&mut self, loc: SourceLoc) -> Token {
         let start = self.i;
         while let Some(c) = self.peek() {
-            if c.is_alphanumeric() || c == '_' {
+            // Continue chars are ASCII alphanumerics + `_` only; a non-ASCII char ends the
+            // name and lexes as its own `Unknown` token (so `XＡ=9` → `X` then Unknown(Ａ)
+            // → Syntax error 3, hw_verified sb-oracle 2026-06-26).
+            if c.is_ascii_alphanumeric() || c == '_' {
                 self.i += 1;
             } else {
                 break;
             }
         }
-        // SmileBASIC names are case-insensitive: fold ASCII to uppercase (kana /
-        // full-width characters are left as-is by `to_ascii_uppercase`).
+        // SmileBASIC names are case-insensitive: fold ASCII to uppercase.
         let name: String = self.chars[start..self.i]
             .iter()
             .map(|c| c.to_ascii_uppercase())
@@ -296,8 +307,11 @@ impl Lexer {
     fn lex_label_or_const(&mut self, loc: SourceLoc, is_label: bool) -> Token {
         self.i += 1; // consume @ or #
         let start = self.i;
+        // Label/const names are ASCII-only too (hw_verified sb-oracle 2026-06-26: `@あ`/`@Ａ`
+        // /`#あ` → errnum 3). A label MAY start with a digit (`@1X` is legal), so the start
+        // char is not letter-gated here — only the ASCII alphanumeric+`_` run is scanned.
         while let Some(c) = self.peek() {
-            if c.is_alphanumeric() || c == '_' {
+            if c.is_ascii_alphanumeric() || c == '_' {
                 self.i += 1;
             } else {
                 break;
@@ -516,16 +530,23 @@ mod tests {
     }
 
     #[test]
-    fn non_ascii_identifiers_allowed() {
-        // SmileBASIC is Japanese: full-width / kana names lex as identifiers
-        // (the osb ASCII-only limit must not be inherited).
+    fn non_ascii_is_not_an_identifier() {
+        // SmileBASIC 3.6.0 identifiers are ASCII-only: a kana / full-width / kanji char is
+        // NOT a name char — it lexes as `Unknown` (the parser then raises Syntax error 3).
+        // hw_verified via the sb-oracle skill (real SB 3.6.0, 2026-06-26): `あ=1`/`Ａ=1`/
+        // `愛=1` → errnum 3. This reverses the earlier unverified "Japanese names accepted"
+        // assumption (beads sb-interpreter-x01 / -29m).
+        assert_eq!(kinds("あ"), vec![TokenKind::Unknown('あ')]);
+        // Full-width Latin `Ａ` (U+FF21) is likewise Unknown, not a fold of ASCII `A`.
+        assert_eq!(kinds("Ａ"), vec![TokenKind::Unknown('Ａ')]);
+        // A non-ASCII char ends an ASCII name run rather than extending it: `XＡ` → `X`
+        // then `Unknown(Ａ)` (so `XＡ=9` is a Syntax error in the parser, per the oracle).
         assert_eq!(
-            kinds("カウント なまえ$"),
-            vec![
-                ident("カウント", Suffix::None),
-                ident("なまえ", Suffix::Str),
-            ]
+            kinds("XＡ"),
+            vec![ident("X", Suffix::None), TokenKind::Unknown('Ａ')]
         );
+        // `_` IS a legal name char (start and continue): `_X` is one identifier.
+        assert_eq!(kinds("_X"), vec![ident("_X", Suffix::None)]);
     }
 
     #[test]

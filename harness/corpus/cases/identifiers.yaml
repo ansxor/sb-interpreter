@@ -1,0 +1,32 @@
+# Identifier / label character class (beads sb-interpreter-x01, sb-interpreter-29m) —
+# hw_verified via the sb-oracle skill (real SB 3.6.0, 2026-06-26).
+#
+# SmileBASIC 3.6.0 identifiers are ASCII-ONLY, reversing the earlier unverified assumption
+# (carried in osb's comments and the manual's Japanese examples) that kana / full-width names
+# are accepted. A variable/function name starts with `[A-Za-z]` or `_` and continues with
+# `[A-Za-z0-9_]`; ASCII letters are case-folded (`abc` == `ABC`). Any non-ASCII char in a name
+# — full-width Latin `Ａ` (U+FF21), hiragana `あ`, katakana `ア`, kanji `愛`, a full-width
+# digit `１`, or a full-width `＝` — is NOT a name char: it lexes as an `Unknown` token and the
+# parser raises Syntax error (errnum 3). A leading ASCII digit (`1A`) is likewise errnum 3.
+# Labels `@name` and consts `#name` share the ASCII class, EXCEPT a label may start with a
+# digit: `@1X` is legal (NOERR) where `1A` as a variable is not.
+#
+# Oracle harvest: harness/harvest/out/ident_*.tsv (ident_out / ident_err2 / ident_lbl).
+cases:
+  # -- Syntax error (3): a non-ASCII char is not an identifier char --------------------
+  - { name: ident_fwlatin,     code: 'Ａ=1',   expect: { error: { errnum: 3 } } }
+  - { name: ident_hiragana,    code: 'あ=1',   expect: { error: { errnum: 3 } } }
+  - { name: ident_katakana,    code: 'ア=1',   expect: { error: { errnum: 3 } } }
+  - { name: ident_kanji,       code: '愛=1',   expect: { error: { errnum: 3 } } }
+  - { name: ident_fwequals,    code: 'A＝1',   expect: { error: { errnum: 3 } } }
+  - { name: ident_continue_fw, code: 'XＡ=9',  expect: { error: { errnum: 3 } } }
+  # -- Syntax error (3): a name may not start with a digit (ASCII or full-width) -------
+  - { name: ident_digit_lead,    code: '1A=1',  expect: { error: { errnum: 3 } } }
+  - { name: ident_fwdigit_lead,  code: '１A=1', expect: { error: { errnum: 3 } } }
+  # -- Legal ASCII identifiers (NOERR) -------------------------------------------------
+  - { name: ident_underscore_lead, code: '_X=4:?_X',   expect: { stdout: "4" } }
+  - { name: ident_ascii_case_fold, code: 'ABC=11:?abc', expect: { stdout: "11" } }
+  # -- Labels / consts share the ASCII class; a label MAY start with a digit -----------
+  - { name: label_nonascii,  code: '@あ',  expect: { error: { errnum: 3 } } }
+  - { name: const_nonascii,  code: '#あ',  expect: { error: { errnum: 3 } } }
+  - { name: label_digit_lead, code: '@1X', expect: { stdout: "" } }

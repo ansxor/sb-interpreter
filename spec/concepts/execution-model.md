@@ -67,11 +67,19 @@ program with its own:
 
 ## Source text & lexing
 
-- Source is **UTF-16** text. ⚠ Identifiers are **not ASCII-only**: SmileBASIC is Japanese
-  and accepts full-width / kana names. The docs (`var.md`) say "alphanumeric + underscore",
-  but that is a doc simplification — confirm the real identifier class (full-width/kana,
-  leading-digit rule) vs disassembly/oracle (queued; this is exactly osb's `lexer` limit we
-  must NOT inherit, per prd/M1.md).
+- Source is **UTF-16** text, but identifiers are **ASCII-only** (`hw_verified` via the
+  sb-oracle skill, real SB 3.6.0, 2026-06-26 — beads sb-interpreter-x01 / -29m). A
+  variable/function name starts with `[A-Za-z]` or `_` and continues with `[A-Za-z0-9_]`;
+  ASCII letters are case-folded (`abc` == `ABC`). Any non-ASCII char in a name — full-width
+  Latin `Ａ` (U+FF21), hiragana `あ`, katakana `ア`, kanji `愛`, a full-width digit `１`, or a
+  full-width `＝` — is **not** a name char → **Syntax error (errnum 3)**. A leading ASCII
+  digit (`1A`) is also errnum 3. This **reverses** the earlier hypothesis that "SmileBASIC is
+  Japanese ⇒ full-width/kana names are accepted" (a `var.md` doc simplification + the manual's
+  Japanese examples); the oracle proves they are rejected. Labels `@name` and consts `#name`
+  share the ASCII class, **except** a label may *start* with a digit (`@1X` is legal where
+  `1A` as a variable is not). Non-ASCII text in **string literals / comments** is fine — only
+  *names* are ASCII-restricted. Harvest: `harness/harvest/out/ident_*.tsv`; conformance:
+  `harness/corpus/cases/identifiers.yaml`.
 - **Type by suffix** on a name: none/`%` → numeric, `#` → real, `$` → string. Precisely:
   - `$` → **String**.
   - `%` → **Integer** (i32).
