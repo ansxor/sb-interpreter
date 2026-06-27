@@ -1,0 +1,68 @@
+# Expr-as-statement errnum is ARG-COUNT driven, not a per-builtin flag (bead sb-interpreter-imk).
+# hw_verified via the sb-oracle skill (real SB 3.6.0), 2026-06-27. Captured with the
+# self-validating method: consecutive cases have distinct expected errnums, so each F2 ERRNUM
+# read differs from its predecessor and proves it is a fresh (non-stale) capture. The 2026-06-26
+# 5iu harvest's "per-builtin flag" was an artifact of (a) comparing builtins at different arg
+# counts and (b) harvesting GCOLOR()/GPAGE()/GCLS()/SPPAGE() with EMPTY parens (3 for everyone).
+#
+# RULE: NAME(args) as a whole-paren statement, NAME a registered builtin:
+#   args.len() != 1                  -> Syntax error (3)            [0 args or 2+ comma args]
+#   args.len() == 1, value function  -> Illegal function call (4)   [handler discards return]
+#   args.len() == 1, command         -> runs (NOERR / its own err)
+#
+# --- same builtin, arg count flips the errnum (model.tsv, self-validated) ---
+abs1	ABS(5)	errnum=4 errline=1
+abs2	ABS(5,6)	errnum=3 errline=1
+rgb5	RGB(5)	errnum=4 errline=1
+rgb3	RGB(1,2,3)	errnum=3 errline=1
+pow1	POW(2)	errnum=4 errline=1
+pow2	POW(2,3)	errnum=3 errline=1
+len1	LEN("AB")	errnum=4 errline=1
+len2	LEN("AB","X")	errnum=3 errline=1
+chr1	CHR$(65)	errnum=4 errline=1
+# --- commands: 1-arg runs, !=1 arg -> 3 (corrects the 5iu empty-paren mislabels) ---
+gcls1	GCLS(0)	NOERR (statement did not raise)
+gcls2	GCLS(0,0)	errnum=3 errline=1
+gcolor1	GCOLOR(0)	NOERR (statement did not raise)
+gpset2	GPSET(0,0)	errnum=3 errline=1
+color2	COLOR(0,0)	errnum=3 errline=1
+# GCLS()/GCOLOR()/SPPAGE() with EMPTY parens -> 3 for every builtin (argc 0), even ABS():
+abs_empty	ABS()	errnum=3 errline=1
+gcolor_empty	GCOLOR()	errnum=3 errline=1
+sppage_empty	SPPAGE()	errnum=3 errline=1
+# GPAGE(0) 1-arg is the value-getter form -> 4 (was mislabeled 3 from GPAGE() empty parens):
+gpage_arg	GPAGE(0)	errnum=4 errline=1
+sppage_arg	SPPAGE(0)	NOERR (statement did not raise)
+gcls_arg	GCLS(0)	NOERR (statement did not raise)
+gcolor_arg	GCOLOR(0)	NOERR (statement did not raise)
+# --- 1-arg value functions reach the handler -> 4 (math c1, string c3, anchors fresh) ---
+acos	ACOS(0.5)	errnum=4 errline=1
+asin	ASIN(0.5)	errnum=4 errline=1
+atan	ATAN(1)	errnum=4 errline=1
+ceil	CEIL(2.5)	errnum=4 errline=1
+cos	COS(0)	errnum=4 errline=1
+cosh	COSH(0)	errnum=4 errline=1
+deg	DEG(1)	errnum=4 errline=1
+exp	EXP(1)	errnum=4 errline=1
+log	LOG(2)	errnum=4 errline=1
+rad	RAD(180)	errnum=4 errline=1
+round	ROUND(2.5)	errnum=4 errline=1
+sgn	SGN(-3)	errnum=4 errline=1
+sin	SIN(0)	errnum=4 errline=1
+tan	TAN(0)	errnum=4 errline=1
+asc	ASC("A")	errnum=4 errline=1
+bin	BIN$(5)	errnum=4 errline=1
+hex	HEX$(255)	errnum=4 errline=1
+str	STR$(5)	errnum=4 errline=1
+# --- 2+ arg value functions as a statement -> 3 (their natural arity, still rejected) ---
+max2	MAX(1,2)	errnum=3 errline=1
+min2	MIN(1,2)	errnum=3 errline=1
+instr2	INSTR("ABC","B")	errnum=3 errline=1
+left2	LEFT$("ABC",2)	errnum=3 errline=1
+mid3	MID$("ABC",1,1)	errnum=3 errline=1
+right2	RIGHT$("ABC",2)	errnum=3 errline=1
+# --- 1-arg value functions, forced single arg -> 4 ---
+max1	MAX(1)	errnum=4 errline=1
+# --- 0-arg pure functions: argc 0 -> 3 ---
+pi0	PI()	errnum=3 errline=1
+rndf0	RNDF()	errnum=3 errline=1

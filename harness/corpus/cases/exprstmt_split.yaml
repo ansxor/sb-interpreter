@@ -1,22 +1,27 @@
-# Expr-as-statement errnum split (bead sb-interpreter-5iu) — hw_verified via the sb-oracle
-# skill (real SB 3.6.0), harness/harvest/out/exprstmt2.tsv (24 cases, 2026-06-26).
+# Expr-as-statement errnum is ARG-COUNT driven (beads sb-interpreter-5iu, sb-interpreter-imk) —
+# hw_verified via the sb-oracle skill (real SB 3.6.0), harness/harvest/out/exprstmt_argcount.tsv
+# (2026-06-27, self-validating capture: consecutive cases carry distinct expected errnums so each
+# ERRNUM read is proven fresh, not stale).
 #
-# A value-returning builtin written in the whole-parenthesised STATEMENT form `NAME(args)`
-# (no `OUT`, no assignment) is illegal, but SmileBASIC 3.6.0 picks the errnum from a PER-BUILTIN
-# flag in its command/function keyword table — it is NOT derivable from anything structural:
-#   * NOT routing: RGB->3 but its sibling RGBREAD->4, though both run through call_graphics
-#     (likewise SPPAGE->3 vs SPROT->4 under call_sprite).
-#   * NOT function-vs-command: RGB/GSPOIT/PI are pure value functions yet ->3, while the
-#     equally pure ABS/FLOOR/SQR/LEN ->4.
-# So the split is tabulated in sb-core's parser (`expr_stmt_class`). The disassembly
-# corroborates the mechanism: the ->4 group reaches its handler, which checks the expected
-# return count and raises errnum 4 when it is zero (ABS @0x147a34 / RGB @0x154ed0 both end at a
-# `mov r0,#0x4; bl 0x1fffdc` site) — a RUNTIME error, deferred via StmtKind::IllegalFnStmt; the
-# ->3 group is refused earlier, at parse time (Syntax error). A bare expression as a statement
-# (`5`, `1+2`, `"HI"`, `A`) is also Syntax error 3. Commands that accept a grouped first
-# argument (COLOR/PRINT) run normally (NOERR).
+# A *registered builtin* written in the whole-parenthesised STATEMENT form `NAME(args)` (no `OUT`,
+# no assignment) is classified by ARGUMENT COUNT, not by a per-builtin keyword flag:
+#   * args.len() != 1  (empty `()` or a 2+ comma list)  -> Syntax error (3), rejected at parse.
+#   * args.len() == 1, value-returning function          -> Illegal function call (4) at runtime
+#     (the handler rejects the discarded return; disasm: ABS @0x147a34 / RGB @0x154ed0 end at
+#     `mov r0,#0x4; bl 0x1fffdc`). Deferred via StmtKind::IllegalFnStmt.
+#   * args.len() == 1, command                           -> runs as a normal command call (NOERR).
+# The SAME builtin flips 4<->3 purely by arg count: ABS(5)->4 but ABS(5,6)->3; RGB(5)->4 but
+# RGB(1,2,3)->3; POW(2)->4 but POW(2,3)->3; LEN("AB")->4 but LEN("AB","X")->3.
+#
+# This SUPERSEDES the 5iu reading of the split as a per-builtin flag. That came from comparing
+# builtins at different arg counts (RGB(1,2,3) 3 args vs RGBREAD(0) 1 arg) and from harvesting
+# GCOLOR()/GPAGE()/GCLS()/SPPAGE() with EMPTY parens (3 for EVERY builtin, even ABS()->3) — so
+# GCLS/GCOLOR/SPPAGE were mislabeled Syntax-error when their 1-arg form actually runs, and
+# GPAGE(0) is really Illegal-function-call (4). A bare expression as a statement (`5`, `1+2`,
+# `"HI"`, `A`) is Syntax error 3. User DEFs/variables are exempt (a 3-arg `SIMPLE_INIT(...)`
+# subroutine call still compiles), so the `!=1 arg -> 3` rule is gated on builtins only.
 cases:
-  # -- Illegal function call (4): value functions that reach the handler -----------------
+  # -- Illegal function call (4): value-returning function, EXACTLY ONE argument --------
   - { name: abs_stmt,     code: 'ABS(5)',          expect: { error: { errnum: 4 } } }
   - { name: floor_stmt,   code: 'FLOOR(2.5)',      expect: { error: { errnum: 4 } } }
   - { name: sqr_stmt,     code: 'SQR(4)',          expect: { error: { errnum: 4 } } }
@@ -25,18 +30,47 @@ cases:
   - { name: rgbread_stmt, code: 'RGBREAD(0)',      expect: { error: { errnum: 4 } } }
   - { name: sprot_stmt,   code: 'SPROT(0)',        expect: { error: { errnum: 4 } } }
   - { name: bgcolor_stmt, code: 'BGCOLOR(0)',      expect: { error: { errnum: 4 } } }
+  - { name: rgb1_stmt,    code: 'RGB(5)',          expect: { error: { errnum: 4 } } }
+  - { name: pow1_stmt,    code: 'POW(2)',          expect: { error: { errnum: 4 } } }
+  - { name: max1_stmt,    code: 'MAX(1)',          expect: { error: { errnum: 4 } } }
+  - { name: chr_stmt,     code: 'CHR$(65)',        expect: { error: { errnum: 4 } } }
+  - { name: str_fn_stmt,  code: 'STR$(5)',         expect: { error: { errnum: 4 } } }
+  - { name: asc_stmt,     code: 'ASC("A")',        expect: { error: { errnum: 4 } } }
+  # GPAGE(0) is the 1-arg value-getter form -> 4 (was mislabeled 3 from the GPAGE() empty harvest)
+  - { name: gpage1_stmt,  code: 'GPAGE(0)',        expect: { error: { errnum: 4 } } }
 
-  # -- Syntax error (3): refused at parse time, before the handler ----------------------
+  # -- Syntax error (3): a value function with ZERO or 2+ arguments ---------------------
+  - { name: abs2_stmt,    code: 'ABS(5,6)',        expect: { error: { errnum: 3 } } }
+  - { name: rgb_stmt,     code: 'RGB(1,2,3)',      expect: { error: { errnum: 3 } } }
+  - { name: pow2_stmt,    code: 'POW(2,3)',        expect: { error: { errnum: 3 } } }
+  - { name: len2_stmt,    code: 'LEN("AB","X")',   expect: { error: { errnum: 3 } } }
+  - { name: max2_stmt,    code: 'MAX(1,2)',        expect: { error: { errnum: 3 } } }
+  - { name: instr_stmt,   code: 'INSTR("ABC","B")', expect: { error: { errnum: 3 } } }
+  - { name: left_stmt,    code: 'LEFT$("ABC",2)',  expect: { error: { errnum: 3 } } }
+  - { name: gspoit_stmt,  code: 'GSPOIT(0,0)',     expect: { error: { errnum: 3 } } }
+  # 0-arg pure functions: arg count 0 -> 3.
+  - { name: pi_stmt,      code: 'PI()',            expect: { error: { errnum: 3 } } }
+  - { name: rndf_stmt,    code: 'RNDF()',          expect: { error: { errnum: 3 } } }
+  # Empty parens are Syntax error 3 for EVERY builtin (even a 1-arg function): arg count 0.
+  - { name: abs_empty,    code: 'ABS()',           expect: { error: { errnum: 3 } } }
+
+  # -- Syntax error (3): a command with ZERO or 2+ arguments ---------------------------
   - { name: gcolor_stmt,  code: 'GCOLOR()',        expect: { error: { errnum: 3 } } }
-  - { name: gpage_stmt,   code: 'GPAGE()',         expect: { error: { errnum: 3 } } }
   - { name: gcls_stmt,    code: 'GCLS()',          expect: { error: { errnum: 3 } } }
+  - { name: sppage_stmt,  code: 'SPPAGE()',        expect: { error: { errnum: 3 } } }
+  - { name: gcls2_stmt,   code: 'GCLS(0,0)',       expect: { error: { errnum: 3 } } }
   - { name: gpset_stmt,   code: 'GPSET(0,0)',      expect: { error: { errnum: 3 } } }
   - { name: gline_stmt,   code: 'GLINE(0,0,10,10)', expect: { error: { errnum: 3 } } }
-  - { name: rgb_stmt,     code: 'RGB(1,2,3)',      expect: { error: { errnum: 3 } } }
-  - { name: gspoit_stmt,  code: 'GSPOIT(0,0)',     expect: { error: { errnum: 3 } } }
-  - { name: sppage_stmt,  code: 'SPPAGE()',        expect: { error: { errnum: 3 } } }
   - { name: locate_stmt,  code: 'LOCATE(0,0)',     expect: { error: { errnum: 3 } } }
-  - { name: pi_stmt,      code: 'PI()',            expect: { error: { errnum: 3 } } }
+  - { name: color2_stmt,  code: 'COLOR(0,0)',      expect: { error: { errnum: 3 } } }
+
+  # -- NOERR: a command with EXACTLY ONE argument runs as a normal command call ---------
+  # (These were WRONGLY rejected as Syntax error 3 by the 5iu empty-paren classification.)
+  - { name: gcls1_stmt,   code: 'GCLS(0)',         expect: { stdout: "" } }
+  - { name: gcolor1_stmt, code: 'GCOLOR(0)',       expect: { stdout: "" } }
+  - { name: sppage1_stmt, code: 'SPPAGE(0)',       expect: { stdout: "" } }
+  - { name: color_stmt,   code: 'COLOR(0)',        expect: { stdout: "" } }
+  - { name: print_stmt,   code: 'PRINT(1)',        expect: { stdout: "1" } }
 
   # -- Bare expression as a statement is also Syntax error 3 ----------------------------
   - { name: five_stmt,    code: '5',               expect: { error: { errnum: 3 } } }
@@ -53,7 +87,3 @@ cases:
   # consistency check; same compile-time gate. Oracle confirmation of `A=5:A` queued in
   # sb-interpreter-boi).
   - { name: defvar_stmt,  code: 'A=5:A',           expect: { error: { errnum: 3 } } }
-
-  # -- NOERR: commands that accept a grouped first argument run normally -----------------
-  - { name: color_stmt,   code: 'COLOR(0)',        expect: { stdout: "" } }
-  - { name: print_stmt,   code: 'PRINT(1)',        expect: { stdout: "1" } }

@@ -53,49 +53,80 @@ pub struct ParseError {
     pub msg: String,
 }
 
-/// How SmileBASIC 3.6.0 rejects a value-returning builtin written in the whole-parenthesised
-/// *statement* form `NAME(args)` (no `OUT`, no assignment). The error number is a per-builtin
-/// flag in SB's command/function keyword table, **not** derivable from anything structural:
+/// How SmileBASIC 3.6.0 treats a *registered builtin* written in the whole-parenthesised
+/// *statement* form `NAME(args)` (no `OUT`, no assignment). The error number is decided by the
+/// **argument count**, not by a per-builtin keyword flag (hw_verified sb-oracle 2026-06-27,
+/// `harness/harvest/out/exprstmt_argcount.tsv`):
 ///
-/// - it is NOT routing — `RGB`→3 but its sibling `RGBREAD`→4, though both run through the same
-///   `call_graphics` path (likewise `SPPAGE`→3 vs `SPROT`→4 under `call_sprite`);
-/// - it is NOT function-vs-command — `RGB`/`GSPOIT`/`PI` are pure value functions yet land in
-///   the Syntax-error bucket, while the equally pure `ABS`/`FLOOR`/`SQR`/`LEN` land in
-///   Illegal-function-call.
+/// - **Any builtin with ≠ 1 argument** (empty `()` or a 2+ comma list) → **Syntax error (3)**.
+///   The parenthesised group is not a single command argument, so the statement is rejected at
+///   parse time. The *same* `NAME` flips to 3 purely by arg count: `ABS(5)`→4 but `ABS(5,6)`→3;
+///   `RGB(5)`→4 but `RGB(1,2,3)`→3; `POW(2)`→4 but `POW(2,3)`→3; `LEN("AB")`→4 but
+///   `LEN("AB","X")`→3. Empty parens are 3 for *every* builtin (even `ABS()`→3, `GCLS()`→3).
+/// - **A value-returning function with exactly 1 argument** → **Illegal function call (4)**:
+///   `NAME(x)` reaches the handler, which rejects the discarded return at runtime (disasm:
+///   `ABS` @0x147a34 / `RGB` @0x154ed0 both end at `cmp …,#1` then `mov r0,#0x4; bl 0x1fffdc`).
+///   Deferred to runtime via [`StmtKind::IllegalFnStmt`]. `ABS(5)`/`RGB(5)`/`POW(2)`/`LEN("AB")`/
+///   `CHR$(65)`/`GPAGE(0)` → 4.
+/// - **A command with exactly 1 argument** → runs as a normal command call (NOERR, or the
+///   command's own runtime error): `GCLS(0)`, `GCOLOR(0)`, `COLOR(0)`, `SPPAGE(0)`.
 ///
-/// The split therefore has to be tabulated. The classification below is hw_verified
-/// (sb-oracle 2026-06-26, `harness/harvest/out/exprstmt2.tsv`, 18 builtins; bead
-/// sb-interpreter-5iu). The mechanism is corroborated in the disassembly: the
-/// Illegal-function-call group reaches its handler, which checks the expected return count and
-/// raises errnum 4 when it is zero (e.g. `ABS` @0x147a34: `cmp [r0,#0x4],#1` /
-/// `cmp [r4,#0xc],#1` then `mov r0,#0x4; bl 0x1fffdc`; `RGB` @0x154ed0 has the same
-/// `mov r0,#0x4` site) — runtime, hence [`ExprStmtClass::IllegalFunction`] defers via
-/// [`StmtKind::IllegalFnStmt`]; the Syntax-error group is refused earlier, before the handler.
+/// This corrects bead sb-interpreter-5iu, which read the split as a per-builtin flag. That
+/// conclusion came from comparing builtins at *different* arg counts (the "`RGB`→3 vs
+/// `RGBREAD`→4" contrast is just `RGB(1,2,3)` 3 args vs `RGBREAD(0)` 1 arg) and from harvesting
+/// `GCOLOR()`/`GPAGE()`/`GCLS()`/`SPPAGE()` with **empty** parens (3 for every builtin) — so
+/// `GCLS`/`GCOLOR`/`SPPAGE` were mislabeled Syntax-error when their 1-arg form actually runs,
+/// and `GPAGE(0)` is really Illegal-function-call (4).
 ///
-/// Only the 18 hw_verified names are classified; every other builtin keeps its existing
-/// behavior (the full ~217-entry table is queued for harvest — bead sb-interpreter-5iu notes).
+/// `name` must be a recognized builtin; user `DEF`s and variables are [`ExprStmtClass::Unknown`]
+/// and keep the existing whole-paren call behavior (a 3-arg `SIMPLE_INIT("a","b",1)` subroutine
+/// call must still compile, so the `≠1 arg → 3` rule is gated on builtins only).
 enum ExprStmtClass {
-    /// Reaches the handler, which rejects the discarded return at runtime → Illegal function
-    /// call (4): `ABS`/`FLOOR`/`SQR`/`LEN`/`RND`/`RGBREAD`/`SPROT`/`BGCOLOR`.
-    IllegalFunction,
-    /// Refused before the handler → Syntax error (3): `GCOLOR`/`GPAGE`/`GCLS`/`GPSET`/`GLINE`/
-    /// `RGB`/`GSPOIT`/`SPPAGE`/`LOCATE`/`PI`.
-    SyntaxError,
-    /// Not in the hw_verified set — keep the existing command-call / array-read behavior.
+    /// Value-returning function. 1 arg → Illegal function call (4) at runtime; ≠1 arg →
+    /// Syntax error (3) at parse.
+    ValueFunction,
+    /// Statement-capable command. 1 arg → runs (normal call); ≠1 arg → Syntax error (3).
+    Command,
+    /// Not a recognized builtin — keep the existing command-call / array-read behavior.
     Unknown,
 }
 
-/// Classify a builtin used in the whole-paren statement form. `name` is the upper-cased,
-/// suffix-less identifier. See [`ExprStmtClass`] for why this is a lookup table, not a rule.
+/// Classify a builtin used in the whole-paren statement form. `name` is the canonical
+/// upper-cased name *including* any `$` suffix (`LEFT$`). See [`ExprStmtClass`]: the 3-vs-4
+/// split itself is arg-count driven; this table only encodes value-function vs command, which
+/// decides the 1-argument case. Names not listed are [`ExprStmtClass::Unknown`].
 fn expr_stmt_class(name: &str) -> ExprStmtClass {
     match name {
-        "ABS" | "FLOOR" | "SQR" | "LEN" | "RND" | "RGBREAD" | "SPROT" | "BGCOLOR" => {
-            ExprStmtClass::IllegalFunction
+        // Value-returning functions — pure math/string plus the graphics/sprite getter forms.
+        // Math (spec/instructions/{abs,floor,ceil,…,pi}.yaml) + RNG:
+        "ABS" | "FLOOR" | "CEIL" | "ROUND" | "SGN" | "CLASSIFY" | "MIN" | "MAX" | "SQR"
+        | "POW" | "EXP" | "LOG" | "SIN" | "COS" | "TAN" | "ASIN" | "ACOS" | "ATAN" | "SINH"
+        | "COSH" | "TANH" | "DEG" | "RAD" | "PI" | "RND" | "RNDF"
+        // Strings (spec/instructions/{len,left,…,instr}.yaml):
+        | "LEN" | "LEFT$" | "RIGHT$" | "MID$" | "SUBST$" | "STR$" | "VAL" | "HEX$" | "BIN$"
+        | "FORMAT$" | "ASC" | "CHR$" | "INSTR"
+        // Graphics/sprite value getters (hw_verified 1-arg → 4):
+        | "RGB" | "RGBREAD" | "GSPOIT" | "GPAGE" | "SPROT" | "BGCOLOR" => {
+            ExprStmtClass::ValueFunction
         }
-        "GCOLOR" | "GPAGE" | "GCLS" | "GPSET" | "GLINE" | "RGB" | "GSPOIT" | "SPPAGE"
-        | "LOCATE" | "PI" => ExprStmtClass::SyntaxError,
+        // Statement-capable commands (hw_verified: 1-arg form runs, ≠1 arg → Syntax error 3):
+        "GCLS" | "GCOLOR" | "GPSET" | "GLINE" | "LOCATE" | "COLOR" | "SPPAGE" => {
+            ExprStmtClass::Command
+        }
         _ => ExprStmtClass::Unknown,
     }
+}
+
+/// The canonical upper-cased builtin name for a parsed [`Name`], including its `$`/`%`/`#`
+/// suffix char — matches the keys in [`expr_stmt_class`] and the builtin registry (`LEFT$`).
+fn canonical_builtin_name(name: &Name) -> String {
+    let suffix = match name.suffix {
+        Suffix::None => "",
+        Suffix::Int => "%",
+        Suffix::Real => "#",
+        Suffix::Str => "$",
+    };
+    format!("{}{}", name.ident.to_ascii_uppercase(), suffix)
 }
 
 impl ParseError {
@@ -609,24 +640,35 @@ impl Parser {
             } else {
                 Vec::new()
             };
-            // A value-returning builtin written in this whole-paren statement form
-            // (`ABS(5)`, `GCLS(0)`) is illegal, and SmileBASIC 3.6.0 picks the errnum from a
-            // per-builtin keyword-table flag (see [`expr_stmt_class`]). This is the ONLY
-            // branch that reaches the whole-paren form: the command form (`SPROT 1,90`,
-            // `GCLS RGB(...)`) rewinds to `parse_command_call` below, so the classification
-            // never rejects a legal command. The `OUT` form (a real output-returning call)
-            // is left untouched.
-            if out_args.is_empty() && name.suffix == Suffix::None {
-                match expr_stmt_class(&name.ident.to_ascii_uppercase()) {
-                    ExprStmtClass::SyntaxError => {
+            // A registered builtin written in this whole-paren statement form (`ABS(5)`,
+            // `GCLS(0,0)`) is classified by argument count, not a per-builtin flag (see
+            // [`expr_stmt_class`]). This is the ONLY branch that reaches the whole-paren form:
+            // the command form (`SPROT 1,90`, `GCLS RGB(...)`) rewinds to `parse_command_call`
+            // below, so the classification never rejects a legal command. The `OUT` form (a
+            // real output-returning call) is left untouched.
+            if out_args.is_empty() {
+                match expr_stmt_class(&canonical_builtin_name(&name)) {
+                    // Value function: exactly one arg reaches the handler and is rejected at
+                    // runtime (Illegal function call 4); any other arity is a parse-time
+                    // Syntax error 3 (`ABS(5)`→4, `ABS(5,6)`→3, `ABS()`→3).
+                    ExprStmtClass::ValueFunction => {
+                        return if args.len() == 1 {
+                            Ok(Stmt::new(StmtKind::IllegalFnStmt(args), loc))
+                        } else {
+                            Err(self.syntax_error(
+                                "value-returning builtin as a statement needs exactly one argument",
+                            ))
+                        };
+                    }
+                    // Command: the single-arg grouped form runs (fall through to the normal
+                    // call); empty or multi-arg whole-paren is a Syntax error 3 (`GCLS(0)` runs,
+                    // `GCLS()`/`GCLS(0,0)`→3).
+                    ExprStmtClass::Command if args.len() != 1 => {
                         return Err(self.syntax_error(
-                            "value-returning builtin is not a statement in this form",
+                            "builtin command in whole-paren form takes a single grouped argument",
                         ));
                     }
-                    ExprStmtClass::IllegalFunction => {
-                        return Ok(Stmt::new(StmtKind::IllegalFnStmt(args), loc));
-                    }
-                    ExprStmtClass::Unknown => {}
+                    ExprStmtClass::Command | ExprStmtClass::Unknown => {}
                 }
             }
             return Ok(Stmt::new(
@@ -2088,15 +2130,16 @@ mod tests {
 
     #[test]
     fn value_function_in_statement_form_is_classified() {
-        // The whole-paren statement form `NAME(args)` of a value-returning builtin is illegal,
-        // and SmileBASIC 3.6.0 splits the errnum per-builtin (hw_verified, bead
-        // sb-interpreter-5iu). The Syntax-error group is rejected at parse time...
+        // The whole-paren statement form `NAME(args)` of a builtin is classified by ARGUMENT
+        // COUNT (hw_verified, beads sb-interpreter-5iu / sb-interpreter-imk). Any builtin with
+        // ≠1 arg is rejected at parse time (Syntax error 3) — here a 0-arg command (GCLS()), a
+        // 3-arg / 0-arg value function (RGB(1,2,3), PI()), and 2-arg forms (GSPOIT, LOCATE)...
         for src in ["GCLS()", "RGB(1,2,3)", "PI()", "GSPOIT(0,0)", "LOCATE(0,0)"] {
             let err = parse(src).expect_err(&format!("`{src}` should be a syntax error"));
             assert_eq!(err.errnum, 3, "{src}");
         }
-        // ...while the Illegal-function group parses to a node that defers errnum 4 to runtime
-        // (so a preceding same-line statement still runs).
+        // ...while a value function with EXACTLY ONE arg parses to a node that defers errnum 4 to
+        // runtime (so a preceding same-line statement still runs).
         for src in ["ABS(5)", "FLOOR(2.5)", "RGBREAD(0)", "SPROT(0)"] {
             assert!(
                 matches!(prog(src)[0].kind, StmtKind::IllegalFnStmt(_)),
@@ -2611,6 +2654,67 @@ mod tests {
         for src in ["A=STOP+1", "A=1+STOP", "A=(STOP)", "A=-STOP"] {
             let err = parse(src).expect_err("`{src}` should fail");
             assert_eq!(err.errnum, 3, "`{src}` should be Syntax error (3)");
+        }
+    }
+
+    /// The whole-paren statement form `NAME(args)` of a registered builtin is classified by
+    /// ARGUMENT COUNT (bead sb-interpreter-imk): a value function with one arg lowers to a
+    /// runtime Illegal-function-call ([`StmtKind::IllegalFnStmt`]); any builtin with ≠1 arg is a
+    /// parse-time Syntax error 3; a command with one arg falls through to a normal call.
+    /// hw_verified sb-oracle 2026-06-27 (`harness/harvest/out/exprstmt_argcount.tsv`).
+    #[test]
+    fn expr_stmt_form_is_arg_count_driven() {
+        // Value function, exactly one arg -> IllegalFnStmt (runtime errnum 4). Covers $-suffixed
+        // string functions too (the suffix gate is gone).
+        for src in [
+            "ABS(5)",
+            "RGB(5)",
+            "POW(2)",
+            "LEN(\"AB\")",
+            "CHR$(65)",
+            "GPAGE(0)",
+        ] {
+            let p =
+                parse(src).unwrap_or_else(|e| panic!("`{src}` should parse, errnum {}", e.errnum));
+            assert!(
+                matches!(&p[0].kind, StmtKind::IllegalFnStmt(_)),
+                "`{src}` -> IllegalFnStmt"
+            );
+        }
+        // ≠1 arg (empty or 2+) -> Syntax error 3, for value functions AND commands.
+        for src in [
+            "ABS()",
+            "ABS(5,6)",
+            "RGB(1,2,3)",
+            "POW(2,3)",
+            "LEN(\"AB\",\"X\")",
+            "PI()",
+            "GCLS()",
+            "GCLS(0,0)",
+            "GPSET(0,0)",
+            "COLOR(0,0)",
+            "SPPAGE()",
+        ] {
+            let err = parse(src).expect_err(&format!("`{src}` should fail"));
+            assert_eq!(err.errnum, 3, "`{src}` should be Syntax error 3");
+        }
+        // Command with exactly one arg -> a normal call (no parse error, not IllegalFnStmt).
+        for src in ["GCLS(0)", "GCOLOR(0)", "SPPAGE(0)", "COLOR(0)"] {
+            let p =
+                parse(src).unwrap_or_else(|e| panic!("`{src}` should parse, errnum {}", e.errnum));
+            assert!(
+                matches!(&p[0].kind, StmtKind::Call { .. }),
+                "`{src}` -> normal Call"
+            );
+        }
+        // A user-DEF / unknown name with any arity is exempt (still a normal Call).
+        for src in ["SIMPLE_INIT(\"a\",\"b\",1)", "FOO()", "Bar(1,2)"] {
+            let p =
+                parse(src).unwrap_or_else(|e| panic!("`{src}` should parse, errnum {}", e.errnum));
+            assert!(
+                matches!(&p[0].kind, StmtKind::Call { .. }),
+                "`{src}` -> normal Call (user DEF exempt)"
+            );
         }
     }
 }

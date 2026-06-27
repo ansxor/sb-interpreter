@@ -384,10 +384,11 @@ pub enum StmtKind {
     /// refuses the discarded-return shape. Deferred to runtime (not a parse error) so a
     /// preceding statement on the same line still runs, e.g. `PRINT"HI":ABS(5)` prints
     /// "HI" first. The held expressions are the call arguments, evaluated before the
-    /// error is raised (the caller pushes args before the handler runs). Which builtins
-    /// land here vs. the parse-time Syntax-error (3) bucket is a per-builtin keyword-table
-    /// flag — see [`crate::parser::expr_stmt_class`]. hw_verified (sb-oracle 2026-06-26,
-    /// `harness/harvest/out/exprstmt2.tsv`).
+    /// error is raised (the caller pushes args before the handler runs). This is the
+    /// EXACTLY-ONE-ARGUMENT case of a value-returning builtin; with ≠1 arg the same builtin
+    /// is a parse-time Syntax error (3) instead — the split is arg-count driven, see
+    /// [`crate::parser::expr_stmt_class`]. hw_verified (sb-oracle 2026-06-27,
+    /// `harness/harvest/out/exprstmt_argcount.tsv`).
     IllegalFnStmt(Vec<Expr>),
     /// `PRINT`/`?` (`node.d:Print`).
     Print(Vec<PrintItem>),
