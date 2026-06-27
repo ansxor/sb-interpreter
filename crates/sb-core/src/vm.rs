@@ -7397,6 +7397,38 @@ PRGDEL -1"#,
     }
 
     #[test]
+    fn whole_paren_command_form_raises_each_handlers_own_errnum() {
+        // sb-interpreter-9yg, part (2): the bead-512 `NAME(0)` whole-paren sweep listed 8
+        // BuiltinCommand entries whose 1-arg whole-paren form RUNS its handler (not the
+        // generic arg-count 4) and raises that handler's OWN errnum. This pins sb-core's VM
+        // output for each form against the AUTHORITATIVE disassembly (see talkstop/prgset/
+        // prgins/prgdel/talk specs). NOTE: the harness/harvest/out/exprstmt_cmds.tsv batch
+        // mis-recorded talkstop=8/prgset=8/prgins=8/prgdel=10 — the PRG* trio is a WARM-session
+        // artifact (the batch had already run PRGEDIT, so the session-persistent edit-target
+        // global at 0x306C14 was non-null and the cold-state 38 guard was skipped; cf. the
+        // hw_verified prgdel/prgset specs), and talkstop=8 is a batch-bisection artifact (the
+        // TALKSTOP handler @0x1a39d4 has no type-mismatch path — any arg → 4). A fresh program
+        // (cold edit state) is what these whole-paren forms actually compile to.
+
+        // String-expecting / type-checked commands given an integer → Type mismatch (8),
+        // raised by the handler itself (disasm: TALK/MICSAVE/MPSEND read a string operand).
+        assert_eq!(run_b_err(r#"TALK(0)"#).errnum(), Some(8));
+        assert_eq!(run_b_err(r#"MICSAVE(0)"#).errnum(), Some(8));
+        assert_eq!(run_b_err(r#"MPSEND(0)"#).errnum(), Some(8));
+        // BGMCLEAR(0): slot 0 valid type but the handler range-checks it → Out of range (10).
+        assert_eq!(run_b_err(r#"BGMCLEAR(0)"#).errnum(), Some(10));
+        // TALKSTOP takes NO args (and no result context): the call-shape gate @0x1a39d4 maps
+        // any argument straight to Illegal function call (4) — hw_verified `TALKSTOP 1` → 4.
+        assert_eq!(run_b_err(r#"TALKSTOP(0)"#).errnum(), Some(4));
+        // Cold PRG* mutators check the PRGEDIT edit-target FIRST (errnum 38), before the
+        // arg type/range guard — so cold PRGSET(0)/PRGINS(0)/PRGDEL(0) all raise 38, NOT the
+        // warm-session 8/8/10 the batch recorded (cf. prg_no_prgedit_check_precedes_arg_check).
+        assert_eq!(run_b_err(r#"PRGSET(0)"#).errnum(), Some(38));
+        assert_eq!(run_b_err(r#"PRGINS(0)"#).errnum(), Some(38));
+        assert_eq!(run_b_err(r#"PRGDEL(0)"#).errnum(), Some(38));
+    }
+
+    #[test]
     fn prgedit_guards() {
         assert_eq!(run_b_err("PRGEDIT 4").errnum(), Some(10)); // slot out of range
         assert_eq!(run_b_err("PRGEDIT -1").errnum(), Some(10)); // negative slot
