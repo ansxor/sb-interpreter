@@ -1,0 +1,59 @@
+# Oracle-harvested fixtures for WAVSET (hw_verified) — captured from real SmileBASIC 3.6.0
+# (Azahar) on 2026-06-27: harness/harvest/out/cyf_wavset_{hex,brk2}.tsv. The waveform hex
+# string's accept/reject contract (errnum 4 on a malformed/wrong-count string, and the
+# bracketed `[`/`]` repeat-group format). Audio output itself has no deterministic golden
+# (O-T7); these pin the parse-time contract only.
+tests:
+  # Plain (no-bracket) hex strings — sample count must be 16/32/64/128/256/512.
+  - name: "plain_16_samples_ok"
+    code: 'WAVSET 224,3,10,30,5,"7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF"'
+    expect: { stdout: "" }
+  - name: "plain_wrong_count_8_samples"
+    code: 'WAVSET 224,3,10,30,5,"7F7F7F7FFFFFFFFF"'
+    expect: { error: { errnum: 4 } }
+  - name: "plain_wrong_count_24_samples"
+    code: 'WAVSET 224,3,10,30,5,"7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF"'
+    expect: { error: { errnum: 4 } }
+  - name: "plain_non_hex_char"
+    code: 'WAVSET 224,3,10,30,5,"GG7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF"'
+    expect: { error: { errnum: 4 } }
+  - name: "plain_odd_length"
+    code: 'WAVSET 224,3,10,30,5,"7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFF"'
+    expect: { error: { errnum: 4 } }
+  - name: "empty_string"
+    code: 'WAVSET 224,3,10,30,5,""'
+    expect: { error: { errnum: 4 } }
+  # Bracketed `[`/`]` repeat groups — tiled to fill 512 samples.
+  - name: "bracket_single_group_ok"
+    code: 'WAVSET 224,3,10,30,5,"[7F]"'
+    expect: { stdout: "" }
+  - name: "bracket_two_groups_ok"
+    code: 'WAVSET 224,3,10,30,5,"[7F][FF]"'
+    expect: { stdout: "" }
+  - name: "bracket_three_groups_ok"
+    code: 'WAVSET 224,3,10,30,5,"[7F][7F][7F]"'
+    expect: { stdout: "" }
+  - name: "bracket_16_byte_group_ok"
+    code: 'WAVSET 224,3,10,30,5,"[7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF]"'
+    expect: { stdout: "" }
+  - name: "bracket_then_trailing_hex_ok"
+    code: 'WAVSET 224,3,10,30,5,"[7F]7F7F7F7F"'
+    expect: { stdout: "" }
+  - name: "bracket_odd_group"
+    code: 'WAVSET 224,3,10,30,5,"[7F7]"'
+    expect: { error: { errnum: 4 } }
+  - name: "bracket_nested"
+    code: 'WAVSET 224,3,10,30,5,"[[7F]]"'
+    expect: { error: { errnum: 4 } }
+  - name: "bracket_empty_group"
+    code: 'WAVSET 224,3,10,30,5,"[]"'
+    expect: { error: { errnum: 4 } }
+  - name: "bracket_unclosed"
+    code: 'WAVSET 224,3,10,30,5,"[7F"'
+    expect: { error: { errnum: 4 } }
+  - name: "bracket_unopened"
+    code: 'WAVSET 224,3,10,30,5,"7F]"'
+    expect: { error: { errnum: 4 } }
+  - name: "plain_before_bracket"
+    code: 'WAVSET 224,3,10,30,5,"7F7F[7F]"'
+    expect: { error: { errnum: 4 } }

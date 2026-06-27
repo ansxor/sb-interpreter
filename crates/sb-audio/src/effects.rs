@@ -110,17 +110,37 @@ pub const WAVSET_SAMPLE_COUNTS: [usize; 6] = [16, 32, 64, 128, 256, 512];
 /// The maximum sample count `WAVSETA` commits from a source array (`wavseta.yaml`, 0x4000).
 pub const WAVSETA_MAX_SAMPLES: usize = 16384;
 
+/// The fixed sample count a *bracketed* `WAVSET` waveform expands to: the handler loads
+/// `#0x200` (512) at `@0x1a21c4` and divides it among the bracket groups, tiling each group's
+/// bytes to fill its `512 / group_count` slice (`wavset.yaml`).
+pub const WAVSET_BRACKET_SAMPLES: usize = 512;
+
 /// Decode a `WAVSET` hexadecimal waveform string into its 8-bit unsigned samples (two hex
 /// characters per sample; `&H00`–`&HFF`, with `&H80` = the zero/center level). Returns `None`
-/// for a non-hex character or a sample count not in [`WAVSET_SAMPLE_COUNTS`] — the handler
-/// maps either to errnum 4 (Illegal function call).
+/// for any string the handler rejects with errnum 4 (Illegal function call).
 ///
-/// The disassembled handler also recognises bracketed (`[`/`]`) repeat groups inside the
-/// string; that expansion is not modeled here (no committed case exercises it and its exact
-/// semantics are unverified — tracked in beads: bd:sb-interpreter-i8p), so a `[`/`]` is treated as a
-/// non-hex character.
+/// Two forms are accepted (matched to real SB 3.6.0, `wavset.yaml`):
+///
+/// * **Plain** — all hex, an even length, sample count in [`WAVSET_SAMPLE_COUNTS`].
+/// * **Bracketed** — one or more `[evenhex]` repeat groups (each non-empty, whole-byte, not
+///   nested) at the *start* of the string, optionally followed by trailing whole-byte hex.
+///   The first `[` must be the first character (plain hex *before* a bracket → errnum 4); a
+///   `]` with no open bracket, an unclosed `[`, an empty `[]`, an odd-length group, or a
+///   nested `[` all → errnum 4. Each group is tiled to fill `512 / group_count` samples (the
+///   exact buffer is `disassembled`, not `hw_verified` — the audio output it feeds has no
+///   deterministic golden, O-T7).
 pub fn decode_waveform(s: &str) -> Option<Vec<u8>> {
     let bytes = s.as_bytes();
+    if bytes.iter().any(|&b| b == b'[' || b == b']') {
+        decode_waveform_bracketed(bytes)
+    } else {
+        decode_waveform_plain(bytes)
+    }
+}
+
+/// Decode a plain (no-bracket) `WAVSET` waveform: even length, a sample count in
+/// [`WAVSET_SAMPLE_COUNTS`], all hex; otherwise `None` (errnum 4).
+fn decode_waveform_plain(bytes: &[u8]) -> Option<Vec<u8>> {
     if !bytes.len().is_multiple_of(2) {
         return None;
     }
@@ -130,11 +150,74 @@ pub fn decode_waveform(s: &str) -> Option<Vec<u8>> {
     }
     let mut out = Vec::with_capacity(samples);
     for pair in bytes.chunks_exact(2) {
-        let hi = hex_digit(pair[0])?;
-        let lo = hex_digit(pair[1])?;
-        out.push((hi << 4) | lo);
+        out.push(hex_byte(pair)?);
     }
     Some(out)
+}
+
+/// Decode a bracketed `WAVSET` waveform (see [`decode_waveform`] for the accepted shape).
+fn decode_waveform_bracketed(bytes: &[u8]) -> Option<Vec<u8>> {
+    // The first `[` must open the string (a leading plain run, or a `]` before any `[`, is
+    // rejected at `@0x1a2110` / `@0x1a20fc`).
+    if bytes.first() != Some(&b'[') {
+        return None;
+    }
+    let mut groups: Vec<Vec<u8>> = Vec::new();
+    let mut i = 0;
+    while bytes.get(i) == Some(&b'[') {
+        i += 1; // consume '['
+        let start = i;
+        while let Some(&c) = bytes.get(i) {
+            if c == b']' {
+                break;
+            }
+            if c == b'[' {
+                return None; // nesting is rejected
+            }
+            i += 1;
+        }
+        if bytes.get(i) != Some(&b']') {
+            return None; // unclosed '['
+        }
+        let body = &bytes[start..i];
+        i += 1; // consume ']'
+        if body.is_empty() || !body.len().is_multiple_of(2) {
+            return None; // empty `[]` or odd-length group
+        }
+        let mut g = Vec::with_capacity(body.len() / 2);
+        for pair in body.chunks_exact(2) {
+            g.push(hex_byte(pair)?);
+        }
+        groups.push(g);
+    }
+    if groups.is_empty() {
+        return None;
+    }
+    // Any content after the final group must be whole-byte hex (no stray `[`/`]`).
+    let trailing = &bytes[i..];
+    if !trailing.len().is_multiple_of(2) {
+        return None;
+    }
+    let mut trail = Vec::with_capacity(trailing.len() / 2);
+    for pair in trailing.chunks_exact(2) {
+        trail.push(hex_byte(pair)?);
+    }
+    // Tile each group across its 512 / group_count slice, then append the trailing samples.
+    let per = WAVSET_BRACKET_SAMPLES / groups.len();
+    let mut out = Vec::with_capacity(WAVSET_BRACKET_SAMPLES + trail.len());
+    for g in &groups {
+        for k in 0..per {
+            out.push(g[k % g.len()]);
+        }
+    }
+    out.extend_from_slice(&trail);
+    Some(out)
+}
+
+/// Decode a two-byte ASCII hex pair (`hi`, `lo`) to its 8-bit value, or `None` if either
+/// character is not a hex digit.
+fn hex_byte(pair: &[u8]) -> Option<u8> {
+    Some((hex_digit(pair[0])? << 4) | hex_digit(pair[1])?)
 }
 
 /// Decode one ASCII hex digit (`0-9`, `A-F`, `a-f`) to its 0..15 value.
@@ -192,8 +275,37 @@ mod tests {
     #[test]
     fn decode_waveform_rejects_non_hex() {
         assert!(decode_waveform(&"GG".repeat(16)).is_none());
-        // The bracketed-repeat form is not modeled — treated as non-hex.
+        // A bracket group followed by an odd trailing run (`8`) is still rejected.
         assert!(decode_waveform("[7F]8").is_none());
+    }
+
+    #[test]
+    fn decode_waveform_bracket_repeat_groups() {
+        // A single 1-byte group tiles to fill 512 samples (`@0x1a21c4` #0x200, hw_verified
+        // accept on SB 3.6.0: harness/harvest/out/cyf_wavset_hex.tsv).
+        let w = decode_waveform("[7F]").unwrap();
+        assert_eq!(w.len(), 512);
+        assert!(w.iter().all(|&b| b == 0x7F));
+        // Two groups split 256/256.
+        let w = decode_waveform("[7F][FF]").unwrap();
+        assert_eq!(w.len(), 512);
+        assert_eq!(w[0], 0x7F);
+        assert_eq!(w[255], 0x7F);
+        assert_eq!(w[256], 0xFF);
+        // A 16-byte group and trailing whole-byte hex are both accepted.
+        assert!(decode_waveform("[7F7F7F7FFFFFFFFF7F7F7F7FFFFFFFFF]").is_some());
+        assert!(decode_waveform("[7F]7F7F7F7F").is_some());
+    }
+
+    #[test]
+    fn decode_waveform_bracket_rejects() {
+        // All errnum-4 on SB 3.6.0 (harness/harvest/out/cyf_wavset_{hex,brk2}.tsv).
+        assert!(decode_waveform("[7F7]").is_none()); // odd hex inside a group
+        assert!(decode_waveform("[[7F]]").is_none()); // nested
+        assert!(decode_waveform("[]").is_none()); // empty group
+        assert!(decode_waveform("[7F").is_none()); // unclosed
+        assert!(decode_waveform("7F]").is_none()); // `]` with no open
+        assert!(decode_waveform("7F7F[7F]").is_none()); // plain hex before the first bracket
     }
 
     #[test]
