@@ -1212,7 +1212,9 @@ pub fn sphitrc(
 /// `SPHITINFO OUT …` — read back the most recent `SPHIT*` collision (time, then the
 /// collision coordinates/velocities of the two objects). Takes NO input arguments (else
 /// errnum 4); the form is the number of `OUT` variables (1/3/5/9 — any other count is
-/// errnum 4). Intermediate-slot skipping (`OUT ,X1,…`) is not yet supported.
+/// errnum 4). The 3-var form `OUT TM,X1,Y1` (object-1 coords only) is undocumented but
+/// accepted, hw_verified sb-oracle 2026-06-27 (s_t8d). Intermediate-slot skipping
+/// (`OUT ,X1,…`) is not yet supported.
 pub fn sphitinfo(
     sp: &SpriteState,
     args: &[Value],
@@ -1919,5 +1921,56 @@ mod tests {
                 .errnum,
             8
         );
+    }
+
+    #[test]
+    fn sphitinfo_three_var_form_reports_tm_x1_y1() {
+        // Undocumented 3-var form `SPHITINFO OUT TM,X1,Y1` — the handler (@0x144078) accepts an
+        // OUT count of 3 (cmp r0,#0x3 / beq 0x1440f8), returning the collision time plus only
+        // object 1's collision coordinates. hw_verified sb-oracle 2026-06-27 (s_t8d, wai):
+        //   no-collision default `ACLS:SPSET 0,0:SPHITINFO OUT TM,X1,Y1`            -> 0,0,0
+        //   swept pair (sprite0 @100,100 vel +20 vs sprite1 @130,100) closing 20/fr -> 0.7,114,100
+        let mut sp = SpriteState::new();
+        spset0(&mut sp, 0);
+        spset0(&mut sp, 1);
+
+        // Before any hit the record is the default (time 0) -> TM,X1,Y1 = 0,0,0.
+        assert_eq!(
+            sphitinfo(&sp, &[], 3).unwrap(),
+            vec![n(0.0), n(0.0), n(0.0)]
+        );
+
+        // Swept collision: sprite 0 @ (100,100) closing on sprite 1 @ (130,100) at +20/frame.
+        // 16px sprites with a 14px gap -> first contact at TM = 14/20 = 0.7.
+        spofs(
+            &mut sp,
+            &[Value::Int(0), Value::Int(100), Value::Int(100)],
+            0,
+        )
+        .unwrap();
+        spofs(
+            &mut sp,
+            &[Value::Int(1), Value::Int(130), Value::Int(100)],
+            0,
+        )
+        .unwrap();
+        spcol(&mut sp, &[Value::Int(0)], 0).unwrap();
+        spcol(&mut sp, &[Value::Int(1)], 0).unwrap();
+        spcolvec(&mut sp, &[Value::Int(0), Value::Int(20), Value::Int(0)], 0).unwrap();
+        assert_eq!(
+            sphitsp(&mut sp, &[Value::Int(0)], 1).unwrap()[0],
+            Value::Int(1)
+        );
+
+        // 3-var read-back: TM=0.7, X1 = 100 + 20*0.7 = 114, Y1 = 100 (no Y velocity).
+        assert_eq!(
+            sphitinfo(&sp, &[], 3).unwrap(),
+            vec![n(0.7), n(114.0), n(100.0)]
+        );
+
+        // OUT count gate: only 1/3/5/9 are valid; 2 -> errnum 4 (Illegal function call).
+        assert_eq!(sphitinfo(&sp, &[], 2).unwrap_err().errnum, 4);
+        // Any input argument -> errnum 4.
+        assert_eq!(sphitinfo(&sp, &[Value::Int(0)], 1).unwrap_err().errnum, 4);
     }
 }
