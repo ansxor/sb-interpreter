@@ -90,9 +90,13 @@ cases:
   - name: spdef_define_then_read_all
     code: 'SPDEF 0,32,48,24,24,8,8,1:SPDEF 0 OUT U,V,W,H,OX,OY,A:PRINT U;",";V;",";W;",";H;",";OX;",";OY;",";A'
     expect: { stdout: "32,48,24,24,8,8,1" }
-  - name: spdef_copy_with_override
-    code: 'SPDEF 0,10,20,30,30:SPDEF 1,0,,,16,16:SPDEF 1 OUT U,V,W,H:PRINT U;",";V;",";W;",";H'
-    expect: { stdout: "10,20,16,16" }
+  # A skipped (`,,` Void) slot in a 3..8-arg define is NOT a copy-with-override: the Void where
+  # a number is expected raises errnum 8 (Type mismatch). Define-vs-copy is purely by argcount —
+  # copy is the full 9-arg shape only. hw_verified sb-oracle 2026-06-27 (spdef.yaml
+  # void_in_define_type_mismatch; was a stale pre-c0f4ae9 hypothesis asserting "10,20,16,16").
+  - name: spdef_void_in_define_type_mismatch
+    code: 'SPDEF 0,10,20,30,30:SPDEF 1,0,,,16,16'
+    expect: { error: { errnum: 8 } }
   - name: spdef_reset_restores_defaults
     code: 'SPDEF 0,5,5,8,8:SPDEF:SPDEF 0 OUT U,V,W,H:PRINT U;",";V;",";W;",";H'
     expect: { stdout: "0,0,16,16" }

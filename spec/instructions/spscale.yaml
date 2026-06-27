@@ -55,6 +55,10 @@ tests:
   - { name: rt_corpus_frac, code: "SPSET 0,0\nSPSCALE 0,0.125,0.125\nSPSCALE 0 OUT SX,SY\nPRINT SX;\",\";SY", expect: { stdout: "0.125,0.125" } }
   - { name: rt_zero_x, code: "SPSET 0,0\nSPSCALE 0,0,1\nSPSCALE 0 OUT SX,SY\nPRINT SX;\",\";SY", expect: { stdout: "0,1" } }
   - { name: default_after_spset, code: "SPSET 0,0\nSPSCALE 0 OUT SX,SY\nPRINT SX;\",\";SY", expect: { stdout: "1,1" } }
+  # A REPEAT SPSET on an already-scaled sprite resets the scale to 1,1 (the SET path clears
+  # the scale flag bic r0,#0x400000; a fresh SPSET re-defaults). hw_verified sb-oracle
+  # 2026-06-27 (harness/harvest/out/spcol_scalereset.tsv r2).
+  - { name: re_spset_resets_scale, code: "SPSET 0,0\nSPSCALE 0,2,2\nSPSET 0,0\nSPSCALE 0 OUT SX,SY\nPRINT SX;\",\";SY", expect: { stdout: "1,1" } }
   - { name: independence, code: "SPSET 0,0\nSPSET 1,0\nSPSCALE 0,2,2\nSPSCALE 1,3,3\nSPSCALE 0 OUT SX,SY\nPRINT SX;\",\";SY", expect: { stdout: "2,2" } }
   - { name: mgmt_out_of_range, code: "SPSET 0,0\nSPSCALE 512,1,1", expect: { error: { errnum: 10 } } }
   - { name: before_spset, code: "SPCLR\nSPSCALE 5,1,1", expect: { error: { errnum: 4 } } }

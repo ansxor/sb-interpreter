@@ -1,0 +1,2 @@
+repro|SPSET 0,0:SPCOL 0:SPCOL 0 OUT SX,SY,W,H|STR$(W)+","+STR$(H)|progstr
+repro_acls|ACLS:SPSET 0,0:SPCOL 0:SPCOL 0 OUT SX,SY,W,H|STR$(W)+","+STR$(H)|progstr
