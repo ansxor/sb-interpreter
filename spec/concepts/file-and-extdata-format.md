@@ -11,6 +11,7 @@ sources:
   - { type: hw_verified, ref: "sb-oracle skill sb_extdata.py: extdata SB3 container (80-byte header + UTF-8/PCBN body + 20-byte HMAC-SHA1 footer; markers TXT/DAT/GRP; HMAC key) round-tripped both directions against real SB 3.6.0 (O-T3 write valid file SB accepts + O-T4 read result off disk)" }
   - { type: hw_verified, ref: "sb-oracle skill run_case.py/sb_extdata.py: DAT numeric-array body = 28-byte PCBN0001 header (u16 type=5 @8, u16 rank @10, u32 LE dims @0x0C/0x10/0x14, 4-byte reserved @0x18) + row-major f64 LE elements; 1-D..3-D arrays round-trip through real SB 3.6.0 (O-T3)" }
   - { type: hw_verified, ref: "sb-oracle skill sb_grp.py: DAT/GRP body = 28-byte PCBN header (magic 'PCBN'+'0001', u32 LE width/height @12/@16) + 512x512 RGBA5551 LE row-major pixels; pixel-exact GRP0 capture (O-T6)" }
+  - { type: hw_verified, ref: "sb-oracle skill (1ip grpf_harvest.py, 2026-06-27): GRPF: (font/sprite-sheet page) SAVEs a PCBN body BYTE-IDENTICAL in layout to GRP0-5 — same 80-byte header type marker `01 00 01 00 00 00 02 00`, same 28-byte PCBN header (type/flags u16@8=3 u16@10=2, width@0x0C=512, height@0x10=512), 512x512 RGBA5551 pixels, total file 524416 bytes. No GRPF-specific type tag or dimension difference. On-disk under the GRP/DAT `B` prefix (B<name>)" }
   - { type: hw_verified, ref: "sb-oracle skill (bfh, 2026-06-27): GSAVE color-conversion flag is value-only — `GSAVE 0,0,0,4,4,A,1` (16-bit physical) and `,0` (32-bit logical) SAVE the IDENTICAL PCBN body (type tag 0x0005, rank 1, f64 elements, one pixel/element); flag1 red = 0xF801 = 63489.0, flag0 = 0xFFF80000 = 4294443008.0. No distinct ushort tag/size bit. Real flag1 4x4 header reserved@0x18=0x00000001 (non-zero) and dim1/dim2=0x001D001D garbage" }
   - { type: community, ref: "tools/extract_sbsave.py: PETC smilebasicsource.com server container (type 0=TXT/1=DAT/2=PRJ; project directory at 0x54/0x58; internal name prefix T/B) validated against 915/915 scraped downloads" }
 # On-disk container + DAT/GRP bodies are hw_verified round-trip; resource parsing/errnums are
@@ -62,7 +63,7 @@ targets the **current program slot** (for `SAVE`/`LOAD`) or defaults to `TXT` ch
 | *(none)* | current program SLOT | program text | `SAVE "TEST"` saves the running slot's source |
 | `PRG0:`–`PRG3:` | program slot 0–3 | program text (UTF-8) | `PRG:` == `PRG0:`. Stored on disk as a **TXT** file |
 | `GRP0:`–`GRP5:` | graphic page 0–5 | PCBN image | 512×512 RGBA5551 page |
-| `GRPF:` | font image page | PCBN image | the font/sprite-sheet page (page index −1 in GSAVE) |
+| `GRPF:` | font image page | PCBN image | the font/sprite-sheet page (page index −1 in GSAVE); saves a 512×512 RGBA5551 PCBN body **byte-identical in layout to GRP0–5** (`hw_verified`, 1ip) |
 | `TXT:` | text resource | UTF-8 string | string ↔ file (`SAVE "TXT:F",S$` / `LOAD("TXT:F")`) |
 | `DAT:` | binary data resource | PCBN numeric array | numeric array ↔ file (`SAVE "DAT:F",A` / `LOAD "DAT:F",A`) |
 
