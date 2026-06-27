@@ -54,12 +54,19 @@ const ERR_TYPE_MISMATCH: u32 = 8;
 /// numeric cap is explained by a single shared **byte** budget with a numeric element
 /// weighing 8 SB-bytes (a tagged double slot) and a string element 4 (a heap handle): then
 /// `floor(B/8) ∈ [1_035_000, 1_040_000)` and `floor(B/4) ∈ [2_075_000, 2_080_000)` jointly
-/// pin `B ∈ [8_300_000, 8_320_000)`. We take the low end. The exact constant and its
-/// allocation site are NOT yet read from the disassembly (`DIM`/`VAR` are token-table
-/// keywords, not builtin-dispatch entries, so `disasm.py dispatch` does not reach the
-/// handler body) — so this byte budget is a model fit to the `hw_verified` boundaries, not a
-/// `disassembled` value. It reproduces every measured boundary above; pinning the precise
-/// limit is queued (bead sb-interpreter-4vd).
+/// pin `B ∈ [8_300_000, 8_320_000)`. We take the low end.
+///
+/// The disassembly (bead sb-interpreter-bac) shows there is **no single DIM byte-cap
+/// constant**: the errnum-11 path is generic heap exhaustion. The array constructor sizes its
+/// buffer (`count*4`) and calls the allocator front-door `FUN_001ef32c`; on a NULL return it
+/// raises errnum 11 (`mov r0,#0xb; b 0x1fffdc`). That front-door rounds (`+0x1b` header, 8-byte
+/// align), size-classes (`>0x100` → big-block), and falls through to the dlmalloc-family
+/// allocator `FUN_001331ac`, which returns NULL only when the user heap is full. No ~8.3MB
+/// literal exists in `.rodata`; the measured boundary is the **free user-heap size at program
+/// start** (an emergent 3DS-heap-init value), not a compile-time constant. Since sb-core has no
+/// real heap to exhaust, this byte budget is the deterministic stand-in that reproduces every
+/// measured boundary above. Pinning the exact 3DS heap-region size is queued (bead
+/// sb-interpreter-4vd).
 const MAX_ARRAY_BYTES: usize = 8_300_000;
 
 /// The SB-internal storage weight (bytes) of one array element, used for the

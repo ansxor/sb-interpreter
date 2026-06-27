@@ -6100,12 +6100,12 @@ H$=HEX$(255)"#);
         assert_eq!(run_b_err("FADE 0,0,0").errnum(), Some(4)); // too many
         assert_eq!(run_b_err("A=FADE(0)").errnum(), Some(4)); // function takes no args
         assert_eq!(run_b_err("FADECHK 0").errnum(), Some(4)); // statement form forbidden
-        // `FADECHK()` is the EMPTY-paren statement form (0 args). Per the corrected arg-count
-        // model (bead sb-interpreter-imk; hw_verified `exprstmt_argcount.tsv` / committed in
-        // `cases/exprstmt_split.yaml` as `GCOLOR()`/`ABS()`/`SPPAGE()`→3), empty parens are a
-        // parse-time Syntax error (3) for EVERY builtin — not the runtime Illegal-fn-call (4)
-        // the pre-correction reading assumed. The parser now consults the whole builtin
-        // registry, so FADECHK (a value getter) is rejected at parse like every other builtin.
+                                                              // `FADECHK()` is the EMPTY-paren statement form (0 args). Per the corrected arg-count
+                                                              // model (bead sb-interpreter-imk; hw_verified `exprstmt_argcount.tsv` / committed in
+                                                              // `cases/exprstmt_split.yaml` as `GCOLOR()`/`ABS()`/`SPPAGE()`→3), empty parens are a
+                                                              // parse-time Syntax error (3) for EVERY builtin — not the runtime Illegal-fn-call (4)
+                                                              // the pre-correction reading assumed. The parser now consults the whole builtin
+                                                              // registry, so FADECHK (a value getter) is rejected at parse like every other builtin.
         assert_eq!(parse("FADECHK()").expect_err("syntax error").errnum, 3);
         // Negative fade time raises errnum 10 (Out of range).
         assert_eq!(run_b_err("FADE RGB(0,0,0,255),-1").errnum(), Some(10));
