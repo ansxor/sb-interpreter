@@ -60,36 +60,86 @@ impl GrpState {
         self.plot_dev(x, y, h);
     }
 
-    /// `GLINE x1,y1,x2,y2[,color]` — draw a straight line, endpoints inclusive, via integer
-    /// Bresenham. A degenerate line (start == end) plots the single endpoint.
+    /// `GLINE x1,y1,x2,y2[,color]` — draw a straight line, endpoints inclusive, via SB's
+    /// fixed-point DDA. A degenerate line (start == end) plots the single endpoint.
     pub fn gline(&mut self, x1: i32, y1: i32, x2: i32, y2: i32, color: u32) {
         let h = argb8888_to_rgba5551(color);
         self.line_dev(x1, y1, x2, y2, h);
     }
 
-    /// Bresenham line in device space (used by `GLINE`, `GBOX`, and the sector radii).
+    /// The SmileBASIC 3.6.0 line rasterizer in device space (used by `GLINE`, `GBOX`, and the
+    /// sector radii).
+    ///
+    /// This is **not** textbook Bresenham — it reproduces the device's exact fixed-point DDA
+    /// (hw_verified, `bd:sb-interpreter-sb7`; RE'd from `FUN_001e6700` @0x1e6700). The line is
+    /// always anchored at the **left** endpoint (shallow / x-major) or the **top** endpoint
+    /// (steep / y-major) — the handler swaps the endpoints first (@0x1e69c4 / @0x1e6b3c) — and
+    /// the Bresenham error is **seeded** so the first off-axis step is delayed:
+    ///
+    /// ```text
+    ///   shallow (dx >= dy):  err = (dx + 2·dy) mod 2·dx     ; step y when err >= 2·dx
+    ///   steep   (dx <  dy):  err = (dy + 2·dx) mod 2·dy     ; step x when err >= 2·dy
+    /// ```
+    ///
+    /// That seed is the remainder the handler reads back from its `(minor·2 + major) / (2·major)`
+    /// divide (@0x1e6b0c — quotient in r0, remainder→err in r1). For `GLINE 0,0,399,239` it
+    /// plots `y = floor(0.6·x) = 0,0,1,1,2,3,3,4,4,5`, NOT Bresenham's `0,1,1,2,2,3,4,4,5,5`.
     fn line_dev(&mut self, x1: i32, y1: i32, x2: i32, y2: i32, h: u16) {
         // i64 deltas: extreme i32 endpoints (a degenerate GTRI line, or GLINE/GBOX with far
         // coords) make `x2 - x1` overflow i32 — only the err accumulation needs the width.
         let dx = (x2 as i64 - x1 as i64).abs();
-        let dy = -(y2 as i64 - y1 as i64).abs();
-        let sx = if x1 < x2 { 1 } else { -1 };
-        let sy = if y1 < y2 { 1 } else { -1 };
-        let mut err = dx + dy;
-        let (mut x, mut y) = (x1, y1);
-        loop {
-            self.plot_dev(x, y, h);
-            if x == x2 && y == y2 {
-                break;
+        let dy = (y2 as i64 - y1 as i64).abs();
+        if dx == 0 && dy == 0 {
+            self.plot_dev(x1, y1, h);
+            return;
+        }
+        if dx >= dy {
+            // Shallow (x-major): walk from the left endpoint, step y when the error overflows.
+            let (xa, ya, xb, yb) = if x1 <= x2 {
+                (x1, y1, x2, y2)
+            } else {
+                (x2, y2, x1, y1)
+            };
+            let sy = if yb >= ya { 1 } else { -1 };
+            let two_dx = 2 * dx;
+            let mut err = (dx + 2 * dy) % two_dx;
+            let mut y = ya;
+            let mut x = xa;
+            loop {
+                self.plot_dev(x, y, h);
+                if x == xb {
+                    break;
+                }
+                err += 2 * dy;
+                if err >= two_dx {
+                    y += sy;
+                    err -= two_dx;
+                }
+                x += 1;
             }
-            let e2 = 2 * err;
-            if e2 >= dy {
-                err += dy;
-                x += sx;
-            }
-            if e2 <= dx {
-                err += dx;
-                y += sy;
+        } else {
+            // Steep (y-major): walk from the top endpoint, step x when the error overflows.
+            let (xa, ya, xb, yb) = if y1 <= y2 {
+                (x1, y1, x2, y2)
+            } else {
+                (x2, y2, x1, y1)
+            };
+            let sx = if xb >= xa { 1 } else { -1 };
+            let two_dy = 2 * dy;
+            let mut err = (dy + 2 * dx) % two_dy;
+            let mut x = xa;
+            let mut y = ya;
+            loop {
+                self.plot_dev(x, y, h);
+                if y == yb {
+                    break;
+                }
+                err += 2 * dx;
+                if err >= two_dy {
+                    x += sx;
+                    err -= two_dy;
+                }
+                y += 1;
             }
         }
     }
@@ -368,6 +418,30 @@ mod tests {
         for d in 0..=3 {
             assert_ne!(read(&g, d, d), 0, "diag {d}");
         }
+    }
+
+    #[test]
+    fn gline_diagonal_matches_device_dda() {
+        // hw_verified (sb-oracle GRP capture, bd:sb-interpreter-sb7): `GLINE 0,0,399,239` plots
+        // y per x = floor(0.6·x) = 0,0,1,1,2,3,3,4,4,5 — SB's seeded fixed-point DDA, NOT
+        // textbook Bresenham (which would give 0,1,1,2,2,3,4,4,5,5 and miss the device by px).
+        let mut g = GrpState::new();
+        g.gline(0, 0, 399, 239, WHITE);
+        // Shallow line: exactly one lit pixel per column; find it.
+        let col_y =
+            |g: &GrpState, x: i32| -> Option<i32> { (0..240).find(|&y| read(g, x, y) != 0) };
+        let expected = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5];
+        for (x, &ey) in expected.iter().enumerate() {
+            assert_eq!(col_y(&g, x as i32), Some(ey), "x={x}");
+        }
+        // Endpoints inclusive and exact.
+        assert_ne!(read(&g, 0, 0), 0);
+        assert_ne!(read(&g, 399, 239), 0);
+        // The handler anchors at the left endpoint regardless of argument order, so the
+        // reversed line produces an identical image.
+        let mut rev = GrpState::new();
+        rev.gline(399, 239, 0, 0, WHITE);
+        assert_eq!(g, rev);
     }
 
     #[test]

@@ -81,12 +81,26 @@ fn gfill_covers_its_inclusive_rect_only() {
 #[test]
 fn gline_plots_inclusive_endpoints() {
     // A short HORIZONTAL run: both endpoints lit, one past the end is not. Axis-aligned lines
-    // match the device exactly (hw_verified via the scene_mixed GBOX golden); the *diagonal*
-    // GLINE/GTRI stepping diverges from SB's fixed-point DDA and is queued (bd:sb-interpreter-tzn,
-    // M2-T2), so no diagonal-line golden is committed yet.
+    // match the device exactly (hw_verified via the scene_mixed GBOX golden).
     let fb = render(|g| g.gline(0, 0, 5, 0, rgb(255, 255, 255)));
     assert_eq!(fb.get_argb(0, 0), 0xFFF8_F8F8);
     assert_eq!(fb.get_argb(5, 0), 0xFFF8_F8F8);
     assert_eq!(fb.get_argb(6, 0), 0x0000_0000);
     assert_eq!(fb.get_argb(0, 1), 0x0000_0000); // stays on its row
+}
+
+#[test]
+fn gline_diagonal_matches_device_dda() {
+    // gline_cross.sb3 (hw_verified GRP capture, bd:sb-interpreter-sb7): the corner-to-corner
+    // diagonal `GLINE 0,0,399,239` steps y = floor(0.6·x) via SB's seeded fixed-point DDA
+    // (0,0,1,1,2,3,3,4,4,5…), NOT textbook Bresenham (0,1,1,2,2,3,4,4,5,5). One lit pixel per
+    // column; the framebuffer column scan must land on the device row.
+    let fb = render(|g| g.gline(0, 0, 399, 239, rgb(255, 255, 255)));
+    let col_y =
+        |fb: &Framebuffer, x: usize| -> Option<usize> { (0..H).find(|&y| fb.get_argb(x, y) != 0) };
+    for (x, ey) in [0usize, 0, 1, 1, 2, 3, 3, 4, 4, 5].into_iter().enumerate() {
+        assert_eq!(col_y(&fb, x), Some(ey), "x={x}");
+    }
+    assert_eq!(fb.get_argb(0, 0), 0xFFF8_F8F8); // top-left endpoint
+    assert_eq!(fb.get_argb(399, 239), 0xFFF8_F8F8); // bottom-right endpoint, exact
 }
