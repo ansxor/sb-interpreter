@@ -1,8 +1,8 @@
 import init, { run_interactive, stop_interactive } from "../pkg/sb_platform_wasm.js";
-
-const DEFAULT_CODE = `PRINT "hello from sb-player!"
-PRINT "edit this code, or load a file"
-`;
+// SmileBASIC 3.6.0 built-in "EXAMPLE8 / Technical Demo" (TECHDEMO), decoded from the
+// Azahar extdata slot TTECHDEMO (in-SB name TECHDEMO, TXT). Provenance: harvested via the
+// sb-oracle extdata reader (.claude/skills/sb-oracle/tools/sb_extdata.py read_result).
+import DEFAULT_CODE from "./techdemo.sb?raw";
 
 const els = {
   run: document.getElementById("btn-run"),
