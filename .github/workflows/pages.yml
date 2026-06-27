@@ -1,0 +1,66 @@
+name: Deploy sb-player to GitHub Pages
+
+# Builds the sb-player browser client (Vite + wasm-pack) and publishes it to GitHub
+# Pages on every push to main. This is DECOUPLED from the deterministic ci.yml gate —
+# the Pages deploy does not wait on the (slow) Rust test job; it only builds the player.
+#
+# Hosting choice: GitHub Pages (not Cloudflare). sb-player/wrangler.toml is a leftover
+# from an earlier CF Pages experiment and is unused by this workflow.
+#
+# One-time manual repo setting required: Settings → Pages → Source = "GitHub Actions".
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least-privilege token plus the OIDC + pages scopes the official deploy action needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one in-flight Pages deploy at a time; don't cancel a running deploy.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: sb-player
+        run: npm ci
+
+      - name: Build (wasm-pack + vite)
+        # `npm run build` runs build:wasm (wasm-pack build → pkg/) then `vite build`,
+        # emitting sb-player/dist with relative (base: "./") asset URLs.
+        working-directory: sb-player
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: sb-player/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
