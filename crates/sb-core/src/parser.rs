@@ -85,34 +85,47 @@ enum ExprStmtClass {
     /// Value-returning function. 1 arg → Illegal function call (4) at runtime; ≠1 arg →
     /// Syntax error (3) at parse.
     ValueFunction,
-    /// Statement-capable command. 1 arg → runs (normal call); ≠1 arg → Syntax error (3).
-    Command,
-    /// Not a recognized builtin — keep the existing command-call / array-read behavior.
+    /// Any other registered builtin (a statement-capable command, or a VM-routed value
+    /// getter not yet split out). 1 arg → runs (normal call); ≠1 arg → Syntax error (3).
+    ///
+    /// The ≠1-arg → 3 half is the arg-count rule and is correct for *every* builtin. The
+    /// 1-arg half is only correct for true commands: a VM-routed value-getter's 1-arg
+    /// statement form should be Illegal function call (4), not run — that per-builtin
+    /// value-vs-command bit is still queued (bead sb-interpreter-imk), so getters not in
+    /// the explicit [`ExprStmtClass::ValueFunction`] list above currently *run* their
+    /// 1-arg form (no worse than before this generalization, which left them `Unknown`).
+    BuiltinCommand,
+    /// Not a registered builtin — a user `DEF` call or a plain variable. Keep the existing
+    /// command-call / array-read behavior (a multi-arg `SIMPLE_INIT("a","b",1)` subroutine
+    /// call must still compile), so the ≠1-arg → 3 rule never reaches it.
     Unknown,
 }
 
 /// Classify a builtin used in the whole-paren statement form. `name` is the canonical
 /// upper-cased name *including* any `$` suffix (`LEFT$`). See [`ExprStmtClass`]: the 3-vs-4
 /// split itself is arg-count driven; this table only encodes value-function vs command, which
-/// decides the 1-argument case. Names not listed are [`ExprStmtClass::Unknown`].
+/// decides the 1-argument case. Any registered builtin not in the value-function list is
+/// [`ExprStmtClass::BuiltinCommand`] (so the ≠1-arg → 3 rule applies generically to all
+/// ~217 builtins, not just a hardcoded handful); non-builtins are [`ExprStmtClass::Unknown`].
 fn expr_stmt_class(name: &str) -> ExprStmtClass {
     match name {
-        // Value-returning functions — pure math/string plus the graphics/sprite getter forms.
-        // Math (spec/instructions/{abs,floor,ceil,…,pi}.yaml) + RNG:
+        // Value-returning functions — the stateless `dispatch` set (all math + string,
+        // spec/instructions/{abs,…,pi,len,…,instr}.yaml) plus the hw_verified graphics/sprite
+        // value getters whose 1-arg statement form is Illegal function call (4).
+        // Math + RNG:
         "ABS" | "FLOOR" | "CEIL" | "ROUND" | "SGN" | "CLASSIFY" | "MIN" | "MAX" | "SQR"
         | "POW" | "EXP" | "LOG" | "SIN" | "COS" | "TAN" | "ASIN" | "ACOS" | "ATAN" | "SINH"
         | "COSH" | "TANH" | "DEG" | "RAD" | "PI" | "RND" | "RNDF"
-        // Strings (spec/instructions/{len,left,…,instr}.yaml):
+        // Strings:
         | "LEN" | "LEFT$" | "RIGHT$" | "MID$" | "SUBST$" | "STR$" | "VAL" | "HEX$" | "BIN$"
         | "FORMAT$" | "ASC" | "CHR$" | "INSTR"
         // Graphics/sprite value getters (hw_verified 1-arg → 4):
         | "RGB" | "RGBREAD" | "GSPOIT" | "GPAGE" | "SPROT" | "BGCOLOR" => {
             ExprStmtClass::ValueFunction
         }
-        // Statement-capable commands (hw_verified: 1-arg form runs, ≠1 arg → Syntax error 3):
-        "GCLS" | "GCOLOR" | "GPSET" | "GLINE" | "LOCATE" | "COLOR" | "SPPAGE" => {
-            ExprStmtClass::Command
-        }
+        // Every other registered builtin: the ≠1-arg → 3 rule applies (the 1-arg form runs,
+        // pending the per-builtin value-vs-command split — bead sb-interpreter-imk).
+        _ if crate::builtins::BUILTIN_NAMES.contains(&name) => ExprStmtClass::BuiltinCommand,
         _ => ExprStmtClass::Unknown,
     }
 }
@@ -660,15 +673,16 @@ impl Parser {
                             ))
                         };
                     }
-                    // Command: the single-arg grouped form runs (fall through to the normal
-                    // call); empty or multi-arg whole-paren is a Syntax error 3 (`GCLS(0)` runs,
-                    // `GCLS()`/`GCLS(0,0)`→3).
-                    ExprStmtClass::Command if args.len() != 1 => {
+                    // Builtin command: the single-arg grouped form runs (fall through to the
+                    // normal call); empty or multi-arg whole-paren is a Syntax error 3 (`GCLS(0)`
+                    // runs, `GCLS()`/`GCLS(0,0)`/`SPSET(1,2,3)`→3). This arm catches every
+                    // registered builtin, so the ≠1-arg → 3 rule is generic, not a name list.
+                    ExprStmtClass::BuiltinCommand if args.len() != 1 => {
                         return Err(self.syntax_error(
                             "builtin command in whole-paren form takes a single grouped argument",
                         ));
                     }
-                    ExprStmtClass::Command | ExprStmtClass::Unknown => {}
+                    ExprStmtClass::BuiltinCommand | ExprStmtClass::Unknown => {}
                 }
             }
             return Ok(Stmt::new(

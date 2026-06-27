@@ -64,6 +64,20 @@ cases:
   - { name: locate_stmt,  code: 'LOCATE(0,0)',     expect: { error: { errnum: 3 } } }
   - { name: color2_stmt,  code: 'COLOR(0,0)',      expect: { error: { errnum: 3 } } }
 
+  # -- Syntax error (3): the ≠1-arg rule is GENERIC — it applies to EVERY registered builtin,
+  # not just the handful with an explicit value-fn/command entry (bead sb-interpreter-imk:
+  # the parser now consults the whole BUILTIN_NAMES registry). These VM-routed commands used
+  # to fall through as Unknown and RUN their whole-paren multi-arg/zero-arg form; the arg-count
+  # rule (hw_verified exprstmt_argcount.tsv) rejects them at parse. Per-builtin oracle harvest
+  # of these exact forms is queued; the errnum follows deterministically from the proven rule.
+  - { name: spset3_stmt,   code: 'SPSET(0,1,2)',         expect: { error: { errnum: 3 } } }
+  - { name: gfill5_stmt,   code: 'GFILL(0,0,1,1,1)',     expect: { error: { errnum: 3 } } }
+  - { name: gbox4_stmt,    code: 'GBOX(0,0,1,1)',        expect: { error: { errnum: 3 } } }
+  - { name: gcircle_stmt,  code: 'GCIRCLE(0,0,5)',       expect: { error: { errnum: 3 } } }
+  - { name: bgput4_stmt,   code: 'BGPUT(0,0,0,0)',       expect: { error: { errnum: 3 } } }
+  - { name: spofs_empty,   code: 'SPOFS()',              expect: { error: { errnum: 3 } } }
+  - { name: bgscreen_stmt, code: 'BGSCREEN(0,32,32)',    expect: { error: { errnum: 3 } } }
+
   # -- NOERR: a command with EXACTLY ONE argument runs as a normal command call ---------
   # (These were WRONGLY rejected as Syntax error 3 by the 5iu empty-paren classification.)
   - { name: gcls1_stmt,   code: 'GCLS(0)',         expect: { stdout: "" } }
