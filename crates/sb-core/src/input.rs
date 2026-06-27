@@ -20,13 +20,28 @@
 //! ## Key-repeat ([[brepeat]])
 //!
 //! `BUTTON` feature ID 1 (moment-pressed-with-repeat) is the raw press edge plus, for any
-//! button configured via `BREPEAT start,interval`, a periodic re-fire while held: after
-//! the button has been held `start` frames the press re-fires, then every `interval`
-//! frames (`interval == 0` disables repeat, so feature 1 == feature 2 for that button).
+//! button configured via `BREPEAT start,interval`, a periodic re-fire while held. The exact
+//! timing model is the disassembled per-frame button-edge updater `FUN_001393a8`, which runs
+//! a per-button hold counter + a "has started repeating" flag (the config lives at
+//! `0x1d04000[id]`: word0 = interval / disable gate, word1 = start — stored by the `BREPEAT`
+//! commit `FUN_001a48b8`):
+//!
+//! - The counter is reset to 0 whenever the button is **not** held, and incremented (read +1)
+//!   on every held frame — so it reads **1** on the fresh-press frame.
+//! - Before repeating, the press re-fires when `counter > start`; since the press frame is
+//!   counter 1, that lands on the `start`-th held frame after the press (`start` frames held).
+//! - On each fire the counter is reset to **0** and the flag is set; thereafter the press
+//!   re-fires when `counter > interval`. Because the post-fire counter restarts at 0 (vs. the
+//!   press frame's 1), the steady-state period is **`interval + 1` frames**, not `interval` —
+//!   e.g. `BREPEAT 0,15,4` re-fires at hold-frames 15, 20, 25, … (initial delay 15, period 5).
+//! - `interval == 0` is the disable gate (`r10 <= 0` → skip in the updater): no repeat ever,
+//!   so feature 1 == feature 2 for that button. This is the boot default and the 1-arg
+//!   `BREPEAT id` form.
+//!
 //! `BREPEAT`'s **management ID is the bit index** (0=up … 9=R, 11=ZR, 12=ZL; 10 unused),
-//! NOT the bit weight. The exact default timing + whether SB pre-seeds a non-zero repeat
-//! are not deterministically harvestable (no input injection in the oracle); repeat is
-//! modelled OFF until `BREPEAT` sets it and tracked in beads (bd:sb-interpreter-cjq).
+//! NOT the bit weight. Whether SB pre-seeds a non-zero repeat at boot is not deterministically
+//! harvestable (no input injection in the oracle); repeat is modelled OFF until `BREPEAT` sets
+//! it. See `spec/instructions/brepeat.yaml` (bd:sb-interpreter-cjq).
 
 use crate::value::SbStr;
 use std::collections::VecDeque;
@@ -92,8 +107,12 @@ pub struct InputState {
     pressed_repeat: u16,
     /// Release edge this frame: !held & prev_held (feature 3).
     released: u16,
-    /// Consecutive frames each button has been held (0 on the press frame, then 1,2,…).
-    hold_frames: [u32; BUTTON_BITS],
+    /// Per-button key-repeat hold counter (the disassembled `0x1d04170[id]` counter): 0 while
+    /// not held, then 1,2,… each held frame, reset to 0 on every repeat fire (`FUN_001393a8`).
+    rep_counter: [u32; BUTTON_BITS],
+    /// Per-button "has started repeating" flag (the disassembled `state[id]+4` byte): false
+    /// until the first re-fire, then true so subsequent fires use `interval` (not `start`).
+    repeating: [bool; BUTTON_BITS],
     /// Key-repeat timing per button (indexed by bit / `BREPEAT` management ID).
     repeat: [RepeatCfg; BUTTON_BITS],
     /// Circle Pad axes, already scaled + clamped to -1.0..1.0 (x right+, y up+).
@@ -130,7 +149,8 @@ impl InputState {
             pressed: 0,
             pressed_repeat: 0,
             released: 0,
-            hold_frames: [0; BUTTON_BITS],
+            rep_counter: [0; BUTTON_BITS],
+            repeating: [false; BUTTON_BITS],
             repeat: [RepeatCfg::default(); BUTTON_BITS],
             stick: (0.0, 0.0),
             stickex: (0.0, 0.0),
@@ -154,27 +174,38 @@ impl InputState {
         self.pressed = held & !self.prev_held;
         self.released = !held & self.prev_held;
 
+        // Per-frame key-repeat updater (disassembled `FUN_001393a8`). `repeat_fire` starts as
+        // the raw press edge; held buttons with a non-zero interval OR their re-fires into it.
         let mut repeat_fire = self.pressed;
         for bit in 0..BUTTON_BITS {
             let mask = 1u16 << bit;
-            if held & mask != 0 {
-                if self.prev_held & mask != 0 {
-                    self.hold_frames[bit] = self.hold_frames[bit].saturating_add(1);
-                } else {
-                    // Fresh press: the raw edge (already in `pressed`) starts the timer.
-                    self.hold_frames[bit] = 0;
-                }
-                let cfg = self.repeat[bit];
-                let h = self.hold_frames[bit];
-                if cfg.interval != 0
-                    && h > 0
-                    && h >= cfg.start
-                    && (h - cfg.start).is_multiple_of(cfg.interval)
-                {
+            if held & mask == 0 {
+                // Not held: reset the counter + flag (`ble`/not-held path stores counter 0).
+                self.rep_counter[bit] = 0;
+                self.repeating[bit] = false;
+                continue;
+            }
+            let cfg = self.repeat[bit];
+            if cfg.interval == 0 {
+                // interval (config word0) <= 0 is the disable gate: no repeat, feature 1 == 2.
+                continue;
+            }
+            // Counter is read-then-incremented every held frame → 1 on the fresh-press frame.
+            let counter = self.rep_counter[bit].saturating_add(1);
+            self.rep_counter[bit] = counter;
+            if self.repeating[bit] {
+                // Steady state: re-fire when counter exceeds interval, then restart at 0
+                // (period == interval + 1 frames).
+                if counter > cfg.interval {
                     repeat_fire |= mask;
+                    self.rep_counter[bit] = 0;
                 }
-            } else {
-                self.hold_frames[bit] = 0;
+            } else if counter > cfg.start {
+                // First re-fire: at the `start`-th held frame (counter starts at 1). Latch the
+                // repeating flag and restart the counter at 0.
+                repeat_fire |= mask;
+                self.repeating[bit] = true;
+                self.rep_counter[bit] = 0;
             }
         }
         self.pressed_repeat = repeat_fire;
@@ -309,27 +340,53 @@ mod tests {
 
     #[test]
     fn brepeat_refires_pressed_with_repeat() {
-        // BREPEAT A=4 -> start=15, interval=4: re-fire at hold 15, 19, 23, …
+        // BREPEAT 4,15,4 -> start=15, interval=4. Disassembled FUN_001393a8: initial delay is
+        // `start` held frames, then the period is `interval + 1` (post-fire counter restarts at
+        // 0 vs. the press frame's 1): re-fire at hold-frames 15, 20, 25, …
         let mut s = InputState::new();
         s.set_repeat(4, 15, 4);
-        // Frame 0: fresh press (hold 0) -> feature 1 fires the raw edge.
+        // hold 0: fresh press -> feature 1 fires the raw edge (feature 2 too).
         s.advance_frame(A, (0.0, 0.0), (0.0, 0.0));
         assert_eq!(s.button(1), Some(A as i32));
         assert_eq!(s.button(2), Some(A as i32));
-        // Frames with hold 1..14: no re-fire (feature 1 clears with feature 2).
-        for _ in 0..14 {
+        // hold 1..14: no re-fire (feature 1 clears with feature 2).
+        for h in 1..15 {
             s.advance_frame(A, (0.0, 0.0), (0.0, 0.0));
-            assert_eq!(s.button(1), Some(0));
+            assert_eq!(s.button(1), Some(0), "hold {h}");
         }
-        // hold == 15: repeat begins.
+        // hold == 15: repeat begins; the raw edge (feature 2) stays clear.
         s.advance_frame(A, (0.0, 0.0), (0.0, 0.0));
         assert_eq!(s.button(1), Some(A as i32));
-        assert_eq!(s.button(2), Some(0)); // raw edge stays clear
-                                          // hold 16,17,18: quiet. hold 19: next interval.
-        for _ in 0..3 {
+        assert_eq!(s.button(2), Some(0));
+        // hold 16,17,18,19: quiet. hold 20: next fire (period = interval + 1 = 5).
+        for h in 16..20 {
             s.advance_frame(A, (0.0, 0.0), (0.0, 0.0));
-            assert_eq!(s.button(1), Some(0));
+            assert_eq!(s.button(1), Some(0), "hold {h}");
         }
+        s.advance_frame(A, (0.0, 0.0), (0.0, 0.0));
+        assert_eq!(s.button(1), Some(A as i32));
+        // hold 21..24: quiet. hold 25: third fire — confirms the steady period repeats.
+        for h in 21..25 {
+            s.advance_frame(A, (0.0, 0.0), (0.0, 0.0));
+            assert_eq!(s.button(1), Some(0), "hold {h}");
+        }
+        s.advance_frame(A, (0.0, 0.0), (0.0, 0.0));
+        assert_eq!(s.button(1), Some(A as i32));
+    }
+
+    #[test]
+    fn brepeat_start_zero_fires_each_interval_plus_one() {
+        // start=0: the press frame itself satisfies `counter(1) > start(0)`, so the first repeat
+        // coincides with the raw press edge, then the steady period is interval + 1.
+        let mut s = InputState::new();
+        s.set_repeat(4, 0, 2); // interval 2 -> period 3
+        s.advance_frame(A, (0.0, 0.0), (0.0, 0.0)); // hold 0: raw edge + first repeat
+        assert_eq!(s.button(1), Some(A as i32));
+        // hold 1,2: quiet. hold 3: re-fire (period 3).
+        s.advance_frame(A, (0.0, 0.0), (0.0, 0.0));
+        assert_eq!(s.button(1), Some(0));
+        s.advance_frame(A, (0.0, 0.0), (0.0, 0.0));
+        assert_eq!(s.button(1), Some(0));
         s.advance_frame(A, (0.0, 0.0), (0.0, 0.0));
         assert_eq!(s.button(1), Some(A as i32));
     }
