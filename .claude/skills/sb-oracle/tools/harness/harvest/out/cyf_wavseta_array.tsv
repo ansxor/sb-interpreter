@@ -1,0 +1,9 @@
+# WAVSETA array-operand error harvest (sb-oracle SB 3.6.0 Azahar, 2026-06-27, bd:sb-interpreter-cyf)
+# multi-line forms (DIM line 1, WAVSETA line 2) to avoid the batch |err colon-mangle; errline=2
+name	stmt	errored	errnum	errline
+refpitch_oor	DIM SMP[16] / WAVSETA 224,0,95,100,20,SMP,128	true	10	2
+start_oor	DIM SMP[16] / WAVSETA 224,0,95,100,20,SMP,69,20	true	10	2
+end_oor	DIM SMP[16] / WAVSETA 224,0,95,100,20,SMP,69,0,20	true	10	2
+end_before_start	DIM SMP[16] / WAVSETA 224,0,95,100,20,SMP,69,10,5	true	4	2
+define_6args_ok	DIM SMP[16] / WAVSETA 224,0,95,100,20,SMP	false	-	-
+define_9args_ok	DIM SMP[16] / WAVSETA 255,120,0,127,124,SMP,45,0,15	false	-	-
