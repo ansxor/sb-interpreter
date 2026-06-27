@@ -45,3 +45,26 @@ cases:
   - name: anim_too_long
     code: "SPSET 0,0\nSPANIM 0,\"Z\",1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0"
     expect: { error: { errnum: 39 } }
+  # Form-2 (DATA "@label") first value = KEYFRAME COUNT, not the total item count (bd f7h).
+  # hw_verified 2026-06-27 (f7h_dataform.tsv): `DATA 2` with an XY channel (stride 3) reads 2
+  # KEYFRAMES = 6 values and activates the channel (SPCHK bit 1) — it does NOT require the
+  # first value to be divisible by the stride (a total-item-count reading would raise errnum 4
+  # for `DATA 2` / `DATA 1`). Channel-activation is read back through SPCHK (= (flags>>17)&0xFF).
+  - name: anim_data_keyframe_count_xy
+    code: "SPSET 0,0\nSPANIM 0,\"XY\",\"@L\"\nPRINT SPCHK(0)\n@L\nDATA 2\nDATA -60,200,100\nDATA -30,50,20"
+    expect: { stdout: "1" }
+  # A single keyframe (`DATA 1`, 3 XY values) — `1` is not a multiple of stride 3, yet it is
+  # accepted because it is a keyframe COUNT, confirming the not-total-count reading.
+  - name: anim_data_keyframe_count_single
+    code: "SPSET 0,0\nSPANIM 0,\"XY\",\"@L\"\nPRINT SPCHK(0)\n@L\nDATA 1\nDATA -60,200,100"
+    expect: { stdout: "1" }
+  # A stride-2 channel (Z): `DATA 2` reads 2 keyframes = 4 values, activating SPCHK bit 2.
+  - name: anim_data_keyframe_count_z
+    code: "SPSET 0,0\nSPANIM 0,\"Z\",\"@L\"\nPRINT SPCHK(0)\n@L\nDATA 2\nDATA 10,5\nDATA 20,15"
+    expect: { stdout: "2" }
+  # Proof of direction: `DATA 6` with only 6 XY values present reads 6 KEYFRAMES (= 18 values)
+  # and runs out of DATA → "Out of DATA" (errnum 13). A total-item-count reading would have
+  # treated 6 as 2 keyframes and succeeded. hw_verified 2026-06-27 (errcase: errnum 13).
+  - name: anim_data_count_is_keyframes_not_items
+    code: "SPSET 0,0\nSPANIM 0,\"XY\",\"@L\"\n@L\nDATA 6\nDATA -60,200,100\nDATA -30,50,20"
+    expect: { error: { errnum: 13 } }
