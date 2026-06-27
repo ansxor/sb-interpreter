@@ -1,0 +1,19 @@
+# sb-oracle harvest — bead sb-interpreter-ltz · 2026-06-26 · run_case.py batch
+# All 7 Class-1 statement keywords as sole RHS (`A=<KW>`) under OPTION STRICT.
+# PLUS the non-STRICT `A=FOO` baseline proving errnum 48 is NOT a generic
+# uninit-read — ordinary uninit reads as 0 (NOERR); only a Class-1 KW bareword
+# sole-RHS trips 48 non-STRICT. See ctm_bareword_kw.tsv for the non-STRICT KW set.
+#
+# Conclusion: the bareword-KW-as-sole-RHS is a SPECIAL form, not a general
+# uninit-var mechanism. Under STRICT it routes through the normal undeclared-var
+# path -> 15; under default mode it routes to a dedicated 48 (Uninitialized
+# variable used) rather than the silent auto-init-0 a plain name gets.
+stop_strict	errnum=15 errline=1
+end_strict	errnum=15 errline=1
+goto_strict	errnum=15 errline=1
+gosub_strict	errnum=15 errline=1
+return_strict	errnum=15 errline=1
+print_strict	errnum=15 errline=1
+restore_strict	errnum=15 errline=1
+foo_strict	errnum=15 errline=1
+foo_nostict	NOERR (statement did not raise)

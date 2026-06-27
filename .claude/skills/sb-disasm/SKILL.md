@@ -20,7 +20,9 @@ you read as a `disassembled` source in the spec.
 ## Hard facts
 - Artifacts (in `sb-disassembly/`): `SmileBASIC_3.6.0_CIA.bin` (decompressed code),
   `listings/cia_3.6.0.lst` (disassembly text), `listings/cia_3.6.0.functions.txt` (6,558
-  function bounds). These are gitignored but present locally; rebuild via the repo README.
+  function bounds). These are gitignored but present locally. If `functions.txt` is missing
+  (so `func`/`xref`/`near`/`dispatch` labels crash with FileNotFoundError), rebuild it from
+  the `.lst` with `python3 tools/build_functions_txt.py` — no Ghidra install needed.
 - **runtime address = .bin file offset + 0x100000.** Segments: `.text [0x100000,0x2C8000)`,
   `.rodata [0x2C8000,0x2FD000)`, `.data [0x2FD000,0x325000)`.
 - Command/function **names are UTF-16LE** in `.rodata`; a keyword table near `0x2C8E00`
