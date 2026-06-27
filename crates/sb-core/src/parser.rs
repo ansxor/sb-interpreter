@@ -136,7 +136,20 @@ fn expr_stmt_class(name: &str) -> ExprStmtClass {
         // command call and a value-fn-as-statement are indistinguishable by errnum — both raise
         // runtime 4 after evaluating the arg — so the IllegalFnStmt lowering is faithful here).
         | "SPUSED" | "SPCHK" | "BGCHK" | "BGMCHK" | "CHKFILE" | "CHKCHR" | "BUTTON"
-        | "TALKCHK" | "FADECHK" | "PRGNAME$" | "MPSTAT" | "MPNAME$" | "SPLINK" | "VISIBLE" => {
+        | "TALKCHK" | "FADECHK" | "PRGNAME$" | "MPSTAT" | "MPNAME$" | "SPLINK" | "VISIBLE"
+        // Tail of the per-builtin value-vs-command split (bead sb-interpreter-imk, hw_verified
+        // sb-oracle 2026-06-27, harness/harvest/out/exprstmt_tail.tsv — anchored against
+        // GPAGE(0)→4 / SPPAGE(0)→NOERR / GCLS(0)→NOERR for fresh reads). Every name here had its
+        // 1-arg whole-paren statement form measured → Illegal function call (4), so it was RUNning
+        // wrongly under BuiltinCommand. Mix of real value getters (SPHITSP/SPHITRC collision tests,
+        // SPVAR/BGGET/BGVAR getters, PRGGET$/PRGSIZE source queries, BGCOORD coord convert) and
+        // multi-arg COMMANDS whose 1-arg whole-paren form raises 4 by wrong-arity (SPCOL/SPCOLVEC/
+        // SPDEF/BGCOPY/SPFUNC) — a wrong-arity command call and a value-fn-as-statement are
+        // indistinguishable by errnum (both raise runtime 4 after evaluating the arg), so the
+        // IllegalFnStmt lowering is faithful for both. BGPAGE is NOT here: BGPAGE(0) → NOERR
+        // (its 1-arg form is a valid command and RUNS), so it stays BuiltinCommand.
+        | "SPHITSP" | "SPHITRC" | "SPVAR" | "BGGET" | "BGVAR" | "PRGGET$" | "PRGSIZE"
+        | "BGCOORD" | "SPCOL" | "SPCOLVEC" | "SPDEF" | "BGCOPY" | "SPFUNC" => {
             ExprStmtClass::ValueFunction
         }
         // System constant: a zero-arg read-only sysvar (like `PI`, but `HARDWARE` is a bare

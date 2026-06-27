@@ -62,6 +62,36 @@ cases:
   - { name: splink_stmt,  code: 'SPLINK(0)',      expect: { error: { errnum: 4 } } }
   - { name: visible_stmt, code: 'VISIBLE(0)',     expect: { error: { errnum: 4 } } }
 
+  # -- Illegal function call (4): tail of the value-vs-command split — 1-arg whole-paren
+  # statement form (bead sb-interpreter-imk; hw_verified sb-oracle 2026-06-27, harness/harvest/
+  # out/exprstmt_tail.tsv, anchored GPAGE(0)->4 / SPPAGE(0)->NOERR / GCLS(0)->NOERR for fresh
+  # reads). These used to fall through as BuiltinCommand and RUN their 1-arg form. SPHITSP/
+  # SPHITRC are collision-test functions; SPVAR/BGGET/BGVAR are getters; PRGGET$/PRGSIZE query
+  # source slots; BGCOORD converts coords. SPCOL/SPCOLVEC/SPDEF/BGCOPY/SPFUNC are multi-arg
+  # COMMANDS whose 1-arg whole-paren form raises 4 by wrong-arity (indistinguishable from a
+  # value-fn-as-statement, both runtime 4).
+  - { name: sphitsp_stmt,  code: 'SPHITSP(0)',   expect: { error: { errnum: 4 } } }
+  - { name: sphitrc_stmt,  code: 'SPHITRC(0)',   expect: { error: { errnum: 4 } } }
+  - { name: spvar_stmt,    code: 'SPVAR(0)',     expect: { error: { errnum: 4 } } }
+  - { name: bgget_stmt,    code: 'BGGET(0)',     expect: { error: { errnum: 4 } } }
+  - { name: bgvar_stmt,    code: 'BGVAR(0)',     expect: { error: { errnum: 4 } } }
+  - { name: prgget_stmt,   code: 'PRGGET$(0)',   expect: { error: { errnum: 4 } } }
+  - { name: prgsize_stmt,  code: 'PRGSIZE(0)',   expect: { error: { errnum: 4 } } }
+  - { name: bgcoord_stmt,  code: 'BGCOORD(0)',   expect: { error: { errnum: 4 } } }
+  - { name: spcol_stmt,    code: 'SPCOL(0)',     expect: { error: { errnum: 4 } } }
+  - { name: spcolvec_stmt, code: 'SPCOLVEC(0)',  expect: { error: { errnum: 4 } } }
+  - { name: spdef_stmt,    code: 'SPDEF(0)',     expect: { error: { errnum: 4 } } }
+  - { name: bgcopy_stmt,   code: 'BGCOPY(0)',    expect: { error: { errnum: 4 } } }
+  - { name: spfunc_stmt,   code: 'SPFUNC(0)',    expect: { error: { errnum: 4 } } }
+
+  # -- NOERR: BGPAGE is a true command — its 1-arg whole-paren form runs (BGPAGE(0) selects the
+  # current BG layer; hw_verified -> NOERR, exprstmt_tail.tsv). Contrast SPVAR/BGGET above.
+  - { name: bgpage1_stmt,  code: 'BGPAGE(0)',    expect: { stdout: "" } }
+
+  # -- Syntax error (3): 2-arg whole-paren statement form of a getter -> generic ≠1-arg rule
+  # (hw_verified SPVAR(0,1) -> 3, exprstmt_tail.tsv).
+  - { name: spvar2_stmt,   code: 'SPVAR(0,1)',   expect: { error: { errnum: 3 } } }
+
   # -- Syntax error (3): HARDWARE is a zero-arg system constant, not a callable. ANY whole-
   # paren form is a parse error (hw_verified HARDWARE(0) -> 3, exprstmt_getters.tsv).
   - { name: hardware1_stmt, code: 'HARDWARE(0)',  expect: { error: { errnum: 3 } } }
