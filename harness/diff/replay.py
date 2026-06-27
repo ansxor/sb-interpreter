@@ -78,11 +78,57 @@ def diff_goldens(runner):
     return failed
 
 
+def diff_composite_goldens(runner):
+    """Composite gate (sb-interpreter-tzn): render each golden program through
+    `sb-run --composite` — the FULL composited framebuffer (backdrop → GRP → BG → sprites →
+    console → fader), not just the GRP page — and pixel-diff it against the committed golden PNG
+    (an oracle composite screenshot, O-T6). Hermetic, no emulator. A composite golden typically
+    draws a static scene then spins in `WHILE 1:WEND`, so sb-run runs it for a bounded number of
+    frames and snapshots the scene. Returns the list of FAILED golden stems."""
+    goldens = count("harness/corpus/golden/composite", "*.png")
+    if not goldens:
+        return []
+    print(f"\npixel-diffing {len(goldens)} composite golden(s) via {runner.name} ...")
+    failed = []
+    for golden in goldens:
+        prog = golden.with_suffix(".sb3")
+        if not prog.exists():
+            print(f"  [FAIL] {golden.name}: no sibling program {prog.name}")
+            failed.append(golden.stem)
+            continue
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+            tmp = Path(tf.name)
+        try:
+            proc = subprocess.run(
+                [str(runner), "--composite", str(tmp), "top", str(prog)],
+                capture_output=True,
+                text=True,
+            )
+            if proc.returncode not in (0, 1):  # 1 = SB error, scene still composited
+                note = proc.stderr.strip().splitlines()[0] if proc.stderr.strip() else ""
+                print(f"  [FAIL] {golden.name}: sb-run exit {proc.returncode}  {note}")
+                failed.append(golden.stem)
+                continue
+            bad, total, first = diff_rgba(
+                decode_rgba(golden.read_bytes()), decode_rgba(tmp.read_bytes())
+            )
+            if bad == 0:
+                print(f"  [PASS] {golden.name}  ({total} px)")
+            else:
+                where = "size mismatch" if first is None else f"first @ {first}"
+                print(f"  [FAIL] {golden.name}: {bad}/{total} px differ ({where})")
+                failed.append(golden.stem)
+        finally:
+            tmp.unlink(missing_ok=True)
+    return failed
+
+
 def main():
     spec_tests = count("spec/tests", "*.yaml")
     cases = count("harness/corpus/cases", "*.yaml")
     programs = count("harness/corpus/programs", "*.sb3")
     golden_gfx = count("harness/corpus/golden/gfx", "*.png")
+    golden_composite = count("harness/corpus/golden/composite", "*.png")
     golden_audio = count("harness/corpus/golden/audio", "*.wav")
 
     print("Deterministic replay inventory (committed fixtures):")
@@ -90,6 +136,7 @@ def main():
     print(f"  corpus cases       : {len(cases)}")
     print(f"  corpus programs    : {len(programs)}")
     print(f"  golden gfx (PNG)   : {len(golden_gfx)}")
+    print(f"  golden composite   : {len(golden_composite)}")
     print(f"  golden audio (WAV) : {len(golden_audio)}")
 
     runner = sb_core_runner()
@@ -130,14 +177,20 @@ def main():
             failed.append(prog.name)
 
     golden_failed = diff_goldens(runner)
+    composite_failed = diff_composite_goldens(runner)
 
-    if failed or golden_failed:
+    if failed or golden_failed or composite_failed:
         if failed:
             print(f"\n{len(failed)} expected-pass program(s) failed: {', '.join(failed)}")
         if golden_failed:
             print(f"{len(golden_failed)} graphics golden(s) failed: {', '.join(golden_failed)}")
+        if composite_failed:
+            print(
+                f"{len(composite_failed)} composite golden(s) failed: "
+                f"{', '.join(composite_failed)}"
+            )
         return 1
-    print("\nall expected-pass programs OK; all graphics goldens match.")
+    print("\nall expected-pass programs OK; all graphics + composite goldens match.")
     return 0
 
 

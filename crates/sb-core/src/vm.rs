@@ -781,6 +781,14 @@ impl Vm {
         self.screen.upper_visibility()
     }
 
+    /// The opaque backdrop color (ARGB8888) the compositor paints behind every layer — the
+    /// live `BACKCOLOR` RGB with a forced opaque alpha. Default is black (`BACKCOLOR 0`). The
+    /// headless composite-golden path (`sb-run --composite`) reads this so a `BACKCOLOR` golden
+    /// diffs correctly against the oracle composite capture (O-T6).
+    pub fn backdrop(&self) -> u32 {
+        0xFF00_0000 | (self.back_color as u32 & 0x00FF_FFFF)
+    }
+
     /// The current fader color as an ARGB code, for `FADE()` / for inspection.
     pub fn fader_color(&self) -> i32 {
         self.fader.current()
