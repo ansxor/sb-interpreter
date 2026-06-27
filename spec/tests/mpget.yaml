@@ -7,3 +7,9 @@ tests:
   - name: "too_many_args"
     code: "A=MPGET(0,0,0)"
     expect: { error: { errnum: 4 } }
+  - name: "terminal_out_of_range"
+    code: "A=MPGET(0,0)"
+    expect: { error: { errnum: 10 } }
+  - name: "terminal_negative"
+    code: "A=MPGET(-1,0)"
+    expect: { error: { errnum: 10 } }

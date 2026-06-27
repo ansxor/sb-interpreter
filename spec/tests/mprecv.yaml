@@ -7,3 +7,6 @@ tests:
   - name: "one_out_var"
     code: "MPRECV OUT SID"
     expect: { error: { errnum: 4 } }
+  - name: "value_arg_before_out"
+    code: "MPRECV SID OUT RCV$"
+    expect: { error: { errnum: 4 } }
