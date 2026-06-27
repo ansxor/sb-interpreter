@@ -11,6 +11,7 @@ sources:
   - { type: hw_verified, ref: "sb-oracle skill sb_extdata.py: extdata SB3 container (80-byte header + UTF-8/PCBN body + 20-byte HMAC-SHA1 footer; markers TXT/DAT/GRP; HMAC key) round-tripped both directions against real SB 3.6.0 (O-T3 write valid file SB accepts + O-T4 read result off disk)" }
   - { type: hw_verified, ref: "sb-oracle skill run_case.py/sb_extdata.py: DAT numeric-array body = 28-byte PCBN0001 header (u16 type=5 @8, u16 rank @10, u32 LE dims @0x0C/0x10/0x14, 4-byte reserved @0x18) + row-major f64 LE elements; 1-D..3-D arrays round-trip through real SB 3.6.0 (O-T3)" }
   - { type: hw_verified, ref: "sb-oracle skill sb_grp.py: DAT/GRP body = 28-byte PCBN header (magic 'PCBN'+'0001', u32 LE width/height @12/@16) + 512x512 RGBA5551 LE row-major pixels; pixel-exact GRP0 capture (O-T6)" }
+  - { type: hw_verified, ref: "sb-oracle skill (bfh, 2026-06-27): GSAVE color-conversion flag is value-only — `GSAVE 0,0,0,4,4,A,1` (16-bit physical) and `,0` (32-bit logical) SAVE the IDENTICAL PCBN body (type tag 0x0005, rank 1, f64 elements, one pixel/element); flag1 red = 0xF801 = 63489.0, flag0 = 0xFFF80000 = 4294443008.0. No distinct ushort tag/size bit. Real flag1 4x4 header reserved@0x18=0x00000001 (non-zero) and dim1/dim2=0x001D001D garbage" }
   - { type: community, ref: "tools/extract_sbsave.py: PETC smilebasicsource.com server container (type 0=TXT/1=DAT/2=PRJ; project directory at 0x54/0x58; internal name prefix T/B) validated against 915/915 scraped downloads" }
 # On-disk container + DAT/GRP bodies are hw_verified round-trip; resource parsing/errnums are
 # disassembled; project model is documented. Top-level confidence stays disassembled because the
@@ -190,7 +191,7 @@ For a **DAT numeric array** (`hw_verified` on real SB 3.6.0, O-T3):
 | 0x0C | 4 | dimension 0 size (`u32` LE) |
 | 0x10 | 4 | dimension 1 size (`u32` LE), unused/garbage when `rank < 2` |
 | 0x14 | 4 | dimension 2 size (`u32` LE), unused/garbage when `rank < 3` |
-| 0x18 | 4 | reserved (zeros in valid files) |
+| 0x18 | 4 | reserved (often `0`, but a real GSAVE-flag-1 save was observed with `0x00000001`; ignore it) |
 | 0x1C | `count × 8` | elements as **`f64` LE**, row-major (`count = dim0·dim1·dim2`) |
 
 `SAVE "DAT:"` stores every numeric array as `f64` elements, regardless of whether the source
@@ -201,7 +202,14 @@ must use the `rank` field and ignore the trailing slots.
 
 The `GSAVE`/`GLOAD` **color-conversion flag** picks how pixels are stored when round-tripping
 a page through an array: `0` = convert to 32-bit logical colors, `1` = leave the 16-bit physical
-codes as-is. (`GSAVE`/`GLOAD` dat-file layout is the same numeric-array PCBN format above.)
+codes as-is. The flag changes only the **element values**, never the container: both forms write
+the *same* numeric-array PCBN body (`hw_verified`, bfh, O-T3) — type tag `0x0005`, f64 elements,
+one pixel per element. A flag-`1` save stores the raw RGBA5551 code as an f64 (red `0xF801` =
+`63489.0`); the equivalent flag-`0` save stores the 32-bit logical color (`0xFFF80000` =
+`4294443008.0`). There is **no** distinct "ushort" type tag and **no** size/type bit — a decoder
+reads both with the single tag-`0x0005`/f64 branch. (In the harvested 4×4 flag-`1` file the
+reserved field at `0x18` was `0x00000001`, not zero, and the unused `dim1`/`dim2` slots held
+`0x001D001D`; honour `rank` and ignore them, as above.)
 
 ---
 

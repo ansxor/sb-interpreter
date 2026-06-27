@@ -327,6 +327,39 @@ mod tests {
     }
 
     #[test]
+    fn dat_pcbn_gsave_flag1_ushort_reuses_tag5() {
+        // bfh (hw_verified, sb-oracle 2026-06-27): a graphics page captured into an array via
+        // `GSAVE x,y,w,h,A,1` (16-bit physical RGBA5551 codes) and SAVEd to `DAT:` stores its
+        // body with the SAME PCBN tag (0x0005) and f64 elements as a flag-0 (32-bit logical)
+        // save — there is NO distinct ushort type tag or size bit. The 16-bit codes are just
+        // f64 values (e.g. red = 0xF801 = 63489.0). The real on-disk header for a 4×4 flag-1
+        // capture is reproduced byte-for-byte below; note dim1/dim2 hold garbage (0x001D001D)
+        // and the reserved field is 0x00000001 — the decoder must ignore them via `rank`.
+        #[rustfmt::skip]
+        let header: [u8; PCBN_HEADER_LEN] = [
+            0x50, 0x43, 0x42, 0x4E, // "PCBN"
+            0x30, 0x30, 0x30, 0x31, // "0001"
+            0x05, 0x00,             // type tag = 5
+            0x01, 0x00,             // rank = 1
+            0x10, 0x00, 0x00, 0x00, // dim0 = 16
+            0x1D, 0x00, 0x1D, 0x00, // dim1 = garbage (rank<2)
+            0x1D, 0x00, 0x1D, 0x00, // dim2 = garbage (rank<3)
+            0x01, 0x00, 0x00, 0x00, // reserved = 1 (NOT zero on a real save)
+        ];
+        let mut body = header.to_vec();
+        for _ in 0..16 {
+            body.extend_from_slice(&63489.0f64.to_le_bytes()); // 0xF801, RGBA5551 red
+        }
+        let dest = int_array(&[0]);
+        decode_dat_into(&dest, &body).unwrap();
+        if let Value::IntArray(a) = &dest {
+            assert_eq!(a.borrow().as_slice(), &[63489i32; 16]);
+        } else {
+            panic!("dest changed type");
+        }
+    }
+
+    #[test]
     fn dat_pcbn_truncated_data_is_rejected() {
         let dest = int_array(&[0]);
         let mut body = make_pcbn_1d(&[1.0, 2.0]);
