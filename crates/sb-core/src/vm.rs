@@ -5996,23 +5996,27 @@ H$=HEX$(255)"#);
     #[test]
     fn cls_clears_console() {
         // hw_verified: PRINT then CLS leaves the console empty.
-        assert_eq!(out(r#"PRINT "X":CLS"#), "");
+        // The bare `CLS` command needs the registry so it is not mistaken for a bare
+        // variable used as a statement (which is Syntax error 3).
+        assert_eq!(run_b(r#"PRINT "X":CLS"#).console_text(), "");
     }
 
     #[test]
     fn console_command_error_conditions() {
-        // hw_verified expects from the console specs.
-        assert_eq!(run_err("LOCATE 51,0").errnum(), Some(10)); // X out of range
-        assert_eq!(run_err("LOCATE 0,30").errnum(), Some(10)); // Y out of range
-        assert_eq!(run_err("LOCATE 0,0,2000").errnum(), Some(10)); // Z out of range
-        assert_eq!(run_err("LOCATE 0").errnum(), Some(4)); // single slot
-        assert_eq!(run_err("COLOR 16").errnum(), Some(10)); // fg out of range
-        assert_eq!(run_err("COLOR 0,16").errnum(), Some(10)); // bg out of range
-        assert_eq!(run_err("CLS 0").errnum(), Some(4)); // CLS takes no args
-        assert_eq!(run_err("BACKCOLOR").errnum(), Some(4)); // SET needs 1 arg
-        assert_eq!(run_err("BACKCOLOR 0,1").errnum(), Some(4)); // too many
-        assert_eq!(run_err("ACLS 1").errnum(), Some(4)); // 1 arg illegal
-        assert_eq!(run_err("ACLS 1,1").errnum(), Some(4)); // 2 args illegal
+        // hw_verified expects from the console specs. Uses the registry helper so the
+        // bare `BACKCOLOR` is recognized as a command (→ its arg-count errnum 4), not a
+        // bare-variable statement (→ Syntax error 3).
+        assert_eq!(run_b_err("LOCATE 51,0").errnum(), Some(10)); // X out of range
+        assert_eq!(run_b_err("LOCATE 0,30").errnum(), Some(10)); // Y out of range
+        assert_eq!(run_b_err("LOCATE 0,0,2000").errnum(), Some(10)); // Z out of range
+        assert_eq!(run_b_err("LOCATE 0").errnum(), Some(4)); // single slot
+        assert_eq!(run_b_err("COLOR 16").errnum(), Some(10)); // fg out of range
+        assert_eq!(run_b_err("COLOR 0,16").errnum(), Some(10)); // bg out of range
+        assert_eq!(run_b_err("CLS 0").errnum(), Some(4)); // CLS takes no args
+        assert_eq!(run_b_err("BACKCOLOR").errnum(), Some(4)); // SET needs 1 arg
+        assert_eq!(run_b_err("BACKCOLOR 0,1").errnum(), Some(4)); // too many
+        assert_eq!(run_b_err("ACLS 1").errnum(), Some(4)); // 1 arg illegal
+        assert_eq!(run_b_err("ACLS 1,1").errnum(), Some(4)); // 2 args illegal
     }
 
     #[test]
@@ -6032,8 +6036,8 @@ H$=HEX$(255)"#);
     #[test]
     fn acls_runs_and_resets() {
         // The no-arg form and the corpus-verified 3-arg form both run; no error.
-        run(r#"COLOR 3,4:PRINT "X":ACLS"#);
-        run("ACLS 1,1,0");
+        run_b(r#"COLOR 3,4:PRINT "X":ACLS"#);
+        run_b("ACLS 1,1,0");
     }
 
     #[test]
@@ -6041,7 +6045,7 @@ H$=HEX$(255)"#);
         // hw_verified (acls.yaml, M7-T2 2026-06-24): ACLS restores the scalar draw settings
         // to their power-on defaults (GCOLOR -> -1 white, BACKCOLOR -> 0, WIDTH -> 8,
         // DISPLAY -> 0) but leaves the writable TABSTEP sysvar untouched.
-        let vm = run(
+        let vm = run_b(
             "GCOLOR RGB(1,2,3):BACKCOLOR &HFF112233:WIDTH 16:XSCREEN 2:DISPLAY 1:TABSTEP=8:ACLS\n\
              G=GCOLOR():B=BACKCOLOR():W=WIDTH():D=DISPLAY():T=TABSTEP",
         );
@@ -6051,7 +6055,7 @@ H$=HEX$(255)"#);
         assert_eq!(int(&vm, "D"), 0);
         assert_eq!(int(&vm, "T"), 8);
         // The 3-arg selective form resets identically.
-        let vm = run("BACKCOLOR &HFF112233:WIDTH 16:ACLS 1,1,1\nB=BACKCOLOR():W=WIDTH()");
+        let vm = run_b("BACKCOLOR &HFF112233:WIDTH 16:ACLS 1,1,1\nB=BACKCOLOR():W=WIDTH()");
         assert_eq!(int(&vm, "B"), 0);
         assert_eq!(int(&vm, "W"), 8);
     }
@@ -6090,14 +6094,15 @@ H$=HEX$(255)"#);
 
     #[test]
     fn fade_error_conditions() {
-        // Wrong call shapes raise errnum 4.
-        assert_eq!(run_err("FADE").errnum(), Some(4)); // statement needs >=1 arg
-        assert_eq!(run_err("FADE 0,0,0").errnum(), Some(4)); // too many
-        assert_eq!(run_err("A=FADE(0)").errnum(), Some(4)); // function takes no args
-        assert_eq!(run_err("FADECHK 0").errnum(), Some(4)); // statement form forbidden
-        assert_eq!(run_err("FADECHK()").errnum(), Some(4)); // not used as statement
-                                                            // Negative fade time raises errnum 10 (Out of range).
-        assert_eq!(run_err("FADE RGB(0,0,0,255),-1").errnum(), Some(10));
+        // Wrong call shapes raise errnum 4. Registry helper so bare `FADE` is the command
+        // (→ errnum 4 for the missing arg), not a bare-variable statement (→ errnum 3).
+        assert_eq!(run_b_err("FADE").errnum(), Some(4)); // statement needs >=1 arg
+        assert_eq!(run_b_err("FADE 0,0,0").errnum(), Some(4)); // too many
+        assert_eq!(run_b_err("A=FADE(0)").errnum(), Some(4)); // function takes no args
+        assert_eq!(run_b_err("FADECHK 0").errnum(), Some(4)); // statement form forbidden
+        assert_eq!(run_b_err("FADECHK()").errnum(), Some(4)); // not used as statement
+                                                              // Negative fade time raises errnum 10 (Out of range).
+        assert_eq!(run_b_err("FADE RGB(0,0,0,255),-1").errnum(), Some(10));
     }
 
     #[test]
@@ -6119,7 +6124,7 @@ H$=HEX$(255)"#);
 
     #[test]
     fn acls_resets_fader() {
-        let vm = run("FADE RGB(128,255,0,0),10\nACLS\nA=FADE()");
+        let vm = run_b("FADE RGB(128,255,0,0),10\nACLS\nA=FADE()");
         assert_eq!(int(&vm, "A"), 0);
     }
 
@@ -6300,7 +6305,7 @@ H$=HEX$(255)"#);
         // ACLS resets DISPLAY -> 0 (hw_verified, acls.yaml). The GRP command-target screen
         // must follow, or subsequent draws would route to the Touch screen while DISPLAY()
         // reads back 0.
-        let vm = run("XSCREEN 2:DISPLAY 1:ACLS");
+        let vm = run_b("XSCREEN 2:DISPLAY 1:ACLS");
         assert_eq!(vm.grp().active, 0);
         assert_eq!(vm.screen_config().display, 0);
     }
@@ -6454,7 +6459,10 @@ H$=HEX$(255)"#);
     fn chkchr_reads_console_grid() {
         // Round-trip: print a glyph, read its UTF-16 code back, then CLS so the scrape is the
         // read-back value alone (ASC("A") == 65).
-        assert_eq!(out(r#"LOCATE 0,0:?"A";:C=CHKCHR(0,0):CLS:?C"#), "65");
+        assert_eq!(
+            run_b(r#"LOCATE 0,0:?"A";:C=CHKCHR(0,0):CLS:?C"#).console_text(),
+            "65"
+        );
         // Empty / out-of-bounds cells read as 0 (no error).
         assert_eq!(out("?CHKCHR(10,10)"), "0");
         assert_eq!(out("?CHKCHR(-1,0)"), "0");

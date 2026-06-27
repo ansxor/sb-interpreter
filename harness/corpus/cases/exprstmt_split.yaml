@@ -42,11 +42,17 @@ cases:
   - { name: five_stmt,    code: '5',               expect: { error: { errnum: 3 } } }
   - { name: aplusb_stmt,  code: '1+2',             expect: { error: { errnum: 3 } } }
   - { name: str_stmt,     code: '"HI"',            expect: { error: { errnum: 3 } } }
-  # NOTE: the 4th bare-expr case `var_stmt` (a lone identifier `A` -> errnum 3, hw_verified
-  # exprstmt2.tsv) is intentionally NOT included: sb-core currently gives Undefined function
-  # (16) for a bare bareword statement instead of Syntax error (3). That is a distinct
-  # parser concern (bare-identifier statement, not the builtin 3-vs-4 split) — queued as its
-  # own bead. The other three bare-expr forms (literal / arithmetic / string) already -> 3.
+  # A lone bareword identifier used as a statement is the same bucket (bead sb-interpreter-boi,
+  # hw_verified exprstmt2.tsv `var_stmt` = `A` -> errnum 3 errline 1). It reaches the compiler
+  # as an empty `Call` only because it is neither a parser keyword, a registered builtin
+  # command, nor a user DEF — i.e. a plain variable name — so it is rejected as Syntax error 3
+  # at compile time, NOT dispatched as an empty builtin call (which would give the runtime
+  # Undefined function 16).
+  - { name: var_stmt,     code: 'A',               expect: { error: { errnum: 3 } } }
+  # A bareword that names an ALREADY-DEFINED variable is still not a statement -> 3 (sb-core
+  # consistency check; same compile-time gate. Oracle confirmation of `A=5:A` queued in
+  # sb-interpreter-boi).
+  - { name: defvar_stmt,  code: 'A=5:A',           expect: { error: { errnum: 3 } } }
 
   # -- NOERR: commands that accept a grouped first argument run normally -----------------
   - { name: color_stmt,   code: 'COLOR(0)',        expect: { stdout: "" } }

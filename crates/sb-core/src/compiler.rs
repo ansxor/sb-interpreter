@@ -1137,6 +1137,27 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
+        // A LONE bareword used as a statement (`A` on its own line, no args/parens)
+        // is a Syntax error (errnum 3) on real SB 3.6.0 — NOT the runtime Undefined
+        // function (16) it would get if dispatched as an empty builtin call. SB rejects
+        // a bare expression/variable used as a statement at parse time, the same bucket
+        // as `5` / `1+2` / `"HI"` (which the parser already routes to errnum 3). A bare
+        // name reaches here only when it is neither a parser keyword, a registered
+        // builtin command (`GCLS`, `VSYNC`, …), nor a user `DEF` — i.e. it is a plain
+        // variable name, whether undefined or already assigned (`A=5:A` → 3 too).
+        // hw_verified (sb-oracle, harness/harvest/out/exprstmt2.tsv `var_stmt` →
+        // errnum 3 errline 1). Follow-up to sb-interpreter-5iu (the builtin 3-vs-4 split).
+        if args.is_empty()
+            && out_args.is_empty()
+            && cname != "CALL"
+            && !self.user_funcs.contains(&cname)
+            && !self.builtins.is_builtin(&cname)
+        {
+            return Err(self.err(
+                ERR_SYNTAX,
+                format!("bare name `{cname}` is not a statement"),
+            ));
+        }
         // The stack/queue ops (M1-T14) take their first operand by reference so they can
         // grow/shrink the caller's array or write a modified string scalar back.
         let leading_ref = is_stack_op(&cname);
