@@ -44,6 +44,43 @@ const ERR_ILLEGAL_FN: u32 = 4;
 /// through to errnum 8). hw_verified sb-oracle 2026-06-26 (s_t4b multi-dim).
 const ERR_TYPE_MISMATCH: u32 = 8;
 
+/// Shared user-heap budget (in SB-internal bytes) for a single array allocation, beyond
+/// which `DIM`/`VAR` raises `Out of memory` (errnum 11) instead of OOMing the host.
+///
+/// This reproduces the per-type element caps measured on real SB 3.6.0 (sb-oracle
+/// `run_case.py errcase` probe, 2026-06-26, recorded in `spec/instructions/dim.yaml`): a 1D
+/// numeric (int/double) array succeeds at 1,035,000 elements and OOMs at 1,040,000; a string
+/// array succeeds at 2,075,000 and OOMs at 2,080,000. The string cap being exactly ~2× the
+/// numeric cap is explained by a single shared **byte** budget with a numeric element
+/// weighing 8 SB-bytes (a tagged double slot) and a string element 4 (a heap handle): then
+/// `floor(B/8) ∈ [1_035_000, 1_040_000)` and `floor(B/4) ∈ [2_075_000, 2_080_000)` jointly
+/// pin `B ∈ [8_300_000, 8_320_000)`. We take the low end. The exact constant and its
+/// allocation site are NOT yet read from the disassembly (`DIM`/`VAR` are token-table
+/// keywords, not builtin-dispatch entries, so `disasm.py dispatch` does not reach the
+/// handler body) — so this byte budget is a model fit to the `hw_verified` boundaries, not a
+/// `disassembled` value. It reproduces every measured boundary above; pinning the precise
+/// limit is queued (bead sb-interpreter-4vd).
+const MAX_ARRAY_BYTES: usize = 8_300_000;
+
+/// The SB-internal storage weight (bytes) of one array element, used for the
+/// [`MAX_ARRAY_BYTES`] allocation cap. Numeric elements occupy an 8-byte tagged slot
+/// regardless of int vs double (both cap at ~1,037,500 elements on real SB 3.6.0); a string
+/// element is a 4-byte heap handle (caps at ~2× the numeric count).
+pub trait ArrayElem {
+    /// SB-internal bytes per element for the memory-budget check.
+    const SB_WEIGHT: usize;
+}
+impl ArrayElem for i32 {
+    const SB_WEIGHT: usize = 8;
+}
+impl ArrayElem for f64 {
+    const SB_WEIGHT: usize = 8;
+}
+impl ArrayElem for Vec<u16> {
+    // `crate::value::SbStr` = `Vec<u16>` — a string element is a heap handle (4 bytes).
+    const SB_WEIGHT: usize = 4;
+}
+
 /// A shared, mutable SmileBASIC array. Cloning the `Rc` shares the storage, which
 /// is exactly the by-reference semantics SmileBASIC arrays have.
 pub type ArrayRef<T> = Rc<RefCell<SbArray<T>>>;
@@ -66,9 +103,14 @@ impl<T: Clone + Default + PartialEq> SbArray<T> {
     /// `dims` must hold 1–4 entries, each `>= 0`. Elements default to `T::default()`
     /// (0 / 0.0 / "" — per `dim.yaml`: "All numeric elements default to 0; all string
     /// elements default to \"\""). A negative size or a count outside 1–4 raises
-    /// `Illegal function call` (errnum 4); an allocation that overflows `usize`
-    /// raises `Out of memory` (errnum 11).
-    pub fn new(dims: &[i32]) -> Result<Self, RuntimeError> {
+    /// `Illegal function call` (errnum 4); an allocation that overflows `usize` **or**
+    /// exceeds the SB user-heap budget ([`MAX_ARRAY_BYTES`], a per-type element cap)
+    /// raises `Out of memory` (errnum 11) — matching real SB 3.6.0 rather than OOMing
+    /// the host (e.g. `DIM A[10000,10000]` → errnum 11, hw_verified).
+    pub fn new(dims: &[i32]) -> Result<Self, RuntimeError>
+    where
+        T: ArrayElem,
+    {
         if dims.is_empty() || dims.len() > 4 {
             return Err(RuntimeError::new(ERR_ILLEGAL_FN));
         }
@@ -82,6 +124,13 @@ impl<T: Clone + Default + PartialEq> SbArray<T> {
             len = len
                 .checked_mul(d as usize)
                 .ok_or_else(|| RuntimeError::new(ERR_OUT_OF_MEMORY))?;
+        }
+        // SB user-heap cap: reject before touching the host allocator (real SB raises 11).
+        let too_large = len
+            .checked_mul(T::SB_WEIGHT)
+            .is_none_or(|bytes| bytes > MAX_ARRAY_BYTES);
+        if too_large {
+            return Err(RuntimeError::new(ERR_OUT_OF_MEMORY));
         }
         Ok(SbArray {
             data: vec![T::default(); len],
@@ -318,6 +367,31 @@ mod tests {
         assert_eq!(SbArray::<i32>::new(&[]).unwrap_err().errnum, 4);
         assert_eq!(SbArray::<i32>::new(&[1, 1, 1, 1, 1]).unwrap_err().errnum, 4);
         assert_eq!(SbArray::<i32>::new(&[-1]).unwrap_err().errnum, 4);
+    }
+
+    #[test]
+    fn over_budget_array_is_errnum_11() {
+        // Real SB 3.6.0 (sb-oracle errcase probe 2026-06-26, dim.yaml): an over-large array
+        // raises Out of memory (11) instead of OOMing the host. The cap is a shared byte
+        // budget — numeric elements weigh 8 SB-bytes, string elements 4 — so a numeric and a
+        // string array OOM at ~2× different element counts.
+        // Headline hw_verified case: DIM A[10000,10000] (1e8 elements) -> 11.
+        assert_eq!(SbArray::<i32>::new(&[10000, 10000]).unwrap_err().errnum, 11);
+        // 1D numeric boundary: 1,035,000 ok, 1,040,000 OOMs.
+        assert!(SbArray::<i32>::new(&[1_035_000]).is_ok());
+        assert!(SbArray::<f64>::new(&[1_035_000]).is_ok());
+        assert_eq!(SbArray::<i32>::new(&[1_040_000]).unwrap_err().errnum, 11);
+        assert_eq!(SbArray::<f64>::new(&[1_040_000]).unwrap_err().errnum, 11);
+        // 1D string boundary: 2,075,000 ok, 2,080,000 OOMs (≈2× the numeric cap).
+        assert!(SbArray::<Vec<u16>>::new(&[2_075_000]).is_ok());
+        assert_eq!(
+            SbArray::<Vec<u16>>::new(&[2_080_000]).unwrap_err().errnum,
+            11
+        );
+        // A string array survives an element count that OOMs a numeric one — the per-type
+        // distinction the empirical probe found.
+        assert_eq!(SbArray::<i32>::new(&[1_040_000]).unwrap_err().errnum, 11);
+        assert!(SbArray::<Vec<u16>>::new(&[1_040_000]).is_ok());
     }
 
     #[test]

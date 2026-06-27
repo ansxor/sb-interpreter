@@ -6,13 +6,17 @@
 # (the `(` is rejected at parse time on line 1). sb-core agrees: its parser (parse_dim)
 # only accepts `[` after the name for the array form, leaving a stray `(` → Syntax error 3.
 #
-# An over-large numeric array raises Out of memory (errnum 11), errline 1 — hw_verified for
-# DIM A[10000,10000] (1e8 elements). The exact per-type element-count cap was probed but is
-# NOT pinned here as a conformance case: sb-core's SbArray::new only raises errnum 11 on
-# usize overflow (checked_mul), not on a real-memory cap, so a DIM A[10000,10000] case would
-# attempt a 400MB allocation and OOM the host rather than cleanly raise 11. The errnum itself
-# is hw_verified (see dim.yaml sources); # the cap is queued for a disassembly read + sb-core
-# memory-limit bead (sb-interpreter-4vd, blocked on sb-interpreter-zvj).
+# An over-large array raises Out of memory (errnum 11), errline 1 — hw_verified. sb-core now
+# enforces a shared user-heap byte budget in SbArray::new (crates/sb-core/src/array.rs,
+# MAX_ARRAY_BYTES) so these raise 11 cleanly instead of OOMing the host. The cap reproduces
+# every measured boundary (sb-oracle errcase probe 2026-06-26): numeric (int/double) 1D ok at
+# 1,035,000 elements / OOM at 1,040,000; string 1D ok at 2,075,000 / OOM at 2,080,000 — a
+# string element (4 SB-bytes) being half a numeric element (8) explains the ~2× string cap
+# under one byte budget. The exact constant + its allocation site are still oracle/disasm
+# pending (DIM/VAR are token-table keywords, not builtin-dispatch entries — bead
+# sb-interpreter-4vd); the model fits all hw_verified points but is not itself disassembled.
+# Only the OOM (errnum 11) cases are replayed below — the under-cap "succeeds" boundaries are
+# exercised by the array.rs unit test (they allocate ~8MB and need no parse/VM golden).
 tests:
   - name: "paren_instead_of_bracket_1d"
     code: "DIM A(3)"
@@ -26,3 +30,13 @@ tests:
   - name: "paren_instead_of_bracket_then_use"
     code: "DIM A(3):A[0]=1"
     expect: { error: { errnum: 3 } }
+  # Out of memory (errnum 11) — over-large arrays. hw_verified sb-oracle errcase 2026-06-26.
+  - name: "oom_2d_huge"
+    code: "DIM A[10000,10000]"
+    expect: { error: { errnum: 11 } }
+  - name: "oom_numeric_1d"
+    code: "DIM A[1040000]"
+    expect: { error: { errnum: 11 } }
+  - name: "oom_string_1d"
+    code: "DIM A$[2080000]"
+    expect: { error: { errnum: 11 } }
