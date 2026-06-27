@@ -3225,7 +3225,9 @@ impl Vm {
     /// `BGFUNC layer, @label` — bind a callback process name to a BG layer. Requires exactly
     /// 2 arguments (errnum 4); the layer ∉ 0..3 is errnum 10; a non-string label operand is
     /// errnum 8; an unresolvable label/process is errnum 4. The bound process runs later via
-    /// `CALL BG` (with `CALLIDX` = the layer number) — dispatch is oracle-pending (M3-T6).
+    /// `CALL BG`, which sweeps layers 0..3 setting `CALLIDX` to the layer number for each bound
+    /// process (hw_verified sb-oracle 2026-06-27, t1n: layer 0 → CALLIDX 0, layers 0 & 2 →
+    /// `"02"`, resting CALLIDX = 4 = `BG_LAYER_COUNT`).
     fn do_bgfunc(&mut self, args: &[Value], ret_count: usize) -> Result<(), VmError> {
         if ret_count != 0 || args.len() != 2 {
             return Err(sb(crate::builtins::illegal()));
@@ -3241,13 +3243,17 @@ impl Vm {
             Value::Str(s) => s.clone(),
             _ => return Err(sb(crate::builtins::type_mismatch())),
         };
-        let name = String::from_utf16_lossy(&label)
-            .trim_start_matches('@')
-            .to_ascii_uppercase();
-        // The name must resolve to a code @label or a DEF-defined process; else errnum 4.
-        let resolves = self.program.code_labels.iter().any(|(n, _)| *n == name)
-            || self.program.functions.iter().any(|f| f.name.ident == name);
-        if !resolves {
+        let raw = String::from_utf16_lossy(&label);
+        // A leading `@` selects the @label namespace ONLY — it never falls back to a DEF process
+        // (hw_verified sb-oracle 2026-06-27, mirroring SPFUNC: `BGFUNC 0,@CB` with a `DEF CB` and
+        // no `@CB` label raises errnum 4, while the bare-string `BGFUNC 0,"CB"` resolves the DEF).
+        // The same applies to a leading-`@` STRING literal. A name with no leading `@` is looked
+        // up as a label first, then a DEF process. See [`Vm::do_spfunc`].
+        let label_only = raw.starts_with('@');
+        let name = raw.trim_start_matches('@').to_ascii_uppercase();
+        let is_label = self.program.code_labels.iter().any(|(n, _)| *n == name);
+        let is_def = !label_only && self.program.functions.iter().any(|f| f.name.ident == name);
+        if !is_label && !is_def {
             return Err(sb(crate::builtins::illegal()));
         }
         let scr = self.active_screen();
@@ -6754,6 +6760,17 @@ H$=HEX$(255)"#);
         // The idle/boot value is 0 (hw_verified sysvars golden); a sweep is what changes it.
         let vm = run_b("PRINT CALLIDX");
         assert_eq!(vm.console_text(), "0");
+    }
+
+    #[test]
+    fn bgfunc_leading_at_does_not_fall_back_to_a_def() {
+        // hw_verified sb-oracle 2026-06-27 (t1n): a leading `@` selects the @label namespace
+        // ONLY — `BGFUNC 0,@CB` with a `DEF CB` and no `@CB` label HALTS (errnum 4), mirroring
+        // SPFUNC. The bare-string form `BGFUNC 0,"CB"` resolves the DEF (no raise).
+        let err = run_b_err("BGSCREEN 0,32,32\nBGFUNC 0,@CB\nEND\nDEF CB\nEND");
+        assert_eq!(err.errnum(), Some(4));
+        let vm = run_b("BGSCREEN 0,32,32\nBGFUNC 0,\"CB\"\nEND\nDEF CB\nEND");
+        assert_eq!(vm.console_text(), "");
     }
 
     #[test]

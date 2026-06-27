@@ -1,0 +1,16 @@
+# BGFUNC v2 — GOTO-guard the DEF/label blocks so main flow never falls INTO them
+# (the v1 halts on def_string/atlabel/unset were the SAVE-after-DEF flow bug, not SB behavior).
+
+# Bare-string "CB" resolves a DEF process; CALL BG dispatches it with CALLIDX = layer 0.
+def_string_v2|BGSCREEN 0,32,32\nBGFUNC 0,"CB"\nCALL BG\nGOTO @SK\nDEF CB\nG$=G$+STR$(CALLIDX)\nEND\n@SK|G$|progstr
+# Leading-@ `@CB` with a `DEF CB` and no `@CB` label: must STILL halt (errnum 4) even GOTO-guarded
+# — proves the @-prefix never falls back to a DEF (the def_string_v2 success is the contrast).
+atlabel_no_def_v2|BGSCREEN 0,32,32\nBGFUNC 0,@CB\nGOTO @SK\nDEF CB\nEND\n@SK|OK|progstr
+# Bind to an un-BGSCREEN'd layer 1: does the BIND alone raise?
+bind_unset|BGFUNC 1,@CB\nGOTO @SK\n@CB\nRETURN\n@SK|OK|progstr
+# Dispatch (CALL BG) over an un-BGSCREEN'd bound layer 1: does dispatch raise?
+dispatch_unset|BGFUNC 1,@CB\nCALL BG\nGOTO @SK\n@CB\nRETURN\n@SK|OK|progstr
+# Empty sweep with a configured screen: NOERR no-op.
+empty_sweep|BGSCREEN 0,32,32\nCALL BG\nGOTO @SK\n@SK|OK|progstr
+# CALL BG with NO BGSCREEN at all and nothing bound (v1 reported errnum 8 — re-check isolated).
+call_bg_no_screen|CALL BG|err

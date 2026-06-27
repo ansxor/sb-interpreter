@@ -1,0 +1,22 @@
+# BGFUNC / CALL BG dispatch + CALLIDX + @-namespace harvest (mirror s_t8e SPFUNC 2026-06-27).
+# prog/progstr setups use \n for real newlines; err cases are single-line (`:`-separated).
+
+# CALLIDX inside a bound @label callback = the layer number; ascending sweep accumulates.
+callidx_single|BGSCREEN 0,32,32\nBGFUNC 0,@CB\nCALL BG\nGOTO @D\n@CB\nG$=G$+STR$(CALLIDX)\nRETURN\n@D|G$|progstr
+callidx_ascending|BGSCREEN 0,32,32\nBGFUNC 0,@CB\nBGFUNC 2,@CB\nCALL BG\nGOTO @D\n@CB\nG$=G$+STR$(CALLIDX)\nRETURN\n@D|G$|progstr
+# Resting CALLIDX after the full layer sweep (expect 4 = BG_LAYER_COUNT, one past layer 3).
+callidx_rest_after|BGSCREEN 0,32,32\nBGFUNC 0,@CB\nBGFUNC 2,@CB\nCALL BG\nGOTO @D\n@CB\nRETURN\n@D|CALLIDX|prog
+# CALLIDX before any CALL BG sweep.
+callidx_initial|CALLIDX
+# Bare-string name falls back to a DEF process; CALLIDX inside it = the layer number.
+callidx_def_string|BGSCREEN 0,32,32\nBGFUNC 0,"CB"\nCALL BG\nDEF CB\nG$=G$+STR$(CALLIDX)\nEND|G$|progstr
+# A leading `@` selects the @label namespace ONLY — `@CB` does NOT fall back to `DEF CB`.
+# Expect HALT (errnum 4 at bind); a NOERR result here would prove a wrong DEF fallback.
+callidx_def_atlabel|BGSCREEN 0,32,32\nBGFUNC 0,@CB\nDEF CB\nEND|OK|progstr
+# Non-string label operand -> errnum 8 (Type mismatch); unresolvable leading-@ -> errnum 4.
+nonstring_label_literal|BGSCREEN 0,32,32:BGFUNC 0,5|err
+nonstring_label_var|BGSCREEN 0,32,32:N=5:BGFUNC 0,N|err
+unresolved_string_label|BGSCREEN 0,32,32:BGFUNC 0,"@NOPE"|err
+# Un-BGSCREEN'd layer bind+dispatch and an empty sweep are both NOERR.
+call_bg_unset|BGFUNC 1,@CB\nG$="X":CALL BG\nGOTO @D\n@CB\nRETURN\n@D|G$|progstr
+call_bg_empty|CALL BG|err
