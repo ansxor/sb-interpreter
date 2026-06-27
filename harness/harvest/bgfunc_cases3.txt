@@ -1,6 +1,6 @@
 # BGFUNC v3 — ONLY NOERR-expected cases (no halting case to cascade-contaminate the run).
-# Each returns "OK" iff it ran without raising.
-empty_sweep|BGSCREEN 0,32,32\nCALL BG\nGOTO @SK\n@SK|OK|progstr
-bind_unset|BGFUNC 1,@CB\nGOTO @SK\n@CB\nRETURN\n@SK|OK|progstr
-dispatch_unset|BGFUNC 1,@CB\nCALL BG\nGOTO @SK\n@CB\nRETURN\n@SK|OK|progstr
-def_string_noerr|BGSCREEN 0,32,32\nBGFUNC 0,"CB"\nCALL BG\nGOTO @SK\nDEF CB\nEND\n@SK|OK|progstr
+# Each returns "OK" iff it ran to completion without raising (progstr result is a string literal).
+empty_sweep|BGSCREEN 0,32,32\nCALL BG\nGOTO @SK\n@SK|"OK"|progstr
+bind_unset|BGFUNC 1,@CB\nGOTO @SK\n@CB\nRETURN\n@SK|"OK"|progstr
+dispatch_unset|BGFUNC 1,@CB\nCALL BG\nGOTO @SK\n@CB\nRETURN\n@SK|"OK"|progstr
+def_string_noerr|BGSCREEN 0,32,32\nBGFUNC 0,"CB"\nCALL BG\nGOTO @SK\nDEF CB\nEND\n@SK|"OK"|progstr
