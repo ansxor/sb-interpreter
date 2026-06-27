@@ -1,0 +1,12 @@
+# GTRI thin right-triangle masks to PIN the edge-DDA seed phase (bd:sb-interpreter-j4l).
+# Each is GTRI 0,0,W,H,0,H: a right triangle with a VERTICAL left edge at x=0, a horizontal
+# bottom edge at y=H, and the hypotenuse (0,0)->(W,H). Span per scanline = [0, rightX(y)],
+# so rightX(y) directly reveals the Bresenham boundary (the seed phase) for slope W/H.
+# Slopes chosen to span steep..45..shallow: 1/9, 9/9, 20/3, 3/20, 9/4.
+# GSPOIT read-back (framebuffer-free): white=-460552 lit, 0 empty. box WxH @(0,0) where box=(W+1)x(H+1).
+# box dims: lineA 2x10@(0,0) lineB 10x10@(0,0) lineC 21x4@(0,0) lineD 4x21@(0,0) lineE 10x5@(0,0)
+lineA|GCLS:W=RGB(255,255,255):GTRI 0,0,1,9,0,9,W:R$="":FOR DY=0 TO 9:FOR DX=0 TO 1:R$=R$+STR$(GSPOIT(DX,DY))+" ":NEXT:NEXT|R$|progstr
+lineB|GCLS:W=RGB(255,255,255):GTRI 0,0,9,9,0,9,W:R$="":FOR DY=0 TO 9:FOR DX=0 TO 9:R$=R$+STR$(GSPOIT(DX,DY))+" ":NEXT:NEXT|R$|progstr
+lineC|GCLS:W=RGB(255,255,255):GTRI 0,0,20,3,0,3,W:R$="":FOR DY=0 TO 3:FOR DX=0 TO 20:R$=R$+STR$(GSPOIT(DX,DY))+" ":NEXT:NEXT|R$|progstr
+lineD|GCLS:W=RGB(255,255,255):GTRI 0,0,3,20,0,20,W:R$="":FOR DY=0 TO 20:FOR DX=0 TO 3:R$=R$+STR$(GSPOIT(DX,DY))+" ":NEXT:NEXT|R$|progstr
+lineE|GCLS:W=RGB(255,255,255):GTRI 0,0,9,4,0,4,W:R$="":FOR DY=0 TO 4:FOR DX=0 TO 9:R$=R$+STR$(GSPOIT(DX,DY))+" ":NEXT:NEXT|R$|progstr
