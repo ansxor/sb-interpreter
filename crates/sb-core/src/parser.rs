@@ -100,6 +100,15 @@ enum ExprStmtClass {
     /// count — never Illegal function call (4) and never a run. hw_verified `HARDWARE(0)` → 3
     /// (bead sb-interpreter-imk, sb-oracle 2026-06-27, `harness/harvest/out/exprstmt_getters.tsv`).
     SystemConst,
+    /// A keyword-style command that does NOT accept the whole-paren call form at all: EVERY
+    /// `NAME(…)` statement is a parse-time Syntax error (3), regardless of arg count — the command
+    /// is only legal in its bare/space-separated form (`XON feature`, `EFCWET out,wet`). Distinct
+    /// from [`Self::SystemConst`] (a bare *value* with no call form) only in intent; both reject
+    /// every paren shape. hw_verified 1-arg `XON(0)`/`XOFF(0)`/`EFCON(0)`/`EFCOFF(0)`/`EFCWET(0)`
+    /// → 3 (and `EFCON(1)` → 3, value-independent) (bead sb-interpreter-512, sb-oracle 2026-06-27,
+    /// `harness/harvest/out/exprstmt_cmds.tsv`). The generic ≠1-arg → 3 rule already covers 0/2+
+    /// args; this arm forces the 1-arg case to 3 too (instead of running).
+    NoParenCall,
     /// Not a registered builtin — a user `DEF` call or a plain variable. Keep the existing
     /// command-call / array-read behavior (a multi-arg `SIMPLE_INIT("a","b",1)` subroutine
     /// call must still compile), so the ≠1-arg → 3 rule never reaches it.
@@ -149,9 +158,39 @@ fn expr_stmt_class(name: &str) -> ExprStmtClass {
         // IllegalFnStmt lowering is faithful for both. BGPAGE is NOT here: BGPAGE(0) → NOERR
         // (its 1-arg form is a valid command and RUNS), so it stays BuiltinCommand.
         | "SPHITSP" | "SPHITRC" | "SPVAR" | "BGGET" | "BGVAR" | "PRGGET$" | "PRGSIZE"
-        | "BGCOORD" | "SPCOL" | "SPCOLVEC" | "SPDEF" | "BGCOPY" | "SPFUNC" => {
-            ExprStmtClass::ValueFunction
-        }
+        | "BGCOORD" | "SPCOL" | "SPCOLVEC" | "SPDEF" | "BGCOPY" | "SPFUNC"
+        // Full BuiltinCommand sweep (bead sb-interpreter-512, hw_verified sb-oracle 2026-06-27,
+        // harness/harvest/out/exprstmt_cmds.tsv — anchored against GCLS(0)/SPPAGE(0)/BGPAGE(0)→
+        // NOERR and GPSET(0)→4 for fresh reads). The 1-arg whole-paren statement form of every
+        // name below was measured → Illegal function call (4), so it was RUNning wrongly under the
+        // BuiltinCommand default. The 4 is value-independent (SPSHOW(0) and SPSHOW(1) both → 4): the
+        // whole-paren CALL syntax used as a statement is rejected regardless of the argument, while
+        // the bare/space form (`SPSHOW 1`, `LOCATE x,y`) still runs via parse_command_call. Mix of
+        // multi-arg COMMANDS whose 1-arg form is wrong-arity (GPSET/GLINE/SPSET/BGPUT/SORT/COPY/…)
+        // and true 1-arg commands that nonetheless reject the whole-paren form (SPSHOW/SPHIDE/…) —
+        // a wrong-arity command call and a value-fn-as-statement are indistinguishable by errnum
+        // (both raise runtime 4 after evaluating the arg), so the IllegalFnStmt lowering is faithful.
+        // NOT here (their 1-arg whole-paren form is NOERR → valid command that RUNS, stays
+        // BuiltinCommand): RANDOMIZE COLOR BACKCOLOR FONTDEF WAIT VSYNC BREPEAT GCLS GCOLOR GPRIO
+        // GCLIP SPCLR BGPAGE BGCLR BGSHOW BGHIDE BGCLIP BGSTART BGSTOP XSCREEN DISPLAY FADE BGMPLAY
+        // BGMSTOP BGMVOL BEEP EFCSET SPPAGE. Also NOT here (1-arg form RUNS and the command raises
+        // its OWN error, not 4, so BuiltinCommand is faithful): TALK/TALKSTOP/PRGSET/PRGINS/MICSAVE/
+        // MPSEND → Type mismatch (8); BGMCLEAR/PRGDEL → errnum 10. The XON/XOFF/EFCON/EFCOFF/EFCWET
+        // → Syntax error (3) cases are NoParenCall (below), not here.
+        | "GPSET" | "LOCATE" | "CLS" | "ACLS" | "INKEY$" | "ATTR" | "SCROLL" | "WIDTH"
+        | "STICK" | "STICKEX" | "TOUCH" | "KEY" | "GLINE" | "GBOX" | "GFILL" | "GCIRCLE"
+        | "GTRI" | "GPAINT" | "GCOPY" | "GSAVE" | "GLOAD" | "SPSET" | "SPSHOW" | "SPHIDE"
+        | "SPANIM" | "SPSTART" | "SPSTOP" | "SPUNLINK" | "SPOFS" | "SPCOLOR" | "SPCLIP"
+        | "SPHITINFO" | "BGSCREEN" | "BGPUT" | "BGFILL" | "BGOFS" | "BGROT" | "BGSCALE"
+        | "BGHOME" | "BGANIM" | "BGFUNC" | "BGLOAD" | "BGSAVE" | "SORT" | "RSORT" | "COPY"
+        | "FILL" | "PUSH" | "POP" | "SHIFT" | "UNSHIFT" | "BGMVAR" | "BGMSET" | "BGMSETD"
+        | "WAVSET" | "WAVSETA" | "PRGEDIT" | "MICSTART" | "MICSTOP" | "MICDATA" | "GYROA"
+        | "GYROV" | "GYROSYNC" | "ACCEL" | "MPSTART" | "MPEND" | "MPSET" | "MPRECV"
+        | "MPGET" => ExprStmtClass::ValueFunction,
+        // Keyword-style commands that reject the whole-paren call form entirely → Syntax error (3)
+        // for the 1-arg case too (bead sb-interpreter-512, hw_verified sb-oracle 2026-06-27,
+        // exprstmt_cmds.tsv: XON(0)/XOFF(0)/EFCON(0)/EFCOFF(0)/EFCWET(0) → 3, EFCON(1) → 3).
+        "XON" | "XOFF" | "EFCON" | "EFCOFF" | "EFCWET" => ExprStmtClass::NoParenCall,
         // System constant: a zero-arg read-only sysvar (like `PI`, but `HARDWARE` is a bare
         // value, not a callable). Real SB 3.6.0 rejects ANY whole-paren form `HARDWARE(…)` as a
         // Syntax error (3), not Illegal function call (4) — hw_verified `HARDWARE(0)` → 3
@@ -717,10 +756,12 @@ impl Parser {
                             "builtin command in whole-paren form takes a single grouped argument",
                         ));
                     }
-                    // A system constant has no call form: any whole-paren shape is Syntax error 3.
-                    ExprStmtClass::SystemConst => {
+                    // A system constant has no call form, and a keyword-style command (XON/EFCON/…)
+                    // rejects the whole-paren call form entirely: any whole-paren shape is Syntax
+                    // error 3 (never a run, never Illegal function call 4).
+                    ExprStmtClass::SystemConst | ExprStmtClass::NoParenCall => {
                         return Err(self.syntax_error(
-                            "system constant cannot be used in a whole-paren call form",
+                            "this builtin cannot be used in a whole-paren call form",
                         ));
                     }
                     ExprStmtClass::BuiltinCommand | ExprStmtClass::Unknown => {}
@@ -2770,6 +2811,156 @@ mod tests {
                 matches!(&p[0].kind, StmtKind::Call { .. }),
                 "`{src}` -> normal Call (user DEF exempt)"
             );
+        }
+    }
+
+    /// Full BuiltinCommand 1-arg whole-paren sweep (bead sb-interpreter-512): each builtin's
+    /// `NAME(0)` statement form was measured on real SB 3.6.0. hw_verified sb-oracle 2026-06-27
+    /// (`harness/harvest/out/exprstmt_cmds.tsv`, anchored against GCLS/SPPAGE/BGPAGE(0)→NOERR and
+    /// GPSET(0)→4). Three outcomes the parser must reproduce: → 4 (IllegalFnStmt), NOERR (a real
+    /// command call that runs), and → 3 (keyword command that rejects the paren form).
+    #[test]
+    fn expr_stmt_cmd_sweep_512() {
+        // Measured → Illegal function call (4): the 1-arg whole-paren form lowers to IllegalFnStmt.
+        // The 4 is value-independent (SPSHOW(1) → 4 too, spot-checked), so any single arg works.
+        for src in [
+            "GPSET(0)",
+            "LOCATE(0)",
+            "CLS(0)",
+            "ACLS(0)",
+            "INKEY$(0)",
+            "ATTR(0)",
+            "SCROLL(0)",
+            "WIDTH(0)",
+            "STICK(0)",
+            "STICKEX(0)",
+            "TOUCH(0)",
+            "KEY(0)",
+            "GLINE(0)",
+            "GBOX(0)",
+            "GFILL(0)",
+            "GCIRCLE(0)",
+            "GTRI(0)",
+            "GPAINT(0)",
+            "GCOPY(0)",
+            "GSAVE(0)",
+            "GLOAD(0)",
+            "SPSET(0)",
+            "SPSHOW(0)",
+            "SPSHOW(1)",
+            "SPHIDE(0)",
+            "SPANIM(0)",
+            "SPSTART(0)",
+            "SPSTOP(0)",
+            "SPUNLINK(0)",
+            "SPOFS(0)",
+            "SPCOLOR(0)",
+            "SPCLIP(0)",
+            "SPHITINFO(0)",
+            "BGSCREEN(0)",
+            "BGPUT(0)",
+            "BGFILL(0)",
+            "BGOFS(0)",
+            "BGROT(0)",
+            "BGSCALE(0)",
+            "BGHOME(0)",
+            "BGANIM(0)",
+            "BGFUNC(0)",
+            "BGLOAD(0)",
+            "BGSAVE(0)",
+            "SORT(0)",
+            "RSORT(0)",
+            "COPY(0)",
+            "FILL(0)",
+            "PUSH(0)",
+            "POP(0)",
+            "SHIFT(0)",
+            "UNSHIFT(0)",
+            "BGMVAR(0)",
+            "BGMSET(0)",
+            "BGMSETD(0)",
+            "WAVSET(0)",
+            "WAVSETA(0)",
+            "PRGEDIT(0)",
+            "MICSTART(0)",
+            "MICSTOP(0)",
+            "MICDATA(0)",
+            "GYROA(0)",
+            "GYROV(0)",
+            "GYROSYNC(0)",
+            "ACCEL(0)",
+            "MPSTART(0)",
+            "MPEND(0)",
+            "MPSET(0)",
+            "MPRECV(0)",
+            "MPGET(0)",
+        ] {
+            let p =
+                parse(src).unwrap_or_else(|e| panic!("`{src}` should parse, errnum {}", e.errnum));
+            assert!(
+                matches!(&p[0].kind, StmtKind::IllegalFnStmt(_)),
+                "`{src}` -> IllegalFnStmt (errnum 4)"
+            );
+        }
+        // Measured NOERR: a genuine 1-arg command call that runs (stays a normal Call). These also
+        // raise their own command-specific runtime error (8/10) on a bad arg, never a parse error.
+        for src in [
+            "RANDOMIZE(0)",
+            "COLOR(0)",
+            "BACKCOLOR(0)",
+            "FONTDEF(0)",
+            "WAIT(0)",
+            "VSYNC(0)",
+            "BREPEAT(0)",
+            "GCLS(0)",
+            "GCOLOR(0)",
+            "GPRIO(0)",
+            "GCLIP(0)",
+            "SPCLR(0)",
+            "BGPAGE(0)",
+            "BGCLR(0)",
+            "BGSHOW(0)",
+            "BGHIDE(0)",
+            "BGCLIP(0)",
+            "BGSTART(0)",
+            "BGSTOP(0)",
+            "XSCREEN(0)",
+            "DISPLAY(0)",
+            "FADE(0)",
+            "BGMPLAY(0)",
+            "BGMSTOP(0)",
+            "BGMVOL(0)",
+            "BEEP(0)",
+            "EFCSET(0)",
+            "SPPAGE(0)",
+            "TALK(0)",
+            "TALKSTOP(0)",
+            "PRGSET(0)",
+            "PRGINS(0)",
+            "MICSAVE(0)",
+            "MPSEND(0)",
+            "BGMCLEAR(0)",
+            "PRGDEL(0)",
+        ] {
+            let p =
+                parse(src).unwrap_or_else(|e| panic!("`{src}` should parse, errnum {}", e.errnum));
+            assert!(
+                matches!(&p[0].kind, StmtKind::Call { .. }),
+                "`{src}` -> normal Call (1-arg command runs)"
+            );
+        }
+        // Measured → Syntax error (3): keyword commands that reject the whole-paren form entirely,
+        // value-independent (EFCON(1) → 3 too).
+        for src in [
+            "XON(0)",
+            "XOFF(0)",
+            "EFCON(0)",
+            "EFCON(1)",
+            "EFCOFF(0)",
+            "EFCWET(0)",
+        ] {
+            let err = parse(src).expect_err(&format!("`{src}` should fail"));
+            assert_eq!(err.errnum, 3, "`{src}` should be Syntax error 3");
         }
     }
 }
