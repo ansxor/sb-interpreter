@@ -1,0 +1,21 @@
+# GTRI filled-triangle SKEWED-edge fill masks — GSPOIT read-back (framebuffer-free, real
+# SB 3.6.0 via sb-oracle, 2026-06-27). bd:sb-interpreter-j4l. Each case reads a row-major box
+# of GSPOIT values (white=-460552 lit, 0 empty) over the triangle bounding box.
+#
+# PURPOSE: discriminate the GTRI interior fill rule on NON-45-degree edges (the committed
+# gtri.yaml mask5 is a 45-deg right triangle where every candidate rule agrees). These masks
+# DISPROVE two hypotheses:
+#   (1) barycentric / exact half-plane (sb-core baseline raster.rs gtri) — too far IN by ~2px
+#       on shallow edges.
+#   (2) "GTRI outline == three GLINEs / same seeded DDA per edge" (the bead premise) — too far
+#       OUT by 1px: HW does NOT light (1,1) for GTRI 0,0,20,0,20,6 but GLINE 0,0,20,6 DOES.
+# The true edge x per scanline is a SINGLE interpolated x (fixed-point/float, FUN_001944e8
+# table @0x1B1E33C + the float helpers FUN_001556d8/FUN_001557f4), NOT GLINE pixel coverage.
+# A ceil(min)/floor(max) of the exact line at y-0.5 fits skewA/skewB (one axis-aligned edge)
+# but FAILS skewC/D/E (both edges sloped). Exact rule still unresolved — see bead.
+# box dims: skewA 21x7@(0,0) skewB 14x8@(0,0) skewC 31x11@(10,10) skewD 10x21@(0,0) skewE 9x10@(0,0)
+skewA|GCLS:W=RGB(255,255,255):GTRI 0,0,20,0,20,6,W:R$="":FOR DY=0 TO 6:FOR DX=0 TO 20:R$=R$+STR$(GSPOIT(DX,DY))+" ":NEXT:NEXT|R$|progstr
+skewB|GCLS:W=RGB(255,255,255):GTRI 0,0,13,0,0,7,W:R$="":FOR DY=0 TO 7:FOR DX=0 TO 13:R$=R$+STR$(GSPOIT(DX,DY))+" ":NEXT:NEXT|R$|progstr
+skewC|GCLS:W=RGB(255,255,255):GTRI 10,10,40,13,10,20,W:R$="":FOR DY=10 TO 20:FOR DX=10 TO 40:R$=R$+STR$(GSPOIT(DX,DY))+" ":NEXT:NEXT|R$|progstr
+skewD|GCLS:W=RGB(255,255,255):GTRI 3,0,9,20,0,12,W:R$="":FOR DY=0 TO 20:FOR DX=0 TO 9:R$=R$+STR$(GSPOIT(DX,DY))+" ":NEXT:NEXT|R$|progstr
+skewE|GCLS:W=RGB(255,255,255):GTRI 0,0,8,3,3,9,W:R$="":FOR DY=0 TO 9:FOR DX=0 TO 8:R$=R$+STR$(GSPOIT(DX,DY))+" ":NEXT:NEXT|R$|progstr
