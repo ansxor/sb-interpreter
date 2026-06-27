@@ -3419,13 +3419,17 @@ impl Vm {
             Value::Str(s) => s.clone(),
             _ => return Err(sb(crate::builtins::type_mismatch())),
         };
-        let name = String::from_utf16_lossy(&label)
-            .trim_start_matches('@')
-            .to_ascii_uppercase();
-        // The name must resolve to a code @label or a DEF-defined process; else errnum 4.
-        let resolves = self.program.code_labels.iter().any(|(n, _)| *n == name)
-            || self.program.functions.iter().any(|f| f.name.ident == name);
-        if !resolves {
+        let raw = String::from_utf16_lossy(&label);
+        // A leading `@` selects the @label namespace ONLY — it never falls back to a DEF process
+        // (hw_verified sb-oracle 2026-06-27: `SPFUNC 2,@CB` with a `DEF CB` and no `@CB` label
+        // raises errnum 4, while the bare-string `SPFUNC 2,"CB"` resolves the DEF). The same
+        // applies to a leading-`@` STRING literal (`SPFUNC 0,"@NOPE"` → errnum 4). A name with no
+        // leading `@` is looked up as a label first, then a DEF process.
+        let label_only = raw.starts_with('@');
+        let name = raw.trim_start_matches('@').to_ascii_uppercase();
+        let is_label = self.program.code_labels.iter().any(|(n, _)| *n == name);
+        let is_def = !label_only && self.program.functions.iter().any(|f| f.name.ident == name);
+        if !is_label && !is_def {
             return Err(sb(crate::builtins::illegal()));
         }
         let scr = self.active_screen();
