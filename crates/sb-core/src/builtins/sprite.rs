@@ -1339,28 +1339,36 @@ fn override_field(field: &mut i32, v: Option<&Value>) -> Result<(), RuntimeError
 }
 
 /// `SPDEF` with a numeric scalar first argument: the single-template define (form 2) or the
-/// copy-with-adjust (form 6). Copy is selected when the second argument is the only one
-/// (`SPDEF dst,src`) or when any override field is skipped (a `,,` Void) — otherwise it is a
-/// define. The defined template is range-validated (errnum 10); `defnum`/`srcnum` ∉ 0..4095
-/// is errnum 10.
+/// copy-with-adjust (form 6). The two are disambiguated purely by ARGUMENT COUNT (hw_verified
+/// sb-oracle 2026-06-27, harness/harvest/out/spdef_v{2,3,4}.tsv): copy (form 6) is selected
+/// ONLY at the full 9-argument shape `SPDEF dst,src,[U],[V],[W],[H],[OX],[OY],[attr]` (so
+/// `rest.len() == 8`); any 3..=8-argument call is a define (form 2, grouped optional args),
+/// where a skipped (`,,` Void) slot raises Type mismatch (errnum 8) — it is NOT reinterpreted
+/// as a copy. A bare `SPDEF dst` (argc 1), `SPDEF dst,src` (argc 2), and argc 10+ are all
+/// Illegal function call (errnum 4). The defined/copied template is range-validated (errnum
+/// 10); `defnum`/`srcnum` ∉ 0..4095 is errnum 10.
 pub(crate) fn spdef_scalar(spdef: &mut SpdefTable, args: &[Value]) -> Result<(), RuntimeError> {
     let defnum = defn(&args[0])? as usize;
     let rest = &args[1..];
-    let is_copy = rest.len() == 1 || rest.iter().any(|v| matches!(v, Value::Void));
-    let entry = if is_copy {
-        let src = defn(&rest[0])? as usize;
-        let mut e = spdef.get(src);
-        let ov = &rest[1..];
-        override_field(&mut e.u, ov.first())?;
-        override_field(&mut e.v, ov.get(1))?;
-        override_field(&mut e.w, ov.get(2))?;
-        override_field(&mut e.h, ov.get(3))?;
-        override_field(&mut e.origin_x, ov.get(4))?;
-        override_field(&mut e.origin_y, ov.get(5))?;
-        override_field(&mut e.attr, ov.get(6))?;
-        e
-    } else {
-        parse_define(rest)?
+    let entry = match rest.len() {
+        // Copy/adjust (form 6) — the full 9-arg shape `dst,src,[U]..[attr]`.
+        8 => {
+            let src = defn(&rest[0])? as usize;
+            let mut e = spdef.get(src);
+            let ov = &rest[1..];
+            override_field(&mut e.u, ov.first())?;
+            override_field(&mut e.v, ov.get(1))?;
+            override_field(&mut e.w, ov.get(2))?;
+            override_field(&mut e.h, ov.get(3))?;
+            override_field(&mut e.origin_x, ov.get(4))?;
+            override_field(&mut e.origin_y, ov.get(5))?;
+            override_field(&mut e.attr, ov.get(6))?;
+            e
+        }
+        // Define (form 2) — `dst,U,V[,W,H[,OX,OY]][,attr]`, grouped optional args.
+        2..=7 => parse_define(rest)?,
+        // argc 2 (`dst,src` alone) and argc 10+ — no matching form.
+        _ => return Err(illegal()),
     };
     validate_spdef(&entry)?;
     spdef.set(defnum, entry);

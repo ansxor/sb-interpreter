@@ -177,9 +177,9 @@ const IN_SCOPE_SCREEN: &[&str] = &[
 /// hit results + errnums hw_verified), `SPHITINFO` (read the hit record — TM=0 default +
 /// arg-shape errnums + the swept-collision coordinate/velocity values, position+velocity*time,
 /// hw_verified), and
-/// `SPDEF` (definition templates — define/read/reset/copy + the W,H=16/attr=1 defaults and
-/// the U+W>512 range error hw_verified; non-default field read-back oracle-pending). Listed
-/// by id.
+/// `SPDEF` (definition templates — define/read/reset/copy + the W,H=16/attr=1 defaults, the
+/// U+W>512 range error, non-default full field read-back, the argcount-grouped define optional
+/// args, and the copy-is-argc9-only disambiguation all hw_verified). Listed by id.
 const IN_SCOPE_SPRITES: &[&str] = &[
     "SPSET",
     "SPCLR",
