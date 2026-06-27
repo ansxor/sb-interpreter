@@ -62,6 +62,7 @@ sources:
   - { type: community, ref: "osb/SMILEBASIC/sprite.d (3.5.0 structural cross-check only): SpriteCollision.detection(int x,int y,int w,int h) does AABB overlap against `data.linkx+sx, data.linky+sy, data.w*scalex, data.h*scaley`. osb has no SPHITRC and no swept/float math, so the moving-quadrangle behavior is taken from docs + disassembly only." }
   - { type: community, ref: "sbsave corpus (verified, word-boundary rg): real forms include the bare quadrangle `SPHITRC(sx,sy,w,h)` (e.g. 13D4DV3V/TXT/MAIN_PRG_V2 `SPHITRC(CALLIDX,0,0,400,240)`), the vs-one form WITH mask omitted + movement `SPHITRC(m,sx,sy,w,h,,mvx,mvy)` (e.g. 13D4DV3V/TXT/MAIN_PRG_V2 `SPHITRC(TC,BGCX-8,BGCY,16,16,,GRG*XD*2,GRG*-YD*2)`), and the full vs-range form with explicit mask + velocity `SPHITRC(first,last,sx,sy,w,h,mask,mvx,mvy)` (9 args, e.g. 1DVK34J/TXT/HNZHS `SPHITRC(C,C_MB,X,Y,1,1,&HFFFFFFFF,W,H)`). Confirms the optional mask (skippable with `,,`) and movement args." }
   - { type: hw_verified, ref: "sb-oracle 2026-06-22 (s_t8d): SPCLR:SPHITRC(1,0,0,16,16) -> 0 (vs-one returns FALSE, NO error before SPSET); a 16x16 rect at 0,0 vs sprite 0 placed at 8,8 with SPCOL set -> 0 (hits sprite mgmt 0)." }
+  - { type: hw_verified, ref: "sb-oracle 2026-06-27 (s_t8d, wai; harness/harvest/out/sphitrc_swept.tsv): swept-movement + mask AND-filtering VALUE harvest. Baseline sprite 0 (SPDEF #0, 16x16) at SPOFS 100,100 -> detection rect 100,100,16,16, SPCOLVEC 0,0,0 (zero velocity). vs-all static overlap `SPHITRC(100,100,16,16)` -> 0, disjoint `SPHITRC(0,0,16,16)` -> -1. SWEPT vs-all: rect at x=0 (right edge 16, gap 84 to the sprite's left edge 100), mask skipped (`,,`) -> default all-bits; moving +100 `SPHITRC(0,100,16,16,,100,0)` -> 0 (hit), moving +50 `SPHITRC(0,100,16,16,,50,0)` -> -1 (right edge only reaches 66 < 100). MASK AND-filtering (SPCOL mask &B0001): `SPHITRC(100,100,16,16,&B0010,0,0)` -> -1 (AND==0, no collision), `SPHITRC(100,100,16,16,&B0011,0,0)` -> 0 (AND==1, collide). vs-one (5/8 args) returns TRUE/FALSE: hit -> 1, miss -> 0; swept vs-one `SPHITRC(0,0,100,16,16,,100,0)` -> 1. vs-range (6/9 args) [0,3] returns the first colliding mgmt: hit -> 0, miss -> -1. SPHITINFO after a swept SPHITRC hit reconstructs OBJECT 1 = the moving quadrangle: `V=SPHITRC(0,100,16,16,,100,0):SPHITINFO OUT TM,X1,Y1` -> 0.84,84,100 (TM=84/100, X1 = rect_x + mvx*TM = 0+100*0.84 = 84, Y1 = 100+0 = 100)." }
 
 confidence: hw_verified
 
@@ -69,3 +70,26 @@ tests:
   # Values hw_verified (sb-oracle 2026-06-22 s_t8d).
   - { name: rect_vs_all_hit, code: "ACLS\nSPSET 0,0\nSPOFS 0,8,8\nSPCOL 0\nSPCOLVEC 0\nPRINT SPHITRC(0,0,16,16)", expect: { stdout: "0" } }
   - { name: before_spset_vs_one_false, code: "SPCLR\nPRINT SPHITRC(1,0,0,16,16)", expect: { stdout: "0" } }
+  # Swept-movement + mask AND-filtering VALUE contract (sb-oracle 2026-06-27 s_t8d, wai;
+  # harness/harvest/out/sphitrc_swept.tsv). Baseline: sprite 0 at 100,100 -> detection rect
+  # 100,100,16,16, zero SPCOLVEC.
+  - { name: rect_vs_all_static_hit, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0\nSPCOLVEC 0,0,0\nPRINT SPHITRC(100,100,16,16)", expect: { stdout: "0" } }
+  - { name: rect_vs_all_static_miss, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0\nSPCOLVEC 0,0,0\nPRINT SPHITRC(0,0,16,16)", expect: { stdout: "-1" } }
+  # Swept: rect at x=0 (right edge 16) closing the 84px gap to the sprite's left edge 100;
+  # mask skipped with `,,` -> default all-bits. +100 reaches (hit), +50 does not (miss).
+  - { name: rect_swept_hit, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0\nSPCOLVEC 0,0,0\nPRINT SPHITRC(0,100,16,16,,100,0)", expect: { stdout: "0" } }
+  - { name: rect_swept_miss, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0\nSPCOLVEC 0,0,0\nPRINT SPHITRC(0,100,16,16,,50,0)", expect: { stdout: "-1" } }
+  # Mask AND filtering: sprite SPCOL mask &B0001. A quadrangle mask that ANDs to 0 -> no
+  # collision (-1); a non-zero AND -> collide (0).
+  - { name: rect_mask_and_zero, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0,0,0,16,16,0,&B0001\nSPCOLVEC 0,0,0\nPRINT SPHITRC(100,100,16,16,&B0010,0,0)", expect: { stdout: "-1" } }
+  - { name: rect_mask_and_nonzero, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0,0,0,16,16,0,&B0001\nSPCOLVEC 0,0,0\nPRINT SPHITRC(100,100,16,16,&B0011,0,0)", expect: { stdout: "0" } }
+  # vs-one form (mgmt,sx,sy,w,h…) returns TRUE(1)/FALSE(0); swept vs-one too.
+  - { name: rect_vs_one_hit, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0\nSPCOLVEC 0,0,0\nPRINT SPHITRC(0,100,100,16,16)", expect: { stdout: "1" } }
+  - { name: rect_vs_one_miss, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0\nSPCOLVEC 0,0,0\nPRINT SPHITRC(0,0,0,16,16)", expect: { stdout: "0" } }
+  - { name: rect_swept_vs_one_hit, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0\nSPCOLVEC 0,0,0\nPRINT SPHITRC(0,0,100,16,16,,100,0)", expect: { stdout: "1" } }
+  # vs-range form (first,last,sx,sy,w,h…) returns the first colliding mgmt in [first,last], or -1.
+  - { name: rect_vs_range_hit, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0\nSPCOLVEC 0,0,0\nPRINT SPHITRC(0,3,100,100,16,16)", expect: { stdout: "0" } }
+  - { name: rect_vs_range_miss, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0\nSPCOLVEC 0,0,0\nPRINT SPHITRC(0,3,0,0,16,16)", expect: { stdout: "-1" } }
+  # SPHITINFO after a swept SPHITRC hit reconstructs OBJECT 1 = the moving quadrangle:
+  # TM=84/100, X1 = rect_x + mvx*TM = 0+100*0.84 = 84, Y1 = 100 (no Y movement).
+  - { name: rect_swept_sphitinfo, code: "ACLS\nSPSET 0,0\nSPOFS 0,100,100\nSPCOL 0\nSPCOLVEC 0,0,0\nV=SPHITRC(0,100,16,16,,100,0)\nSPHITINFO OUT TM,X1,Y1\nPRINT STR$(TM)+\",\"+STR$(X1)+\",\"+STR$(Y1)", expect: { stdout: "0.84,84,100" } }
