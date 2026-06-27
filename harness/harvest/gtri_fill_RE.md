@@ -137,3 +137,48 @@ flip/seed choice rescues it — the geometry the HW fills is simply not this int
    round-to-int (vcvt mode). That, not the integer DDA, is the fill.
 2. With that formula, close the remaining 21 px (steep-edge phasing) to 0, then port into
    `sb-render` gtri (replacing barycentric) + add a GTRI scene golden from the line+skew masks.
+
+---
+
+## RUN 4 (2026-06-27): SOLVED — GTRI fill is a TRANSPOSED integer Bresenham. Shipped.
+
+RUN 3's NEXT-STEP ("disasm the FLOAT math inside FUN_00194120's span build") was a dead end:
+there is NO float math in `FUN_00194120` (@0x194120..0x1944e8) — the whole span build is the
+integer helpers `FUN_00155f8c` (init) + `FUN_0015cab0` (union). The error in RUNs 2-3 was the
+**axis**: those runs simulated the DDA per-SCANLINE (table indexed by Y, horizontal spans).
+
+### The fix: the DDA is run TRANSPOSED (indexed by X, vertical spans)
+Reading the edge-call register loads in `FUN_00194120` (general path @0x1944a0-0x1944d8):
+the calls pass `r0=Ay', r1=Ax, r2=Cy', r3=Cx` — i.e. **(value=Y', index=X)**. Confirmed
+against the helper bodies: `FUN_00155f8c`'s loop variable is `r1` (the table index) and it
+runs from `r1`→`r3`; the vertical branch (`r0==r2`) writes a constant value across that index
+range. So the span table @0x1B1E33C is **indexed by X (columns)**, each entry holds a
+`{lo,hi}` **Y** range, and the fill loop @0x194374 writes **VERTICAL** runs (the swizzle uses
+`r1`=X as the column and `r0`=Y as the row start). The DDA ALWAYS drives along X regardless of
+slope (the seed `err0=(dV>dI)?-dV:dI` handles steep edges via the multi-step inner loop).
+
+Structure (after Y-flip `y'=ctx[8]-y-1` and X-ascending sort A≤B≤C):
+- **init** edge A→C (min-x to max-x) seeds every column — `FUN_00155f8c`, OVERWRITE.
+- **union** edges A→B and B→C merge their sub-ranges — `FUN_0015cab0`, min-lo / max-hi.
+- two-equal-x dispatch (@0x19427c / @0x1942ec) drops the vertical edge: init A→C + union B→C
+  (when Ax==Bx) or init A→B + union A→C (when Bx==Cx).
+- fill: per column x in [Ax..Cx], `[lo,hi]` → vertical run.
+
+The Y-flip is **flip-invariant** for the final pixel set (the asymmetric `new-1`/`new+1`
+rounding reverses with the axis and un-reverses on read-back) — verified H∈{512,256,240,192,
+none} all give 0 error — so we rasterize directly in screen Y.
+
+### Verified EXACT against all ground truth
+A faithful Python port (`harness/harvest/gtri_transposed.py`) of init+union+driver reproduces ALL
+10 harvested masks (lineA-E + skewA-E) with **0 px error**, and the spec's committed 45° mask
+(`GTRI 100,100,104,100,100,104` = dx+dy≤4). A closed-form per-column span (O(1), needed so
+extreme i32 coords don't iterate 2^31 columns) matches the iterative device loop over **1e6
+random edges** with 0 mismatches.
+
+### Shipped
+- `crates/sb-render/src/raster.rs`: replaced the barycentric `gtri` fill with the transposed
+  Bresenham (`gtri_edge_col` closed form + `floor_div`). Degenerate→line_dev path unchanged.
+- New test `gtri_fill_matches_device_masks` replays all 10 GSPOIT masks (hw_verified).
+- `spec/instructions/gtri.yaml`: corrected the "sorted by y then x" prose (it sorts by X
+  only) and documented the transposed-Bresenham fill in the disassembled ref.
+- bd:sb-interpreter-j4l CLOSED. The model is now hw_verified at the pixel level.

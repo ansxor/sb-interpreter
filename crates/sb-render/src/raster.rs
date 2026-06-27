@@ -14,13 +14,16 @@
 //!
 //! The **call shape** of each statement (argument counts, the default-color path, the
 //! errnum-4 guards) is `hw_verified` (sb-oracle s_t7b/s_t7c) and exercised by the spec's
-//! inline tests + the graphics builtins. The **exact pixel coverage** of each shape
-//! (line endpoint inclusivity, the circle/arc midpoint rule, the paint boundary test,
-//! triangle edge fill) is a draw-helper detail the disassembly leaves to the framebuffer
-//! oracle, so the algorithms here are faithful-but-unverified at the pixel level and are
-//! queued for the O-T6 golden harvest (`bd:sb-interpreter-7td`). The unit tests assert only the
-//! coverage these algorithms are *defined* to produce (a plotted pixel lands, a box is an
-//! outline, a fill is solid, clipping holds), not parity with hardware sub-pixel rules.
+//! inline tests + the graphics builtins. The `GLINE` fixed-point DDA and the `GTRI` interior
+//! fill are also `hw_verified` at the pixel level: the line DDA was RE'd from `FUN_001e6700`
+//! (`bd:sb-interpreter-sb7`) and the triangle fill from `FUN_00194120` + its transposed-
+//! Bresenham edge helpers `FUN_00155f8c`/`FUN_0015cab0`, both checked against GSPOIT
+//! read-back masks from real SB 3.6.0 (`bd:sb-interpreter-j4l`). The **exact pixel coverage**
+//! of the remaining shapes (the circle/arc midpoint rule, the paint boundary test) is a
+//! draw-helper detail the disassembly leaves to the framebuffer oracle, so those are
+//! faithful-but-unverified at the pixel level and queued for the O-T6 golden harvest
+//! (`bd:sb-interpreter-7td`). Their unit tests assert only the coverage they are *defined* to
+//! produce (a plotted pixel lands, a box is an outline, a fill is solid, clipping holds).
 
 use crate::grp::{argb8888_to_rgba5551, ClipRect, GrpState, GRP_DIM};
 
@@ -36,6 +39,56 @@ fn draw_bounds(clip: &ClipRect) -> Option<(i32, i32, i32, i32)> {
         None
     } else {
         Some((x0, y0, x1, y1))
+    }
+}
+
+/// Floor division for i128 (Rust `/` truncates toward zero; the GTRI edge DDA needs floor).
+fn floor_div(a: i128, b: i128) -> i128 {
+    let q = a / b;
+    let r = a % b;
+    if r != 0 && (r < 0) != (b < 0) {
+        q - 1
+    } else {
+        q
+    }
+}
+
+/// One GTRI edge as a transposed Bresenham: it is driven along **X** (the column index `x`,
+/// from `x0` to `x1`, `x0 <= x1`) and tracks the **Y** value (`y0` at `x0` to `y1` at `x1`).
+/// Returns the `[lo, hi]` Y span this edge paints in column `x`. This is the closed form of
+/// SB 3.6.0's `FUN_00155f8c`/`FUN_0015cab0` per-column run (the same seeded DDA as GLINE,
+/// always X-major); it is exact vs the iterative device loop over 1e6 random edges.
+fn gtri_edge_col(y0: i128, x0: i128, y1: i128, x1: i128, x: i128) -> (i128, i128) {
+    if y0 == y1 {
+        return (y0, y0); // horizontal edge: constant Y across its columns
+    }
+    let di = (x1 - x0).abs();
+    if di == 0 {
+        return (y0.min(y1), y0.max(y1)); // single column: the whole Y range
+    }
+    let dv = (y1 - y0).abs();
+    // Seed matching the device: err0 = (dV > dI) ? -dV : dI (FUN_00155f8c @0x155fa0).
+    let seed = if dv > di { -dv } else { di };
+    let (tdv, tdi) = (2 * dv, 2 * di);
+    let k = x - x0;
+    if y0 < y1 {
+        // Y increasing: `old` enters the column, `new` after stepping; hi = new-1 unless flat.
+        // Column 0's entering value is exactly y0; the run can overshoot to y1+1 at the end.
+        let old = if k == 0 {
+            y0
+        } else {
+            (y0 + floor_div(seed + k * tdv, tdi)).min(y1 + 1)
+        };
+        let new = (y0 + floor_div(seed + (k + 1) * tdv, tdi)).min(y1 + 1);
+        (old, if old == new { old } else { new - 1 })
+    } else {
+        let old = if k == 0 {
+            y0
+        } else {
+            (y0 - floor_div(seed + k * tdv, tdi)).max(y1 - 1)
+        };
+        let new = (y0 - floor_div(seed + (k + 1) * tdv, tdi)).max(y1 - 1);
+        (if old == new { old } else { new + 1 }, old)
     }
 }
 
@@ -287,29 +340,65 @@ impl GrpState {
             self.line_dev(v[i].0, v[i].1, v[j].0, v[j].1, h);
             return;
         }
-        let (x1, y1, x2, y2, x3, y3) = (ax, ay, bx, by, cx, cy);
-        let (minx, maxx) = (x1.min(x2).min(x3), x1.max(x2).max(x3));
-        let (miny, maxy) = (y1.min(y2).min(y3), y1.max(y2).max(y3));
-        // Clamp the scan box to the drawable region so a huge off-screen triangle is cheap.
+        // Non-degenerate: SB 3.6.0 fills via a TRANSPOSED integer Bresenham (FUN_00194120 +
+        // FUN_00155f8c init / FUN_0015cab0 union, hw_verified bd:sb-interpreter-j4l). The span
+        // table is indexed by X (columns) and stores per-column Y ranges; the fill writes
+        // VERTICAL runs. The three vertices are sorted by X; the edge from the min-x vertex to
+        // the max-x vertex SEEDS every column, the other two edges UNION (min lo / max hi)
+        // their sub-ranges. Each edge is GLINE's seeded DDA but always driven along X. (The
+        // device Y-flips by the page height before scan-converting, but the asymmetric DDA
+        // rounding is flip-invariant, so we rasterize directly in screen Y.)
         let Some((bx0, by0, bx1, by1)) = draw_bounds(&self.cur().write_clip) else {
             return;
         };
-        let (minx, maxx) = (minx.max(bx0 as i128), maxx.min(bx1 as i128));
-        let (miny, maxy) = (miny.max(by0 as i128), maxy.min(by1 as i128));
-        let edge = |ax: i128, ay: i128, bx: i128, by: i128, px: i128, py: i128| {
-            (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+        // Sort vertices by X ascending with the device's compare-swaps (swap on strict >).
+        let mut v = [(ax, ay), (bx, by), (cx, cy)];
+        if v[0].0 > v[1].0 {
+            v.swap(0, 1);
+        }
+        if v[1].0 > v[2].0 {
+            v.swap(1, 2);
+        }
+        if v[0].0 > v[1].0 {
+            v.swap(0, 1);
+        }
+        let [(ax, ay), (bx, by), (cx, cy)] = v;
+        // Init edge (spans every column ax..=cx) + the union edges covering their sub-ranges.
+        // When two vertices share X, the device drops the vertical edge and inits/unions the
+        // remaining two (all-X-equal is collinear -> already handled by the area==0 path).
+        let init = (ay, ax, cy, cx);
+        let (u0, u1) = if ax != bx && bx != cx {
+            (Some((ay, ax, by, bx)), Some((by, bx, cy, cx)))
+        } else if ax == bx {
+            (Some((by, bx, cy, cx)), None)
+        } else {
+            // bx == cx
+            (Some((ay, ax, by, bx)), None)
         };
-        for py in miny..=maxy {
-            for px in minx..=maxx {
-                let w0 = edge(x2, y2, x3, y3, px, py);
-                let w1 = edge(x3, y3, x1, y1, px, py);
-                let w2 = edge(x1, y1, x2, y2, px, py);
-                let inside = (w0 >= 0 && w1 >= 0 && w2 >= 0) || (w0 <= 0 && w1 <= 0 && w2 <= 0);
-                if inside {
-                    // px/py are clamped to the (small) draw bounds, so they fit i32.
-                    self.plot_dev(px as i32, py as i32, h);
+        let clo = ax.max(bx0 as i128);
+        let chi = cx.min(bx1 as i128);
+        let mut x = clo;
+        while x <= chi {
+            let (mut lo, mut hi) = gtri_edge_col(init.0, init.1, init.2, init.3, x);
+            for u in [u0, u1].into_iter().flatten() {
+                if u.1 <= x && x <= u.3 {
+                    let (l, hh) = gtri_edge_col(u.0, u.1, u.2, u.3, x);
+                    lo = lo.min(l);
+                    hi = hi.max(hh);
                 }
             }
+            if lo > hi {
+                core::mem::swap(&mut lo, &mut hi);
+            }
+            // Clamp the vertical run to the drawable region; x/y now fit i32.
+            let ya = lo.max(by0 as i128);
+            let yb = hi.min(by1 as i128);
+            let mut y = ya;
+            while y <= yb {
+                self.plot_dev(x as i32, y as i32, h);
+                y += 1;
+            }
+            x += 1;
         }
     }
 
@@ -525,6 +614,47 @@ mod tests {
         assert_ne!(read(&g, 1, 1), 0); // the on-screen corner is covered by the huge triangle
         let mut e = GrpState::new();
         e.gtri(i32::MIN, i32::MIN, i32::MAX, 0, 0, i32::MAX, WHITE); // no panic
+    }
+
+    #[test]
+    fn gtri_fill_matches_device_masks() {
+        // Ground-truth GTRI interior masks harvested from real SB 3.6.0 via GSPOIT read-back
+        // (sb-oracle, bd:sb-interpreter-j4l). Each is (verts, box_w, box_h, ox, oy, bitmask):
+        // the bitmask is the row-major box of lit (1) / clear (0) GSPOIT pixels. These pin the
+        // transposed-Bresenham fill — RUN3 disproved both barycentric and per-scanline DDA
+        // models; the device drives the DDA along X (columns) and fills vertical runs.
+        // lineA-E: thin right triangles isolating one edge slope; skewA-E: both edges sloped.
+        let cases: &[(&str, i32, i32, i32, i32, &str)] = &[
+            ("0,0,1,9,0,9", 2, 10, 0, 0, "10101010111111111111"),
+            ("0,0,9,9,0,9", 10, 10, 0, 0, "1000000000110000000011100000001111000000111110000011111100001111111000111111110011111111101111111111"),
+            ("0,0,20,3,0,3", 21, 4, 0, 0, "111100000000000000000111111111100000000000111111111111111110000111111111111111111111"),
+            ("0,0,3,20,0,20", 4, 21, 0, 0, "100010001000110011001100110011001100110011101110111011101110111011111111111111111111"),
+            ("0,0,9,4,0,4", 10, 5, 0, 0, "11000000001111000000111111000011111111001111111111"),
+            ("0,0,20,0,20,6", 21, 7, 0, 0, "111111111111111111111001111111111111111111000001111111111111111000000000111111111111000000000000111111111000000000000000111111000000000000000000011"),
+            ("0,0,13,0,0,7", 14, 8, 0, 0, "1111111111111111111111111110111111111110001111111110000011111110000000111110000000001110000000000010000000000000"),
+            ("10,10,40,13,10,20", 31, 11, 10, 10, "11111000000000000000000000000001111111111111110000000000000000111111111111111111111111100000011111111111111111111111111111111111111111111111111111111111000111111111111111111111111000000011111111111111111111000000000001111111111111110000000000000000111111111110000000000000000000011111110000000000000000000000001110000000000000000000000000000"),
+            ("3,0,9,20,0,12", 10, 21, 0, 0, "000100000000011000000001100000001110000000111000000011110000001111000001111100000111111000011111100001111110001111111100111111110001111111000011111100000111111000001111100000001110000000011100000000110000000001"),
+            ("0,0,8,3,3,9", 9, 10, 0, 0, "110000000011100000011111100011111111001111111001111110001111100000111000000111000000110000"),
+        ];
+        for &(verts, w, h, ox, oy, mask) in cases {
+            let c: Vec<i32> = verts.split(',').map(|s| s.parse().unwrap()).collect();
+            let mut g = GrpState::new();
+            g.gtri(c[0], c[1], c[2], c[3], c[4], c[5], WHITE);
+            let bits: Vec<u8> = mask.bytes().map(|b| b - b'0').collect();
+            for dy in 0..h {
+                for dx in 0..w {
+                    let lit = read(&g, ox + dx, oy + dy) != 0;
+                    let want = bits[(dy * w + dx) as usize] == 1;
+                    assert_eq!(
+                        lit,
+                        want,
+                        "GTRI {verts} pixel ({}, {}): got lit={lit}, want lit={want}",
+                        ox + dx,
+                        oy + dy
+                    );
+                }
+            }
+        }
     }
 
     #[test]
