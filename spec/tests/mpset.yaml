@@ -4,9 +4,18 @@ tests:
   - name: "wrong_argcount"
     code: "MPSET 5"
     expect: { error: { errnum: 4 } }
+  - name: "three_args"
+    code: "MPSET 5,123,1"
+    expect: { error: { errnum: 4 } }
+  - name: "four_args"
+    code: "MPSET 5,123,1,2"
+    expect: { error: { errnum: 4 } }
   - name: "mgmt_negative"
     code: "MPSET -1,0"
     expect: { error: { errnum: 10 } }
   - name: "mgmt_too_large"
     code: "MPSET 9,0"
     expect: { error: { errnum: 10 } }
+  - name: "value_string"
+    code: "MPSET 5,\"X\""
+    expect: { error: { errnum: 8 } }

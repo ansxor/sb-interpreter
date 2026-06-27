@@ -4,3 +4,15 @@ tests:
   - name: "too_many_args"
     code: "A=MPSTAT(0,1)"
     expect: { error: { errnum: 4 } }
+  - name: "whole_session_none"
+    code: "PRINT MPSTAT()"
+    expect: { stdout: "0" }
+  - name: "terminal_id_0_no_session"
+    code: "A=MPSTAT(0)"
+    expect: { error: { errnum: 10 } }
+  - name: "terminal_id_3_no_session"
+    code: "A=MPSTAT(3)"
+    expect: { error: { errnum: 10 } }
+  - name: "terminal_id_negative"
+    code: "A=MPSTAT(-1)"
+    expect: { error: { errnum: 10 } }

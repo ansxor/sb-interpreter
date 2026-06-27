@@ -1,0 +1,10 @@
+mpset_valid|MPSET 5,123|err
+mpset_double|MPSET 5,1.9|err
+mpset_double_neg|MPSET 5,-1.9|err
+mpset_3arg|MPSET 5,123,1|err
+mpset_string|MPSET 5,"X"|err
+mpset_4arg|MPSET 5,123,1,2|err
+mpstat_session|MPSTAT()
+mpstat_term0|A=MPSTAT(0)|err
+mpstat_term3|A=MPSTAT(3)|err
+mpstat_term_neg|A=MPSTAT(-1)|err
