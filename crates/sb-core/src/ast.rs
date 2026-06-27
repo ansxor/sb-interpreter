@@ -378,6 +378,17 @@ pub enum StmtKind {
         args: Vec<Expr>,
         out_args: Vec<Expr>,
     },
+    /// A value-returning builtin written in the whole-parenthesised *statement* form
+    /// `NAME(args)` (no `OUT`, no assignment) that real SB 3.6.0 rejects at **runtime**
+    /// with Illegal function call (4) — the builtin's handler reaches the dispatcher and
+    /// refuses the discarded-return shape. Deferred to runtime (not a parse error) so a
+    /// preceding statement on the same line still runs, e.g. `PRINT"HI":ABS(5)` prints
+    /// "HI" first. The held expressions are the call arguments, evaluated before the
+    /// error is raised (the caller pushes args before the handler runs). Which builtins
+    /// land here vs. the parse-time Syntax-error (3) bucket is a per-builtin keyword-table
+    /// flag — see [`crate::parser::expr_stmt_class`]. hw_verified (sb-oracle 2026-06-26,
+    /// `harness/harvest/out/exprstmt2.tsv`).
+    IllegalFnStmt(Vec<Expr>),
     /// `PRINT`/`?` (`node.d:Print`).
     Print(Vec<PrintItem>),
     /// `@label` definition site (`node.d:Label`), *without* the leading `@`.

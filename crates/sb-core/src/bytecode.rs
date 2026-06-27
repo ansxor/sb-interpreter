@@ -282,6 +282,13 @@ pub enum Op {
     /// `EXEC target`: pop a slot/file expression, load+run it (M6-T6). The operand validation
     /// is hw_verified; the actual control transfer is the deferred multi-program model.
     Exec,
+    /// Raise a SmileBASIC runtime error with the given errnum, unconditionally. Used to
+    /// defer an error that is known at compile time but must fire during execution — e.g.
+    /// a value-returning builtin written in the whole-paren statement form `ABS(5)`, which
+    /// real SB rejects at runtime with Illegal function call (4) only when reached, so a
+    /// preceding statement on the same line still runs. The errline is the failing op's
+    /// own source line (filled by [`Vm::attach_line`](crate::vm::Vm)).
+    Raise(u32),
     /// `END` — stop the program normally.
     End,
     /// `STOP` — halt (distinct from `END`; resumable via CONT in DIRECT mode).

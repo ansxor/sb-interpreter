@@ -1,0 +1,53 @@
+# Expr-as-statement errnum split (bead sb-interpreter-5iu) — hw_verified via the sb-oracle
+# skill (real SB 3.6.0), harness/harvest/out/exprstmt2.tsv (24 cases, 2026-06-26).
+#
+# A value-returning builtin written in the whole-parenthesised STATEMENT form `NAME(args)`
+# (no `OUT`, no assignment) is illegal, but SmileBASIC 3.6.0 picks the errnum from a PER-BUILTIN
+# flag in its command/function keyword table — it is NOT derivable from anything structural:
+#   * NOT routing: RGB->3 but its sibling RGBREAD->4, though both run through call_graphics
+#     (likewise SPPAGE->3 vs SPROT->4 under call_sprite).
+#   * NOT function-vs-command: RGB/GSPOIT/PI are pure value functions yet ->3, while the
+#     equally pure ABS/FLOOR/SQR/LEN ->4.
+# So the split is tabulated in sb-core's parser (`expr_stmt_class`). The disassembly
+# corroborates the mechanism: the ->4 group reaches its handler, which checks the expected
+# return count and raises errnum 4 when it is zero (ABS @0x147a34 / RGB @0x154ed0 both end at a
+# `mov r0,#0x4; bl 0x1fffdc` site) — a RUNTIME error, deferred via StmtKind::IllegalFnStmt; the
+# ->3 group is refused earlier, at parse time (Syntax error). A bare expression as a statement
+# (`5`, `1+2`, `"HI"`, `A`) is also Syntax error 3. Commands that accept a grouped first
+# argument (COLOR/PRINT) run normally (NOERR).
+cases:
+  # -- Illegal function call (4): value functions that reach the handler -----------------
+  - { name: abs_stmt,     code: 'ABS(5)',          expect: { error: { errnum: 4 } } }
+  - { name: floor_stmt,   code: 'FLOOR(2.5)',      expect: { error: { errnum: 4 } } }
+  - { name: sqr_stmt,     code: 'SQR(4)',          expect: { error: { errnum: 4 } } }
+  - { name: len_stmt,     code: 'LEN("AB")',       expect: { error: { errnum: 4 } } }
+  - { name: rnd_stmt,     code: 'RND(10)',         expect: { error: { errnum: 4 } } }
+  - { name: rgbread_stmt, code: 'RGBREAD(0)',      expect: { error: { errnum: 4 } } }
+  - { name: sprot_stmt,   code: 'SPROT(0)',        expect: { error: { errnum: 4 } } }
+  - { name: bgcolor_stmt, code: 'BGCOLOR(0)',      expect: { error: { errnum: 4 } } }
+
+  # -- Syntax error (3): refused at parse time, before the handler ----------------------
+  - { name: gcolor_stmt,  code: 'GCOLOR()',        expect: { error: { errnum: 3 } } }
+  - { name: gpage_stmt,   code: 'GPAGE()',         expect: { error: { errnum: 3 } } }
+  - { name: gcls_stmt,    code: 'GCLS()',          expect: { error: { errnum: 3 } } }
+  - { name: gpset_stmt,   code: 'GPSET(0,0)',      expect: { error: { errnum: 3 } } }
+  - { name: gline_stmt,   code: 'GLINE(0,0,10,10)', expect: { error: { errnum: 3 } } }
+  - { name: rgb_stmt,     code: 'RGB(1,2,3)',      expect: { error: { errnum: 3 } } }
+  - { name: gspoit_stmt,  code: 'GSPOIT(0,0)',     expect: { error: { errnum: 3 } } }
+  - { name: sppage_stmt,  code: 'SPPAGE()',        expect: { error: { errnum: 3 } } }
+  - { name: locate_stmt,  code: 'LOCATE(0,0)',     expect: { error: { errnum: 3 } } }
+  - { name: pi_stmt,      code: 'PI()',            expect: { error: { errnum: 3 } } }
+
+  # -- Bare expression as a statement is also Syntax error 3 ----------------------------
+  - { name: five_stmt,    code: '5',               expect: { error: { errnum: 3 } } }
+  - { name: aplusb_stmt,  code: '1+2',             expect: { error: { errnum: 3 } } }
+  - { name: str_stmt,     code: '"HI"',            expect: { error: { errnum: 3 } } }
+  # NOTE: the 4th bare-expr case `var_stmt` (a lone identifier `A` -> errnum 3, hw_verified
+  # exprstmt2.tsv) is intentionally NOT included: sb-core currently gives Undefined function
+  # (16) for a bare bareword statement instead of Syntax error (3). That is a distinct
+  # parser concern (bare-identifier statement, not the builtin 3-vs-4 split) — queued as its
+  # own bead. The other three bare-expr forms (literal / arithmetic / string) already -> 3.
+
+  # -- NOERR: commands that accept a grouped first argument run normally -----------------
+  - { name: color_stmt,   code: 'COLOR(0)',        expect: { stdout: "" } }
+  - { name: print_stmt,   code: 'PRINT(1)',        expect: { stdout: "1" } }

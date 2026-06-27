@@ -1173,6 +1173,8 @@ impl Vm {
                 b.assign_through(into_b).map_err(sb)?;
             }
 
+            Op::Raise(errnum) => return Err(sb(RuntimeError::new(errnum))),
+
             Op::End => return Ok(Some(Halt::End)),
             Op::Stop => return Ok(Some(Halt::Stop)),
 
@@ -5804,9 +5806,24 @@ H$=HEX$(255)"#);
     }
 
     #[test]
-    fn builtin_result_discarded_in_statement_position() {
-        // A bare function call as a statement runs (and discards the result) cleanly.
-        run("FLOOR(3.7)");
+    fn function_as_statement_raises_illegal_function_call() {
+        // A value-returning builtin in the whole-paren statement form is NOT silently
+        // discarded — real SB 3.6.0 raises Illegal function call (4) (bead
+        // sb-interpreter-5iu, hw_verified harness/harvest/out/exprstmt2.tsv: FLOOR(2.5),
+        // ABS(5), SQR(4)… all → errnum 4). The split is per-builtin: GCLS()/RGB()/PI() →
+        // Syntax error 3 instead (rejected at parse). See [`crate::parser::expr_stmt_class`].
+        assert_eq!(run_err("FLOOR(3.7)").errnum(), Some(4));
+        assert_eq!(run_err("ABS(5)").errnum(), Some(4));
+        assert_eq!(run_err("SQR(4)").errnum(), Some(4));
+
+        // errnum 4 is deferred to RUNTIME (the handler raises it), so a preceding statement
+        // on the same line still runs: the PRINT output survives before the error.
+        let ast = parse(r#"PRINT "HI":ABS(5)"#).expect("parse");
+        let program = compile(&ast).expect("compile");
+        let mut vm = Vm::new(program);
+        let err = vm.run().expect_err("expected illegal function call");
+        assert_eq!(err.errnum(), Some(4));
+        assert!(vm.console_text().contains("HI"));
     }
 
     // ---- RNG (M1-T9): RND / RNDF / RANDOMIZE through the full program path ----

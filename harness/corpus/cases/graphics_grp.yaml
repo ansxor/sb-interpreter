@@ -156,6 +156,12 @@ cases:
   - name: gspoit_three_args_errors
     code: 'A=GSPOIT(1,2,3)'
     expect: { error: { errnum: 4 } }
+  # The whole-paren STATEMENT form is Syntax error 3, NOT Illegal function call 4: the parser
+  # rejects a value-returning builtin used as a statement before the handler (which would raise
+  # 4 on its return-count check) is ever reached. Corrected from a stale disasm-inference (the
+  # 2026-06-22 batch's header over-claimed this case as hw_verified) — re-harvested 2026-06-26
+  # (bead sb-interpreter-5iu, harness/harvest/out/exprstmt_gspoit_conflict.tsv): GSPOIT(1,1) and
+  # GSPOIT(0,0) both -> errnum 3 errline 1, while the function form A=GSPOIT(1,1) is NOERR.
   - name: gspoit_as_statement_errors
     code: 'GSPOIT(1,1)'
-    expect: { error: { errnum: 4 } }
+    expect: { error: { errnum: 3 } }

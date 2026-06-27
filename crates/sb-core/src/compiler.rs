@@ -67,6 +67,7 @@ impl std::error::Error for CompileError {}
 type CResult<T> = Result<T, CompileError>;
 
 const ERR_SYNTAX: u32 = 3;
+const ERR_ILLEGAL_FUNCTION_CALL: u32 = 4;
 const ERR_UNDEFINED_LABEL: u32 = 14;
 const ERR_UNDEFINED_VARIABLE: u32 = 15;
 const ERR_DUPLICATE_VARIABLE: u32 = 18;
@@ -585,6 +586,18 @@ impl<'a> Compiler<'a> {
                 args,
                 out_args,
             } => self.compile_call_stmt(name, args, out_args)?,
+            StmtKind::IllegalFnStmt(args) => {
+                // A value-returning builtin in the whole-paren statement form (`ABS(5)`):
+                // real SB evaluates the arguments, then its handler rejects the discarded
+                // return at runtime → Illegal function call (4). Mirror that order — emit
+                // the arg evaluation, then the deferred raise — so an argument-internal
+                // error (`ABS(1/0)`) still surfaces first and a preceding same-line
+                // statement still runs. See [`crate::parser::expr_stmt_class`].
+                for a in args {
+                    self.compile_expr(a)?;
+                }
+                self.emit(Op::Raise(ERR_ILLEGAL_FUNCTION_CALL));
+            }
             StmtKind::Print(items) => {
                 for item in items {
                     match item {

@@ -53,6 +53,51 @@ pub struct ParseError {
     pub msg: String,
 }
 
+/// How SmileBASIC 3.6.0 rejects a value-returning builtin written in the whole-parenthesised
+/// *statement* form `NAME(args)` (no `OUT`, no assignment). The error number is a per-builtin
+/// flag in SB's command/function keyword table, **not** derivable from anything structural:
+///
+/// - it is NOT routing — `RGB`→3 but its sibling `RGBREAD`→4, though both run through the same
+///   `call_graphics` path (likewise `SPPAGE`→3 vs `SPROT`→4 under `call_sprite`);
+/// - it is NOT function-vs-command — `RGB`/`GSPOIT`/`PI` are pure value functions yet land in
+///   the Syntax-error bucket, while the equally pure `ABS`/`FLOOR`/`SQR`/`LEN` land in
+///   Illegal-function-call.
+///
+/// The split therefore has to be tabulated. The classification below is hw_verified
+/// (sb-oracle 2026-06-26, `harness/harvest/out/exprstmt2.tsv`, 18 builtins; bead
+/// sb-interpreter-5iu). The mechanism is corroborated in the disassembly: the
+/// Illegal-function-call group reaches its handler, which checks the expected return count and
+/// raises errnum 4 when it is zero (e.g. `ABS` @0x147a34: `cmp [r0,#0x4],#1` /
+/// `cmp [r4,#0xc],#1` then `mov r0,#0x4; bl 0x1fffdc`; `RGB` @0x154ed0 has the same
+/// `mov r0,#0x4` site) — runtime, hence [`ExprStmtClass::IllegalFunction`] defers via
+/// [`StmtKind::IllegalFnStmt`]; the Syntax-error group is refused earlier, before the handler.
+///
+/// Only the 18 hw_verified names are classified; every other builtin keeps its existing
+/// behavior (the full ~217-entry table is queued for harvest — bead sb-interpreter-5iu notes).
+enum ExprStmtClass {
+    /// Reaches the handler, which rejects the discarded return at runtime → Illegal function
+    /// call (4): `ABS`/`FLOOR`/`SQR`/`LEN`/`RND`/`RGBREAD`/`SPROT`/`BGCOLOR`.
+    IllegalFunction,
+    /// Refused before the handler → Syntax error (3): `GCOLOR`/`GPAGE`/`GCLS`/`GPSET`/`GLINE`/
+    /// `RGB`/`GSPOIT`/`SPPAGE`/`LOCATE`/`PI`.
+    SyntaxError,
+    /// Not in the hw_verified set — keep the existing command-call / array-read behavior.
+    Unknown,
+}
+
+/// Classify a builtin used in the whole-paren statement form. `name` is the upper-cased,
+/// suffix-less identifier. See [`ExprStmtClass`] for why this is a lookup table, not a rule.
+fn expr_stmt_class(name: &str) -> ExprStmtClass {
+    match name {
+        "ABS" | "FLOOR" | "SQR" | "LEN" | "RND" | "RGBREAD" | "SPROT" | "BGCOLOR" => {
+            ExprStmtClass::IllegalFunction
+        }
+        "GCOLOR" | "GPAGE" | "GCLS" | "GPSET" | "GLINE" | "RGB" | "GSPOIT" | "SPPAGE"
+        | "LOCATE" | "PI" => ExprStmtClass::SyntaxError,
+        _ => ExprStmtClass::Unknown,
+    }
+}
+
 impl ParseError {
     /// The byte-for-byte message SmileBASIC displays for this error's `errnum`
     /// (e.g. errnum 3 → `"Syntax error"`, errnum 21 → `"NEXT without FOR"`; see
@@ -564,6 +609,26 @@ impl Parser {
             } else {
                 Vec::new()
             };
+            // A value-returning builtin written in this whole-paren statement form
+            // (`ABS(5)`, `GCLS(0)`) is illegal, and SmileBASIC 3.6.0 picks the errnum from a
+            // per-builtin keyword-table flag (see [`expr_stmt_class`]). This is the ONLY
+            // branch that reaches the whole-paren form: the command form (`SPROT 1,90`,
+            // `GCLS RGB(...)`) rewinds to `parse_command_call` below, so the classification
+            // never rejects a legal command. The `OUT` form (a real output-returning call)
+            // is left untouched.
+            if out_args.is_empty() && name.suffix == Suffix::None {
+                match expr_stmt_class(&name.ident.to_ascii_uppercase()) {
+                    ExprStmtClass::SyntaxError => {
+                        return Err(self.syntax_error(
+                            "value-returning builtin is not a statement in this form",
+                        ));
+                    }
+                    ExprStmtClass::IllegalFunction => {
+                        return Ok(Stmt::new(StmtKind::IllegalFnStmt(args), loc));
+                    }
+                    ExprStmtClass::Unknown => {}
+                }
+            }
             return Ok(Stmt::new(
                 StmtKind::Call {
                     name,
@@ -2019,6 +2084,29 @@ mod tests {
         };
         assert_eq!(name.ident, "SIMPLE_INIT");
         assert_eq!(args.len(), 3);
+    }
+
+    #[test]
+    fn value_function_in_statement_form_is_classified() {
+        // The whole-paren statement form `NAME(args)` of a value-returning builtin is illegal,
+        // and SmileBASIC 3.6.0 splits the errnum per-builtin (hw_verified, bead
+        // sb-interpreter-5iu). The Syntax-error group is rejected at parse time...
+        for src in ["GCLS()", "RGB(1,2,3)", "PI()", "GSPOIT(0,0)", "LOCATE(0,0)"] {
+            let err = parse(src).expect_err(&format!("`{src}` should be a syntax error"));
+            assert_eq!(err.errnum, 3, "{src}");
+        }
+        // ...while the Illegal-function group parses to a node that defers errnum 4 to runtime
+        // (so a preceding same-line statement still runs).
+        for src in ["ABS(5)", "FLOOR(2.5)", "RGBREAD(0)", "SPROT(0)"] {
+            assert!(
+                matches!(prog(src)[0].kind, StmtKind::IllegalFnStmt(_)),
+                "{src} should parse to IllegalFnStmt"
+            );
+        }
+        // The COMMAND form of the same names is unaffected — it takes the command-call path,
+        // so `SPROT 1,90` and `LOCATE 5,10` stay ordinary calls.
+        assert!(matches!(prog("SPROT 1,90")[0].kind, StmtKind::Call { .. }));
+        assert!(matches!(prog("LOCATE 5,10")[0].kind, StmtKind::Call { .. }));
     }
 
     #[test]
