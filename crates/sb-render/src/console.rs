@@ -46,30 +46,36 @@ pub const DEFAULT_FG: u8 = 15;
 /// Default background color: transparent = 0.
 pub const DEFAULT_BG: u8 = 0;
 
-/// The 16-color text palette as ARGB8888, index 0 = transparent.
+/// The 16-color text palette as **logical** ARGB8888, index 0 = transparent.
 ///
-/// Derived from the documented 16-color set (`COLOR` doc: 0 Transparent, 1 Black … 15
-/// White) cross-checked against `osb/SMILEBASIC/console.d` `consoleColor`, then **quantized
-/// to SB 3.6.0's hw_verified 5-bit device precision** (`quantize8`, low 3 bits forced 0):
-/// e.g. white = `0xF8F8F8` (== the hw_verified `#WHITE`), red = `0xF80000`. osb (3.5.0)
-/// stored the un-quantized `0xFF`/`0x7F` values; the exact text-layer ARGB on 3.6.0 is
-/// oracle-pending (composite screenshot capture, O-T6 → `bd:sb-interpreter-7td`).
+/// **hw_verified on SB 3.6.0** (Azahar composite screenshots, 2026-06-27,
+/// `bd:sb-interpreter-vzv`; harvest `harness/harvest/out/vzv_console_palette_attr.tsv`).
+/// A COLOR-ramp screen was sampled per band: the **displayed** (3DS LCD scanout) pixels are
+/// full = `(255,255,255)` and half-tone = `(132,132,132)`. The display does a 5-bit→8-bit
+/// **bit-replication** scanout `(c5<<3)|(c5>>2)`, so full = 5-bit 31 → 255 and half = 5-bit
+/// **16** → 132 (0x84). The text layer therefore does **not** bypass 5-bit precision, and the
+/// half-tone is neither `0x78` (5-bit 15) nor `0x7F` — it is 5-bit index **16**.
+///
+/// We store the **logical** channel (`expand5 = c5<<3`, low 3 bits zero) to stay consistent
+/// with the numeric color constants (`#WHITE = 0xF8F8F8`) and the disassembled pixel-read
+/// helper `FUN_00191dfc` (masks `0xF8`); the display bit-replication is the final scanout step
+/// (see [`crate::expand5`]). So full = `0xF8` and half = `16<<3 = 0x80` (was wrongly `0x78`).
 pub const TEXT_PALETTE: [u32; 16] = [
     0x0000_0000, // 0 transparent
     0xFF00_0000, // 1 black   #TBLACK
-    0xFF78_0000, // 2 maroon  #TMAROON
+    0xFF80_0000, // 2 maroon  #TMAROON  (half = 5-bit 16, displayed 132)
     0xFFF8_0000, // 3 red     #TRED
-    0xFF00_7800, // 4 green   #TGREEN
+    0xFF00_8000, // 4 green   #TGREEN
     0xFF00_F800, // 5 lime    #TLIME
-    0xFF78_7800, // 6 olive   #TOLIVE
+    0xFF80_8000, // 6 olive   #TOLIVE
     0xFFF8_F800, // 7 yellow  #TYELLOW
-    0xFF00_0078, // 8 navy    #TNAVY
+    0xFF00_0080, // 8 navy    #TNAVY
     0xFF00_00F8, // 9 blue    #TBLUE
-    0xFF78_0078, // 10 purple #TPURPLE
+    0xFF80_0080, // 10 purple #TPURPLE
     0xFFF8_00F8, // 11 magenta #TMAGENTA
-    0xFF00_7878, // 12 teal   #TTEAL
+    0xFF00_8080, // 12 teal   #TTEAL
     0xFF00_F8F8, // 13 cyan   #TCYAN
-    0xFF78_7878, // 14 gray   #TGRAY
+    0xFF80_8080, // 14 gray   #TGRAY
     0xFFF8_F8F8, // 15 white  #TWHITE
 ];
 
@@ -473,6 +479,50 @@ mod tests {
         assert_eq!((c.scroll_x, c.scroll_y), (0, 0));
         assert_eq!(c.cur_x, 0);
         assert_eq!(c.cur_y, 0);
+    }
+
+    #[test]
+    fn text_palette_matches_hw_verified_displayed_colors() {
+        // hw_verified (sb-interpreter-vzv, 2026-06-27): COLOR-ramp composite screenshot.
+        // The logical channels are stored as `c5<<3`; the displayed (scanout) pixel is the
+        // bit-replicated value the screenshot shows. full=0xF8->255, half=0x80->132.
+        use crate::display_scanout8;
+        let displayed = |argb: u32| -> (u8, u8, u8) {
+            (
+                display_scanout8((argb >> 16) as u8),
+                display_scanout8((argb >> 8) as u8),
+                display_scanout8(argb as u8),
+            )
+        };
+        // index -> harvested displayed RGB (1..=15; 0 is transparent).
+        let want: [(u8, u8, u8); 16] = [
+            (0, 0, 0),
+            (0, 0, 0),       // 1 black
+            (132, 0, 0),     // 2 maroon
+            (255, 0, 0),     // 3 red
+            (0, 132, 0),     // 4 green
+            (0, 255, 0),     // 5 lime
+            (132, 132, 0),   // 6 olive
+            (255, 255, 0),   // 7 yellow
+            (0, 0, 132),     // 8 navy
+            (0, 0, 255),     // 9 blue
+            (132, 0, 132),   // 10 purple
+            (255, 0, 255),   // 11 magenta
+            (0, 132, 132),   // 12 teal
+            (0, 255, 255),   // 13 cyan
+            (132, 132, 132), // 14 gray
+            (255, 255, 255), // 15 white
+        ];
+        for i in 1..16 {
+            assert_eq!(
+                displayed(TEXT_PALETTE[i]),
+                want[i],
+                "text palette index {i}"
+            );
+        }
+        // The half-tone is 5-bit 16 (logical 0x80), NOT 0x78 (5-bit 15).
+        assert_eq!(TEXT_PALETTE[2] & 0x00FF_0000, 0x0080_0000);
+        assert_eq!(TEXT_PALETTE[14] & 0x00FF_FFFF, 0x0080_8080);
     }
 
     #[test]

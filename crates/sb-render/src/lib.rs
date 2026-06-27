@@ -108,6 +108,27 @@ pub const fn quantize8(c8: u8) -> u8 {
     c8 & 0xF8
 }
 
+/// Expand a SB 5-bit channel to the 8-bit value the **3DS LCD scanout actually shows**.
+///
+/// FIDELITY: distinct from [`expand5`]. The *logical* framebuffer channel is `c5<<3` (low 3
+/// bits zero — what `#WHITE`/GSPOIT/`FUN_00191dfc` report). The *display* hardware replicates
+/// the high bits into the low ones on scanout: `(c5<<3)|(c5>>2)`. So 5-bit 31 → 255 (not
+/// 248) and 5-bit 16 → 132 (0x84, not 0x80). hw_verified on SB 3.6.0 by sampling composite
+/// screenshots (`bd:sb-interpreter-vzv`): #WHITE displays 255, RGB(128) displays 132, and any
+/// input is first truncated to its top 5 bits (RGB 120/124/127 all display 123 = 5-bit 15).
+/// Use this when comparing a rendered framebuffer against an emulator/device screenshot.
+#[inline]
+pub const fn display_expand5(c5: u8) -> u8 {
+    let v = c5 & 0x1F;
+    (v << 3) | (v >> 2)
+}
+
+/// Map a SB *logical* 8-bit channel (`c5<<3`, low 3 zero) to its displayed scanout value.
+#[inline]
+pub const fn display_scanout8(c8: u8) -> u8 {
+    display_expand5(c8 >> 3)
+}
+
 /// Build a packed ARGB8888 color from SB 5-bit RGB components + a 1-bit alpha.
 #[inline]
 pub const fn rgb555_to_argb8888(r5: u8, g5: u8, b5: u8, a1: bool) -> u32 {
@@ -137,6 +158,23 @@ mod tests {
         assert_eq!(quantize8(0xFF), 0xF8);
         assert_eq!(quantize8(0x7F), 0x78);
         assert_eq!(quantize8(0x80), 0x80);
+    }
+
+    #[test]
+    fn display_scanout_bit_replicates_5bit() {
+        // hw_verified (sb-interpreter-vzv): the LCD scanout replicates the high 5 bits.
+        assert_eq!(display_expand5(31), 0xFF); // full  -> 255 (NOT 248)
+        assert_eq!(display_expand5(16), 0x84); // half  -> 132 (NOT 0x78/0x7F)
+        assert_eq!(display_expand5(0), 0x00);
+        // Logical channels map to the harvested displayed values:
+        assert_eq!(display_scanout8(0xF8), 255); // #WHITE channel
+        assert_eq!(display_scanout8(0x80), 132); // text half-tone
+        assert_eq!(display_scanout8(0x00), 0);
+        // Any 8-bit input is truncated to its top 5 bits first: 120/124/127 all show 123.
+        assert_eq!(display_scanout8(120), 123);
+        assert_eq!(display_scanout8(124), 123);
+        assert_eq!(display_scanout8(127), 123);
+        assert_eq!(display_scanout8(8), 8);
     }
 
     #[test]

@@ -14,7 +14,8 @@ summary: "Sets the console text drawing (foreground) and optional per-character 
 semantics:
   - "Takes 1 or 2 argument slots; any other count, or use as a function (requesting a return value), raises errnum 4 (Illegal function call) — argcount guard cmp #1/cmp #2 with return-count check @0x14b2d0."
   - "Each color index must be in 0..15; out of range raises errnum 10 (Out of range) — range check cmp r0,#0/blt + cmp r0,#0xf/ble @0x14b324 (fg) and @0x14b3b0 (bg)."
-  - "Color 0 is the transparent color; 1..15 map to the text palette #TBLACK..#TWHITE (1:Black 2:Maroon 3:Red 4:Green 5:Lime 6:Olive 7:Yellow 8:Navy 9:Blue 10:Purple 11:Magenta 12:Teal 13:Cyan 14:Gray 15:White)."
+  - "Color 0 is the transparent color; 1..15 map to the text palette #TBLACK..#TWHITE (1:Black 2:Maroon 3:Red 4:Green 5:Lime 6:Olive 7:Yellow 8:Navy 9:Blue 10:Purple 11:Magenta 12:Teal 13:Cyan 14:Gray 15:White). #TBLACK..#TWHITE are palette INDICES 1..15 (e.g. #TWHITE=15, #TRED=3), not ARGB values (hw_verified)."
+  - "The text palette uses two channel levels per primary: full = 5-bit 31 and half-tone = 5-bit 16. As DISPLAYED on the 3DS LCD (5-bit->8-bit bit-replication `(c5<<3)|(c5>>2)`) full=255 and half=132 (0x84); as a LOGICAL ARGB channel (`c5<<3`, matching #WHITE=0xF8F8F8) full=0xF8 and half=0x80. hw_verified displayed RGB: 1 black (0,0,0); 2 maroon (132,0,0); 3 red (255,0,0); 4 green (0,132,0); 5 lime (0,255,0); 6 olive (132,132,0); 7 yellow (255,255,0); 8 navy (0,0,132); 9 blue (0,0,255); 10 purple (132,0,132); 11 magenta (255,0,255); 12 teal (0,132,132); 13 cyan (0,255,255); 14 gray (132,132,132); 15 white (255,255,255). The text layer does NOT bypass 5-bit precision, and the half-tone is 5-bit index 16 (0x84 displayed / 0x80 logical) — neither 0x78 (5-bit 15) nor 0x7F."
   - "The drawing color may be omitted with a comma placeholder (`COLOR ,bg`) to change only the background; the omitted argument keeps its previous value (the absent-operand path skips the store)."
   - "The stored drawing color is masked to its low 8 bits (and r0,r0,#0xff @0x14b310) before being saved, though the 0..15 range guard already constrains it."
 
@@ -27,6 +28,7 @@ sources:
   - { type: disassembled, ref: "cia_3.6.0.lst COLOR handler @0x14b28c: return-count [r0+0xc]!=0 -> errnum 4; argcount r0=[r4+0x4], cmp #1 beq 1-arg form @0x14b2e0, cmp #2 beq 2-arg form @0x14b354, else mov r0,#0x4 (errnum 4) @0x14b2d0. fg range: cmp r0,#0/blt + cmp r0,#0xf/ble @0x14b324 else mov r0,#0xa (errnum 10) @0x14b340. Store: and r0,r0,#0xff @0x14b310; str r0,[r5,#0x34]. bg range check @0x14b3b0 else mov r0,#0xa @0x14b3d0.", confidence: disassembled }
   - { type: community, ref: "osb/SMILEBASIC/console.d COLOR: sets fg/bg palette indices for subsequent text (3.5.0 structural cross-check only)" }
   - { type: hw_verified, ref: "sb-oracle batch 2026-06-22 (s_t5a): COLOR 16 -> errnum 10, errline 1; COLOR 0,16 -> errnum 10, errline 1 (color index > 15 out of range); A=COLOR(7) (used as a function) -> errnum 4, errline 1." }
+  - { type: hw_verified, ref: "sb-oracle composite screenshots 2026-06-27 (sb-interpreter-vzv; harness/harvest/out/vzv_console_palette_attr.tsv): COLOR-ramp screen (COLOR 0,C:PRINT spaces per C=1..15) sampled on a 400x240 top screenshot gives the displayed text-palette RGB above (full 255 / half 132). A graphics probe (#WHITE->255, RGB(128)->132, RGB(120/124/127)->123, RGB(8)->8) confirms the display scanout truncates to the top 5 bits then bit-replicates. #T* color constants eval to indices (#TWHITE=15,#TBLACK=1,#TRED=3)." }
 
 confidence: hw_verified
 
