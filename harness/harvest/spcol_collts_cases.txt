@@ -1,0 +1,40 @@
+# SPCOL scale-adjust LIVE collision geometry (sb-interpreter-6nd / S-T8d).
+# Confirm the documented timing: scale-adjust TRUE syncs the detection AABB with
+# |SPSCALE|, but ONLY for SPSCALE issued AFTER the SPCOL. The OUT read-back is
+# invariant to SPSCALE (already hw_verified), so this is observable only through
+# collision OUTCOMES. SPDEF #0 is 16x16. Two probe methods cross-validate:
+#   (A) SPHITSP(0,1) sprite-vs-sprite  (returns 0/1)
+#   (B) SPHITRC(0,sx,sy,w,h) sprite-vs-rect (returns 0/1)
+# Geometry: sprite 0 SPHOME default top-left, at SPOFS 100,100 -> world (100,100)-(116,116).
+#   gap probe placed so base(16) MISSES, scaled-2x(32) HITS.
+# prog mode = isolated program per case (clean session, no leaked scale cache).
+
+## ---- SPHITSP sprite-vs-sprite calibration (no SPSCALE) ----
+# sprite1 at 120 -> world (120,100)-(136,116); base sprite0 ends at 116 -> 4px gap -> MISS.
+sp_cal_gap|ACLS:SPSET 0,0:SPSET 1,0:SPOFS 0,100,100:SPOFS 1,120,100:SPCOL 0:SPCOL 1:SPCOLVEC 0,0,0:SPCOLVEC 1,0,0|SPHITSP(0,1)|prog
+# sprite1 at 110 -> overlaps base sprite0 (100-116) -> HIT (sanity that collision resolves).
+sp_cal_overlap|ACLS:SPSET 0,0:SPSET 1,0:SPOFS 0,100,100:SPOFS 1,110,100:SPCOL 0:SPCOL 1:SPCOLVEC 0,0,0:SPCOLVEC 1,0,0|SPHITSP(0,1)|prog
+
+## ---- SPHITSP timing matrix (gap probe: hit only if sprite0 AABB grows to 32) ----
+# SPSCALE 2x AFTER SPCOL,TRUE -> docs: detection syncs -> AABB 32 -> closes gap -> HIT.
+sp_aft_true|ACLS:SPSET 0,0:SPSET 1,0:SPOFS 0,100,100:SPOFS 1,120,100:SPCOL 0,TRUE:SPCOL 1:SPCOLVEC 0,0,0:SPCOLVEC 1,0,0:SPSCALE 0,2,2|SPHITSP(0,1)|prog
+# SPSCALE 2x BEFORE SPCOL,TRUE -> docs: pre-SPCOL scale IGNORED -> AABB stays 16 -> MISS.
+sp_bef_true|ACLS:SPSET 0,0:SPSET 1,0:SPOFS 0,100,100:SPOFS 1,120,100:SPSCALE 0,2,2:SPCOL 0,TRUE:SPCOL 1:SPCOLVEC 0,0,0:SPCOLVEC 1,0,0|SPHITSP(0,1)|prog
+# SPSCALE 2x AFTER SPCOL,FALSE -> sync disabled -> AABB stays 16 -> MISS.
+sp_aft_false|ACLS:SPSET 0,0:SPSET 1,0:SPOFS 0,100,100:SPOFS 1,120,100:SPCOL 0,FALSE:SPCOL 1:SPCOLVEC 0,0,0:SPCOLVEC 1,0,0:SPSCALE 0,2,2|SPHITSP(0,1)|prog
+# TRUE flag but NO SPSCALE -> base AABB -> MISS.
+sp_noscale_true|ACLS:SPSET 0,0:SPSET 1,0:SPOFS 0,100,100:SPOFS 1,120,100:SPCOL 0,TRUE:SPCOL 1:SPCOLVEC 0,0,0:SPCOLVEC 1,0,0|SPHITSP(0,1)|prog
+# Both BEFORE and AFTER scale with TRUE: does a post-SPCOL scale override an ignored pre one? AFTER wins -> HIT.
+sp_bef_and_aft|ACLS:SPSET 0,0:SPSET 1,0:SPOFS 0,100,100:SPOFS 1,120,100:SPSCALE 0,2,2:SPCOL 0,TRUE:SPCOL 1:SPCOLVEC 0,0,0:SPCOLVEC 1,0,0:SPSCALE 0,2,2|SPHITSP(0,1)|prog
+
+## ---- SPHITRC sprite-vs-rect cross-check ----
+# probe rect (120,100,4,4) -> world (120,100)-(124,104); base sprite0 ends 116 -> MISS.
+rc_cal_gap|ACLS:SPSET 0,0:SPOFS 0,100,100:SPCOL 0:SPCOLVEC 0,0,0|SPHITRC(0,120,100,4,4)|prog
+# rect inside base sprite0 -> HIT (sanity).
+rc_cal_in|ACLS:SPSET 0,0:SPOFS 0,100,100:SPCOL 0:SPCOLVEC 0,0,0|SPHITRC(0,104,104,4,4)|prog
+# SPSCALE 2x AFTER SPCOL,TRUE -> AABB 32 -> rect at 120 now inside -> HIT.
+rc_aft_true|ACLS:SPSET 0,0:SPOFS 0,100,100:SPCOL 0,TRUE:SPCOLVEC 0,0,0:SPSCALE 0,2,2|SPHITRC(0,120,100,4,4)|prog
+# SPSCALE 2x BEFORE SPCOL,TRUE -> pre ignored -> AABB 16 -> MISS.
+rc_bef_true|ACLS:SPSET 0,0:SPOFS 0,100,100:SPSCALE 0,2,2:SPCOL 0,TRUE:SPCOLVEC 0,0,0|SPHITRC(0,120,100,4,4)|prog
+# SPSCALE 2x AFTER SPCOL,FALSE -> no sync -> AABB 16 -> MISS.
+rc_aft_false|ACLS:SPSET 0,0:SPOFS 0,100,100:SPCOL 0,FALSE:SPCOLVEC 0,0,0:SPSCALE 0,2,2|SPHITRC(0,120,100,4,4)|prog
